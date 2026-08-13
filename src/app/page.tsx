@@ -1,0 +1,26 @@
+import type { Metadata } from "next";
+import { getPublishedEventsWithVenue } from "@/lib/queries";
+import EventExplorer from "@/components/EventExplorer";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+export default function HomePage() {
+  const events = getPublishedEventsWithVenue();
+
+  return (
+    <div>
+      <div className="mx-auto max-w-6xl px-4 pb-4 pt-6 sm:px-6 sm:pt-8">
+        <h1 className="font-display text-2xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-[2rem]">
+          Electronic music in Copenhagen
+        </h1>
+        <p className="mt-1.5 max-w-xl text-sm text-text-secondary">
+          Techno, house, trance, drum &amp; bass and more — every credible electronic
+          event in Copenhagen &amp; Frederiksberg, one continuously updated list.
+        </p>
+      </div>
+      <EventExplorer events={events} />
+    </div>
+  );
+}
