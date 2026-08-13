@@ -1,0 +1,333 @@
+import { randomUUID } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
+import { db } from "./client";
+import { discoveryQueue, eventChangeLog, events, sourceEventLinks } from "./schema";
+import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
+import { assessDuplicate } from "../lib/dedup";
+import type { ConfidenceLevel } from "../lib/types";
+import type { GenreSlug } from "../lib/taxonomy";
+
+/**
+ * All admin/sync write operations go through this module — API routes stay
+ * thin, and this is the single place field-level override protection
+ * (src/lib/override.ts) actually gets enforced against the database.
+ */
+
+function logId(): string {
+  return `log-${randomUUID()}`;
+}
+
+async function writeChangeLog(
+  eventId: string,
+  changedBy: string,
+  changeType: string,
+  fieldsChanged: string[],
+  note?: string,
+) {
+  await db.insert(eventChangeLog).values({
+    id: logId(),
+    eventId,
+    changedBy,
+    changeType,
+    fieldsChanged,
+    note: note ?? null,
+  });
+}
+
+type EventInsert = typeof events.$inferInsert;
+export type EventEditPatch = Partial<Pick<EventInsert, EditableEventField>>;
+
+/**
+ * Applies an admin-authored edit: the touched fields are written AND marked
+ * as manually overridden, so a later sync (src/lib/sync.ts) can never
+ * silently revert them.
+ */
+export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  const touchedFields = Object.keys(patch);
+  const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
+
+  await db
+    .update(events)
+    .set({
+      ...patch,
+      overriddenFields,
+      manualOverride: true,
+      updatedAt: new Date(),
+      lastChanged: new Date(),
+    })
+    .where(eq(events.id, eventId));
+
+  await writeChangeLog(eventId, "admin", "update", touchedFields);
+}
+
+export async function setEventPublished(eventId: string, published: boolean) {
+  await applyAdminEventEdit(eventId, { published });
+  await writeChangeLog(eventId, "admin", published ? "publish" : "unpublish", ["published"]);
+}
+
+/**
+ * Applies an automated sync's proposed patch, but only to fields the admin
+ * hasn't manually corrected — the enforcement point for manual-override
+ * protection during real ingestion (task 5/6).
+ */
+export async function applySourceSyncPatch(
+  eventId: string,
+  sourceId: string,
+  proposedPatch: Record<string, unknown>,
+) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  const safePatch = stripOverriddenFields(proposedPatch, existing.overriddenFields);
+  const skippedFields = Object.keys(proposedPatch).filter((k) => !(k in safePatch));
+
+  if (Object.keys(safePatch).length > 0) {
+    await db
+      .update(events)
+      .set({ ...safePatch, updatedAt: new Date(), lastChanged: new Date(), lastSourceCheck: new Date() })
+      .where(eq(events.id, eventId));
+  } else {
+    await db.update(events).set({ lastSourceCheck: new Date() }).where(eq(events.id, eventId));
+  }
+
+  await writeChangeLog(
+    eventId,
+    sourceId,
+    "sync",
+    Object.keys(safePatch),
+    skippedFields.length > 0 ? `skipped manually-overridden fields: ${skippedFields.join(", ")}` : undefined,
+  );
+
+  return { applied: Object.keys(safePatch), skipped: skippedFields };
+}
+
+interface NewEventInput {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  artists: string[];
+  startDatetime: Date;
+  endDatetime: Date | null;
+  venueId: string;
+  primaryGenre: GenreSlug;
+  subgenres: GenreSlug[];
+  genreConfidence: ConfidenceLevel;
+  officialEventUrl: string | null;
+  ticketUrl: string | null;
+  facebookUrl: string | null;
+  residentAdvisorUrl: string | null;
+  imageUrl: string | null;
+  priceFrom: number | null;
+  currency: "DKK" | null;
+  published: boolean;
+  confidence: ConfidenceLevel;
+  canonicalSourceId: string | null;
+}
+
+export async function createEvent(input: NewEventInput, createdBy: string) {
+  const now = new Date();
+  await db.insert(events).values({
+    ...input,
+    timezone: "Europe/Copenhagen",
+    otherSourceUrls: [],
+    soldOut: false,
+    cancelled: false,
+    dateChanged: false,
+    timeChanged: false,
+    manualOverride: false,
+    overriddenFields: [],
+    createdAt: now,
+    updatedAt: now,
+    lastSourceCheck: now,
+    lastChanged: now,
+  });
+  if (input.canonicalSourceId && input.officialEventUrl) {
+    await recordSourceLink(input.id, input.canonicalSourceId, input.officialEventUrl, "official");
+  }
+  await writeChangeLog(input.id, createdBy, "create", Object.keys(input));
+}
+
+export async function recordSourceLink(
+  eventId: string,
+  sourceId: string,
+  sourceUrl: string,
+  role: "official" | "ticket" | "facebook" | "resident-advisor" | "other",
+) {
+  await db
+    .insert(sourceEventLinks)
+    .values({ eventId, sourceId, sourceUrl, role })
+    .onConflictDoNothing();
+}
+
+// ---- Discovery queue actions ----
+
+export async function publishDiscoveryItem(queueId: string, resolvedVenueId: string) {
+  const [item] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, queueId)).limit(1);
+  if (!item) throw new Error(`Discovery item ${queueId} not found`);
+  if (item.status !== "pending") throw new Error(`Discovery item ${queueId} already ${item.status}`);
+  if (!item.probableStart) throw new Error("Cannot publish without a resolved date/time");
+
+  const eventId = `e-${randomUUID().slice(0, 8)}`;
+  const slug = `${item.probableTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${eventId}`;
+
+  await createEvent(
+    {
+      id: eventId,
+      title: item.probableTitle,
+      slug,
+      description: null,
+      artists: item.detectedLineup,
+      startDatetime: item.probableStart,
+      endDatetime: null,
+      venueId: resolvedVenueId,
+      primaryGenre: (item.predictedGenre as GenreSlug) ?? "electronic-other",
+      subgenres: item.predictedGenre ? [item.predictedGenre as GenreSlug] : [],
+      genreConfidence: item.genreConfidence as ConfidenceLevel,
+      officialEventUrl: item.sourceUrl,
+      ticketUrl: null,
+      facebookUrl: item.sourceUrl.includes("facebook.com") ? item.sourceUrl : null,
+      residentAdvisorUrl: item.sourceUrl.includes("ra.co") ? item.sourceUrl : null,
+      imageUrl: null,
+      priceFrom: null,
+      currency: null,
+      published: true,
+      confidence: item.overallConfidence as ConfidenceLevel,
+      canonicalSourceId: null,
+    },
+    "admin",
+  );
+
+  await db
+    .update(discoveryQueue)
+    .set({ status: "published", resolvedAt: new Date() })
+    .where(eq(discoveryQueue.id, queueId));
+
+  return eventId;
+}
+
+export async function ignoreDiscoveryItem(queueId: string) {
+  await db
+    .update(discoveryQueue)
+    .set({ status: "ignored", resolvedAt: new Date() })
+    .where(eq(discoveryQueue.id, queueId));
+}
+
+/** Merges a discovery item into an existing event, preserving provenance instead of discarding it. */
+export async function mergeDiscoveryItem(queueId: string, targetEventId: string, sourceId = "admin-merge") {
+  const [item] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, queueId)).limit(1);
+  if (!item) throw new Error(`Discovery item ${queueId} not found`);
+  const [target] = await db.select().from(events).where(eq(events.id, targetEventId)).limit(1);
+  if (!target) throw new Error(`Target event ${targetEventId} not found`);
+
+  const otherSourceUrls = Array.from(new Set([...target.otherSourceUrls, item.sourceUrl]));
+  await db
+    .update(events)
+    .set({ otherSourceUrls, updatedAt: new Date() })
+    .where(eq(events.id, targetEventId));
+
+  await recordSourceLink(targetEventId, sourceId, item.sourceUrl, "other");
+  await writeChangeLog(targetEventId, "admin", "merge", ["otherSourceUrls"], `merged discovery item ${queueId}`);
+
+  await db
+    .update(discoveryQueue)
+    .set({ status: "merged", resolvedAt: new Date(), suspectedDuplicateOfEventId: targetEventId })
+    .where(eq(discoveryQueue.id, queueId));
+}
+
+export interface DiscoveryEditPatch {
+  probableTitle?: string;
+  probableStart?: Date | null;
+  probableVenueName?: string | null;
+  detectedLineup?: string[];
+  predictedGenre?: GenreSlug | null;
+}
+
+/** Lets an admin fill in fields a generic extraction couldn't determine (date, venue, lineup) before publishing. */
+export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch) {
+  const [existing] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, id)).limit(1);
+  if (!existing) throw new Error(`Discovery item ${id} not found`);
+  if (existing.status !== "pending") throw new Error(`Discovery item ${id} already ${existing.status}`);
+
+  const missingFields = existing.missingFields.filter((f) => {
+    if (f.startsWith("date") && patch.probableStart) return false;
+    if (f.startsWith("venue") && patch.probableVenueName) return false;
+    if (f.startsWith("title") && patch.probableTitle) return false;
+    return true;
+  });
+
+  await db
+    .update(discoveryQueue)
+    .set({ ...patch, missingFields })
+    .where(eq(discoveryQueue.id, id));
+}
+
+export async function insertDiscoveryItem(item: {
+  id: string;
+  probableTitle: string;
+  probableStart: Date | null;
+  probableVenueName: string | null;
+  sourceName: string;
+  sourceUrl: string;
+  detectedLineup: string[];
+  predictedGenre: GenreSlug | null;
+  genreConfidence: ConfidenceLevel;
+  suspectedDuplicateOfEventId: string | null;
+  missingFields: string[];
+  overallConfidence: ConfidenceLevel;
+}) {
+  await db.insert(discoveryQueue).values({ ...item, status: "pending" });
+}
+
+/** Finds the strongest same-night duplicate among currently published events, for merge suggestions. */
+export async function findDuplicateEventId(
+  candidate: { title: string; artists: string[]; venueId: string | null; startDatetime: string },
+): Promise<string | null> {
+  const rows = await db.select().from(events).where(eq(events.published, true));
+  let best: { id: string; confidence: string } | null = null;
+  for (const row of rows) {
+    const assessment = assessDuplicate(candidate, {
+      title: row.title,
+      artists: row.artists,
+      venueId: row.venueId,
+      startDatetime: row.startDatetime.toISOString(),
+    });
+    if (assessment.confidence === "none") continue;
+    if (!best || rank(assessment.confidence) > rank(best.confidence)) {
+      best = { id: row.id, confidence: assessment.confidence };
+    }
+  }
+  return best?.id ?? null;
+}
+
+function rank(c: string): number {
+  return { high: 3, medium: 2, low: 1, none: 0 }[c] ?? 0;
+}
+
+export async function touchSourceSyncStats(
+  sourceId: string,
+  outcome: { success: boolean; eventsFound?: number; eventsUpdated?: number; error?: string | null },
+) {
+  const now = new Date();
+  const { sources } = await import("./schema");
+  if (outcome.success) {
+    await db
+      .update(sources)
+      .set({
+        lastSuccessfulSync: now,
+        lastAttemptedSync: now,
+        lastError: null,
+        eventsFound: outcome.eventsFound ?? sql`events_found`,
+        eventsUpdated: outcome.eventsUpdated ?? sql`events_updated`,
+      })
+      .where(eq(sources.id, sourceId));
+  } else {
+    await db
+      .update(sources)
+      .set({ lastAttemptedSync: now, lastError: outcome.error ?? "Unknown sync failure" })
+      .where(eq(sources.id, sourceId));
+  }
+}

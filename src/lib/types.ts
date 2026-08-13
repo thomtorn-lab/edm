@@ -99,6 +99,8 @@ export interface EventRecord {
   timeChanged: boolean;
   published: boolean;
   manualOverride: boolean;
+  /** Field names an admin has hand-corrected — a later sync must never overwrite these (see src/lib/override.ts). */
+  overriddenFields: string[];
   confidence: ConfidenceLevel;
   canonicalSourceId: string | null;
   createdAt: string;
@@ -124,6 +126,8 @@ export interface FestivalRecord {
 
 export type DiscoveryAction = "publish" | "edit" | "ignore" | "merge";
 
+export type DiscoveryQueueStatus = "pending" | "published" | "ignored" | "merged";
+
 export interface DiscoveryQueueItem {
   id: string;
   probableTitle: string;
@@ -137,4 +141,5 @@ export interface DiscoveryQueueItem {
   suspectedDuplicateOfEventId: string | null;
   missingFields: string[];
   overallConfidence: ConfidenceLevel;
+  status: DiscoveryQueueStatus;
 }

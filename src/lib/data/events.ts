@@ -5,10 +5,12 @@ import { getVenueById } from "./venues";
 
 /**
  * Representative sample event data for the Phase 1 product/UX proof (spec
- * section 62). This stands in for the canonical database until the source
- * adapters in src/lib/adapters are wired to real ingestion (Phase 3+). Dates
- * are anchored around August 2026 so "Tonight" / "This weekend" behave
- * correctly out of the box.
+ * section 62). Dates are anchored around August 2026 so "Tonight" / "This
+ * weekend" behave correctly out of the box.
+ *
+ * The running app now reads events from Postgres (src/lib/queries.ts) — this
+ * file is the seed source for `npm run db:seed` and fixture data for
+ * pure-logic unit tests that don't need a live database.
  */
 
 let counter = 0;
@@ -75,6 +77,7 @@ function mkEvent(input: SeedEventInput): EventRecord {
     timeChanged: input.timeChanged ?? false,
     published: input.published ?? true,
     manualOverride: false,
+    overriddenFields: [],
     confidence: input.confidence ?? "high",
     canonicalSourceId: input.canonicalSourceId ?? null,
     createdAt: SEED_TIMESTAMP,

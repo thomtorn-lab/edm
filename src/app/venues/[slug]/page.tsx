@@ -1,19 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { VENUES, getVenueBySlug } from "@/lib/data/venues";
-import { getEventsForVenue } from "@/lib/queries";
+import { getEventsForVenue, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
 
-export function generateStaticParams() {
-  return VENUES.map((v) => ({ slug: v.slug }));
-}
+export const revalidate = 0;
 
 export async function generateMetadata({ params }: PageProps<"/venues/[slug]">): Promise<Metadata> {
   const { slug } = await params;
-  const venue = getVenueBySlug(slug);
+  const venue = await getVenueBySlug(slug);
   if (!venue) return {};
   return {
     title: venue.name,
@@ -24,11 +21,11 @@ export async function generateMetadata({ params }: PageProps<"/venues/[slug]">):
 
 export default async function VenueDetailPage({ params }: PageProps<"/venues/[slug]">) {
   const { slug } = await params;
-  const venue = getVenueBySlug(slug);
+  const venue = await getVenueBySlug(slug);
   if (!venue) notFound();
 
   const now = new Date();
-  const upcoming = sortByStart(getEventsForVenue(venue.id).filter((e) => !isPastEvent(e, now)));
+  const upcoming = sortByStart((await getEventsForVenue(venue.id)).filter((e) => !isPastEvent(e, now)));
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">

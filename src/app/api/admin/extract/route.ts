@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { VENUES } from "@/lib/data/venues";
-import { getPublishedEventsWithVenue } from "@/lib/queries";
+import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
+import { createEvent, insertDiscoveryItem } from "@/db/writes";
 import type { RawCandidateEvent } from "@/lib/adapters/types";
 
 /**
@@ -78,7 +79,8 @@ export async function POST(request: NextRequest) {
     genreConfidenceHint: null,
   };
 
-  const existing = getPublishedEventsWithVenue().map((e) => ({
+  const [venues, publishedEvents] = await Promise.all([getVenues(), getPublishedEventsWithVenue()]);
+  const existing = publishedEvents.map((e) => ({
     id: e.id,
     title: e.title,
     artists: e.artists,
@@ -86,7 +88,58 @@ export async function POST(request: NextRequest) {
     startDatetime: e.startDatetime,
   }));
 
-  const result = runIngestionPipeline(raw, { venues: VENUES, existingEvents: existing });
+  const result = runIngestionPipeline(raw, { venues, existingEvents: existing });
 
-  return NextResponse.json({ raw, result });
+  // Persist immediately, per the quality gate's decision — a page refresh
+  // must not lose the analysis, and the review queue is where the admin
+  // actually acts on it (spec section 33-35).
+  if (result.decision === "auto_publish" && result.resolvedVenueId && raw.startDatetime) {
+    const eventId = `e-${randomUUID().slice(0, 8)}`;
+    const slug = `${(raw.title || "event").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${eventId}`;
+    await createEvent(
+      {
+        id: eventId,
+        title: raw.title,
+        slug,
+        description: raw.description,
+        artists: result.normalizedArtists,
+        startDatetime: new Date(raw.startDatetime),
+        endDatetime: raw.endDatetime ? new Date(raw.endDatetime) : null,
+        venueId: result.resolvedVenueId,
+        primaryGenre: result.genre ?? "electronic-other",
+        subgenres: result.genre ? [result.genre] : [],
+        genreConfidence: result.genreConfidence,
+        officialEventUrl: raw.officialEventUrl,
+        ticketUrl: raw.ticketUrl,
+        facebookUrl: raw.facebookUrl,
+        residentAdvisorUrl: raw.residentAdvisorUrl,
+        imageUrl: raw.imageUrl,
+        priceFrom: raw.priceFrom,
+        currency: raw.priceFrom != null ? "DKK" : null,
+        published: true,
+        confidence: result.genreConfidence,
+        canonicalSourceId: null,
+      },
+      "admin-paste",
+    );
+    return NextResponse.json({ raw, result, persisted: { kind: "event", id: eventId } });
+  }
+
+  const queueId = `dq-${randomUUID().slice(0, 8)}`;
+  await insertDiscoveryItem({
+    id: queueId,
+    probableTitle: raw.title || "(untitled)",
+    probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
+    probableVenueName: raw.venueName,
+    sourceName: "Admin: Add event from URL",
+    sourceUrl: raw.sourceUrl,
+    detectedLineup: result.normalizedArtists,
+    predictedGenre: result.genre,
+    genreConfidence: result.genreConfidence,
+    suspectedDuplicateOfEventId: result.duplicateOfEventId,
+    missingFields: result.missingFields,
+    overallConfidence: result.decision === "review_queue" ? "medium" : "low",
+  });
+
+  return NextResponse.json({ raw, result, persisted: { kind: "discovery", id: queueId } });
 }

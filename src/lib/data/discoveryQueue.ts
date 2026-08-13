@@ -19,6 +19,7 @@ export const DISCOVERY_QUEUE: DiscoveryQueueItem[] = [
     suspectedDuplicateOfEventId: null,
     missingFields: ["venue (unresolved against registry)", "official source url"],
     overallConfidence: "medium",
+    status: "pending",
   },
   {
     id: "dq-002",
@@ -33,6 +34,7 @@ export const DISCOVERY_QUEUE: DiscoveryQueueItem[] = [
     suspectedDuplicateOfEventId: "e-002",
     missingFields: [],
     overallConfidence: "medium",
+    status: "pending",
   },
   {
     id: "dq-003",
@@ -47,5 +49,6 @@ export const DISCOVERY_QUEUE: DiscoveryQueueItem[] = [
     suspectedDuplicateOfEventId: null,
     missingFields: ["venue", "genre evidence", "official source url"],
     overallConfidence: "low",
+    status: "pending",
   },
 ];

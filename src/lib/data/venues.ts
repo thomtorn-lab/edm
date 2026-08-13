@@ -1,9 +1,14 @@
 import type { Venue } from "../types";
 
 /**
- * Canonical venue registry. Aliases absorb spelling/capitalization variants
+ * Canonical venue fixtures. Aliases absorb spelling/capitalization variants
  * seen across sources so the same physical venue never fragments into
  * multiple entries (spec section 37).
+ *
+ * The running app reads venues from Postgres (src/lib/queries.ts), not this
+ * file directly — this is now the seed source for `npm run db:seed` and the
+ * fixture data for pure-logic unit tests (normalize.test.ts, dedup.test.ts)
+ * that intentionally don't need a live database connection.
  */
 export const VENUES: Venue[] = [
   {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEventBySlugWithVenue, getPublishedEventsWithVenue } from "@/lib/queries";
+import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { crossesMidnight } from "@/lib/datetime";
 import { displayGenres, getGenre } from "@/lib/taxonomy";
@@ -10,15 +10,13 @@ import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 
-export const revalidate = 3600;
-
-export function generateStaticParams() {
-  return getPublishedEventsWithVenue().map((e) => ({ slug: e.slug }));
-}
+// Events are admin-editable now (publish/hide/correct/cancel); render fresh
+// on every request rather than risk serving a stale prebuilt page.
+export const revalidate = 0;
 
 export async function generateMetadata({ params }: PageProps<"/events/[slug]">): Promise<Metadata> {
   const { slug } = await params;
-  const event = getEventBySlugWithVenue(slug);
+  const event = await getEventBySlugWithVenue(slug);
   if (!event) return {};
 
   const genres = displayGenres(event.subgenres).map((g) => g.label).join(" · ");
@@ -39,7 +37,7 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
 
 export default async function EventDetailPage({ params }: PageProps<"/events/[slug]">) {
   const { slug } = await params;
-  const event = getEventBySlugWithVenue(slug);
+  const event = await getEventBySlugWithVenue(slug);
   if (!event) notFound();
 
   const genres = event.subgenres.map(getGenre);

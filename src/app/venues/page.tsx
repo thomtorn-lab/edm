@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { VENUES } from "@/lib/data/venues";
-import { getEventsForVenue } from "@/lib/queries";
+import { getEventsForVenue, getVenues } from "@/lib/queries";
 import { isPastEvent } from "@/lib/datetime";
 
 export const metadata: Metadata = {
@@ -10,8 +9,17 @@ export const metadata: Metadata = {
   alternates: { canonical: "/venues" },
 };
 
-export default function VenuesPage() {
-  const venues = [...VENUES].sort((a, b) => a.name.localeCompare(b.name));
+export const revalidate = 0;
+
+export default async function VenuesPage() {
+  const venues = await getVenues();
+  const now = new Date();
+  const venuesWithCounts = await Promise.all(
+    venues.map(async (venue) => ({
+      venue,
+      upcomingCount: (await getEventsForVenue(venue.id)).filter((e) => !isPastEvent(e, now)).length,
+    })),
+  );
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -23,22 +31,18 @@ export default function VenuesPage() {
       </p>
 
       <ul className="mt-8">
-        {venues.map((venue) => {
-          const now = new Date();
-          const upcomingCount = getEventsForVenue(venue.id).filter((e) => !isPastEvent(e, now)).length;
-          return (
-            <li key={venue.id} className="border-b border-border py-5">
-              <Link href={`/venues/${venue.slug}`} className="text-lg font-semibold text-text-primary hover:text-accent-strong">
-                {venue.name}
-              </Link>
-              <p className="mt-1 text-sm text-text-secondary">{venue.address}</p>
-              <p className="mt-2 text-sm leading-relaxed text-text-secondary">{venue.description}</p>
-              <p className="mt-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
-                {upcomingCount} upcoming event{upcomingCount === 1 ? "" : "s"}
-              </p>
-            </li>
-          );
-        })}
+        {venuesWithCounts.map(({ venue, upcomingCount }) => (
+          <li key={venue.id} className="border-b border-border py-5">
+            <Link href={`/venues/${venue.slug}`} className="text-lg font-semibold text-text-primary hover:text-accent-strong">
+              {venue.name}
+            </Link>
+            <p className="mt-1 text-sm text-text-secondary">{venue.address}</p>
+            <p className="mt-2 text-sm leading-relaxed text-text-secondary">{venue.description}</p>
+            <p className="mt-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+              {upcomingCount} upcoming event{upcomingCount === 1 ? "" : "s"}
+            </p>
+          </li>
+        ))}
       </ul>
     </div>
   );

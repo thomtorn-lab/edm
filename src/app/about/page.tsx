@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SOURCES } from "@/lib/data/sources";
+import { getSources } from "@/lib/queries";
 
 export const metadata: Metadata = {
   title: "About",
   description: "What Nattefrekvens is, what it covers, and how the listing stays up to date.",
   alternates: { canonical: "/about" },
 };
+
+export const revalidate = 0;
 
 const roleLabel: Record<string, string> = {
   discovery: "Discovery",
@@ -15,7 +17,8 @@ const roleLabel: Record<string, string> = {
   link: "Link",
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const sources = await getSources();
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
@@ -61,7 +64,7 @@ export default function AboutPage() {
             </tr>
           </thead>
           <tbody>
-            {SOURCES.map((source) => (
+            {sources.map((source) => (
               <tr key={source.id} className="border-b border-border last:border-b-0">
                 <td className="px-3 py-2 text-text-primary">{source.sourceName}</td>
                 <td className="px-3 py-2 text-text-secondary">{source.roles.map((r) => roleLabel[r]).join(", ")}</td>

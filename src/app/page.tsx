@@ -6,8 +6,12 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
-export default function HomePage() {
-  const events = getPublishedEventsWithVenue();
+// Events are admin-editable now; always read the current DB state rather
+// than serving a stale prerendered page after a publish/edit/hide.
+export const revalidate = 0;
+
+export default async function HomePage() {
+  const events = await getPublishedEventsWithVenue();
 
   return (
     <div>
