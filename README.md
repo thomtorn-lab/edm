@@ -57,6 +57,28 @@ Two deliberately separate entry points — never run the dev one against a real 
   Proven end-to-end (empty database → migrate → this bootstrap → a real live Hangaren sync → a
   second bootstrap run) by `npm run db:verify-bootstrap`.
 
+## Preparing the production database
+
+`.github/workflows/prepare-production-db.yml` runs the two commands a real deployment's database
+needs — `npm run db:migrate` then `npm run db:seed:production` — against whatever `DATABASE_URL`
+the `DATABASE_URL` repository secret points at. It is manual-only (`workflow_dispatch`, no
+schedule, no trigger on push/PR), never runs `db:seed:dev` or `db:verify-bootstrap` (the
+destructive one — see "Seeding" above), never prints `DATABASE_URL`, and makes no deployment or
+infrastructure changes.
+
+1. **Add the `DATABASE_URL` repository secret.** In the repo on GitHub: Settings → Secrets and
+   variables → Actions → Secrets tab → "New repository secret". Name: `DATABASE_URL`. Value: the
+   production Postgres connection string (e.g. your Supabase connection string). Save.
+2. **Run the workflow manually.** Actions tab → "Prepare Production Database" in the left sidebar
+   → "Run workflow" → in the `confirm` box type exactly `PREPARE-PRODUCTION-DB` → "Run workflow".
+   It will fail immediately (before touching the database) if `DATABASE_URL` isn't set or the
+   confirmation text doesn't match exactly.
+3. **Verify success.** Open the completed run: both the "Apply database migrations" and "Seed
+   production reference data" steps should show a green check with no error output. Separately,
+   confirm against the database itself (e.g. via `psql` or Supabase's table editor) that the
+   `venues` and `sources` tables are populated and that `events`/`discovery_queue` are empty —
+   exactly what `npm run db:seed:production` guarantees (see "Seeding" above).
+
 ## Architecture
 
 ```
