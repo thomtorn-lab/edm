@@ -26,6 +26,33 @@ stands in for the canonical database. Swapping it for real persistence (Postgres
 implementing the same query shapes in `src/lib/queries.ts` against a database instead of static
 arrays; nothing in the UI layer assumes static data.
 
+## Preparing the production database
+
+`.github/workflows/prepare-production-db.yml` is a manual-only (`workflow_dispatch`, no schedule,
+no trigger on push/PR) GitHub Actions workflow for running database migrations and a
+production-safe reference-data seed against a real deployment. It requires a `DATABASE_URL`
+repository secret, fails immediately if that secret is missing, never prints its value, and makes
+no deployment or infrastructure changes.
+
+**Note:** the workflow's seed step runs `npm run db:seed:production`, which is not yet defined on
+this branch — that command and its underlying script land with a separate, larger change. Until
+then, running this workflow will succeed through `npm run db:migrate` and then fail cleanly at the
+seed step with an "unknown script" error; it will not write to `venues`, `sources`, `events`, or
+`discovery_queue`. This is expected and safe — the workflow is being made available ahead of that
+change, not run against it yet.
+
+1. **Add the `DATABASE_URL` repository secret.** In the repo on GitHub: Settings → Secrets and
+   variables → Actions → Secrets tab → "New repository secret". Name: `DATABASE_URL`. Value: the
+   production Postgres connection string (e.g. your Supabase connection string). Save.
+2. **Run the workflow manually.** Actions tab → "Prepare Production Database" in the left sidebar
+   → "Run workflow" → in the `confirm` box type exactly `PREPARE-PRODUCTION-DB` → "Run workflow".
+   It will fail immediately (before touching the database) if `DATABASE_URL` isn't set or the
+   confirmation text doesn't match exactly.
+3. **Verify success.** Open the completed run: the "Apply database migrations" step should show a
+   green check. Until `db:seed:production` exists on this branch, the seed step will fail with a
+   clear "unknown script" error — that failure means nothing was written beyond the migration, not
+   that something went wrong.
+
 ## Architecture
 
 ```

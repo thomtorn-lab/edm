@@ -1,0 +1,89 @@
+name: Prepare Production Database
+
+# Manual, one-time (or occasional) production database preparation:
+# migrations + the production-safe reference-data bootstrap
+# (src/db/bootstrapProduction.ts, venues + sources only — no demo
+# content). Deliberately workflow_dispatch-only: this touches a real
+# database, so it must never fire on a push, PR, or schedule.
+#
+# One-time setup before the first run:
+#   1. Repository secret DATABASE_URL — the production Postgres
+#      connection string (Settings > Secrets and variables > Actions >
+#      Secrets). See README.md's "Preparing the production database"
+#      section for the full walkthrough.
+#
+# This workflow will refuse to run without that secret set, never prints
+# its value, never runs the dev seed (src/db/seedDev.ts — inserts sample
+# events/discovery-queue items) or the destructive bootstrap-verification
+# script (src/db/verifyProductionBootstrap.ts — drops tables), and makes
+# no deployment or infrastructure changes of any kind.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type PREPARE-PRODUCTION-DB to confirm you want to run migrations and the production seed against the DATABASE_URL secret.'
+        required: true
+
+permissions:
+  contents: read
+
+# Belt-and-suspenders: prevents two manual runs of this workflow from ever
+# touching the database at the same time. runSourceSync's own advisory
+# lock (src/db/sync.ts) is unrelated — this workflow never calls sync at
+# all, it only migrates and seeds reference data.
+concurrency:
+  group: prepare-production-db
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "PREPARE-PRODUCTION-DB" ]; then
+            echo "::error::Confirmation input did not match. Re-run this workflow and enter exactly: PREPARE-PRODUCTION-DB"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets). Add it before running this workflow."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Written to a file, never to stdout/logs — the db: scripts read
+      # DATABASE_URL via `node --env-file=.env.local` (see package.json),
+      # matching local dev's `cp .env.example .env.local` convention.
+      # .env.local is git-ignored and this runner is destroyed after the
+      # job, but it's still removed explicitly in the last step below.
+      - name: Write DATABASE_URL for the db scripts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Apply database migrations
+        run: npm run db:migrate
+
+      - name: Seed production reference data (venues + sources only, no demo content)
+        run: npm run db:seed:production
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
