@@ -135,6 +135,7 @@ export interface DiscoveryQueueItem {
   probableVenueName: string | null;
   sourceName: string;
   sourceUrl: string;
+  sourceId: string | null;
   detectedLineup: string[];
   predictedGenre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;

@@ -196,7 +196,11 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       currency: null,
       published: true,
       confidence: item.overallConfidence as ConfidenceLevel,
-      canonicalSourceId: null,
+      // Provenance is persisted immediately here (via createEvent's own
+      // recordSourceLink call, triggered whenever canonicalSourceId +
+      // officialEventUrl are both set) rather than left for a later sync to
+      // reconstruct via fuzzy matching.
+      canonicalSourceId: item.sourceId,
     },
     "admin",
   );
@@ -217,7 +221,7 @@ export async function ignoreDiscoveryItem(queueId: string) {
 }
 
 /** Merges a discovery item into an existing event, preserving provenance instead of discarding it. */
-export async function mergeDiscoveryItem(queueId: string, targetEventId: string, sourceId = "admin-merge") {
+export async function mergeDiscoveryItem(queueId: string, targetEventId: string) {
   const [item] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, queueId)).limit(1);
   if (!item) throw new Error(`Discovery item ${queueId} not found`);
   const [target] = await db.select().from(events).where(eq(events.id, targetEventId)).limit(1);
@@ -229,7 +233,13 @@ export async function mergeDiscoveryItem(queueId: string, targetEventId: string,
     .set({ otherSourceUrls, updatedAt: new Date() })
     .where(eq(events.id, targetEventId));
 
-  await recordSourceLink(targetEventId, sourceId, item.sourceUrl, "other");
+  // Only record a source link when this discovery item actually came from a
+  // registered source — recordSourceLink's sourceId is a NOT NULL FK into
+  // `sources`, so a fabricated id here (as a previous version of this
+  // function used) would throw on every merge of an admin-pasted item.
+  if (item.sourceId) {
+    await recordSourceLink(targetEventId, item.sourceId, item.sourceUrl, "other");
+  }
   await writeChangeLog(targetEventId, "admin", "merge", ["otherSourceUrls"], `merged discovery item ${queueId}`);
 
   await db
@@ -272,6 +282,10 @@ export async function insertDiscoveryItem(item: {
   probableVenueName: string | null;
   sourceName: string;
   sourceUrl: string;
+  /** Registered source (e.g. "src-hangaren") this candidate came from, so
+   *  publishing later can persist provenance immediately. Omit/null for
+   *  candidates with no registered source (e.g. admin "Add event from URL"). */
+  sourceId?: string | null;
   detectedLineup: string[];
   predictedGenre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;

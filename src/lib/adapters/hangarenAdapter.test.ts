@@ -50,6 +50,29 @@ describe("parseHangarenEventsHtml", () => {
     expect(kander!.description).toContain("Hard Bounce, Schranz and Techno");
   });
 
+  it("credits an explicit genre statement in the venue's own bio as high-confidence (official-description tier), not the generic medium-confidence fallback", () => {
+    const kander = events.find((e) => e.title.startsWith("Kander"));
+    expect(kander!.genreHint).toBe("techno");
+    expect(kander!.genreConfidenceHint).toBe("high");
+  });
+
+  it("searches the FULL bio for a genre keyword, not just the truncated 600-char stored description", () => {
+    // Daria's bio states "the fastest-rising names in the techno scene" well past
+    // character 600 — the stored `description` is truncated for display, but
+    // genre classification must not silently miss evidence past that cutoff.
+    const daria = events.find((e) => e.title.startsWith("Daria Kolosova"));
+    expect(daria!.description!.length).toBeLessThanOrEqual(600);
+    expect(daria!.description).not.toContain("techno");
+    expect(daria!.genreHint).toBe("techno");
+    expect(daria!.genreConfidenceHint).toBe("high");
+  });
+
+  it("leaves genreHint null when the bio genuinely never states a genre — never a guess dressed up as evidence", () => {
+    const gerdJanson = events.find((e) => e.title.startsWith("Gerd Janson"));
+    expect(gerdJanson!.genreHint).toBeNull();
+    expect(gerdJanson!.genreConfidenceHint).toBeNull();
+  });
+
   it("falls back to a Billetto ticket link when no Resident Advisor link is present", () => {
     const possessed = events.find((e) => e.title.includes("POSSESSED"));
     expect(possessed).toBeDefined();
@@ -79,17 +102,40 @@ describe("createHangarenAdapter", () => {
     expect(candidates).toHaveLength(19);
   });
 
-  it("throws a descriptive error on a non-OK response (source failure, not zero-events)", async () => {
+  it("retries once on a 5xx before giving up", async () => {
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls++;
+      return calls === 1 ? new Response("", { status: 503 }) : new Response(FIXTURE_HTML, { status: 200 });
+    };
+    const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch, 0);
+    const candidates = await adapter.fetchCandidates();
+    expect(calls).toBe(2);
+    expect(candidates).toHaveLength(19);
+  });
+
+  it("does not retry a 4xx — it won't fix itself", async () => {
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls++;
+      return new Response("", { status: 404 });
+    };
+    const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch, 0);
+    await expect(adapter.fetchCandidates()).rejects.toThrow(/404/);
+    expect(calls).toBe(1);
+  });
+
+  it("throws a descriptive error on a non-OK response after exhausting retries (source failure, not zero-events)", async () => {
     const fetchImpl = async () => new Response("", { status: 503 });
-    const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch);
+    const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch, 0);
     await expect(adapter.fetchCandidates()).rejects.toThrow(/503/);
   });
 
-  it("throws a descriptive error on a network failure", async () => {
+  it("throws a descriptive error on a network failure after exhausting retries", async () => {
     const fetchImpl = async () => {
       throw new Error("getaddrinfo ENOTFOUND");
     };
-    const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch);
+    const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch, 0);
     await expect(adapter.fetchCandidates()).rejects.toThrow(/Hangaren fetch failed/);
   });
 });

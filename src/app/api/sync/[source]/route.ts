@@ -28,5 +28,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ so
   }
 
   const summary = await runSourceSync(entry.sourceId, entry.displayName, entry.create());
-  return NextResponse.json(summary);
+
+  // ok/skipped_concurrent are 200s — a concurrent-run skip is expected,
+  // benign behavior, not something a scheduler should alert on. failed/
+  // zero_events return non-2xx so the calling workflow's own failure
+  // handling (a red GitHub Actions run, retries, notifications) surfaces
+  // them — this endpoint's response is the "failure logging" a plain
+  // console.error inside the process wouldn't otherwise expose externally.
+  const status = summary.outcome === "failed" ? 502 : summary.outcome === "zero_events" ? 503 : 200;
+  return NextResponse.json(summary, { status });
 }

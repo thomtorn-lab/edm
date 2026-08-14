@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db } from "./client";
+import { db, pool } from "./client";
 import { discoveryQueue, sourceEventLinks } from "./schema";
 import {
   applySourceSyncPatch,
@@ -25,7 +25,7 @@ import { buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "@/lib/sync"
 
 export interface SyncSummary {
   sourceId: string;
-  outcome: "ok" | "zero_events" | "failed";
+  outcome: "ok" | "zero_events" | "failed" | "skipped_concurrent";
   candidatesFound: number;
   created: number;
   updated: number;
@@ -36,7 +36,43 @@ export interface SyncSummary {
 const ZERO_EVENTS_MESSAGE =
   "0 events parsed from a successful fetch — likely a page structure change on the source, or (less likely) genuinely no upcoming events. Treated as a source anomaly requiring review, never as venue inactivity or a signal to cancel existing events.";
 
+/**
+ * Concurrency safety: a scheduled run, a manual re-trigger, and a retried
+ * HTTP request could all reach here for the same source at once. Postgres
+ * advisory locks are cluster-wide (visible to every connection, not just
+ * this process) and session-scoped, so the lock must be acquired and
+ * released on ONE dedicated connection checked out from the pool — routing
+ * the acquire/release through drizzle's `db` would let the pool hand each
+ * query to a different connection, making the "lock" a no-op. A concurrent
+ * run is skipped outright (pg_try_advisory_lock, non-blocking) rather than
+ * queued, since a healthy sync finishes in seconds and piling up blocked
+ * runs behind a stuck one is worse than just trying again next cycle.
+ */
 export async function runSourceSync(
+  sourceId: string,
+  sourceDisplayName: string,
+  adapter: SourceAdapter,
+): Promise<SyncSummary> {
+  const lockClient = await pool.connect();
+  try {
+    const {
+      rows: [{ locked }],
+    } = await lockClient.query<{ locked: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [sourceId]);
+    if (!locked) {
+      console.error(`[sync] skipped: another sync for "${sourceId}" is already running`);
+      return { sourceId, outcome: "skipped_concurrent", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, errors: [] };
+    }
+    try {
+      return await runSourceSyncLocked(sourceId, sourceDisplayName, adapter);
+    } finally {
+      await lockClient.query("SELECT pg_advisory_unlock(hashtext($1))", [sourceId]);
+    }
+  } finally {
+    lockClient.release();
+  }
+}
+
+async function runSourceSyncLocked(
   sourceId: string,
   sourceDisplayName: string,
   adapter: SourceAdapter,
@@ -46,11 +82,13 @@ export async function runSourceSync(
     candidates = await adapter.fetchCandidates();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error(`[sync] "${sourceId}" fetch failed: ${message}`);
     await touchSourceSyncStats(sourceId, { success: false, error: message });
     return { sourceId, outcome: "failed", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, errors: [message] };
   }
 
   if (candidates.length === 0) {
+    console.error(`[sync] "${sourceId}" zero-event anomaly: ${ZERO_EVENTS_MESSAGE}`);
     await touchSourceSyncStats(sourceId, { success: false, error: ZERO_EVENTS_MESSAGE });
     return {
       sourceId,
@@ -177,6 +215,7 @@ export async function runSourceSync(
         probableVenueName: raw.venueName,
         sourceName: sourceDisplayName,
         sourceUrl: dedupKey,
+        sourceId,
         detectedLineup: result.normalizedArtists,
         predictedGenre: result.genre,
         genreConfidence: result.genreConfidence,

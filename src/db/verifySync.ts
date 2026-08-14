@@ -134,10 +134,20 @@ async function main() {
   const queueRows = await db.select().from(discoveryQueue).where(eq(discoveryQueue.sourceUrl, KANDER_URL));
   check("Kander queued with correct probable start (overnight, spans midnight)", queueRows[0]?.probableStart?.toISOString() === "2026-08-15T18:00:00.000Z");
 
-  // ---- Step 3: admin publishes Kander -> now on the public homepage/detail page ----
-  console.log("\nStep 3: admin publish (real write path) -> public homepage/detail page");
+  // ---- Step 3: admin publishes Kander -> provenance persists immediately, event on the public homepage/detail page ----
+  console.log("\nStep 3: admin publish (real write path) -> provenance + public homepage/detail page");
   const [kanderQueueItem] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.sourceUrl, KANDER_URL));
+  check("discovery item carries the registered source id (not null)", kanderQueueItem.sourceId === HANGAREN_SOURCE_ID);
   const kanderEventId = await publishDiscoveryItem(kanderQueueItem.id, "v-hangaren");
+
+  // Provenance must exist NOW, immediately after publish — not reconstructed later by a
+  // fuzzy-match sync. This is the fix for task item 3 (publishDiscoveryItem previously set
+  // canonicalSourceId: null unconditionally, so no source link was ever recorded at publish time).
+  const linksRightAfterPublish = await db.select().from(sourceEventLinks).where(eq(sourceEventLinks.eventId, kanderEventId));
+  check("source link recorded immediately at publish (before any sync runs)", linksRightAfterPublish.some((l) => l.sourceId === HANGAREN_SOURCE_ID && l.sourceUrl === KANDER_URL));
+  const [publishedRow] = await db.select().from(events).where(eq(events.id, kanderEventId));
+  check("event's canonicalSourceId set at publish", publishedRow.canonicalSourceId === HANGAREN_SOURCE_ID);
+
   const published = await getPublishedEventsWithVenue();
   const onHomepage = published.find((e) => e.id === kanderEventId);
   check("published event appears in the exact query the public homepage uses", Boolean(onHomepage));
@@ -145,10 +155,12 @@ async function main() {
 
   // The discovery queue only stores a probable *start* (spec's Phase 2 schema) — publishing
   // from it doesn't carry an end time yet. A real source sync fills that in, same as any
-  // other field the initial discovery pass couldn't determine.
+  // other field the initial discovery pass couldn't determine — and because provenance
+  // already exists, this sync must match via the direct link, not a fuzzy duplicate guess.
+  const linkCountBeforeSync = linksRightAfterPublish.length;
   await runSourceSync(HANGAREN_SOURCE_ID, "Hangaren", stubAdapter([kanderCandidate()]));
-  const linksAfterAttach = await db.select().from(sourceEventLinks).where(eq(sourceEventLinks.sourceUrl, KANDER_URL));
-  check("subsequent sync attaches provenance to the now-published event (fuzzy match, no link yet)", linksAfterAttach.some((l) => l.eventId === kanderEventId));
+  const linksAfterSync = await db.select().from(sourceEventLinks).where(eq(sourceEventLinks.eventId, kanderEventId));
+  check("provenance survives the subsequent sync unchanged (matched via the existing link, not re-created)", linksAfterSync.length === linkCountBeforeSync);
   const [withEndTime] = await db.select().from(events).where(eq(events.id, kanderEventId));
   check(
     "overnight flag survives: end date is the day after start",
@@ -211,6 +223,22 @@ async function main() {
   check("flagged for review, not treated as 'venue has nothing on'", Boolean(sourceRowAfterZero.lastError?.toLowerCase().includes("anomaly") || sourceRowAfterZero.lastError?.includes("never")));
   const afterZero = (await db.select().from(events).where(eq(events.id, kanderEventId)))[0];
   check("no existing event was cancelled/hidden because of it", !afterZero.cancelled && afterZero.published);
+
+  // ---- Step 9: concurrent runs — the second must be skipped, not race the first ----
+  console.log("\nStep 9: CONCURRENT RUNS — two syncs for the same source fired at once");
+  const slowAdapter: SourceAdapter = {
+    sourceId: HANGAREN_SOURCE_ID,
+    fetchCandidates: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return [kanderCandidate()];
+    },
+  };
+  const [c1, c2] = await Promise.all([
+    runSourceSync(HANGAREN_SOURCE_ID, "Hangaren", slowAdapter),
+    runSourceSync(HANGAREN_SOURCE_ID, "Hangaren", slowAdapter),
+  ]);
+  const outcomes = [c1.outcome, c2.outcome].sort();
+  check("exactly one run proceeds and one is skipped (advisory lock, cluster-wide not per-process)", outcomes[0] === "ok" && outcomes[1] === "skipped_concurrent", JSON.stringify(outcomes));
 
   console.log(`\n=== ${pass} passed, ${fail} failed ===`);
   process.exit(fail > 0 ? 1 : 0);

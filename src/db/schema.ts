@@ -97,6 +97,14 @@ export const discoveryQueue = pgTable("discovery_queue", {
   probableVenueName: text("probable_venue_name"),
   sourceName: text("source_name").notNull(),
   sourceUrl: text("source_url").notNull(),
+  /**
+   * Registered source this item came from (src-hangaren, etc.), so
+   * publishDiscoveryItem can persist provenance immediately instead of
+   * relying on a later sync to reconstruct it via fuzzy matching. Null for
+   * items with no registered source — e.g. the admin "Add event from URL"
+   * tool, which isn't tied to any src-* row.
+   */
+  sourceId: text("source_id").references(() => sources.id),
   detectedLineup: text("detected_lineup").array().notNull().default([]),
   predictedGenre: text("predicted_genre"),
   genreConfidence: text("genre_confidence").notNull().default("low"),

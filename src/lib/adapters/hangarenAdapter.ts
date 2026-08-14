@@ -1,4 +1,6 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
+import { genreConfidenceForEvidence } from "../classification";
+import { deterministicGenreFromText } from "./deterministicGenreMapping";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
 /**
@@ -179,7 +181,24 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
         icsIdx !== -1 && lineupStartIdx > icsIdx
           ? lines.slice(icsIdx + 1, lineupStartIdx).filter((l) => !/^https?:\/\//i.test(l))
           : [];
-      const description = bioLines.join(" ").slice(0, 600) || null;
+      const fullBioText = bioLines.join(" ");
+      const description = fullBioText.slice(0, 600) || null;
+
+      // Genre evidence: a keyword match against the venue's OWN descriptive
+      // text about this specific show is "official-description" tier
+      // (classification.ts's evidence hierarchy — high confidence), not the
+      // generic "deterministic-mapping" fallback (medium) the pipeline uses
+      // when an adapter supplies no hint. Hangaren has no explicit genre
+      // field, but its bios routinely state the genre outright (e.g. "Hard
+      // Bounce, Schranz and Techno are genres that define the sound of
+      // Kander") — that is reliable evidence, not a guess, and crediting it
+      // correctly is what the existing rules already call for. Matched
+      // against the FULL bio (not the 600-char stored summary — a genre
+      // mention past that cutoff, common in longer artist bios, must not be
+      // missed). A match against the title ALONE (no bio text at all, e.g. a
+      // bare artist name) gets no such credit — the pipeline's own
+      // title+description fallback still applies to those, at medium.
+      const descriptionGenre = fullBioText ? deterministicGenreFromText(fullBioText) : null;
 
       results.push({
         sourceId: HANGAREN_SOURCE_ID,
@@ -196,8 +215,8 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
         residentAdvisorUrl,
         imageUrl: imgMatch ? imgMatch[1] : null,
         priceFrom: null,
-        genreHint: null,
-        genreConfidenceHint: null,
+        genreHint: descriptionGenre,
+        genreConfidenceHint: descriptionGenre ? genreConfidenceForEvidence("official-description") : null,
       });
     } catch {
       // A single malformed record must never take down the whole sync.
@@ -208,33 +227,53 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
   return results;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchOnce(fetchImpl: typeof fetch): Promise<Response> {
+  return fetchImpl(HANGAREN_EVENTS_URL, {
+    signal: AbortSignal.timeout(15_000),
+    headers: {
+      "user-agent": "NattefrekvensBot/1.0 (+https://nattefrekvens.dk/about; first-party sync)",
+      accept: "text/html",
+    },
+  });
+}
+
 /**
  * Real HTTP fetch against the permitted plain-HTML `/events` page (never the
- * robots.txt-disallowed `?format=json`/`?format=ical` shortcuts). Throws a
- * descriptive error on network failure or a non-OK response so the sync
- * runner can record it as a distinct source failure, never as "zero events".
+ * robots.txt-disallowed `?format=json`/`?format=ical` shortcuts). Retries
+ * once after a short delay on a transient failure (network error or 5xx) —
+ * a single blip shouldn't flag a healthy source as failed. Throws a
+ * descriptive error only after both attempts fail, so the sync runner can
+ * record it as a distinct source failure, never as "zero events". A sync
+ * runs every 6h, so anything beyond one retry is better left to the next
+ * scheduled run than held up here.
  */
-export function createHangarenAdapter(fetchImpl: typeof fetch = fetch): SourceAdapter {
+export function createHangarenAdapter(fetchImpl: typeof fetch = fetch, retryDelayMs = 2_000): SourceAdapter {
   return {
     sourceId: HANGAREN_SOURCE_ID,
     async fetchCandidates(): Promise<RawCandidateEvent[]> {
-      let res: Response;
-      try {
-        res = await fetchImpl(HANGAREN_EVENTS_URL, {
-          signal: AbortSignal.timeout(15_000),
-          headers: {
-            "user-agent": "NattefrekvensBot/1.0 (+https://nattefrekvens.dk/about; first-party sync)",
-            accept: "text/html",
-          },
-        });
-      } catch (err) {
-        throw new Error(`Hangaren fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+      let lastError: string | null = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const res = await fetchOnce(fetchImpl);
+          if (res.ok) {
+            const html = await res.text();
+            return parseHangarenEventsHtml(html, HANGAREN_EVENTS_URL);
+          }
+          lastError = `Hangaren responded with HTTP ${res.status}`;
+          if (res.status < 500) break; // a 4xx won't fix itself on retry
+        } catch (err) {
+          lastError = `Hangaren fetch failed: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        if (attempt === 1) {
+          console.error(`[hangaren-adapter] attempt 1 failed (${lastError}), retrying once in ${retryDelayMs}ms`);
+          await delay(retryDelayMs);
+        }
       }
-      if (!res.ok) {
-        throw new Error(`Hangaren responded with HTTP ${res.status}`);
-      }
-      const html = await res.text();
-      return parseHangarenEventsHtml(html, HANGAREN_EVENTS_URL);
+      throw new Error(`${lastError} (after retry)`);
     },
   };
 }
