@@ -11,13 +11,14 @@ Next.js (App Router) + TypeScript + Tailwind CSS v4 + Postgres (Drizzle ORM).
 ```bash
 cp .env.example .env.local   # point DATABASE_URL at a local/hosted Postgres
 npm install
-npm run db:migrate   # apply the schema
-npm run db:seed      # load sample venues/sources/events (idempotent)
-npm run dev           # http://localhost:3000
-npm run test           # vitest — datetime, dedup, normalization, classification, ICS export, sync
-npm run build            # production build (all routes are statically generated except /api/*)
+npm run db:migrate         # apply the schema
+npm run db:seed:dev         # local/demo only — real registries + sample events (see "Seeding" below)
+npm run dev                  # http://localhost:3000
+npm run test                   # vitest — datetime, dedup, normalization, classification, ICS export, sync
+npm run build                    # production build (all routes are statically generated except /api/*)
 npm run lint
-npm run db:verify-sync    # end-to-end proof: live-fetches Hangaren + exercises every sync scenario against Postgres
+npm run db:verify-sync             # end-to-end proof: live-fetches Hangaren + exercises every sync scenario
+npm run db:verify-bootstrap          # end-to-end proof: empty DB -> migrate -> production bootstrap -> real sync
 ```
 
 ## Current phase
@@ -30,10 +31,31 @@ normalization → dedup → genre classification → confidence gate → databas
 subsequent source update, running **on an actual schedule** (`.github/workflows/sync-hangaren.yml`,
 every 6h — see "Scheduling" below) rather than only being triggerable by hand. `/admin` and
 `/api/admin/*` are gated behind HTTP Basic Auth (see "Admin access" below) — not publicly writable.
-`src/lib/data/*.ts` is no longer read by the running app — it's the seed source for `npm run
-db:seed` and fixture data for pure-logic unit tests. The other three first-party venues (Culture
-Box, Gravity, Den Anden Side) are evaluated in `src/lib/data/sources.ts`'s `integrationNote` per
-source but do not have a working adapter yet — see that file before adding one.
+`src/lib/data/*.ts` is no longer read by the running app — it's the seed source for both seed
+paths (see "Seeding" below) and fixture data for pure-logic unit tests. The other three
+first-party venues (Culture Box, Gravity, Den Anden Side) are evaluated in
+`src/lib/data/sources.ts`'s `integrationNote` per source but do not have a working adapter yet —
+see that file before adding one.
+
+## Seeding
+
+Two deliberately separate entry points — never run the dev one against a real deployment:
+
+- **`npm run db:seed:dev`** (`src/db/seedDev.ts`) — local/demo only. Loads the real venue/source
+  registries *plus* Phase-1 sample events, sample discovery-queue items, and the sources' staged
+  demo sync-health states (e.g. Gravity's fabricated "degraded" example) — useful for seeing the
+  full UI locally with something in it.
+- **`npm run db:seed:production`** (`src/db/bootstrapProduction.ts`) — the only one safe to run
+  against a real database. Seeds *only* the venue and source registries (real Copenhagen venues,
+  real research about real external sources — genuinely required for the app to operate, e.g. the
+  Hangaren pipeline can't resolve a venue without the `v-hangaren` row existing) and inserts
+  **zero** demo content: no sample events, no sample discovery-queue items, and no fabricated
+  source sync-history — each source's health fields start neutral (`null`/`0`, "never synced
+  yet") and are only ever written by a real sync run afterward. Both commands are idempotent
+  (upsert by primary key); re-running the production one specifically never resets a source's
+  *real* accumulated sync history back to neutral — see `src/db/referenceData.ts`'s doc comments.
+  Proven end-to-end (empty database → migrate → this bootstrap → a real live Hangaren sync → a
+  second bootstrap run) by `npm run db:verify-bootstrap`.
 
 ## Architecture
 
@@ -55,7 +77,9 @@ src/lib/
   sync.ts                         Pure sync-time merge decisions: does a candidate match an
                                    already-known event (linked/fuzzy), and if so what actually
                                    changed (buildSyncPatch — dateChanged/timeChanged flags, etc.)
-  data/                            Seed fixtures for `npm run db:seed` + pure-logic unit tests
+  data/                            Seed fixtures shared by both seed paths + pure-logic unit tests
+  sourceRegistry.ts                Pure logic: fixture -> production-safe source row (strips
+                                    fabricated demo sync-health, see "Seeding" below)
   adapters/
     types.ts                        RawCandidateEvent — the shape every adapter must produce
     firstPartyAdapter.ts              Generic reference adapter for a first-party JSON feed
@@ -75,6 +99,12 @@ src/db/
                                          never-silent, never-a-cancellation outcomes
   verifySync.ts                         `npm run db:verify-sync` — end-to-end proof against a real
                                          Postgres database (see "Hangaren ingestion" below)
+  referenceData.ts                      seedVenues() + seedSourcesProduction() — shared by both
+                                         seed paths (see "Seeding" below)
+  seedDev.ts                            `npm run db:seed:dev` — local/demo only
+  bootstrapProduction.ts                `npm run db:seed:production` — the production-safe one
+  verifyProductionBootstrap.ts          `npm run db:verify-bootstrap` — proves empty DB -> migrate
+                                         -> production bootstrap -> real sync end to end
 src/app/api/sync/[source]/route.ts      Scheduling entry point, `x-sync-token`-protected
 src/proxy.ts                             HTTP Basic Auth gate for /admin + /api/admin/*
 .github/workflows/sync-hangaren.yml      Actual cron trigger — see "Scheduling" below
@@ -215,12 +245,22 @@ above.
 midnight-crossing edge cases, venue alias resolution, artist normalization, duplicate detection
 tiers, genre evidence confidence, canonical source priority, the quality gate, calendar export
 (including DST-safe UTC conversion and overnight events), manual-override field protection, the
-Hangaren HTML parser against a real recorded response, and sync-time merge-decision logic
-(`src/lib/sync.test.ts`).
+Hangaren HTML parser against a real recorded response, sync-time merge-decision logic
+(`src/lib/sync.test.ts`), and the production-bootstrap safety property that no fabricated source
+sync-health can reach a production row (`src/lib/sourceRegistry.test.ts`).
 
-`npm run db:verify-sync` is a separate, DB-backed proof (not part of `npm test`, since it needs a
-live Postgres and makes one real network call to hangaren.dk): it live-fetches the real source,
-then runs the real `runSourceSync`/database code path through new-event, duplicate,
-changed-date/time, changed-lineup, provenance-persisted-at-publish, manual-override-survives-sync,
-source-failure, zero-events-anomaly, and concurrent-runs scenarios, asserting against the actual
-database each time. Idempotent — cleans up its own prior run before each execution.
+Two separate DB-backed proofs (not part of `npm test`, since both need a live Postgres):
+
+- **`npm run db:verify-sync`** live-fetches the real source, then runs the real
+  `runSourceSync`/database code path through new-event, duplicate, changed-date/time,
+  changed-lineup, provenance-persisted-at-publish, manual-override-survives-sync, source-failure,
+  zero-events-anomaly, and concurrent-runs scenarios, asserting against the actual database each
+  time. Idempotent — cleans up its own prior run before each execution.
+- **`npm run db:verify-bootstrap`** proves the exact production-prep sequence works against a
+  *genuinely empty* database: it drops the app's own tables, re-runs migrations from scratch,
+  runs the production bootstrap, asserts zero demo events/discovery-items and that the required
+  registry rows exist with neutral health, runs one real live Hangaren sync, asserts the results
+  are real and attributed correctly, then re-runs the bootstrap a second time and asserts nothing
+  duplicated and the source's now-real sync history wasn't reset. **Destructive** — refuses to run
+  unless `DATABASE_URL` looks local or `ALLOW_DESTRUCTIVE_RESET=1` is set; never point it at a
+  database you care about.
