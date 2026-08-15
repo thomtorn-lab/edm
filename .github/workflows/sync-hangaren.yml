@@ -1,0 +1,72 @@
+name: Sync Hangaren
+
+# Scheduling entry point for the Hangaren ingestion adapter
+# (src/lib/adapters/hangarenAdapter.ts). Calls the deployed app's
+# POST /api/sync/hangaren on a fixed schedule, matching
+# src/lib/data/sources.ts's `syncFrequency: "every 6h"` for src-hangaren.
+#
+# One-time setup after deploying the app somewhere:
+#   1. Repository variable SYNC_BASE_URL — the deployed app's base URL
+#      (e.g. https://nattefrekvens.example.com), no trailing slash.
+#   2. Repository secret SYNC_TRIGGER_TOKEN — must match the
+#      SYNC_TRIGGER_TOKEN environment variable set on the deployment itself
+#      (see .env.example). Generate a real random value for production.
+# Until both are set, scheduled runs fail fast with a clear error instead
+# of silently doing nothing.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {} # manual re-trigger, e.g. to retry after a fix
+
+# Prevents two runs of this workflow from ever calling the endpoint at the
+# same time (queues instead of overlapping). This is a second, belt-and-
+# suspenders layer — the real correctness guarantee is the Postgres
+# advisory lock in src/db/sync.ts::runSourceSync, which protects against
+# concurrent calls from ANY source (a manual admin trigger, a retried
+# request, etc.), not just two overlapping GitHub Actions runs.
+concurrency:
+  group: sync-hangaren
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Hangaren sync
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set — point it at the deployed app's base URL (Settings > Secrets and variables > Actions > Variables) before this workflow can do anything."
+            exit 1
+          fi
+          if [ -z "${SYNC_TRIGGER_TOKEN}" ]; then
+            echo "::error::Repository secret SYNC_TRIGGER_TOKEN is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the deployment's SYNC_TRIGGER_TOKEN env var."
+            exit 1
+          fi
+
+          # --retry handles transient network blips reaching the endpoint;
+          # a persistently failing source itself is retried once more
+          # *inside* the app (src/lib/adapters/hangarenAdapter.ts), and
+          # beyond that is left to the next scheduled run 6h later rather
+          # than retried aggressively here.
+          http_code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 60 \
+            -o /tmp/sync-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            "${SYNC_BASE_URL}/api/sync/hangaren")
+
+          echo "HTTP status: ${http_code}"
+          echo "Response:"
+          cat /tmp/sync-response.json
+          echo
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Hangaren sync returned HTTP ${http_code} — see response body above (source failure and zero-event anomaly both return non-2xx; not concurrent-run skips, which return 200)."
+            exit 1
+          fi
