@@ -18,6 +18,7 @@
     "db:verify-bootstrap": "node --env-file=.env.local --import tsx src/db/verifyProductionBootstrap.ts"
   },
   "dependencies": {
+    "@fontsource/big-shoulders": "^5.3.0",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.0",
     "pg": "^8.23.0",

@@ -17,6 +17,10 @@
   --status-warn: #cf9a53;
   --status-bad: #c97272;
   --focus-ring: #ab9be0;
+  /* Self-hosted via @fontsource/big-shoulders (see src/app/layout.tsx) —
+     not a next/font variable, since this font is no longer loaded through
+     next/font/google. */
+  --font-big-shoulders: "Big Shoulders";
 }
 
 @theme inline {
