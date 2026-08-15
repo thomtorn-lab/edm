@@ -53,6 +53,23 @@ change, not run against it yet.
    clear "unknown script" error — that failure means nothing was written beyond the migration, not
    that something went wrong.
 
+## Scheduling: Hangaren sync
+
+`.github/workflows/sync-hangaren.yml` calls a deployed app's `POST /api/sync/hangaren` endpoint
+every 6 hours (`workflow_dispatch` also available for a manual re-trigger) to run a Hangaren
+ingestion sync. It only calls the deployed app over HTTP, so it doesn't require any ingestion
+application code to be present in this branch — but it does need two one-time GitHub setup steps
+before it can do anything:
+
+1. **Repository variable `SYNC_BASE_URL`.** Settings → Secrets and variables → Actions →
+   Variables tab → "New repository variable". Value: the deployed app's base URL (e.g.
+   `https://your-deployment.example.com`), no trailing slash.
+2. **Repository secret `SYNC_TRIGGER_TOKEN`.** Settings → Secrets and variables → Actions →
+   Secrets tab → "New repository secret". Value must match the `SYNC_TRIGGER_TOKEN` environment
+   variable configured on the deployment itself (see `.env.example`).
+
+Until both are set, the workflow fails fast with a clear error instead of silently doing nothing.
+
 ## Architecture
 
 ```
