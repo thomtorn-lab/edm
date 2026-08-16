@@ -1,0 +1,61 @@
+name: Verify Discogs Reachability
+
+# One-off, manual network check (task 9 of the genre-enrichment MVP): the
+# agent sandbox this feature was built in cannot reach api.discogs.com at
+# all (confirmed EGRESS_BLOCKED on every attempt), so this workflow answers
+# the only question that actually matters — can the real deployment
+# environment reach it? GitHub-hosted runners have normal internet access,
+# which is a reasonable proxy for "not blocked by an unusual egress
+# policy"; it does not by itself prove Vercel's runtime can reach it, but a
+# failure here would already be a hard "no".
+#
+# Read-only: makes one unauthenticated GET to a public Discogs search
+# endpoint (and, if DISCOGS_TOKEN is set as a repository secret, one
+# authenticated request too, to confirm the token itself works). No
+# database access, no writes, nothing destructive. Prints only HTTP status
+# codes and rate-limit headers — never the response body, never the token.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check unauthenticated reachability
+        run: |
+          set -u
+          http_code=$(curl -sS \
+            --max-time 15 \
+            -o /dev/null -w '%{http_code}' \
+            -A "NattefrekvensGenreEnrichment/1.0 (+https://nattefrekvens.dk/about; reachability-check)" \
+            "https://api.discogs.com/database/search?q=test&type=artist&per_page=1")
+          echo "Unauthenticated request: HTTP ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::api.discogs.com did not return a 2xx for an unauthenticated search request (got ${http_code}). See the requirements around DISCOGS_TOKEN in .env.example before relying on this in production."
+            exit 1
+          fi
+
+      - name: Check authenticated reachability (only if DISCOGS_TOKEN is set)
+        env:
+          DISCOGS_TOKEN: ${{ secrets.DISCOGS_TOKEN }}
+        run: |
+          set -u
+          if [ -z "${DISCOGS_TOKEN}" ]; then
+            echo "DISCOGS_TOKEN repository secret is not set — skipping the authenticated check. Enrichment still works without it, at the lower unauthenticated rate limit (25/min vs 60/min). See .env.example."
+            exit 0
+          fi
+          http_code=$(curl -sS \
+            --max-time 15 \
+            -o /dev/null -w '%{http_code}' \
+            -A "NattefrekvensGenreEnrichment/1.0 (+https://nattefrekvens.dk/about; reachability-check)" \
+            -H "Authorization: Discogs token=${DISCOGS_TOKEN}" \
+            "https://api.discogs.com/database/search?q=test&type=artist&per_page=1")
+          echo "Authenticated request: HTTP ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Authenticated Discogs request failed (HTTP ${http_code}) — DISCOGS_TOKEN may be invalid or expired."
+            exit 1
+          fi
