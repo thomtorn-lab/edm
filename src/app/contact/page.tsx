@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CONTACT_EMAIL, mailtoHref } from "@/lib/contact";
+import ContactForm from "./ContactForm";
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -16,11 +16,8 @@ export default function ContactPage() {
       </h1>
 
       <p className="mt-4 max-w-xl text-sm leading-relaxed text-text-secondary">
-        Wrong date, dead link, duplicate listing, or just a question — email{" "}
-        <a href={mailtoHref()} className="text-accent-strong underline hover:text-accent">
-          {CONTACT_EMAIL}
-        </a>{" "}
-        and a person reads it. No forms, no ticket numbers.
+        Wrong date, dead link, duplicate listing, or just a question — send a note below and a
+        person reads it.
       </p>
 
       <p className="mt-4 max-w-xl text-sm leading-relaxed text-text-secondary">
@@ -30,6 +27,8 @@ export default function ContactPage() {
         </Link>{" "}
         instead.
       </p>
+
+      <ContactForm />
 
       <p className="mt-10 text-xs text-text-tertiary">
         <Link href="/" className="underline hover:text-text-secondary">Back to the calendar</Link>
