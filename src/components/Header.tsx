@@ -13,10 +13,7 @@ export default function Header() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
         <Link href="/" className="flex items-baseline gap-2 shrink-0">
           <span className="font-display text-base font-bold uppercase tracking-tight text-text-primary sm:text-xl">
-            Nattefrekvens
-          </span>
-          <span className="hidden text-[10px] uppercase tracking-[0.18em] text-text-tertiary sm:inline">
-            CPH
+            Electronic CPH
           </span>
         </Link>
 

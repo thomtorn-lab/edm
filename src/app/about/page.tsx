@@ -4,7 +4,7 @@ import { getSources } from "@/lib/queries";
 
 export const metadata: Metadata = {
   title: "About",
-  description: "What Nattefrekvens is, what it covers, and how the listing stays up to date.",
+  description: "What Electronic CPH is, what it covers, and how the listing stays up to date.",
   alternates: { canonical: "/about" },
 };
 
@@ -27,7 +27,7 @@ export default async function AboutPage() {
 
       <div className="mt-6 space-y-5 text-sm leading-relaxed text-text-secondary">
         <p>
-          Nattefrekvens is a fast, curated index of electronic music events in Copenhagen and Frederiksberg —
+          Electronic CPH is a fast, curated index of electronic music events in Copenhagen and Frederiksberg —
           techno, house, trance, drum &amp; bass, garage, disco and everything adjacent. Nothing else.
         </p>
         <p>

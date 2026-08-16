@@ -1,4 +1,4 @@
-# Nattefrekvens — Copenhagen electronic music events
+# Electronic CPH — Copenhagen electronic music events
 
 A fast, curated, largely self-maintaining index of electronic music events in Copenhagen &
 Frederiksberg. See the product brief this was built against for full requirements; this file

@@ -18,19 +18,19 @@ const inter = Inter({
   display: "swap",
 });
 
-const SITE_URL = "https://cph-electronic.events";
+const SITE_URL = "https://electroniccph.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Nattefrekvens — Copenhagen Electronic Music Events",
-    template: "%s — Nattefrekvens",
+    default: "Electronic CPH — Copenhagen Electronic Music Events",
+    template: "%s — Electronic CPH",
   },
   description:
     "Techno, house, trance, drum & bass and more — a fast, curated index of electronic music events in Copenhagen and Frederiksberg.",
   openGraph: {
     type: "website",
-    siteName: "Nattefrekvens",
+    siteName: "Electronic CPH",
     locale: "en_GB",
   },
   twitter: {
