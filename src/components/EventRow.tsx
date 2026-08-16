@@ -3,13 +3,24 @@ import type { EventWithVenue } from "@/lib/queries";
 import { formatRowDateLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks } from "@/lib/links";
+import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
+
+const SITE_URL = "https://electroniccph.com";
 
 export default function EventRow({ event }: { event: EventWithVenue }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
   const statuses = getEventStatuses(event);
   const lineup = event.artists.length > 0 ? `: ${event.artists.join(" / ")}` : "";
+  const calendarInput = {
+    title: event.title,
+    description: event.description,
+    startDatetime: event.startDatetime,
+    endDatetime: event.endDatetime,
+    venue: event.venue,
+    eventUrl: `${SITE_URL}/events/${event.slug}`,
+  };
 
   return (
     <li className="group border-b border-border last:border-b-0">
@@ -49,25 +60,28 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
           </div>
         </div>
 
-        {links.length > 0 && (
-          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium uppercase tracking-wide">
-            {links.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={
-                  link.primary
-                    ? "text-accent-strong hover:text-accent"
-                    : "text-text-secondary hover:text-text-primary"
-                }
-              >
-                {link.label} ↗
-              </a>
-            ))}
-          </div>
-        )}
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 sm:gap-y-1">
+          {links.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium uppercase tracking-wide">
+              {links.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={
+                    link.primary
+                      ? "text-accent-strong hover:text-accent"
+                      : "text-text-secondary hover:text-text-primary"
+                  }
+                >
+                  {link.label} ↗
+                </a>
+              ))}
+            </div>
+          )}
+          <AddToCalendar event={calendarInput} filename={`${event.slug}.ics`} />
+        </div>
       </div>
     </li>
   );

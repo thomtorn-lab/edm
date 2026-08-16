@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     template: "%s — Electronic CPH",
   },
   description:
-    "Techno, house, trance, drum & bass and more — a fast, curated index of electronic music events in Copenhagen and Frederiksberg.",
+    "Techno, house, trance, drum & bass and more — a fast, curated index of electronic music events in Copenhagen.",
   openGraph: {
     type: "website",
     siteName: "Electronic CPH",

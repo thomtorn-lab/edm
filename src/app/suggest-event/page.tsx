@@ -4,7 +4,7 @@ import SuggestEventForm from "./SuggestEventForm";
 
 export const metadata: Metadata = {
   title: "Suggest an event",
-  description: "Know a Copenhagen or Frederiksberg electronic music event that's missing? Suggest it for review.",
+  description: "Know a Copenhagen electronic music event that's missing? Suggest it for review.",
   alternates: { canonical: "/suggest-event" },
 };
 
@@ -16,7 +16,7 @@ export default function SuggestEventPage() {
       </h1>
 
       <p className="mt-4 max-w-xl text-sm leading-relaxed text-text-secondary">
-        Know a night in Copenhagen or Frederiksberg that should be here? Send the essentials
+        Know a night in Copenhagen that should be here? Send the essentials
         below and it goes into the review queue. Nothing gets published automatically: every
         suggestion is checked against an official or first-party source before it goes live.
       </p>

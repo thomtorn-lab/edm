@@ -38,6 +38,12 @@ export function formatMonthAbbr(month: number): string {
   return MONTH_ABBR[month - 1];
 }
 
+/** e.g. "Aug" — title case, for user-facing nav rather than dense data badges. */
+export function formatMonthAbbrTitleCase(month: number): string {
+  const abbr = MONTH_ABBR[month - 1];
+  return abbr.charAt(0) + abbr.slice(1).toLowerCase();
+}
+
 export function formatMonthFull(month: number): string {
   return MONTH_FULL[month - 1];
 }
