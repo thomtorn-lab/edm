@@ -1,0 +1,211 @@
+name: Verify Preview Enrichment
+
+# One-off, manual validation of the Discogs genre-enrichment MVP against the
+# claude/supabase-prod-db-setup-s7o09z Preview deployment. Read-only against
+# the database (every connection is set to a read-only transaction mode
+# before any query runs) except for the two HTTP calls that trigger a real
+# Hangaren sync on the already-deployed Preview app itself — this workflow
+# never runs db:migrate, db:seed:*, or any other mutating script, and never
+# modifies application code. Preview and Production currently share one
+# Supabase database (see README), so these reads/writes are against the
+# real shared instance — that's the point: this proves what the deployed
+# enrichment code actually does, not a simulation.
+#
+# Secrets used: DATABASE_URL (read-only queries only), SYNC_TRIGGER_TOKEN
+# and VERCEL_AUTOMATION_BYPASS_SECRET (sync trigger headers). None of the
+# four secrets named in this file (those two, plus DISCOGS_TOKEN which this
+# workflow never touches at all — that's a Vercel-side env var) are ever
+# echoed, printed, or included in any step output.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN-PREVIEW-ENRICHMENT-VALIDATION to confirm: this triggers a real Hangaren sync (twice) against the Preview deployment and the shared database.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-preview-enrichment
+  cancel-in-progress: false
+
+env:
+  PREVIEW_BASE_URL: https://edm-git-claude-supabase-prod-db-setup-s7o09z-edm9.vercel.app
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "RUN-PREVIEW-ENRICHMENT-VALIDATION" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: RUN-PREVIEW-ENRICHMENT-VALIDATION"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required secrets are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          missing=""
+          [ -z "${DATABASE_URL:-}" ] && missing="${missing} DATABASE_URL"
+          [ -z "${SYNC_TRIGGER_TOKEN:-}" ] && missing="${missing} SYNC_TRIGGER_TOKEN"
+          [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ] && missing="${missing} VERCEL_AUTOMATION_BYPASS_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repository secret(s):${missing}"
+            exit 1
+          fi
+
+      - name: Install dependencies (pg only needed, but npm ci matches repo convention)
+        run: npm ci
+
+      - name: Write read-only DB snapshot script
+        run: |
+          cat > snapshot.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main() {
+            const client = new Client({ connectionString: process.env.DATABASE_URL });
+            await client.connect();
+            // Belt-and-suspenders: any accidental write in this script fails loudly
+            // instead of silently succeeding against the shared database.
+            await client.query('SET default_transaction_read_only = on');
+
+            const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
+            console.log(`\n========== ${label} ==========`);
+
+            const dq = await client.query(
+              `SELECT id, probable_title, status, predicted_genre, genre_confidence, overall_confidence, detected_lineup, missing_fields, created_at
+               FROM discovery_queue WHERE source_id = 'src-hangaren' ORDER BY created_at`
+            );
+            console.log(`\n-- discovery_queue (source_id=src-hangaren): ${dq.rows.length} rows --`);
+            console.log(JSON.stringify(dq.rows, null, 2));
+
+            const ev = await client.query(
+              `SELECT id, title, primary_genre, subgenres, genre_confidence, confidence, published, manual_override, overridden_fields, created_at
+               FROM events WHERE canonical_source_id = 'src-hangaren' ORDER BY created_at`
+            );
+            console.log(`\n-- events (canonical_source_id=src-hangaren): ${ev.rows.length} rows --`);
+            console.log(JSON.stringify(ev.rows, null, 2));
+
+            const cacheCount = await client.query(`SELECT count(*)::int AS n FROM artist_genre_cache`);
+            console.log(`\n-- artist_genre_cache total row count: ${cacheCount.rows[0].n} --`);
+
+            const cacheRows = await client.query(
+              `SELECT artist_name_normalized, lookup_status, proposed_genre, genre_confidence, identity_confidence,
+                      discogs_artist_id, classification_method, looked_up_at, expires_at, evidence
+               FROM artist_genre_cache ORDER BY looked_up_at`
+            );
+            console.log(`\n-- artist_genre_cache rows --`);
+            console.log(JSON.stringify(cacheRows.rows, null, 2));
+
+            const src = await client.query(
+              `SELECT id, last_successful_sync, last_attempted_sync, last_error, events_found, events_updated
+               FROM sources WHERE id = 'src-hangaren'`
+            );
+            console.log(`\n-- sources row (src-hangaren) --`);
+            console.log(JSON.stringify(src.rows, null, 2));
+
+            console.log(`\n-- SAFETY CHECKS (this snapshot) --`);
+            const failures = [];
+            for (const row of ev.rows) {
+              if (row.genre_confidence !== 'high') {
+                failures.push(`events row ${row.id} ("${row.title}") has genre_confidence=${row.genre_confidence} — every row in events comes from the auto_publish path in this app, which requires 'high'`);
+              }
+            }
+            for (const row of cacheRows.rows) {
+              if (row.genre_confidence === 'high') {
+                failures.push(`artist_genre_cache row for "${row.artist_name_normalized}" has genre_confidence='high' — Discogs enrichment must never exceed medium`);
+              }
+            }
+            if (failures.length === 0) {
+              console.log('PASS: no safety violations detected in this snapshot.');
+            } else {
+              console.log('FAIL:');
+              failures.forEach((f) => console.log(' - ' + f));
+            }
+
+            await client.end();
+          }
+
+          main().catch((err) => {
+            console.error('SNAPSHOT FAILED:', err.message);
+            process.exit(1);
+          });
+          SCRIPT
+
+      - name: "PHASE 1 — BEFORE snapshot"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: BEFORE (pre-sync)
+        run: node snapshot.cjs
+
+      - name: "PHASE 2 — trigger first real Preview Hangaren sync"
+        env:
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${PREVIEW_BASE_URL}/api/sync/hangaren")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Sync #1 HTTP status: ${http_code}"
+          echo "Sync #1 response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::First sync request failed with HTTP ${http_code} — see response body above."
+            exit 1
+          fi
+
+      - name: "PHASE 3 — AFTER snapshot (post sync #1)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER SYNC #1
+        run: node snapshot.cjs
+
+      - name: "PHASE 4 — trigger second Preview Hangaren sync (cache-reuse check)"
+        env:
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${PREVIEW_BASE_URL}/api/sync/hangaren")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Sync #2 HTTP status: ${http_code}"
+          echo "Sync #2 response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Second sync request failed with HTTP ${http_code} — see response body above."
+            exit 1
+          fi
+
+      - name: "PHASE 4 — AFTER snapshot (post sync #2, for cache-reuse comparison)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER SYNC #2 (cache-reuse check)
+        run: node snapshot.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f snapshot.cjs
