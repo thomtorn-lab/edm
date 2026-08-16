@@ -90,14 +90,14 @@ describe("getOrLookupArtistGenre", () => {
     const cache = inMemoryCache();
     const client = fakeDiscogsClient({
       searchArtist: async () => [
-        { id: 5, title: "Âme" },
+        { id: 5, title: "Bicep" },
         { id: 6, title: "Some Other Artist" }, // must be filtered out — not an exact name match
       ],
       getArtistReleaseIds: async () => [200],
       getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Deep House"] }),
     });
 
-    const result = await getOrLookupArtistGenre("Âme", cache, client, NOW);
+    const result = await getOrLookupArtistGenre("Bicep", cache, client, NOW);
     expect(result.lookupStatus).toBe("found");
     expect(result.discogsArtistId).toBe(5);
     expect(result.proposedGenre).toBe("deep-house");
@@ -174,7 +174,7 @@ describe("getOrLookupArtistGenre", () => {
   it("a release-detail failure for one release does not fail the whole artist lookup", async () => {
     const cache = inMemoryCache();
     const client = fakeDiscogsClient({
-      searchArtist: async () => [{ id: 50, title: "Mira" }],
+      searchArtist: async () => [{ id: 50, title: "Solomun" }],
       getArtistReleaseIds: async () => [500, 501],
       getReleaseGenres: async (id) => {
         if (id === 500) throw new Error("Discogs request failed: HTTP 503 for /releases/500");
@@ -182,9 +182,151 @@ describe("getOrLookupArtistGenre", () => {
       },
     });
 
-    const result = await getOrLookupArtistGenre("Mira", cache, client, NOW);
+    const result = await getOrLookupArtistGenre("Solomun", cache, client, NOW);
     expect(result.lookupStatus).toBe("found");
     expect(result.proposedGenre).toBe("deep-house");
+  });
+});
+
+describe("placeholder artist names", () => {
+  it("skips TBA/TBD/TBC entirely — never searched, never cached", async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 1, title: "Should Not Be Called" }],
+    });
+
+    const result = await enrichEventGenre(["TBA", "tbd", "T.B.C."], cache, client, NOW);
+    expect(client.searchCalls).toHaveLength(0);
+    expect(cache.store.size).toBe(0);
+    expect(result.perArtist).toHaveLength(0);
+    expect(result.genre).toBeNull();
+  });
+
+  it("still processes real artists alongside skipped placeholders in the same lineup", async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async (name) => [{ id: 1, title: name }],
+      getArtistReleaseIds: async () => [1],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Techno"] }),
+    });
+
+    const result = await enrichEventGenre(["TBA", "Working Artist"], cache, client, NOW);
+    expect(client.searchCalls).toEqual(["Working Artist"]);
+    expect(result.genre).toBe("techno");
+  });
+});
+
+describe("lineup annotation cleanup (real Hangaren examples)", () => {
+  it('cleans "Âme (live) (Innervisions)" to "Âme" for search/cache identity, but preserves the raw string in evidence', async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 5, title: "Âme" }],
+      getArtistReleaseIds: async () => [200],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Deep House"] }),
+    });
+
+    const result = await getOrLookupArtistGenre("Âme (live) (Innervisions)", cache, client, NOW);
+    expect(client.searchCalls).toEqual(["Âme"]);
+    expect(result.artistNameNormalized).toBe(normalizeArtistName("Âme"));
+    expect((result.evidence as { rawArtistName: string }).rawArtistName).toBe("Âme (live) (Innervisions)");
+    expect((result.evidence as { cleanedArtistName: string }).cleanedArtistName).toBe("Âme");
+    // "Âme" is itself short/generic (<=4 letters) — see the short-name identity
+    // safety tests below — so identity is correctly degraded even once cleaned.
+    expect(result.identityConfidence).toBe("low");
+    expect(result.proposedGenre).toBeNull();
+  });
+
+  it('cleans "Oliver Koletzki [Stil vor Talent]" to "Oliver Koletzki" and resolves genre normally', async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 20, title: "Oliver Koletzki" }],
+      getArtistReleaseIds: async () => [300],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Melodic Techno"] }),
+    });
+
+    const result = await getOrLookupArtistGenre("Oliver Koletzki [Stil vor Talent]", cache, client, NOW);
+    expect(client.searchCalls).toEqual(["Oliver Koletzki"]);
+    expect((result.evidence as { rawArtistName: string }).rawArtistName).toBe("Oliver Koletzki [Stil vor Talent]");
+    expect(result.identityConfidence).toBe("medium");
+    expect(result.proposedGenre).toBe("melodic-techno");
+  });
+
+  it('cleans "Mira (Kater, MiZi MuZiK, Kiosk I.D.)" to "Mira" for search/cache identity, but preserves the raw string in evidence', async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 50, title: "Mira" }],
+      getArtistReleaseIds: async () => [500],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Deep House"] }),
+    });
+
+    const result = await getOrLookupArtistGenre("Mira (Kater, MiZi MuZiK, Kiosk I.D.)", cache, client, NOW);
+    expect(client.searchCalls).toEqual(["Mira"]);
+    expect((result.evidence as { rawArtistName: string }).rawArtistName).toBe("Mira (Kater, MiZi MuZiK, Kiosk I.D.)");
+    expect((result.evidence as { cleanedArtistName: string }).cleanedArtistName).toBe("Mira");
+    // "Mira" is itself short/generic (4 letters) — degraded for the same reason as Âme above.
+    expect(result.identityConfidence).toBe("low");
+    expect(result.proposedGenre).toBeNull();
+  });
+
+  it("does not strip a name down to nothing when it is entirely one bracketed group", async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({ searchArtist: async () => [] });
+
+    await getOrLookupArtistGenre("(Unknown Collective)", cache, client, NOW);
+    // The whole name is one trailing bracketed group — stripping it would
+    // leave an empty search term, so the guard against reducing a name to
+    // nothing must kick in and leave it untouched.
+    expect(client.searchCalls).toEqual(["(Unknown Collective)"]);
+  });
+});
+
+describe("short/generic artist name identity safety", () => {
+  it("does not treat a bare exact-name match on a short/generic name as verified identity, even with confidently electronic releases (real incident: ENNA)", async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 2764722, title: "ENNA" }],
+      getArtistReleaseIds: async () => [1, 2],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Downtempo", "Glitch", "Tech House"] }),
+    });
+
+    const result = await getOrLookupArtistGenre("ENNA", cache, client, NOW);
+    expect(result.lookupStatus).toBe("found");
+    expect(result.discogsArtistId).toBe(2764722);
+    expect(result.identityConfidence).toBe("low");
+    expect(result.proposedGenre).toBeNull();
+    expect(result.genreConfidence).toBeNull();
+  });
+
+  it("a longer, distinctive name with the same confirmed-electronic evidence is NOT degraded", async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 99, title: "Recondite" }],
+      getArtistReleaseIds: async () => [1],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Tech House"] }),
+    });
+
+    const result = await getOrLookupArtistGenre("Recondite", cache, client, NOW);
+    expect(result.identityConfidence).toBe("medium");
+    expect(result.proposedGenre).toBe("tech-house");
+    expect(result.genreConfidence).toBe("medium");
+    expect(result.genreConfidence).not.toBe("high"); // MEDIUM confidence ceiling stays intact
+  });
+
+  it("a degraded short-name result is still cached (as low/no-genre) so it isn't re-looked-up every sync", async () => {
+    const cache = inMemoryCache();
+    const client = fakeDiscogsClient({
+      searchArtist: async () => [{ id: 2764722, title: "ENNA" }],
+      getArtistReleaseIds: async () => [1],
+      getReleaseGenres: async () => ({ genres: ["Electronic"], styles: ["Downtempo"] }),
+    });
+
+    await getOrLookupArtistGenre("ENNA", cache, client, NOW);
+    expect(client.searchCalls).toHaveLength(1);
+    const cached = await cache.get(normalizeArtistName("ENNA"));
+    expect(cached?.identityConfidence).toBe("low");
+
+    await getOrLookupArtistGenre("ENNA", cache, client, new Date(NOW.getTime() + 60_000));
+    expect(client.searchCalls).toHaveLength(1); // cache satisfied it — no regression to cache behavior
   });
 });
 

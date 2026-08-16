@@ -61,22 +61,72 @@ function computeExpiry(status: LookupStatus, now: Date): Date {
 }
 
 /**
+ * Lineup listings routinely aren't a bare artist name — venues append
+ * performance/label/collective annotations like "Âme (live) (Innervisions)"
+ * or "Oliver Koletzki [Stil vor Talent]", which Discogs' own artist search
+ * won't match. Conservative on purpose: strips only a WHOLE trailing
+ * bracketed group with no nested brackets inside it, one at a time from the
+ * end, and only when non-empty text remains in front of it — so it never
+ * reduces a name to nothing, and a legitimate artist name that itself
+ * contains parentheses is only touched if the parenthetical is clearly a
+ * trailing annotation.
+ */
+export function cleanArtistDisplayName(name: string): string {
+  let result = name.trim();
+  let match: RegExpMatchArray | null;
+  while ((match = result.match(/\s*[([][^()[\]]*[)\]]$/))) {
+    const stripped = result.slice(0, match.index).trim();
+    if (stripped.length === 0) break;
+    result = stripped;
+  }
+  return result;
+}
+
+const PLACEHOLDER_ARTIST_NAMES = new Set(["tba", "tbd", "tbc"]);
+
+/** "TBA"/"TBD"/"TBC" (and trivial punctuation variants) are never a real artist — never search Discogs or cache them. */
+export function isPlaceholderArtistName(name: string): boolean {
+  return PLACEHOLDER_ARTIST_NAMES.has(name.trim().toLowerCase().replace(/\./g, ""));
+}
+
+const SHORT_GENERIC_NAME_MAX_LETTERS = 4;
+
+/**
+ * A bare exact-name Discogs match on a short, generic-looking name (e.g. a
+ * real production incident: "ENNA" matched a Discogs artist whose releases
+ * were confidently electronic, but nothing corroborates that Discogs artist
+ * is the same person as the Hangaren lineup entry — short names collide
+ * across unrelated real people far more often than distinctive ones). This
+ * is deliberately a blunt, MVP-appropriate signal (length only, no lookup of
+ * additional corroborating evidence) rather than a real disambiguation
+ * system — see identityConfidence handling in lookupArtistViaDiscogs.
+ */
+export function isShortGenericArtistName(cleanedName: string): boolean {
+  const lettersOnly = cleanedName.replace(/[^\p{L}]/gu, "");
+  return lettersOnly.length > 0 && lettersOnly.length <= SHORT_GENERIC_NAME_MAX_LETTERS;
+}
+
+/**
  * Looks up one artist against Discogs (no cache involved — callers go
  * through getOrLookupArtistGenre for that). Disambiguation: only an EXACT
  * (case-insensitive, Discogs "(2)"-suffix-stripped) name match counts as a
  * candidate at all. Zero candidates -> not_found. More than one distinct
  * candidate -> ambiguous (Discogs itself has multiple different real people
  * under this exact name) and genre is never guessed between them. Exactly
- * one candidate is still only ever "medium" identity confidence — a bare
- * name match is never treated as high identity confidence, by design.
+ * one candidate is still only ever "medium" identity confidence at best — a
+ * bare name match is never treated as high identity confidence, by design —
+ * and drops to "low" (with proposedGenre withheld) when the match isn't
+ * confirmed electronic or the name is short/generic (see
+ * isShortGenericArtistName).
  */
 async function lookupArtistViaDiscogs(
   artistNameRaw: string,
   client: DiscogsLookupClient,
 ): Promise<Omit<ArtistCacheEntry, "classificationMethod" | "lookedUpAt" | "expiresAt">> {
-  const normalized = normalizeArtistName(artistNameRaw);
+  const cleanedName = cleanArtistDisplayName(artistNameRaw);
+  const normalized = normalizeArtistName(cleanedName);
   const target = normalized;
-  const matches = await client.searchArtist(artistNameRaw);
+  const matches = await client.searchArtist(cleanedName);
   const exact = matches.filter((m) => stripDiscogsDisambiguationSuffix(m.title).toLowerCase() === target);
 
   if (exact.length === 0) {
@@ -87,7 +137,11 @@ async function lookupArtistViaDiscogs(
       genreConfidence: null,
       identityConfidence: null,
       discogsArtistId: null,
-      evidence: { searchResults: matches.map((m) => ({ id: m.id, title: m.title })) },
+      evidence: {
+        rawArtistName: artistNameRaw,
+        cleanedArtistName: cleanedName,
+        searchResults: matches.map((m) => ({ id: m.id, title: m.title })),
+      },
     };
   }
   if (exact.length > 1) {
@@ -98,7 +152,11 @@ async function lookupArtistViaDiscogs(
       genreConfidence: null,
       identityConfidence: "low",
       discogsArtistId: null,
-      evidence: { candidates: exact.map((m) => ({ id: m.id, title: m.title })) },
+      evidence: {
+        rawArtistName: artistNameRaw,
+        cleanedArtistName: cleanedName,
+        candidates: exact.map((m) => ({ id: m.id, title: m.title })),
+      },
     };
   }
 
@@ -113,24 +171,33 @@ async function lookupArtistViaDiscogs(
     ),
   );
   const aggregation = mapDiscogsEvidenceToGenre(releases);
+  const shortGenericName = isShortGenericArtistName(cleanedName);
+
+  // A same-name match with no confirmed electronic release, OR on a
+  // short/generic name where a bare exact match isn't enough corroborating
+  // evidence of identity, is treated as likely the WRONG person — not just
+  // "no genre found". Never emit a proposed genre/confidence unless identity
+  // confidence actually cleared "medium".
+  const identityConfidence: IdentityConfidence = !shortGenericName && aggregation.confirmedElectronic ? "medium" : "low";
+  const proposedGenre = identityConfidence === "medium" ? aggregation.genre : null;
 
   return {
     artistNameNormalized: normalized,
     lookupStatus: "found",
-    proposedGenre: aggregation.genre,
-    genreConfidence: aggregation.genre ? genreConfidenceForEvidence("artist-lineup-metadata") : null,
-    // A same-name match with no confirmed electronic release is treated as
-    // likely the WRONG person, not just "no genre found" — see the
-    // approved design's worked example of a real artist-name collision.
-    identityConfidence: aggregation.confirmedElectronic ? "medium" : "low",
+    proposedGenre,
+    genreConfidence: proposedGenre ? genreConfidenceForEvidence("artist-lineup-metadata") : null,
+    identityConfidence,
     discogsArtistId: artist.id,
     evidence: {
+      rawArtistName: artistNameRaw,
+      cleanedArtistName: cleanedName,
       discogsArtistId: artist.id,
       discogsArtistTitle: artist.title,
       releasesExamined: releases,
       matchedStyles: aggregation.matchedStyles,
       confirmedElectronic: aggregation.confirmedElectronic,
       conflicting: aggregation.conflicting,
+      shortGenericName,
     },
   };
 }
@@ -142,7 +209,7 @@ export async function getOrLookupArtistGenre(
   client: DiscogsLookupClient,
   now: Date = new Date(),
 ): Promise<ArtistCacheEntry> {
-  const normalized = normalizeArtistName(artistNameRaw);
+  const normalized = normalizeArtistName(cleanArtistDisplayName(artistNameRaw));
   const cached = await cache.get(normalized);
   if (cached && cached.expiresAt.getTime() > now.getTime()) {
     return cached;
@@ -181,6 +248,7 @@ export async function enrichEventGenre(
 ): Promise<EventGenreEnrichmentResult> {
   const perArtist: ArtistCacheEntry[] = [];
   for (const name of artistNames) {
+    if (isPlaceholderArtistName(name)) continue; // never looked up, never cached
     try {
       perArtist.push(await getOrLookupArtistGenre(name, cache, client, now));
     } catch (err) {

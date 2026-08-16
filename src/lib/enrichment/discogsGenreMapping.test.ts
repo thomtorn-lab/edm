@@ -51,4 +51,12 @@ describe("mapDiscogsEvidenceToGenre", () => {
     expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["PSYTRANCE"] }]).genre).toBe("psytrance");
     expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Drum n Bass"] }]).genre).toBe("drum-and-bass");
   });
+
+  it("does not fold 'Hard House' into 'house' — falls through to electronic-other, consistent with hard-techno staying separate from techno", () => {
+    // Real production evidence: Kyle Starkey, "Electronic / Hard House".
+    const result = mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Hard House"] }]);
+    expect(result.genre).toBe("electronic-other");
+    expect(result.matchedStyles).toEqual([]);
+    expect(result.confirmedElectronic).toBe(true);
+  });
 });

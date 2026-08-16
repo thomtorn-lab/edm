@@ -13,6 +13,17 @@ function normalizeToken(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+// Deliberately NOT mapped: "Hard House" -> "house". A real Discogs result
+// (Kyle Starkey, "Electronic / Hard House") currently falls through to
+// electronic-other instead of a specific house subgenre, which was reviewed
+// and is the correct, taxonomy-consistent behavior, not a gap: this same
+// taxonomy already keeps "hard-techno" as its own GenreSlug distinct from
+// plain "techno" (see taxonomy.ts and deterministicGenreMapping.ts), so a
+// "hard" variant is established precedent as NOT folded into its base
+// genre here. Folding "Hard House" into "house" would break that
+// consistency, and no "hard-house" slug exists in the taxonomy — adding one
+// is out of scope for this MVP. electronic-other (confirmed electronic, no
+// specific matching subgenre) is the correct fallback.
 const STYLE_TO_GENRE_SLUG_RAW: Record<string, GenreSlug> = {
   techno: "techno",
   "hard techno": "hard-techno",
