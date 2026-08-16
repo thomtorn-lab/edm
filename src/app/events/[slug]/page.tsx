@@ -167,7 +167,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
       <p className="mt-10 text-xs text-text-tertiary">
         Times shown in Europe/Copenhagen. Details are drawn from official and verified sources — if something here looks
-        wrong, <Link href="/about" className="underline hover:text-text-secondary">let us know</Link>.
+        wrong, <Link href="/contact" className="underline hover:text-text-secondary">let us know</Link>.
       </p>
     </div>
   );
