@@ -114,6 +114,15 @@ export const discoveryQueue = pgTable("discovery_queue", {
   overallConfidence: text("overall_confidence").notNull().default("low"),
   /** pending | published | ignored | merged — persisted so a refresh never loses admin decisions. */
   status: text("status").notNull().default("pending"),
+  /**
+   * Field-level manual-override protection, mirroring events.overriddenFields
+   * (src/lib/override.ts). Set by updateDiscoveryItem whenever an admin
+   * hand-edits a field on a still-pending item; a later sync refreshing this
+   * item's machine-generated classification (src/lib/sync.ts::
+   * buildDiscoveryQueueClassificationPatch) must never clobber a field listed
+   * here.
+   */
+  overriddenFields: text("overridden_fields").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "./sync";
+import {
+  buildDiscoveryQueueClassificationPatch,
+  buildSyncPatch,
+  findSyncMatch,
+  type DiscoveryQueueTarget,
+  type SyncTargetEvent,
+} from "./sync";
 import { stripOverriddenFields } from "./override";
 import type { RawCandidateEvent } from "./adapters/types";
 
@@ -130,5 +136,101 @@ describe("buildSyncPatch", () => {
     const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
     expect(safePatch.primaryGenre).toBeUndefined(); // ...but the admin's choice is never actually written
     expect(safePatch.subgenres).toBeUndefined();
+  });
+});
+
+function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): DiscoveryQueueTarget {
+  return {
+    status: "pending",
+    predictedGenre: null,
+    overriddenFields: [],
+    ...overrides,
+  };
+}
+
+describe("buildDiscoveryQueueClassificationPatch", () => {
+  // Real production cases (verified against the live Preview database): both
+  // rows sat unresolved (predicted_genre: null) across a prior sync because
+  // src/db/sync.ts used to just `continue` on an already-pending duplicate,
+  // discarding a freshly-resolved genre instead of ever persisting it.
+
+  it("Sunday Psy: an existing pending item receives a newly-available predicted genre (deterministic 'psy' mapping)", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "psytrance", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ predictedGenre: null }),
+    );
+    expect(patch).toEqual({ predictedGenre: "psytrance", genreConfidence: "medium" });
+  });
+
+  it("Oliver Koletzki: an existing pending item receives a newly-available predicted genre (Discogs enrichment)", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "tech-house", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ predictedGenre: null }),
+    );
+    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium" });
+  });
+
+  it("second identical sync is idempotent — no patch when the fresh genre already matches what's stored", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "psytrance", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ predictedGenre: "psytrance" }),
+    );
+    expect(patch).toEqual({});
+  });
+
+  it("a transient lookup failure (fresh genre unresolved) never clears a previously-resolved genre", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: null, genreConfidence: "low" },
+      pendingDiscoveryTarget({ predictedGenre: "psytrance" }),
+    );
+    expect(patch).toEqual({});
+  });
+
+  it("never overwrites an admin's manual predictedGenre correction", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "tech-house", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ predictedGenre: "house", overriddenFields: ["predictedGenre"] }),
+    );
+    expect(patch).toEqual({});
+  });
+
+  it("a manual edit to an unrelated field (e.g. probableTitle) does not block a genre refresh", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "tech-house", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ predictedGenre: null, overriddenFields: ["probableTitle"] }),
+    );
+    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium" });
+  });
+
+  it("never proposes a status change — the patch shape can only ever contain classification fields, so a medium-confidence suggestion keeps the item in review", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "psytrance", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ predictedGenre: null }),
+    );
+    expect(Object.keys(patch).sort()).toEqual(["genreConfidence", "predictedGenre"]);
+    expect(patch).not.toHaveProperty("status");
+  });
+
+  it("published rows are unaffected — a non-pending item never receives a patch even with a differing fresh genre", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "tech-house", genreConfidence: "medium" },
+      pendingDiscoveryTarget({ status: "published", predictedGenre: null }),
+    );
+    expect(patch).toEqual({});
+  });
+
+  it("ignored and merged rows are equally frozen", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { genre: "tech-house", genreConfidence: "medium" },
+        pendingDiscoveryTarget({ status: "ignored" }),
+      ),
+    ).toEqual({});
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { genre: "tech-house", genreConfidence: "medium" },
+        pendingDiscoveryTarget({ status: "merged" }),
+      ),
+    ).toEqual({});
   });
 });

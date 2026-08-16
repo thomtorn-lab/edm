@@ -136,3 +136,43 @@ export function findSyncMatch(
   }
   return null;
 }
+
+export interface DiscoveryQueueTarget {
+  /** Only ever proposes a patch for "pending" — a resolved item (published/ignored/merged) is frozen. */
+  status: string;
+  predictedGenre: GenreSlug | null;
+  overriddenFields: string[];
+}
+
+export interface DiscoveryQueueClassification {
+  genre: GenreSlug | null;
+  genreConfidence: ConfidenceLevel;
+}
+
+export interface DiscoveryQueueClassificationPatch {
+  predictedGenre?: GenreSlug;
+  genreConfidence?: ConfidenceLevel;
+}
+
+/**
+ * Builds the classification-only patch for an already-pending discovery_queue
+ * item when a later sync's genre resolution differs from what's currently
+ * stored (e.g. a deterministic keyword fix or Discogs enrichment now resolves
+ * a lineup that previously didn't). Deliberately narrow: this is the ONLY
+ * thing a re-sync may ever update on an existing item — identity
+ * (title/lineup/venue/date), status, and review state are untouched here, so
+ * a later sync can improve a suggestion without ever silently publishing or
+ * renaming anything. A missing/unresolved fresh genre never clears a
+ * previously-resolved one (no flicker from a transient lookup failure), a
+ * non-pending item is never touched, and an admin's own correction (tracked
+ * in overriddenFields by updateDiscoveryItem) is never clobbered.
+ */
+export function buildDiscoveryQueueClassificationPatch(
+  fresh: DiscoveryQueueClassification,
+  existing: DiscoveryQueueTarget,
+): DiscoveryQueueClassificationPatch {
+  if (existing.status !== "pending") return {};
+  if (existing.overriddenFields.includes("predictedGenre")) return {};
+  if (!fresh.genre || fresh.genre === existing.predictedGenre) return {};
+  return { predictedGenre: fresh.genre, genreConfidence: fresh.genreConfidence };
+}

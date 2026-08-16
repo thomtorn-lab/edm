@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks } from "./schema";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
@@ -256,7 +256,14 @@ export interface DiscoveryEditPatch {
   predictedGenre?: GenreSlug | null;
 }
 
-/** Lets an admin fill in fields a generic extraction couldn't determine (date, venue, lineup) before publishing. */
+/**
+ * Lets an admin fill in fields a generic extraction couldn't determine (date,
+ * venue, lineup) before publishing. Touched fields are recorded in
+ * overriddenFields (mirrors applyAdminEventEdit for events) so a later sync's
+ * refreshed classification (buildDiscoveryQueueClassificationPatch) can never
+ * silently revert a hand-correction — most importantly, an admin-set
+ * predictedGenre.
+ */
 export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch) {
   const [existing] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, id)).limit(1);
   if (!existing) throw new Error(`Discovery item ${id} not found`);
@@ -269,10 +276,32 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     return true;
   });
 
+  const overriddenFields = addOverriddenFields(existing.overriddenFields, Object.keys(patch));
+
   await db
     .update(discoveryQueue)
-    .set({ ...patch, missingFields })
+    .set({ ...patch, missingFields, overriddenFields })
     .where(eq(discoveryQueue.id, id));
+}
+
+/**
+ * Applies a later sync's refreshed genre classification
+ * (buildDiscoveryQueueClassificationPatch) to an existing pending
+ * discovery_queue row — never creates a row, never touches status or any
+ * identity field. The status='pending' guard is belt-and-suspenders against
+ * an admin resolving the item (publish/ignore/merge) between this sync's read
+ * and this write; a no-op patch is skipped entirely rather than issuing an
+ * empty UPDATE.
+ */
+export async function applyDiscoveryClassificationUpdate(
+  queueId: string,
+  patch: { predictedGenre?: GenreSlug; genreConfidence?: ConfidenceLevel },
+) {
+  if (Object.keys(patch).length === 0) return;
+  await db
+    .update(discoveryQueue)
+    .set(patch)
+    .where(and(eq(discoveryQueue.id, queueId), eq(discoveryQueue.status, "pending")));
 }
 
 export async function insertDiscoveryItem(item: {

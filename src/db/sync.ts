@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, pool } from "./client";
 import { discoveryQueue, sourceEventLinks } from "./schema";
 import {
+  applyDiscoveryClassificationUpdate,
   applySourceSyncPatch,
   createEvent,
   insertDiscoveryItem,
@@ -12,8 +13,9 @@ import {
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
-import { buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "@/lib/sync";
+import { buildDiscoveryQueueClassificationPatch, buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "@/lib/sync";
 import { enrichEventGenre } from "./enrichment";
+import type { GenreSlug } from "@/lib/taxonomy";
 
 /**
  * Orchestrates one full sync run for one source (task 4/5/6): fetch ->
@@ -110,7 +112,7 @@ async function runSourceSyncLocked(
   ]);
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
-  const pendingByUrl = new Set(pendingDiscovery.map((d) => d.sourceUrl));
+  const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
   const existingForDedup: ExistingEventForDedup[] = existingEventRows.map((e) => ({
     id: e.id,
     title: e.title,
@@ -221,8 +223,23 @@ async function runSourceSyncLocked(
 
       // review_queue or hold — but don't re-queue a duplicate row on every
       // sync cycle for a candidate that's already awaiting an admin decision.
+      // Instead, let the classification-only patch (never identity/status)
+      // refresh the existing row if this run's genre resolution improved on
+      // what's stored — see buildDiscoveryQueueClassificationPatch.
       const dedupKey = raw.officialEventUrl ?? raw.sourceUrl;
-      if (pendingByUrl.has(dedupKey)) continue;
+      const existingPending = pendingByUrl.get(dedupKey);
+      if (existingPending) {
+        const classificationPatch = buildDiscoveryQueueClassificationPatch(
+          { genre: result.genre, genreConfidence: result.genreConfidence },
+          {
+            status: existingPending.status,
+            predictedGenre: existingPending.predictedGenre as GenreSlug | null,
+            overriddenFields: existingPending.overriddenFields,
+          },
+        );
+        await applyDiscoveryClassificationUpdate(existingPending.id, classificationPatch);
+        continue;
+      }
 
       const queueId = `dq-${randomUUID().slice(0, 8)}`;
       await insertDiscoveryItem({
