@@ -8,6 +8,27 @@
       "when": 1786631767642,
       "tag": "0000_futuristic_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786684811624,
+      "tag": "0001_flashy_captain_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786865339997,
+      "tag": "0002_lean_marten_broadcloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786895643055,
+      "tag": "0003_amazing_black_panther",
+      "breakpoints": true
     }
   ]
 }

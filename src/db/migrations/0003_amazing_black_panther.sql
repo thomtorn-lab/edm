@@ -1,0 +1,1 @@
+ALTER TABLE "discovery_queue" ADD COLUMN "overridden_fields" text[] DEFAULT '{}' NOT NULL;
