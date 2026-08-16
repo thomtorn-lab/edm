@@ -5,6 +5,7 @@ import {
   boolean,
   integer,
   primaryKey,
+  jsonb,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -130,6 +131,28 @@ export const eventChangeLog = pgTable("event_change_log", {
   fieldsChanged: text("fields_changed").array().notNull().default([]),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Genre enrichment cache (Discogs MVP). One row per distinct artist name,
+ * reused across every event and every future source — never looked up more
+ * than once per TTL window. See src/lib/enrichment/genreEnrichment.ts for
+ * the lookup/aggregation logic and src/db/enrichment.ts for the Postgres
+ * wiring. This table IS the evidence store a reviewer consults (join by
+ * artist name against a discovery-queue item's `detectedLineup`) — no
+ * separate evidence table.
+ */
+export const artistGenreCache = pgTable("artist_genre_cache", {
+  artistNameNormalized: text("artist_name_normalized").primaryKey(),
+  lookupStatus: text("lookup_status").notNull(), // "found" | "not_found" | "ambiguous"
+  proposedGenre: text("proposed_genre"), // GenreSlug, null if unresolved/ambiguous
+  genreConfidence: text("genre_confidence"), // ConfidenceLevel, null if no genre proposed — NEVER "high" for this source
+  identityConfidence: text("identity_confidence"), // "medium" | "low", null if not_found
+  discogsArtistId: integer("discogs_artist_id"),
+  evidence: jsonb("evidence").notNull().default([]),
+  classificationMethod: text("classification_method").notNull(),
+  lookedUpAt: timestamp("looked_up_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
 export const sourceEventLinks = pgTable(

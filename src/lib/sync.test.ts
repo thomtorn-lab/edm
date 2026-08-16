@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "./sync";
+import { stripOverriddenFields } from "./override";
 import type { RawCandidateEvent } from "./adapters/types";
 
 function raw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
@@ -111,5 +112,23 @@ describe("buildSyncPatch", () => {
     const noEnd = raw({ endDatetime: null });
     const { patch } = buildSyncPatch(noEnd, resolved, target());
     expect(patch.endDatetime).toBeUndefined();
+  });
+
+  it("a manually-corrected genre survives a sync even when Discogs enrichment proposes a different one", () => {
+    // Simulates: admin previously hand-set primaryGenre (overriddenFields
+    // includes "primaryGenre"/"subgenres"), then a later sync's genre
+    // enrichment (src/db/enrichment.ts) resolves a DIFFERENT genre for this
+    // same event's artist. buildSyncPatch itself is override-agnostic (see
+    // the test above) — the actual protection is stripOverriddenFields,
+    // exercised here exactly as applySourceSyncPatch (src/db/writes.ts)
+    // calls it in production.
+    const enrichmentResolved = { ...resolved, genre: "psytrance" as const, genreConfidence: "medium" as const };
+    const existing = target({ primaryGenre: "techno", overriddenFields: ["primaryGenre", "subgenres"] });
+    const { patch } = buildSyncPatch(raw(), enrichmentResolved, existing);
+    expect(patch.primaryGenre).toBe("psytrance"); // buildSyncPatch still proposes it...
+
+    const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+    expect(safePatch.primaryGenre).toBeUndefined(); // ...but the admin's choice is never actually written
+    expect(safePatch.subgenres).toBeUndefined();
   });
 });

@@ -10,9 +10,10 @@ import {
   touchSourceSyncStats,
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
-import { runIngestionPipeline, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
+import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
 import { buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "@/lib/sync";
+import { enrichEventGenre } from "./enrichment";
 
 /**
  * Orchestrates one full sync run for one source (task 4/5/6): fetch ->
@@ -126,7 +127,23 @@ async function runSourceSyncLocked(
 
   for (const raw of candidates) {
     try {
-      const result = runIngestionPipeline(raw, { venues, existingEvents: existingForDedup });
+      let result = runIngestionPipeline(raw, { venues, existingEvents: existingForDedup });
+
+      // Genre enrichment (Discogs, MVP): only runs when the deterministic
+      // classifier left genre unresolved, and only ever adds medium
+      // confidence at most — it can move a candidate from hold into the
+      // review queue with a suggested genre, never straight to
+      // auto_publish. A Discogs failure/timeout/rate-limit here is
+      // swallowed by enrichEventGenre's own per-artist try/catch and simply
+      // leaves `result` exactly as the deterministic classifier produced it
+      // — today's existing unresolved/review behavior, unchanged.
+      if (result.genre === null) {
+        const enrichment = await enrichEventGenre(raw.artists);
+        if (enrichment.genre && enrichment.genreConfidence) {
+          result = applyEnrichedGenre(result, enrichment.genre, enrichment.genreConfidence);
+        }
+      }
+
       const linkedEventId = raw.officialEventUrl ? (linkedByUrl.get(raw.officialEventUrl) ?? null) : null;
       const match = findSyncMatch(linkedEventId, result.duplicateOfEventId, result.duplicateConfidence);
 

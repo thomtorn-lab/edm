@@ -35,6 +35,35 @@ export interface PipelineResult {
   duplicateConfidence: "high" | "medium" | "low" | "none";
 }
 
+/** The CONFIDENCE / PUBLISH-REVIEW GATE step, factored out so it can be re-run
+ *  by applyEnrichedGenre below without duplicating the duplicate-downgrade rule. */
+function computeDecision(
+  missingFields: string[],
+  resolvedVenueId: string | null,
+  genre: GenreSlug | null,
+  genreConfidence: ConfidenceLevel,
+  duplicateConfidence: "high" | "medium" | "low" | "none",
+): PublishDecision {
+  let decision = evaluateQualityGate({
+    hasTitle: missingFields.every((f) => f !== "title"),
+    hasDate: missingFields.every((f) => f !== "date"),
+    hasVenue: resolvedVenueId != null,
+    hasSourceUrl: missingFields.every((f) => f !== "source url"),
+    hasCredibleElectronicRelevance: genre != null,
+    genreConfidence,
+  });
+
+  // A likely duplicate always needs a human merge decision before publishing,
+  // even if the record would otherwise clear the quality gate on its own.
+  const duplicateAction = decideDuplicateAction(duplicateConfidence);
+  if (duplicateAction === "auto_merge_if_safe" && decision === "auto_publish") {
+    decision = "review_queue";
+  } else if (duplicateAction === "review_queue" && decision === "auto_publish") {
+    decision = "review_queue";
+  }
+  return decision;
+}
+
 export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOptions): PipelineResult {
   // VALIDATION
   const missingFields: string[] = [];
@@ -75,23 +104,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   }
 
   // CONFIDENCE / PUBLISH-REVIEW GATE
-  let decision = evaluateQualityGate({
-    hasTitle: missingFields.every((f) => f !== "title"),
-    hasDate: missingFields.every((f) => f !== "date"),
-    hasVenue: resolvedVenue != null,
-    hasSourceUrl: missingFields.every((f) => f !== "source url"),
-    hasCredibleElectronicRelevance: genre != null,
-    genreConfidence,
-  });
-
-  // A likely duplicate always needs a human merge decision before publishing,
-  // even if the record would otherwise clear the quality gate on its own.
-  const duplicateAction = decideDuplicateAction(duplicateConfidence);
-  if (duplicateAction === "auto_merge_if_safe" && decision === "auto_publish") {
-    decision = "review_queue";
-  } else if (duplicateAction === "review_queue" && decision === "auto_publish") {
-    decision = "review_queue";
-  }
+  const decision = computeDecision(missingFields, resolvedVenue?.id ?? null, genre, genreConfidence, duplicateConfidence);
 
   return {
     decision,
@@ -103,4 +116,28 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     duplicateOfEventId,
     duplicateConfidence,
   };
+}
+
+/**
+ * Applies genre enrichment evidence (e.g. Discogs — src/db/enrichment.ts) to
+ * a PipelineResult whose deterministic classification left genre
+ * unresolved, and recomputes the decision the same way the main pipeline
+ * would have. Never overrides evidence the deterministic classifier already
+ * found — enrichment only fills a genuine gap, it never second-guesses an
+ * existing answer. Callers are responsible for never passing "high"
+ * genreConfidence here (enrichment evidence is always at most medium, per
+ * policy); this is enforced as an assertion, not silently downgraded, so a
+ * violation is loud rather than silently miscategorized.
+ */
+export function applyEnrichedGenre(
+  result: PipelineResult,
+  genre: GenreSlug,
+  genreConfidence: ConfidenceLevel,
+): PipelineResult {
+  if (result.genre != null) return result;
+  if (genreConfidence === "high") {
+    throw new Error("applyEnrichedGenre: enrichment evidence must never be 'high' confidence.");
+  }
+  const decision = computeDecision(result.missingFields, result.resolvedVenueId, genre, genreConfidence, result.duplicateConfidence);
+  return { ...result, genre, genreConfidence, decision };
 }
