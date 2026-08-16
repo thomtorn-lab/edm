@@ -56,7 +56,8 @@ export default function ContactForm() {
         role="status"
         className="mt-6 rounded border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-text-primary"
       >
-        Thanks — your message is on its way. A person reads it and replies when they can.
+        Thanks — we&rsquo;ve received your message. We may not be able to reply to every message, but
+        we review them all.
       </div>
     );
   }

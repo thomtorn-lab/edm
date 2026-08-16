@@ -81,6 +81,73 @@ export function getGenre(slug: GenreSlug): GenreDef {
 }
 
 /**
+ * User-facing filter taxonomy: a fixed, deliberately small set of 12
+ * categories so the genre filter never fragments into dozens of options.
+ * The finer-grained GenreSlug values above still exist as classification
+ * metadata (and still drive the specific labels shown on event rows/cards)
+ * but always roll up into exactly one of these for filtering purposes.
+ */
+export type MainGenreSlug =
+  | "techno"
+  | "hard-techno"
+  | "house"
+  | "trance"
+  | "psytrance"
+  | "drum-and-bass"
+  | "garage-bass"
+  | "breaks"
+  | "disco"
+  | "electro"
+  | "ambient-experimental"
+  | "electronic-other";
+
+export interface MainGenreDef {
+  slug: MainGenreSlug;
+  label: string;
+}
+
+export const MAIN_GENRES: MainGenreDef[] = [
+  { slug: "techno", label: "Techno" },
+  { slug: "hard-techno", label: "Hard Techno" },
+  { slug: "house", label: "House" },
+  { slug: "trance", label: "Trance" },
+  { slug: "psytrance", label: "Psytrance" },
+  { slug: "drum-and-bass", label: "Drum & Bass" },
+  { slug: "garage-bass", label: "Garage / Bass" },
+  { slug: "breaks", label: "Breaks" },
+  { slug: "disco", label: "Disco" },
+  { slug: "electro", label: "Electro" },
+  { slug: "ambient-experimental", label: "Ambient / Experimental" },
+  { slug: "electronic-other", label: "Electronic / Other" },
+];
+
+/** Every classification-level GenreSlug rolls up into exactly one MainGenreSlug. */
+const GENRE_TO_MAIN: Record<GenreSlug, MainGenreSlug> = {
+  techno: "techno",
+  "melodic-techno": "techno",
+  "minimal-techno": "techno",
+  "hard-techno": "hard-techno",
+  industrial: "hard-techno",
+  house: "house",
+  "deep-house": "house",
+  "tech-house": "house",
+  "progressive-house": "house",
+  "afro-house": "house",
+  trance: "trance",
+  psytrance: "psytrance",
+  "drum-and-bass": "drum-and-bass",
+  garage: "garage-bass",
+  disco: "disco",
+  electro: "electro",
+  "ambient-experimental": "ambient-experimental",
+  "electronic-other": "electronic-other",
+};
+
+export function mainGenreOf(slug: GenreSlug): MainGenreSlug {
+  return GENRE_TO_MAIN[slug];
+}
+
+/**
  * An event may carry several internal classifications, but the homepage only
  * ever shows the 1-2 most informative labels (spec section 9). The first
  * subgenre is treated as most specific/informative; a generic top-level tag
