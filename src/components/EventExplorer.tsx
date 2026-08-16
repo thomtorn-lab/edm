@@ -24,6 +24,12 @@ const MODE_LABEL: Record<Exclude<Mode, "all">, string> = {
   "next-weekend": "Next weekend",
 };
 
+const MODE_EMPTY_TITLE: Record<Exclude<Mode, "all">, string> = {
+  tonight: "Nothing on tonight",
+  weekend: "Nothing on this weekend",
+  "next-weekend": "Nothing lined up next weekend yet",
+};
+
 export default function EventExplorer({ events }: { events: EventWithVenue[] }) {
   const [now, setNow] = useState<Date | null>(null);
   const [mode, setMode] = useState<Mode>("all");
@@ -173,7 +179,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         {!now ? null : groups.length === 0 ? (
           <EmptyState
-            title={mode === "all" ? "No events found" : `No events found ${MODE_LABEL[mode as Exclude<Mode, "all">].toLowerCase()}`}
+            title={mode === "all" ? "No events match" : MODE_EMPTY_TITLE[mode as Exclude<Mode, "all">]}
             hint={hasActiveFilters ? "Try a different date range or clear your filters." : "Check back soon — new events are added every week."}
           />
         ) : (

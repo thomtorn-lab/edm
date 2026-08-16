@@ -79,8 +79,10 @@ export default async function AboutPage() {
         Spotted something wrong?
       </h2>
       <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-        Dates, lineups and statuses change. If an event on this site is wrong, outdated or missing, the
-        fastest fix is usually the venue or promoter&rsquo;s own page — linked from every event. This site
+        Dates, lineups and statuses change. If an event on this site is wrong or outdated, the fastest fix is
+        usually the venue or promoter&rsquo;s own page — linked from every event. Missing something entirely?{" "}
+        <Link href="/suggest-event" className="underline hover:text-text-secondary">Suggest an event</Link>. Anything
+        else, <Link href="/contact" className="underline hover:text-text-secondary">get in touch</Link>. This site
         aims to be a fast, honest index, not the source of truth.
       </p>
 

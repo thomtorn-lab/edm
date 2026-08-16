@@ -215,6 +215,19 @@ the data model and are already wired into Open Graph tags and JSON-LD when prese
 `<img>` on the event/venue/festival detail pages once real images exist is a small, isolated
 follow-up (would also need `images.remotePatterns` in `next.config.ts` for external hosts).
 
+## Contact & Suggest an event
+
+`/contact` and `/suggest-event` are both static, backend-free pages: a short explanation plus a
+`mailto:` link, built by `src/lib/contact.ts`. No form, no database write, no new infrastructure —
+a suggestion arrives as an email that an admin reviews by hand, typically by pasting the sender's
+link into the existing `/admin` "Add event from URL" tool, which already runs it through the
+review pipeline into the discovery queue. Nothing is auto-published.
+
+**Configuration:** set the `NEXT_PUBLIC_CONTACT_EMAIL` environment variable (see `.env.example`)
+to the real contact address before deploying. Unset, it falls back to the `contact@example.com`
+documentation placeholder (RFC 2606) so a missed config step reads as obviously fake rather than a
+wrong-but-plausible address.
+
 ## Scheduling
 
 `.github/workflows/sync-hangaren.yml` calls `POST /api/sync/hangaren` on a schedule — the source
