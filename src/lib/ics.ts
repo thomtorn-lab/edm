@@ -33,7 +33,7 @@ function calendarBounds(input: CalendarEventInput): { start: Date; end: Date } {
 
 export function buildIcsFile(input: CalendarEventInput): string {
   const { start, end } = calendarBounds(input);
-  const uid = `${toIcsUtc(start)}-${encodeURIComponent(input.title).slice(0, 24)}@cph-electronic.events`;
+  const uid = `${toIcsUtc(start)}-${encodeURIComponent(input.title).slice(0, 24)}@electroniccph.com`;
   const descriptionLines = [input.description, input.eventUrl].filter(Boolean).join("\\n\\n");
 
   const lines = [

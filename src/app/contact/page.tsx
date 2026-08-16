@@ -4,7 +4,7 @@ import { CONTACT_EMAIL, mailtoHref } from "@/lib/contact";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Get in touch with Nattefrekvens — corrections, tips, and general questions.",
+  description: "Get in touch with Electronic CPH — corrections, tips, and general questions.",
   alternates: { canonical: "/contact" },
 };
 

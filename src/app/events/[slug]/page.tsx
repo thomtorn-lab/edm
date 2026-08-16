@@ -43,7 +43,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const genres = event.subgenres.map(getGenre);
   const links = getExternalLinks(event);
   const statuses = getEventStatuses(event);
-  const canonicalUrl = `https://cph-electronic.events/events/${event.slug}`;
+  const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
   const jsonLd = buildEventJsonLd(event, canonicalUrl);
 
   const calendarInput = {

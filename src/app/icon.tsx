@@ -20,7 +20,7 @@ export default function Icon() {
           borderRadius: 6,
         }}
       >
-        N
+        E
       </div>
     ),
     size,
