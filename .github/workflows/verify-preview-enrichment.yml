@@ -78,12 +78,30 @@ jobs:
           cat > snapshot.cjs << 'SCRIPT'
           const { Client } = require('pg');
 
-          async function main() {
-            const client = new Client({ connectionString: process.env.DATABASE_URL });
+          async function main(client) {
             await client.connect();
             // Belt-and-suspenders: any accidental write in this script fails loudly
             // instead of silently succeeding against the shared database.
-            await client.query('SET default_transaction_read_only = on');
+            //
+            // IMPORTANT: DATABASE_URL points at Supabase's transaction-mode
+            // connection pooler, which the Preview app's own connections share.
+            // A session-scoped `SET default_transaction_read_only = on` was
+            // previously used here — but a transaction-mode pooler is free to
+            // hand the same physical backend connection to a different logical
+            // session afterward without resetting session-level state, so that
+            // setting could leak into the Preview app's own connections and
+            // make its real write queries fail with Postgres error 25006
+            // ("cannot execute UPDATE in a read-only transaction"). SET LOCAL
+            // is transaction-scoped: Postgres discards it unconditionally at
+            // COMMIT/ROLLBACK, so it cannot leak regardless of what the pooler
+            // does with the connection afterward. Every query below therefore
+            // runs inside one explicit read-only transaction, and the
+            // connection is closed (client.end()) before this script exits —
+            // each snapshot step is its own process, so that close always
+            // happens before the next step (a sync trigger or another
+            // snapshot) opens its own connection.
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
 
             const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
             console.log(`\n========== ${label} ==========`);
@@ -139,13 +157,20 @@ jobs:
               failures.forEach((f) => console.log(' - ' + f));
             }
 
-            await client.end();
+            // Explicitly end the read-only transaction (discarding the SET
+            // LOCAL along with it, belt-and-suspenders) before closing the
+            // connection — never leave the transaction open across the
+            // client.end() call.
+            await client.query('COMMIT');
           }
 
-          main().catch((err) => {
-            console.error('SNAPSHOT FAILED:', err.message);
-            process.exit(1);
-          });
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('SNAPSHOT FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
           SCRIPT
 
       - name: "PHASE 1 — BEFORE snapshot"
