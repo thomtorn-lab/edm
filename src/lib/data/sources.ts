@@ -18,17 +18,23 @@ export const SOURCES: Source[] = [
     sourceType: "official-venue",
     baseUrl: "https://culture-box.com/",
     roles: ["discovery", "ingestion", "verification", "link"],
-    adapter: "first-party-json",
+    // Real working adapter (src/lib/adapters/cultureBoxAdapter.ts): the
+    // /events/ page's one ld+json block is generic Yoast SEO site metadata
+    // (Organization/WebSite/WebPage), not per-event structured data, so
+    // this is a DOM extraction, never a JSON feed as the label used to
+    // (incorrectly) claim. robots.txt places no restriction on /events/.
+    adapter: "culture-box-html",
     trustLevel: "high",
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
-    lastSuccessfulSync: "2026-08-13T07:00:00+02:00",
-    lastAttemptedSync: "2026-08-13T07:00:00+02:00",
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
     lastError: null,
-    eventsFound: 14,
-    eventsUpdated: 2,
-    integrationNote: "First-party programme page. Structured listing, no auth or anti-bot barrier — safe to poll on a fixed schedule.",
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Real working adapter: fetches the unrestricted /events/ HTML page and parses its per-night/per-room structure. The venue rarely states a genre explicitly in its own show titles, so most nights land in the review queue (medium-confidence deterministic/Discogs lineup evidence) rather than auto-publishing — the quality gate never auto-publishes below high genre confidence, matching Hangaren's behavior. Recurring updates to already-known events apply automatically, respecting manual overrides. Not yet run against production — health fields will populate on the first real sync.",
   },
   {
     id: "src-hangaren",
@@ -36,7 +42,14 @@ export const SOURCES: Source[] = [
     sourceType: "official-venue",
     baseUrl: "https://www.hangaren.dk/events",
     roles: ["discovery", "ingestion", "verification", "link"],
-    adapter: "first-party-json",
+    // The only source with a real, working adapter as of this task (see
+    // src/lib/adapters/hangarenAdapter.ts). No JSON/ICS feed is permitted —
+    // robots.txt explicitly disallows `?format=json`/`?format=ical` for all
+    // crawlers, AI crawlers named individually — but the plain `/events`
+    // HTML page is not disallowed, is server-rendered (no JS execution
+    // needed), and carries semantic `<time datetime>` tags plus a Google
+    // Calendar link with exact UTC start/end instants for every event.
+    adapter: "hangaren-html",
     trustLevel: "high",
     autoPublish: true,
     syncFrequency: "every 6h",
@@ -46,7 +59,8 @@ export const SOURCES: Source[] = [
     lastError: null,
     eventsFound: 9,
     eventsUpdated: 1,
-    integrationNote: "First-party events page. Structured listing confirmed stable; primary source for large-format nights.",
+    integrationNote:
+      "Real working adapter: fetches the permitted plain /events HTML page (never the robots.txt-disallowed ?format=json/?format=ical export). No explicit genre metadata field exists on the source, so new events land in the review queue (medium-confidence deterministic genre mapping) rather than auto-publishing — the quality gate never auto-publishes below high genre confidence. Recurring updates to already-known events (date/time/lineup changes) apply automatically, respecting manual overrides.",
   },
   {
     id: "src-das",
@@ -64,7 +78,8 @@ export const SOURCES: Source[] = [
     lastError: null,
     eventsFound: 8,
     eventsUpdated: 0,
-    integrationNote: "First-party events page.",
+    integrationNote:
+      "Verified 2026-08-14: denandenside.com's own /club-events page carries no event listing content — it defers entirely to Resident Advisor (ra.co/clubs/205134) for both discovery and ticketing. Not currently viable as a first-party ingestion source despite the 'official-venue' classification; re-evaluate if their site changes.",
   },
   {
     id: "src-gravity",

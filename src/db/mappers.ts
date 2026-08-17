@@ -100,6 +100,7 @@ export function discoveryRowToRecord(row: DiscoveryQueueRow): DiscoveryQueueItem
     probableVenueName: row.probableVenueName,
     sourceName: row.sourceName,
     sourceUrl: row.sourceUrl,
+    sourceId: row.sourceId,
     detectedLineup: row.detectedLineup,
     predictedGenre: row.predictedGenre as GenreSlug | null,
     genreConfidence: row.genreConfidence as ConfidenceLevel,

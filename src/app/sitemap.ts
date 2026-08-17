@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { FESTIVALS } from "@/lib/data/festivals";
 
-const SITE_URL = "https://cph-electronic.events";
+const SITE_URL = "https://electroniccph.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
@@ -12,6 +12,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/venues`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
     { url: `${SITE_URL}/festivals`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/about`, lastModified: now, changeFrequency: "monthly", priority: 0.3 },
+    { url: `${SITE_URL}/contact`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
+    { url: `${SITE_URL}/suggest-event`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE_URL}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.1 },
   ];
 
   const [publishedEvents, venues] = await Promise.all([getPublishedEventsWithVenue(), getVenues()]);

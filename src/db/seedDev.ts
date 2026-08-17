@@ -1,30 +1,30 @@
 /**
- * Loads the existing sample fixtures (src/lib/data/*.ts) into Postgres.
- * This is the "safe seed/development-data mechanism" the fixtures are kept
- * for — they're no longer read directly by the app (see src/lib/queries.ts),
- * but they remain the source of truth for local/dev/test seed data instead
- * of being deleted.
+ * Development/demo seed — loads the FULL Phase-1 fixture set: the real
+ * venue/source registries (via seedVenues(), shared with the production
+ * bootstrap) PLUS sample events, sample discovery-queue items, and the
+ * sources' staged demo sync-health states (e.g. Gravity's fabricated
+ * "degraded" example). Useful for seeing the full UI locally with
+ * something to look at — NEVER appropriate for a real deployment.
+ *
+ * For production, use `npm run db:seed:production`
+ * (src/db/bootstrapProduction.ts) instead, which seeds only the real
+ * venue/source registries and inserts no demo content at all.
  *
  * Idempotent: safe to re-run, upserts by primary key.
  */
 import { db } from "./client";
-import { venues, sources, events, discoveryQueue } from "./schema";
-import { VENUES } from "../lib/data/venues";
+import { sources, events, discoveryQueue } from "./schema";
+import { seedVenues } from "./referenceData";
 import { SOURCES } from "../lib/data/sources";
 import { EVENTS } from "../lib/data/events";
 import { DISCOVERY_QUEUE } from "../lib/data/discoveryQueue";
 import { sql } from "drizzle-orm";
 
 async function seed() {
-  console.log(`Seeding ${VENUES.length} venues...`);
-  for (const v of VENUES) {
-    await db
-      .insert(venues)
-      .values(v)
-      .onConflictDoUpdate({ target: venues.id, set: { ...v, updatedAt: new Date() } });
-  }
+  const venueCount = await seedVenues();
+  console.log(`Seeded ${venueCount} venues.`);
 
-  console.log(`Seeding ${SOURCES.length} sources...`);
+  console.log(`Seeding ${SOURCES.length} sources (including staged demo sync-health states)...`);
   for (const s of SOURCES) {
     const { lastSuccessfulSync, lastAttemptedSync, ...rest } = s;
     await db
@@ -44,7 +44,7 @@ async function seed() {
       });
   }
 
-  console.log(`Seeding ${EVENTS.length} events...`);
+  console.log(`Seeding ${EVENTS.length} sample events...`);
   for (const e of EVENTS) {
     const row = {
       ...e,
@@ -59,7 +59,7 @@ async function seed() {
     await db.insert(events).values(row).onConflictDoUpdate({ target: events.id, set: row });
   }
 
-  console.log(`Seeding ${DISCOVERY_QUEUE.length} discovery queue items...`);
+  console.log(`Seeding ${DISCOVERY_QUEUE.length} sample discovery queue items...`);
   for (const d of DISCOVERY_QUEUE) {
     const row = {
       ...d,
@@ -68,12 +68,12 @@ async function seed() {
     await db.insert(discoveryQueue).values(row).onConflictDoUpdate({ target: discoveryQueue.id, set: row });
   }
 
-  console.log("Seed complete.");
+  console.log("\nDev seed complete (includes sample/demo content — never run this against production; use `npm run db:seed:production` there instead).");
   await db.execute(sql`SELECT 1`); // sanity ping before exit
   process.exit(0);
 }
 
 seed().catch((err) => {
-  console.error("Seed failed:", err);
+  console.error("Dev seed failed:", err);
   process.exit(1);
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks } from "./schema";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
@@ -196,7 +196,11 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       currency: null,
       published: true,
       confidence: item.overallConfidence as ConfidenceLevel,
-      canonicalSourceId: null,
+      // Provenance is persisted immediately here (via createEvent's own
+      // recordSourceLink call, triggered whenever canonicalSourceId +
+      // officialEventUrl are both set) rather than left for a later sync to
+      // reconstruct via fuzzy matching.
+      canonicalSourceId: item.sourceId,
     },
     "admin",
   );
@@ -217,7 +221,7 @@ export async function ignoreDiscoveryItem(queueId: string) {
 }
 
 /** Merges a discovery item into an existing event, preserving provenance instead of discarding it. */
-export async function mergeDiscoveryItem(queueId: string, targetEventId: string, sourceId = "admin-merge") {
+export async function mergeDiscoveryItem(queueId: string, targetEventId: string) {
   const [item] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, queueId)).limit(1);
   if (!item) throw new Error(`Discovery item ${queueId} not found`);
   const [target] = await db.select().from(events).where(eq(events.id, targetEventId)).limit(1);
@@ -229,7 +233,13 @@ export async function mergeDiscoveryItem(queueId: string, targetEventId: string,
     .set({ otherSourceUrls, updatedAt: new Date() })
     .where(eq(events.id, targetEventId));
 
-  await recordSourceLink(targetEventId, sourceId, item.sourceUrl, "other");
+  // Only record a source link when this discovery item actually came from a
+  // registered source — recordSourceLink's sourceId is a NOT NULL FK into
+  // `sources`, so a fabricated id here (as a previous version of this
+  // function used) would throw on every merge of an admin-pasted item.
+  if (item.sourceId) {
+    await recordSourceLink(targetEventId, item.sourceId, item.sourceUrl, "other");
+  }
   await writeChangeLog(targetEventId, "admin", "merge", ["otherSourceUrls"], `merged discovery item ${queueId}`);
 
   await db
@@ -246,7 +256,14 @@ export interface DiscoveryEditPatch {
   predictedGenre?: GenreSlug | null;
 }
 
-/** Lets an admin fill in fields a generic extraction couldn't determine (date, venue, lineup) before publishing. */
+/**
+ * Lets an admin fill in fields a generic extraction couldn't determine (date,
+ * venue, lineup) before publishing. Touched fields are recorded in
+ * overriddenFields (mirrors applyAdminEventEdit for events) so a later sync's
+ * refreshed classification (buildDiscoveryQueueClassificationPatch) can never
+ * silently revert a hand-correction — most importantly, an admin-set
+ * predictedGenre.
+ */
 export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch) {
   const [existing] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, id)).limit(1);
   if (!existing) throw new Error(`Discovery item ${id} not found`);
@@ -259,10 +276,32 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     return true;
   });
 
+  const overriddenFields = addOverriddenFields(existing.overriddenFields, Object.keys(patch));
+
   await db
     .update(discoveryQueue)
-    .set({ ...patch, missingFields })
+    .set({ ...patch, missingFields, overriddenFields })
     .where(eq(discoveryQueue.id, id));
+}
+
+/**
+ * Applies a later sync's refreshed genre classification
+ * (buildDiscoveryQueueClassificationPatch) to an existing pending
+ * discovery_queue row — never creates a row, never touches status or any
+ * identity field. The status='pending' guard is belt-and-suspenders against
+ * an admin resolving the item (publish/ignore/merge) between this sync's read
+ * and this write; a no-op patch is skipped entirely rather than issuing an
+ * empty UPDATE.
+ */
+export async function applyDiscoveryClassificationUpdate(
+  queueId: string,
+  patch: { predictedGenre?: GenreSlug; genreConfidence?: ConfidenceLevel },
+) {
+  if (Object.keys(patch).length === 0) return;
+  await db
+    .update(discoveryQueue)
+    .set(patch)
+    .where(and(eq(discoveryQueue.id, queueId), eq(discoveryQueue.status, "pending")));
 }
 
 export async function insertDiscoveryItem(item: {
@@ -272,6 +311,10 @@ export async function insertDiscoveryItem(item: {
   probableVenueName: string | null;
   sourceName: string;
   sourceUrl: string;
+  /** Registered source (e.g. "src-hangaren") this candidate came from, so
+   *  publishing later can persist provenance immediately. Omit/null for
+   *  candidates with no registered source (e.g. admin "Add event from URL"). */
+  sourceId?: string | null;
   detectedLineup: string[];
   predictedGenre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;

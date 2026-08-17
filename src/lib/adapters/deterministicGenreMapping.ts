@@ -18,6 +18,7 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bafro\s?house\b/i, "afro-house"],
   [/\bhouse\b/i, "house"],
   [/\bpsytrance\b/i, "psytrance"],
+  [/\bpsy\b/i, "psytrance"],
   [/\btrance\b/i, "trance"],
   [/\bd\s?&\s?b\b|drum\s?(and|&)\s?bass\b|\bdnb\b/i, "drum-and-bass"],
   [/\bgarage\b/i, "garage"],

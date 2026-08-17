@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runIngestionPipeline, type ExistingEventForDedup } from "./pipeline";
+import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "./pipeline";
 import { VENUES } from "../data/venues";
 import type { RawCandidateEvent } from "./types";
 
@@ -72,5 +72,43 @@ describe("runIngestionPipeline", () => {
     const result = runIngestionPipeline(raw({ venueName: "Some Unknown Bar" }), { venues: VENUES, existingEvents: [] });
     expect(result.resolvedVenueId).toBeNull();
     expect(result.decision).toBe("hold");
+  });
+});
+
+describe("applyEnrichedGenre", () => {
+  function unresolvedResult() {
+    return runIngestionPipeline(
+      raw({ genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+      { venues: VENUES, existingEvents: [] },
+    );
+  }
+
+  it("moves an unresolved (hold) record into review_queue at medium confidence — never auto_publish", () => {
+    const held = unresolvedResult();
+    expect(held.decision).toBe("hold");
+
+    const enriched = applyEnrichedGenre(held, "house", "medium");
+    expect(enriched.genre).toBe("house");
+    expect(enriched.genreConfidence).toBe("medium");
+    expect(enriched.decision).toBe("review_queue");
+  });
+
+  it("throws rather than silently accept 'high' confidence from an enrichment source", () => {
+    const held = unresolvedResult();
+    expect(() => applyEnrichedGenre(held, "house", "high")).toThrow();
+  });
+
+  it("never overrides genre evidence the deterministic classifier already found", () => {
+    const resolved = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] }); // genreHint: techno/high
+    expect(resolved.genre).toBe("techno");
+    const result = applyEnrichedGenre(resolved, "house", "medium");
+    expect(result).toBe(resolved); // untouched — same object, not just same values
+  });
+
+  it("still holds if enrichment resolves nothing new (a low-confidence caller should never call this, but stay safe if it did)", () => {
+    const held = unresolvedResult();
+    const enriched = applyEnrichedGenre(held, "house", "low");
+    // low confidence still doesn't clear the gate — same as the deterministic path would.
+    expect(enriched.decision).toBe("hold");
   });
 });
