@@ -1,6 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
 /**
@@ -22,38 +23,9 @@ export const HANGAREN_BASE_URL = "https://www.hangaren.dk";
 export const HANGAREN_EVENTS_URL = `${HANGAREN_BASE_URL}/events`;
 const HANGAREN_VENUE_NAME = "Hangaren";
 
-// ---- HTML text extraction helpers ----
-
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-};
-
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
-    .replace(/&([a-zA-Z]+);/g, (full, name) => NAMED_ENTITIES[name] ?? full);
-}
-
-/** Renders a Squarespace HTML fragment to plain text the way a browser would display it. */
-function htmlToText(html: string): string {
-  const withoutStyleScript = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  const withBreaks = withoutStyleScript
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n");
-  const stripped = withBreaks.replace(/<[^>]+>/g, "");
-  const decoded = decodeHtmlEntities(stripped);
-  return decoded
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .join("\n");
-}
+// ---- HTML text extraction ----
+// decodeHtmlEntities/htmlToText moved to ./htmlExtraction (shared with
+// cultureBoxAdapter.ts) — behavior unchanged, see that module.
 
 const LINEUP_START = /LINE[- ]?UP:?\s*$/i;
 const LINEUP_STOP = /^(TICKETS?|ENTRANCE|INFO|WARDROBE|LOCKERS?|THIS IS HOW WE PARTY|VJ LINE[- ]?UP|PLEASE READ|SUNDAY PSY|H[AÅ]NGAREN)\b/i;
