@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@fontsource/big-shoulders": "^5.3.0",
+    "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.0",
     "pg": "^8.23.0",
