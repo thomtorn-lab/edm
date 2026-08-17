@@ -10,6 +10,7 @@ const inputClasses =
   "mt-1 w-full rounded border border-border-strong bg-surface-1 px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent";
 const labelClasses = "block text-xs font-semibold uppercase tracking-wide text-text-secondary";
 const errorClasses = "mt-1 text-xs text-status-bad";
+const DEFAULT_ERROR_MESSAGE = "Something went wrong sending your message. Please try again in a moment.";
 
 export default function ContactForm() {
   const [name, setName] = useState("");
@@ -18,6 +19,7 @@ export default function ContactForm() {
   const [company, setCompany] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   function validate(): FieldErrors {
     const errors: FieldErrors = {};
@@ -37,15 +39,27 @@ export default function ContactForm() {
     if (Object.keys(errors).length > 0) return;
 
     setStatus("submitting");
+    setErrorMessage(null);
     try {
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, message, company }),
       });
-      if (!res.ok) throw new Error("request failed");
+      const data: unknown = await res.json().catch(() => null);
+      const ok = res.ok && !!data && typeof data === "object" && (data as { ok?: unknown }).ok === true;
+      if (!ok) {
+        const serverMessage =
+          data && typeof data === "object" && typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : null;
+        setErrorMessage(serverMessage ?? DEFAULT_ERROR_MESSAGE);
+        setStatus("error");
+        return;
+      }
       setStatus("success");
     } catch {
+      setErrorMessage(DEFAULT_ERROR_MESSAGE);
       setStatus("error");
     }
   }
@@ -145,7 +159,7 @@ export default function ContactForm() {
 
       {status === "error" && (
         <p role="alert" className={errorClasses}>
-          Something went wrong sending your message. Please try again in a moment.
+          {errorMessage ?? DEFAULT_ERROR_MESSAGE}
         </p>
       )}
 
