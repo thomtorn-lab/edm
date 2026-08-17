@@ -68,7 +68,7 @@ export default function AddToCalendar({
         aria-expanded={open}
         aria-label={compact ? label : undefined}
         title={compact ? label : undefined}
-        className="inline-flex min-h-[2rem] items-center gap-1.5 rounded border border-border-strong px-2 py-1 text-[11px] font-medium text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary"
+        className="inline-flex min-h-[2.25rem] items-center gap-1.5 rounded border border-border-strong px-2.5 py-1 text-[11px] font-medium text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary"
       >
         <CalendarIcon />
         <span className={compact ? "hidden" : "hidden sm:inline"}>{label}</span>
