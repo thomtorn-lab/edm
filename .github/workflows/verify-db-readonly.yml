@@ -166,8 +166,9 @@ jobs:
             if (venExtra.rowCount > 0) contamination = true;
 
             section("Recency scan: any row touched in the last 3 days");
+            const RECENCY_COLUMN = { venues: "updated_at", events: "updated_at", discovery_queue: "created_at", sources: "last_attempted_sync" };
             for (const table of ["venues", "sources", "events", "discovery_queue"]) {
-              const col = table === "discovery_queue" ? "created_at" : "updated_at";
+              const col = RECENCY_COLUMN[table];
               const recent = await client.query(
                 `SELECT id, ${col} FROM ${table} WHERE ${col} > now() - interval '3 days' ORDER BY ${col} DESC LIMIT 20`,
               );
