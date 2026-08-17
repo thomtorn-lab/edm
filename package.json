@@ -15,6 +15,7 @@
     "db:seed": "node --env-file=.env.local --import tsx src/db/seed.ts"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.0",
     "pg": "^8.23.0",
