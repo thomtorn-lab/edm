@@ -1,0 +1,193 @@
+name: Verify Database (Read-Only)
+
+# One-off, manual, read-only database health check — created to verify the
+# shared Supabase database after an accidental `npm run db:seed:dev`
+# attempt from an agent sandbox that could not actually reach the database
+# (every connection attempt timed out at the TCP layer before reaching
+# Postgres). GitHub-hosted runners have normal network access, so this is
+# the authoritative way to confirm the database's real state.
+#
+# Strictly read-only:
+#   - workflow_dispatch only — never runs on push/PR/schedule.
+#   - No migrations, no seed script, no application sync, no deployment.
+#   - The verification script opens exactly one dedicated pg connection,
+#     BEGINs an explicit transaction, sets `default_transaction_read_only`
+#     via SET LOCAL (transaction-scoped only, never session-scoped, never
+#     ALTER ROLE/ALTER DATABASE, never persisted), issues only SELECT
+#     statements, always ROLLBACKs, then explicitly closes the connection.
+#   - DATABASE_URL is read only into this step's environment — never
+#     written to a file, never echoed, never logged.
+#
+# The script itself is written to a throwaway file on the runner during
+# the run step and removed immediately after — it is never committed to
+# this repository. This workflow file is the only change in this PR.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run read-only verification
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > ./.verify-readonly.mjs <<'EOF'
+          import pg from "pg";
+
+          const DEMO_EVENT_IDS = Array.from({ length: 52 }, (_, i) => `e-${String(i + 1).padStart(3, "0")}`);
+          const DEMO_DISCOVERY_IDS = ["dq-001", "dq-002", "dq-003"];
+          const KNOWN_VENUE_IDS = [
+            "v-beta2300", "v-culture-box", "v-den-anden-side", "v-gravity", "v-hangaren",
+            "v-jolene", "v-kb18", "v-solvang", "v-vega-ideal-bar", "v-warehouse9",
+          ];
+          const KNOWN_SOURCE_IDS = [
+            "src-allevents-edm", "src-allevents-raves", "src-billetto", "src-culture-box", "src-das",
+            "src-eventbrite", "src-fb-denmark-electronic-parties", "src-fb-electronic-music-cph",
+            "src-fb-minimal-events", "src-fb-techhagen", "src-fb-techno-events-cph",
+            "src-fb-wonderful-electronic", "src-gravity", "src-hangaren", "src-ra-copenhagen",
+            "src-ra-house", "src-ra-techno",
+          ];
+          // Exact seedDev.ts fixture values for the sources that carry non-null
+          // staged demo sync-health — an exact match is a strong contamination signal.
+          const SEED_FIXTURE_HEALTH = {
+            "src-culture-box": { last_successful_sync: "2026-08-13T05:00:00.000Z", events_found: 14, events_updated: 2 },
+            "src-hangaren": { last_successful_sync: "2026-08-13T04:30:00.000Z", events_found: 9, events_updated: 1 },
+            "src-gravity": { events_found: 0, events_updated: 0, last_error: "0 events parsed from the last 3 attempts — likely page structure change, needs adapter review" },
+          };
+
+          let contamination = false;
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          function section(title) {
+            console.log(`\n=== ${title} ===`);
+          }
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '20s'");
+
+            section("events: seedDev fixture IDs (e-001..e-052)");
+            const evRes = await client.query(
+              `SELECT id, title, start_datetime FROM events WHERE id = ANY($1::text[]) ORDER BY id`,
+              [DEMO_EVENT_IDS],
+            );
+            console.log(`Matching rows: ${evRes.rowCount} / 52 checked IDs.`);
+            for (const r of evRes.rows) console.log(" ", r);
+            if (evRes.rowCount > 0) contamination = true;
+
+            const evTotal = await client.query(`SELECT count(*)::int AS total FROM events`);
+            console.log(`Total rows in events table: ${evTotal.rows[0].total}`);
+
+            section("discovery_queue: seedDev fixture IDs (dq-001..dq-003)");
+            const dqRes = await client.query(
+              `SELECT id, probable_title, source_name FROM discovery_queue WHERE id = ANY($1::text[]) ORDER BY id`,
+              [DEMO_DISCOVERY_IDS],
+            );
+            console.log(`Matching rows: ${dqRes.rowCount} / 3 checked IDs.`);
+            for (const r of dqRes.rows) console.log(" ", r);
+            if (dqRes.rowCount > 0) contamination = true;
+
+            const dqTotal = await client.query(`SELECT count(*)::int AS total FROM discovery_queue`);
+            console.log(`Total rows in discovery_queue table: ${dqTotal.rows[0].total}`);
+
+            section("sources: current health fields for known registry IDs");
+            const srcRes = await client.query(
+              `SELECT id, last_successful_sync, last_attempted_sync, last_error, events_found, events_updated
+               FROM sources WHERE id = ANY($1::text[]) ORDER BY id`,
+              [KNOWN_SOURCE_IDS],
+            );
+            console.log(`Found ${srcRes.rowCount} / ${KNOWN_SOURCE_IDS.length} known source rows.`);
+            for (const r of srcRes.rows) {
+              const fixture = SEED_FIXTURE_HEALTH[r.id];
+              let fixtureMatch = null;
+              if (fixture) {
+                fixtureMatch = Object.entries(fixture).every(([col, v]) => {
+                  const dbVal = r[col];
+                  if (dbVal instanceof Date) return dbVal.toISOString() === v;
+                  return dbVal === v;
+                });
+                if (fixtureMatch) contamination = true;
+              }
+              console.log(" ", { ...r, exact_fixture_match: fixtureMatch });
+            }
+
+            section("sources: any row outside the known 17 registry IDs?");
+            const srcExtra = await client.query(
+              `SELECT id FROM sources WHERE NOT (id = ANY($1::text[])) ORDER BY id`,
+              [KNOWN_SOURCE_IDS],
+            );
+            console.log(`Unexpected source rows: ${srcExtra.rowCount}`);
+            for (const r of srcExtra.rows) console.log(" ", r);
+            if (srcExtra.rowCount > 0) contamination = true;
+
+            section("venues: presence check against the known real registry");
+            const venRes = await client.query(
+              `SELECT id, name FROM venues WHERE id = ANY($1::text[]) ORDER BY id`,
+              [KNOWN_VENUE_IDS],
+            );
+            console.log(`Found ${venRes.rowCount} / ${KNOWN_VENUE_IDS.length} known venue rows.`);
+            for (const r of venRes.rows) console.log(" ", r);
+
+            const venTotal = await client.query(`SELECT count(*)::int AS total FROM venues`);
+            const venExtra = await client.query(
+              `SELECT id, name FROM venues WHERE NOT (id = ANY($1::text[])) ORDER BY id`,
+              [KNOWN_VENUE_IDS],
+            );
+            console.log(`Total rows in venues table: ${venTotal.rows[0].total} (unexpected: ${venExtra.rowCount})`);
+            for (const r of venExtra.rows) console.log(" ", r);
+            if (venExtra.rowCount > 0) contamination = true;
+
+            section("Recency scan: any row touched in the last 3 days");
+            for (const table of ["venues", "sources", "events", "discovery_queue"]) {
+              const col = table === "discovery_queue" ? "created_at" : "updated_at";
+              const recent = await client.query(
+                `SELECT id, ${col} FROM ${table} WHERE ${col} > now() - interval '3 days' ORDER BY ${col} DESC LIMIT 20`,
+              );
+              console.log(`${table}: ${recent.rowCount} row(s) touched in the last 3 days`);
+              for (const r of recent.rows) console.log(" ", r);
+            }
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only).");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("VERIFICATION SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+
+          console.log(contamination ? "\n::error::CONTAMINATION DETECTED — see rows logged above." : "\nDATABASE CLEAN — no seedDev fixture data or unexpected rows found.");
+          if (contamination) process.exitCode = 1;
+          EOF
+          node ./.verify-readonly.mjs
+          rm -f ./.verify-readonly.mjs
