@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy",
-  description: "Electronic CPH doesn't use cookies, analytics, or tracking of any kind.",
+  description: "Electronic CPH uses privacy-friendly, cookieless analytics and no other tracking.",
   alternates: { canonical: "/privacy" },
 };
 
@@ -16,12 +16,13 @@ export default function PrivacyPage() {
 
       <div className="mt-6 space-y-4 text-sm leading-relaxed text-text-secondary">
         <p>
-          Electronic CPH currently does not use non-essential cookies, analytics, tracking pixels, or any
-          comparable tracking technology. Nothing about your visit is collected, stored, or shared — not
-          with us, not with anyone else.
+          Electronic CPH uses Vercel Web Analytics to see how many people visit and which pages are popular.
+          It&rsquo;s privacy-friendly and cookieless — it doesn&rsquo;t set cookies, doesn&rsquo;t use any
+          persistent identifier, and doesn&rsquo;t track you across sites or build a profile of you. Beyond
+          this, we don&rsquo;t use any other analytics, tracking pixels, or comparable tracking technology.
         </p>
         <p>
-          We may still use technically necessary technologies where required for the site to run or to keep
+          We may also use technically necessary technologies where required for the site to run or to keep
           it secure — for example, if a hosting or security provider needs something in place to serve the
           page reliably or block abuse. These aren&rsquo;t used to track you, build a profile, or serve ads,
           and don&rsquo;t require consent under applicable law.
@@ -34,8 +35,8 @@ export default function PrivacyPage() {
           used for anything beyond replying to you or reviewing the suggestion.
         </p>
         <p>
-          If that ever changes — if we add analytics or any other non-essential tracking — this page gets
-          updated first, and we&rsquo;ll ask for your consent before any non-essential tracking is activated.
+          If that ever changes — if we add any other non-essential tracking that requires consent — this
+          page gets updated first, and we&rsquo;ll ask for your consent before it&rsquo;s activated.
         </p>
       </div>
 
