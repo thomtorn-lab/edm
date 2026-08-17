@@ -18,17 +18,23 @@ export const SOURCES: Source[] = [
     sourceType: "official-venue",
     baseUrl: "https://culture-box.com/",
     roles: ["discovery", "ingestion", "verification", "link"],
-    adapter: "first-party-json",
+    // Real working adapter (src/lib/adapters/cultureBoxAdapter.ts): the
+    // /events/ page's one ld+json block is generic Yoast SEO site metadata
+    // (Organization/WebSite/WebPage), not per-event structured data, so
+    // this is a DOM extraction, never a JSON feed as the label used to
+    // (incorrectly) claim. robots.txt places no restriction on /events/.
+    adapter: "culture-box-html",
     trustLevel: "high",
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
-    lastSuccessfulSync: "2026-08-13T07:00:00+02:00",
-    lastAttemptedSync: "2026-08-13T07:00:00+02:00",
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
     lastError: null,
-    eventsFound: 14,
-    eventsUpdated: 2,
-    integrationNote: "First-party programme page. Structured listing, no auth or anti-bot barrier — safe to poll on a fixed schedule.",
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Real working adapter: fetches the unrestricted /events/ HTML page and parses its per-night/per-room structure. The venue rarely states a genre explicitly in its own show titles, so most nights land in the review queue (medium-confidence deterministic/Discogs lineup evidence) rather than auto-publishing — the quality gate never auto-publishes below high genre confidence, matching Hangaren's behavior. Recurring updates to already-known events apply automatically, respecting manual overrides. Not yet run against production — health fields will populate on the first real sync.",
   },
   {
     id: "src-hangaren",

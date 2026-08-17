@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runSourceSync } from "@/db/sync";
 import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangarenAdapter";
+import { createCultureBoxAdapter, CULTURE_BOX_SOURCE_ID } from "@/lib/adapters/cultureBoxAdapter";
+import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
  * Scheduling entry point (task 5): an external scheduler (cron, GitHub
@@ -8,8 +10,9 @@ import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangar
  * sources with a real, verified adapter are wired here — see
  * src/lib/data/sources.ts's `integrationNote` for why the others aren't.
  */
-const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: () => ReturnType<typeof createHangarenAdapter> }> = {
+const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: () => SourceAdapter }> = {
   hangaren: { sourceId: HANGAREN_SOURCE_ID, displayName: "Hangaren", create: createHangarenAdapter },
+  "culture-box": { sourceId: CULTURE_BOX_SOURCE_ID, displayName: "Culture Box", create: createCultureBoxAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {
