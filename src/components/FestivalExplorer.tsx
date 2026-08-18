@@ -23,12 +23,14 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
     [festivals],
   );
 
-  const filtered = festivals.filter((f) => {
-    if (country !== "all" && f.country !== country) return false;
-    if (month !== "all" && !f.typicalMonth.startsWith(month)) return false;
-    if (genre !== "all" && !f.genres.includes(genre)) return false;
-    return true;
-  });
+  const filtered = festivals
+    .filter((f) => {
+      if (country !== "all" && f.country !== country) return false;
+      if (month !== "all" && !f.typicalMonth.startsWith(month)) return false;
+      if (genre !== "all" && !f.genres.includes(genre)) return false;
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
 
   const hasActiveFilters = country !== "all" || month !== "all" || genre !== "all";
 

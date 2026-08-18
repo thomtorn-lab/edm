@@ -109,7 +109,7 @@ export const FESTIVALS: FestivalRecord[] = [
   mk({
     name: "Sonus Festival",
     country: "Croatia",
-    location: "Adriatic coast, Croatia",
+    location: "Adriatic coast",
     typicalMonth: "August",
     genres: ["techno", "house"],
     description: "Beach-club techno and house festival on Croatia's Adriatic coast, part of the region's beach festival circuit.",
