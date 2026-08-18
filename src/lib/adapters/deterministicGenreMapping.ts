@@ -24,7 +24,18 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bgarage\b/i, "garage"],
   [/\belectro\b/i, "electro"],
   [/\bdisco\b/i, "disco"],
-  [/\bambient\b|\bexperimental\b/i, "ambient-experimental"],
+  // "ambient" is a specific, low-ambiguity music-genre word on its own, so it
+  // still matches bare. "experimental" is not: it's heavily overloaded across
+  // arts, theatre, cuisine and general writing (e.g. a bio describing a
+  // "blend of trap, rock, pop and experimental elements" is a genre-crossing
+  // pop/trap act, not electronic music). Electronic CPH's inclusion rule
+  // requires electronic music to be CENTRAL to an event — a generic word must
+  // never establish that on its own — so "experimental" only counts as
+  // ambient-experimental evidence when it appears near an explicit
+  // electronic-music word in the same text (e.g. "experimental electronic
+  // music", "electronic, ambient and experimental soundscapes").
+  [/\bambient\b/i, "ambient-experimental"],
+  [/\belectronica?\b[\s\S]{0,60}\bexperimental\b|\bexperimental\b[\s\S]{0,60}\belectronica?\b/i, "ambient-experimental"],
 ];
 
 /** Returns the first matching genre from title + description text, or null if nothing matches. */

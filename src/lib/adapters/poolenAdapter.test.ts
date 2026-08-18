@@ -226,6 +226,80 @@ describe("parsePoolenEventDetailHtml — missing/optional fields", () => {
   });
 });
 
+describe("parsePoolenEventDetailHtml — generic 'experimental' wording is not electronic evidence", () => {
+  // Real detail-page structure (from the electronic fixture), with only the
+  // bio paragraph swapped for the actual text captured from Poolen's live
+  // Ca7riel y Paco Amoroso page during Preview validation: a genre-crossing
+  // trap/rock/pop bio that happens to use the word "experimental" with no
+  // mention of electronic music anywhere. This must not resolve to
+  // ambient-experimental — Electronic CPH's inclusion rule requires
+  // electronic music to be CENTRAL to an event, and a generic word can't
+  // establish that on its own.
+  const CA7RIEL_BIO_HTML =
+    "<h3>CA7RIEL &amp; Paco Amoroso — FREE SPIRITS World Tour</h3>\n" +
+    "<p>CA7RIEL &amp; Paco Amoroso follow the release of their new album FREE SPIRITS with the announcement of the " +
+    "FREE SPIRITS World Tour, an extensive tour that will bring the Argentine duo to Poolen. On FREE SPIRITS, " +
+    "CA7RIEL &amp; Paco Amoroso expand their already unpredictable blend of trap, rock, pop and experimental " +
+    "elements into something bigger, sharper and more emotionally open without losing the humour, volatility " +
+    "and musicianship that have made them one of Latin America's most talked-about acts.</p>\n";
+  const genericExperimentalHtml = ELECTRONIC_HTML.replace(
+    /<h3>For første gang[\s\S]*?feststemning\.<\/p>\n/,
+    CA7RIEL_BIO_HTML,
+  );
+
+  it("replacement actually took effect (no longer contains the original Danish bio sentence)", () => {
+    expect(genericExperimentalHtml).not.toContain("indflydelsesrige skikkelser inden for elektronisk musik");
+    expect(genericExperimentalHtml).toContain("experimental elements");
+  });
+
+  it("resolves no genre hint — 'experimental' alone, with no electronic-music context, is not credible electronic evidence", () => {
+    const entry: PoolenProgramEntry = {
+      title: "Ca7riel y Paco Amoroso",
+      detailUrl: "https://poolen.dk/da/koncerter/ca7riel-paco-amoroso/",
+      ticketUrl: null,
+      imageUrl: null,
+      dateText: null,
+    };
+    const event = parsePoolenEventDetailHtml(genericExperimentalHtml, entry);
+    expect(event.genreHint).toBeNull();
+    expect(event.genreConfidenceHint).toBeNull();
+  });
+
+  it("still resolves ambient-experimental when the bio explicitly ties 'experimental' to electronic music", () => {
+    const explicitElectronicHtml = ELECTRONIC_HTML.replace(
+      /<h3>For første gang[\s\S]*?feststemning\.<\/p>\n/,
+      "<h3>An evening of experimental electronic music</h3>\n<p>Deep, forward-leaning experimental electronic soundscapes.</p>\n",
+    );
+    const entry: PoolenProgramEntry = {
+      title: "Test Artist",
+      detailUrl: "https://poolen.dk/da/koncerter/test-artist/",
+      ticketUrl: null,
+      imageUrl: null,
+      dateText: null,
+    };
+    const event = parsePoolenEventDetailHtml(explicitElectronicHtml, entry);
+    expect(event.genreHint).toBe("ambient-experimental");
+    expect(event.genreConfidenceHint).toBe("high");
+  });
+
+  it("still resolves ambient-experimental from a bare, unambiguous 'ambient' mention", () => {
+    const ambientHtml = ELECTRONIC_HTML.replace(
+      /<h3>For første gang[\s\S]*?feststemning\.<\/p>\n/,
+      "<h3>A night of ambient textures</h3>\n<p>Slow-building ambient sets to close out the night.</p>\n",
+    );
+    const entry: PoolenProgramEntry = {
+      title: "Test Artist",
+      detailUrl: "https://poolen.dk/da/koncerter/test-artist-2/",
+      ticketUrl: null,
+      imageUrl: null,
+      dateText: null,
+    };
+    const event = parsePoolenEventDetailHtml(ambientHtml, entry);
+    expect(event.genreHint).toBe("ambient-experimental");
+    expect(event.genreConfidenceHint).toBe("high");
+  });
+});
+
 describe("parsePoolenEventDetailHtml — determinism (idempotency at the adapter level)", () => {
   it("parsing the same real page twice yields byte-identical results", () => {
     const entry: PoolenProgramEntry = {
