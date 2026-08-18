@@ -101,6 +101,99 @@ export const SOURCES: Source[] = [
     integrationNote: "First-party events page. Currently degraded: treat as a possible markup change, never as a sign the venue is inactive.",
   },
 
+  // ---- Candidate first-party venues evaluated 2026-08-18 (sourcing workstream, research-only pass) ----
+  // Electronic music is not limited to a curated venue whitelist (spec:
+  // relevant electronic events may occur at any Copenhagen venue) — these
+  // four surfaced as the strongest additional first-party candidates after
+  // Billetto. None has a written/verified adapter yet: this session's
+  // network egress does not reach any of these domains (confirmed via
+  // direct connectivity check, not assumed), so robots.txt permission,
+  // rendering technology and page structure are all unconfirmed pattern
+  // inference from search results only — never treat these as "working"
+  // sources. Deliberately NOT added: Jolene (electronic-central, but no
+  // first-party website exists at all — Instagram/Facebook only), KB18
+  // (appears defunct, domain now redirects to unrelated content), Mayhem
+  // (real venue, but noise/jazz/performance-art focused, not electronic),
+  // Den Anden Side (already tracked as src-das — its current booking runs
+  // through the Shotgun.live ticketing platform's JS widget/organizer-gated
+  // API, reinforcing its existing "not currently viable" note).
+  {
+    id: "src-klub-werkstatt",
+    sourceName: "Klub Werkstatt",
+    sourceType: "official-venue",
+    baseUrl: "https://klubwerkstatt.dk/",
+    roles: ["discovery"],
+    adapter: null,
+    trustLevel: "medium",
+    autoPublish: false,
+    syncFrequency: "manual coverage check",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Strongest new candidate found: Refshaleøen club with electronic (techno/progressive house/experimental) as its core identity, running frequently. Its /event/<slug>/ URL pattern matches WordPress's \"The Events Calendar\" plugin, which typically ships a public JSON REST endpoint (wp-json/tribe/events/v1/events) and per-event ICS export — potentially a better integration than HTML scraping, like Hangaren's calendar export. Unconfirmed: this is a URL-pattern inference, not a verified fetch. Before writing an adapter: directly check klubwerkstatt.dk/robots.txt and whether wp-json/tribe/events/v1/events actually responds.",
+  },
+  {
+    id: "src-poolen",
+    sourceName: "Poolen",
+    sourceType: "official-venue",
+    baseUrl: "https://poolen.dk/",
+    roles: ["discovery"],
+    adapter: null,
+    trustLevel: "medium",
+    autoPublish: false,
+    syncFrequency: "manual coverage check",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Refshaleøen warehouse/rave venue (run by the Pumpehuset/Byhaven team) with a genuinely electronic-leaning program (Intercell techno nights, Technotoget, Elektronisk Halloween). Individual event pages exist at poolen.dk/en/koncerter/<slug>/, likely sharing Pumpehuset's underlying platform (rendering technology unconfirmed from this session — network egress does not reach the domain). Some events are also Billetto-ticketed (see src-billetto's overlap note). Confirm robots.txt and page structure directly before building an adapter.",
+  },
+  {
+    id: "src-pumpehuset",
+    sourceName: "Pumpehuset",
+    sourceType: "official-venue",
+    baseUrl: "https://pumpehuset.dk/",
+    roles: ["discovery"],
+    adapter: null,
+    trustLevel: "medium",
+    autoPublish: false,
+    syncFrequency: "manual coverage check",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Multi-genre venue (~300+ events/year) with a genre-filterable programme page (pumpehuset.dk/en/program/, filterable to \"Electronic\") — electronic is a real but minority strand of its booking, not its core identity, so coverage gain per unit of scraping/maintenance effort is lower than Poolen or Klub Werkstatt. Ticketing is split across Billetto/Ticketmaster/Livenation but the venue's own site appears to carry real per-event pages. Rendering technology and robots.txt unconfirmed from this session.",
+  },
+  {
+    id: "src-bolsjefabrikken",
+    sourceName: "Bolsjefabrikken",
+    sourceType: "official-venue",
+    baseUrl: "https://bolsjefabrikken.com/",
+    roles: ["discovery"],
+    adapter: null,
+    trustLevel: "medium",
+    autoPublish: false,
+    syncFrequency: "manual coverage check",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Volunteer-run culture house on WordPress (bolsjefabrikken.com/wp/ — note bolsjefabrikken.dk is an unrelated housing association, not this venue) with a dedicated events page. Programme mixes electronic/underground club nights with board-game nights, workshops and film screenings, so electronic is present but not the venue's core identity; the events page may be a manually-formatted list rather than a queryable post type, lower confidence in clean parseability than Culture Box's WordPress setup. Lowest priority of the four candidates; confirm structure directly before building.",
+  },
+
   // ---- Resident Advisor: primary discovery + secondary verification benchmark, no automated ingestion ----
   {
     id: "src-ra-copenhagen",
@@ -212,7 +305,30 @@ export const SOURCES: Source[] = [
     lastError: null,
     eventsFound: 0,
     eventsUpdated: 0,
-    integrationNote: "Official API / structured catalogue access not yet confirmed. Treat ticket pages as strong verification for date, venue, ticket URL and sales status once an integration method is confirmed; do not scrape in the meantime.",
+    // Evaluated 2026-08-18 (research-only pass, no adapter written): Billetto
+    // does have a real, documented public API (api.billetto.com/reference —
+    // "search publicly available events", with a Denmark-specific endpoint
+    // per its third-party Publisher Guide). It is NOT anonymous, though —
+    // every endpoint requires an API key pair or OAuth credential, and
+    // nothing available to this project confirms that credential is truly
+    // instant/self-serve rather than gated behind a publisher relationship.
+    // No such credential exists in this project yet, so this is a hold on
+    // "credentials required that are not already available", not a rejection
+    // of Billetto as a concept. Actual Copenhagen electronic-music coverage
+    // is real but thin (Poolen/Teletech, Baile Techno, occasional Hangaren
+    // and Culture Box listings) and overlaps venues already covered by
+    // src-hangaren/src-culture-box — any future integration needs venue+
+    // date+title dedup regardless. A public listing/category page also
+    // exists (billetto.dk/en/c/koebenhavn-l/music-c/<genre>-sc) that in
+    // principle wouldn't need a credential, but its robots.txt permission
+    // and page structure (server-rendered HTML vs JS, JSON-LD presence) are
+    // unconfirmed. Next step if revisited: either obtain an API credential
+    // (ask the user first — this is a real external account/credential, not
+    // something to self-provision) or directly verify the public listing
+    // page's robots.txt and structure from a network-unrestricted
+    // environment before writing any adapter.
+    integrationNote:
+      "Official public API exists (api.billetto.com) but requires an API key/OAuth credential not currently available to this project — treated as a hold, not a rejection. Thin/inconsistent Copenhagen electronic coverage even if access were granted; confirmed overlap risk with Hangaren and Culture Box. An unauthenticated public listing/category page also exists but its scraping permission (robots.txt) and structure are unverified. Do not scrape in the meantime.",
   },
 
   // ---- Eventbrite: supplemental discovery only ----
