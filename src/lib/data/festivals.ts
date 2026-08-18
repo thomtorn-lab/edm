@@ -36,15 +36,20 @@ function mk(input: SeedFestivalInput): FestivalRecord {
 }
 
 /**
- * Curated guide to the festivals most relevant to a Copenhagen electronic
- * audience (spec section 48). Manually maintained by design — only
- * dates/link-health are candidates for light automation later.
+ * Curated, evergreen guide to the festivals most relevant to a Copenhagen
+ * electronic audience (spec section 48). Manually maintained by design —
+ * only link-health is a candidate for light automation later.
  *
- * `currentDates` carries edition-specific facts (a confirmed date range, or a
- * status note like a cancellation/hiatus) that must never be treated as
- * permanent; `location`/`typicalMonth`/`genres`/`description` describe the
- * festival's stable profile. Where an edition's status is genuinely
- * unconfirmed, say so in the text rather than asserting a specific date.
+ * This is a general-information guide, not an edition calendar: no field
+ * here should ever carry a year, exact edition dates, or edition-status
+ * wording (cancelled/hiatus/returns-in/next-edition). `typicalMonth` is the
+ * only timing signal shown. `currentDates` remains on the type for
+ * compatibility but must stay unset — it must never be used to leak
+ * year-specific facts into the public site. Inclusion itself is decided by
+ * an internal-only eligibility check (held/holding an edition in 2026, or an
+ * officially announced 2027 edition) — that check is not represented in this
+ * file or shown publicly; a festival that fails it is simply absent from
+ * this list.
  */
 export const FESTIVALS: FestivalRecord[] = [
   mk({
@@ -61,7 +66,6 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Netherlands",
     location: "Beekse Bergen, Hilvarenbeek",
     typicalMonth: "July",
-    currentDates: "10–12 Jul 2026",
     genres: ["techno"],
     description: "The Netherlands' flagship techno festival, drawing tens of thousands over a single weekend.",
     officialUrl: "https://www.awakenings.com/",
@@ -71,7 +75,6 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Netherlands",
     location: "Amsterdamse Bos, Amsterdam",
     typicalMonth: "July / August",
-    currentDates: "29 Jul – 2 Aug 2026",
     genres: ["techno", "house", "electronic-other"],
     description: "Amsterdam forest festival built around the Dekmantel label's deep, selector-driven booking.",
     officialUrl: "https://dekmantelfestival.com/",
@@ -89,7 +92,7 @@ export const FESTIVALS: FestivalRecord[] = [
     name: "Time Warp",
     country: "Germany",
     location: "Mannheim",
-    typicalMonth: "April",
+    typicalMonth: "March",
     genres: ["techno"],
     description: "Long-running indoor techno marathon in Mannheim's Maimarkthalle, now with satellite editions worldwide.",
     officialUrl: "https://www.timewarp.de/",
@@ -106,11 +109,10 @@ export const FESTIVALS: FestivalRecord[] = [
   mk({
     name: "Sonus Festival",
     country: "Croatia",
-    location: "Zrće Beach, Novalja",
+    location: "Adriatic coast, Croatia",
     typicalMonth: "August",
-    currentDates: "2026 edition cancelled — a return is planned for 2027, possibly at a new Croatian venue (unconfirmed)",
     genres: ["techno", "house"],
-    description: "Beach-club techno and house festival historically staged at Zrće Beach on Pag Island, part of Croatia's Adriatic festival circuit. The 2026 edition was cancelled after the loss of a venue partner; organisers plan to return in 2027.",
+    description: "Beach-club techno and house festival on Croatia's Adriatic coast, part of the region's beach festival circuit.",
     officialUrl: "https://www.sonus-festival.com/",
   }),
   mk({
@@ -118,9 +120,8 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Netherlands",
     location: "Haarlemmermeer",
     typicalMonth: "August",
-    currentDates: "No 2026 edition — organisers paused for a year and plan to return in 2027",
     genres: ["house", "trance", "electronic-other"],
-    description: "One of the world's oldest running dance festivals, spanning a wide range of electronic styles. It is on a one-year pause for 2026, with a return planned for 2027.",
+    description: "One of the world's oldest running dance festivals, spanning a wide range of electronic styles.",
     officialUrl: "https://www.mysteryland.com/en",
   }),
   mk({
@@ -138,9 +139,8 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "United Kingdom",
     location: "Daresbury, Cheshire",
     typicalMonth: "August",
-    currentDates: "27–30 Aug 2026",
     genres: ["house", "techno", "trance", "drum-and-bass", "hardstyle"],
-    description: "Multi-day mainstage festival at Daresbury Estate in Cheshire, running since 1998 across stages covering house, techno, trance, drum & bass and hard dance.",
+    description: "Long-running multi-day mainstage festival at Daresbury Estate in Cheshire, spanning house, techno, trance, drum & bass and hard dance.",
     officialUrl: "https://www.creamfields.com/",
   }),
   mk({
@@ -149,7 +149,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Park Mladeži, Split",
     typicalMonth: "July",
     genres: ["electronic-other", "house", "techno", "trance"],
-    description: "Outdoor mainstage festival in Split, Croatia, and the European counterpart to Miami's Ultra Music Festival, running annually since 2013.",
+    description: "Outdoor mainstage festival in Split, Croatia, and the European counterpart to Miami's Ultra Music Festival.",
     officialUrl: "https://ultraeurope.com/",
   }),
   mk({
@@ -166,7 +166,6 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "France",
     location: "Alpe d'Huez",
     typicalMonth: "March",
-    currentDates: "20–27 Mar 2027",
     genres: ["house", "techno", "trance", "electronic-other"],
     description: "The ski-resort edition of the Tomorrowland festival brand, held each March at the French alpine resort of Alpe d'Huez, with stages spread across the slopes and village.",
     officialUrl: "https://winter.tomorrowland.com/",
@@ -184,10 +183,9 @@ export const FESTIVALS: FestivalRecord[] = [
     name: "Boom Festival",
     country: "Portugal",
     location: "Idanha-a-Nova",
-    typicalMonth: "July (biennial)",
-    currentDates: "18–25 Jul 2027 — no 2026 edition",
+    typicalMonth: "July",
     genres: ["psytrance", "electronic-other"],
-    description: "Biennial psytrance and world-culture gathering on the shores of the Idanha-a-Nova reservoir. The next edition runs 18–25 July 2027; there is no 2026 edition.",
+    description: "Biennial psytrance and world-culture gathering on the shores of the Idanha-a-Nova reservoir.",
     officialUrl: "https://boomfestival.org/",
   }),
   // Multi-genre festival with a strong electronic programme, not a dedicated electronic
@@ -224,7 +222,6 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Netherlands",
     location: "Sloterpark, Amsterdam",
     typicalMonth: "August",
-    currentDates: "8–9 Aug 2026",
     genres: ["house", "techno"],
     description: "House and techno festival known for its immersive, theatrical stage design.",
     officialUrl: "https://www.lovelandfestival.nl/en",
@@ -245,7 +242,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Biddinghuizen",
     typicalMonth: "June",
     genres: ["hardstyle", "rawstyle", "hardcore"],
-    description: "Annual hard dance festival in Biddinghuizen, Netherlands, organised by Q-dance since 2003 and centred on hardstyle with dedicated rawstyle and hardcore stages.",
+    description: "Hard dance festival in Biddinghuizen, Netherlands, organised by Q-dance and centred on hardstyle with dedicated rawstyle and hardcore stages.",
     officialUrl: "https://www.defqon1.com/",
   }),
   mk({
@@ -254,7 +251,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Salzburgring, Plainfeld",
     typicalMonth: "July",
     genres: ["electronic-other", "techno", "dubstep", "hardstyle"],
-    description: "Annual electronic dance music festival at the Salzburgring race circuit in Austria, spanning EDM, techno, bass music and hard dance since 2013.",
+    description: "Electronic dance music festival at the Salzburgring race circuit in Austria, spanning EDM, techno, bass music and hard dance.",
     officialUrl: "https://www.electriclove.at/en/",
   }),
   mk({
@@ -263,16 +260,24 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Westfalenhallen, Dortmund",
     typicalMonth: "April",
     genres: ["techno", "trance", "hardstyle", "house"],
-    description: "Single-night indoor rave at Dortmund's Westfalenhallen, running since 1991 and spanning techno, trance and hardstyle across multiple stages.",
+    description: "Single-night indoor rave at Dortmund's Westfalenhallen, spanning techno, trance and hardstyle across multiple stages.",
     officialUrl: "https://www.mayday.de/en",
+  }),
+  mk({
+    name: "Masters of Hardcore",
+    country: "Netherlands",
+    location: "'s-Hertogenbosch",
+    typicalMonth: "March",
+    genres: ["hardcore"],
+    description: "Indoor hardcore event at the Brabanthallen arena in 's-Hertogenbosch, Netherlands, featuring hardcore, gabber and uptempo artists.",
+    officialUrl: "https://www.mastersofhardcore.com/",
   }),
   mk({
     name: "Nachti Festival (by Nachtdigital)",
     slug: "nachtdigital",
     country: "Germany",
     location: "Olganitz",
-    typicalMonth: "July / August (biennial)",
-    currentDates: "30 Jul – 1 Aug 2027 — no Olganitz edition in 2026",
+    typicalMonth: "July / August",
     genres: ["minimal-techno", "deep-house", "techno"],
     description: "Intimate festival at a bungalow village near Olganitz, focused on minimal, deep and understated club sounds. Now runs on a biennial cycle under the Nachti name, from the long-running Nachtdigital label and event series.",
     officialUrl: "https://nachtdigital.de/en",
@@ -319,7 +324,6 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Portugal",
     location: "Crato",
     typicalMonth: "June",
-    currentDates: "16–22 Jun 2026",
     genres: ["techno", "ambient-experimental", "electronic-other"],
     description: "Countryside festival in the Alentejo region blending techno, ambient and experimental electronic music and live acts.",
     officialUrl: "https://wakinglife.pt/",
@@ -340,7 +344,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Dádpuszta",
     typicalMonth: "July / August",
     genres: ["psytrance", "ambient-experimental", "electronic-other"],
-    description: "Psychedelic arts and music festival held near Dádpuszta, Hungary, since 2004, centred on psytrance with additional ambient and experimental programming.",
+    description: "Psychedelic arts and music festival held near Dádpuszta, Hungary, centred on psytrance with additional ambient and experimental programming.",
     officialUrl: "https://ozorafestival.eu/",
   }),
   // Techno / house / underground
@@ -359,7 +363,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Lyon",
     typicalMonth: "May",
     genres: ["electronic-other", "techno", "house", "ambient-experimental"],
-    description: "Annual electronic music festival held across venues and public spaces in Lyon, France, since 2003, spanning techno, house and experimental electronic music.",
+    description: "Electronic music festival held across venues and public spaces in Lyon, France, spanning techno, house and experimental electronic music.",
     officialUrl: "https://nuits-sonores.com/en/",
   }),
   mk({
@@ -386,7 +390,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "The Garden Resort, Tisno",
     typicalMonth: "July",
     genres: ["house", "disco", "techno"],
-    description: "Week-long multi-venue festival at The Garden Resort in Tisno, Croatia, founded in 2014, spanning house, disco and Balearic-leaning programming.",
+    description: "Week-long multi-venue festival at The Garden Resort in Tisno, Croatia, spanning house, disco and Balearic-leaning programming.",
     officialUrl: "https://www.loveinternationalfestival.com/",
   }),
   mk({
@@ -395,7 +399,7 @@ export const FESTIVALS: FestivalRecord[] = [
     location: "Zrće Beach, Novalja",
     typicalMonth: "June / July",
     genres: ["house", "techno", "drum-and-bass"],
-    description: "Annual beach-club festival on Zrće Beach, running since 2011, spanning house, tech house, techno and drum & bass across the strip's clubs plus a boat-party programme.",
+    description: "Beach-club festival on Zrće Beach, spanning house, tech house, techno and drum & bass across the strip's clubs plus a boat-party programme.",
     officialUrl: "http://www.hideoutfestival.com/",
   }),
   mk({
@@ -403,9 +407,8 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Portugal",
     location: "Forte de Santiago da Barra, Viana do Castelo",
     typicalMonth: "August",
-    currentDates: "6–8 Aug 2026, billed as \"ANTIPOP\" for its 20th-anniversary edition",
     genres: ["techno", "tech-house"],
-    description: "Long-running Portuguese techno festival at a 16th-century coastal fortress, founded in 2006. Its 20th-anniversary 2026 edition uses the one-off name ANTIPOP.",
+    description: "Portuguese techno festival at a 16th-century coastal fortress.",
     officialUrl: "https://antipopmusicfestival.com/",
   }),
   mk({
@@ -420,11 +423,10 @@ export const FESTIVALS: FestivalRecord[] = [
   mk({
     name: "Sea Dance Festival",
     country: "Montenegro",
-    location: "Bečići, Budva",
+    location: "Budva",
     typicalMonth: "August",
-    currentDates: "28–31 Aug 2026",
     genres: ["house", "techno"],
-    description: "Adriatic beach festival pairing house and techno line-ups with a wider alternative music bill. Returned in 2026 after a break, now staged on Bečići Beach near Budva.",
+    description: "Adriatic beach festival near Budva, pairing house and techno line-ups with a wider alternative music bill.",
     officialUrl: "https://seadancefestival.me/",
   }),
   // Copenhagen / Denmark
@@ -442,7 +444,6 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Denmark",
     location: "Refshaleøen, Copenhagen",
     typicalMonth: "August",
-    currentDates: "27–29 Aug 2026",
     genres: ["house", "techno", "disco", "electronic-other"],
     description: "Festival on Refshaleøen, a former shipyard area in Copenhagen, spanning house, disco and techno across multiple outdoor stages.",
     officialUrl: "https://www.karrusel.dk/",
