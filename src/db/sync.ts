@@ -259,7 +259,14 @@ async function runSourceSyncLocked(
       });
       queuedForReview++;
     } catch (err) {
-      errors.push(`${raw.title || "(untitled)"}: ${err instanceof Error ? err.message : String(err)}`);
+      // Drizzle wraps the real driver/Postgres error in `.cause` and puts
+      // only a generic "Failed query: ...\nparams: ..." in `.message` —
+      // without surfacing `.cause` too, every DB-level failure here looks
+      // identical regardless of actual reason (constraint violation, bad
+      // value, connection issue, etc.), which makes this list undiagnosable
+      // from the sync summary alone.
+      const cause = err instanceof Error && err.cause instanceof Error ? ` (cause: ${err.cause.message})` : "";
+      errors.push(`${raw.title || "(untitled)"}: ${err instanceof Error ? err.message : String(err)}${cause}`);
     }
   }
 
