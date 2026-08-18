@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EventWithVenue } from "@/lib/queries";
 import {
   groupByMonth,
@@ -41,6 +41,22 @@ const pillClasses = (active: boolean) =>
 const selectClasses =
   "rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:text-text-primary";
 
+function FilterIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      className="h-3.5 w-3.5 shrink-0"
+      aria-hidden="true"
+    >
+      <path d="M2 4h12M4.5 8h7M7 12h2" />
+    </svg>
+  );
+}
+
 export default function EventExplorer({ events }: { events: EventWithVenue[] }) {
   const [now, setNow] = useState<Date | null>(null);
   const [mode, setMode] = useState<Mode>("all");
@@ -48,6 +64,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   const [venueId, setVenueId] = useState<string | "all">("all");
   const [query, setQuery] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
 
   // "now" is deliberately read post-mount from the visitor's own clock rather
   // than at render time, so a statically prerendered page never bakes in a
@@ -92,6 +109,112 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   }, [upcoming, now, mode, genre, venueId, query]);
 
   const groups = useMemo(() => groupByMonth(filtered), [filtered]);
+
+  // Track which month is currently in view so mobile month nav can highlight it.
+  useEffect(() => {
+    if (groups.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveMonthKey(null);
+      return;
+    }
+    if (!activeMonthKey || !groups.some((g) => g.monthKey === activeMonthKey)) {
+      setActiveMonthKey(groups[0].monthKey);
+    }
+  }, [groups, activeMonthKey]);
+
+  // Tapping a month nav item must win immediately (see handleMonthNavClick)
+  // and stay pinned while the resulting scroll settles — otherwise the
+  // IntersectionObserver below, reacting to whatever happens to be in the
+  // narrow post-header band mid-scroll, can re-assert the PREVIOUS month for
+  // a frame or two. isProgrammaticScrollRef is that pin; scheduleScrollSettle
+  // releases it once scroll position has stopped moving (or, if the target
+  // was already fully in view and no scroll event ever fires, after a fixed
+  // fallback delay armed directly in the click handler).
+  const isProgrammaticScrollRef = useRef(false);
+  const settleTimerRef = useRef<number | null>(null);
+
+  function scheduleScrollSettle() {
+    if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = window.setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+      settleTimerRef.current = null;
+    }, 150);
+  }
+
+  function handleMonthNavClick(monthKey: string) {
+    const el = document.getElementById(`month-${monthKey}`);
+    if (!el) return;
+    isProgrammaticScrollRef.current = true;
+    setActiveMonthKey(monthKey);
+    el.scrollIntoView({ block: "start" }); // no `behavior` -> instant, matching the native anchor jump this replaces
+    if (window.location.hash !== `#month-${monthKey}`) {
+      history.replaceState(null, "", `#month-${monthKey}`);
+    }
+    scheduleScrollSettle();
+  }
+
+  useEffect(() => {
+    if (groups.length < 2) return;
+    const sections = groups
+      .map((g) => document.getElementById(`month-${g.monthKey}`))
+      .filter((el): el is HTMLElement => el !== null);
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // A tap-driven scroll is still settling — its own handler already set
+        // the active month and owns it until scroll position stops moving.
+        if (isProgrammaticScrollRef.current) return;
+        const visible = entries.filter((entry) => entry.isIntersecting);
+        if (visible.length === 0) return;
+        const topMost = visible.reduce((a, b) =>
+          a.boundingClientRect.top < b.boundingClientRect.top ? a : b
+        );
+        setActiveMonthKey(topMost.target.id.replace("month-", ""));
+      },
+      { rootMargin: "-160px 0px -70% 0px", threshold: 0 }
+    );
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [groups]);
+
+  // The intersection band above only covers a strip near the top of the
+  // viewport. When the LAST month's section is short enough (or close enough
+  // to the end of the page) that the page can't scroll any further once that
+  // section reaches the top of the band, the section can end up sitting
+  // lower in the viewport than the band ever reaches — so it never registers
+  // as "intersecting" and the previous month is left active indefinitely.
+  // This isn't month-specific: it happens for whichever month is currently
+  // last AND short/near the page end (right now that's frequently September,
+  // but the fix must not assume that). The generic, robust signal is scroll
+  // position itself: once the viewport has reached the bottom of the page,
+  // the last group is unambiguously the one in view, independent of the
+  // observer's band geometry — this also doubles as this effect's scroll-end
+  // detector for releasing the programmatic-scroll pin above.
+  useEffect(() => {
+    if (groups.length < 2) return;
+    function handleScroll() {
+      const doc = document.documentElement;
+      const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 4;
+      if (atBottom) {
+        const lastKey = groups[groups.length - 1].monthKey;
+        setActiveMonthKey((current) => (current === lastKey ? current : lastKey));
+      }
+      if (isProgrammaticScrollRef.current) scheduleScrollSettle();
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
+      // Safety net: if `groups` changes mid-scroll (e.g. a filter edit) this
+      // effect tears down and its settle timer is cleared without ever
+      // firing — never leave the pin stuck on, or manual scrolling would
+      // stop updating the active month (requirement 4).
+      isProgrammaticScrollRef.current = false;
+    };
+  }, [groups]);
+
   const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
   const activeDrawerFilterCount = (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0);
 
@@ -135,17 +258,28 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   return (
     <div>
       <div className="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur supports-[backdrop-filter]:bg-bg/80">
-        <div className="mx-auto max-w-6xl px-4 py-3 sm:px-6">
-          {/* ---- Mobile (< sm): full-width search, scrollable quick filters, one Filters button ---- */}
-          <div className="flex flex-col gap-2.5 sm:hidden">
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search events, artists or venues"
-              aria-label="Search events, artists or venues"
-              className="w-full rounded-full border border-border-strong bg-surface-1 px-4 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent"
-            />
+        <div className="mx-auto max-w-6xl px-4 py-2.5 sm:px-6 sm:py-3">
+          {/* ---- Mobile (< sm): search + Filters on one row, scrollable quick filters below ---- */}
+          <div className="flex flex-col gap-2 sm:hidden">
+            <div className="flex items-center gap-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search events"
+                aria-label="Search events, artists or venues"
+                className="min-w-0 flex-1 rounded-full border border-border-strong bg-surface-1 px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(true)}
+                aria-haspopup="dialog"
+                className="inline-flex min-h-[2.25rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border-strong px-3.5 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary"
+              >
+                <FilterIcon />
+                {activeDrawerFilterCount > 0 ? `Filters · ${activeDrawerFilterCount}` : "Filters"}
+              </button>
+            </div>
 
             <div
               className="flex gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -165,32 +299,15 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
               ))}
             </div>
 
-            <div className="flex items-center gap-3">
+            {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => setMobileFiltersOpen(true)}
-                className="inline-flex min-h-[2.25rem] items-center gap-1.5 rounded-full border border-border-strong px-3.5 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary"
+                onClick={clearFilters}
+                className="self-start text-xs font-medium text-accent hover:text-accent-strong"
               >
-                Filters
-                {activeDrawerFilterCount > 0 && (
-                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-on">
-                    {activeDrawerFilterCount}
-                  </span>
-                )}
+                Clear filters
               </button>
-
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="text-xs font-medium text-accent hover:text-accent-strong"
-                >
-                  Clear filters
-                </button>
-              )}
-
-              <span className="ml-auto text-[11px] text-text-tertiary">{countLabel}</span>
-            </div>
+            )}
           </div>
 
           {/* ---- Desktop (>= sm): one coherent tool row ---- */}
@@ -246,19 +363,34 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
             className="border-t border-border/60"
           >
             <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 py-1.5 whitespace-nowrap sm:px-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {groups.map((g) => (
-                <a
-                  key={g.monthKey}
-                  href={`#month-${g.monthKey}`}
-                  className="shrink-0 rounded px-2 py-1 text-xs font-medium text-text-tertiary hover:text-text-primary"
-                >
-                  {formatMonthAbbrTitleCase(g.month)}
-                </a>
-              ))}
+              {groups.map((g) => {
+                const isActive = g.monthKey === activeMonthKey;
+                return (
+                  <a
+                    key={g.monthKey}
+                    href={`#month-${g.monthKey}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleMonthNavClick(g.monthKey);
+                    }}
+                    className={
+                      "shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors " +
+                      (isActive
+                        ? "text-accent underline decoration-accent underline-offset-4 sm:text-text-tertiary sm:no-underline sm:hover:text-text-primary"
+                        : "text-text-tertiary hover:text-text-primary")
+                    }
+                  >
+                    {formatMonthAbbrTitleCase(g.month)}
+                  </a>
+                );
+              })}
             </div>
           </nav>
         )}
       </div>
+
+      {/* Mobile-only result count, moved out of the top control row. */}
+      <p className="px-4 pt-2 text-[11px] text-text-tertiary sm:hidden">{countLabel}</p>
 
       {/* ---- Mobile filters sheet: Genre + Venue ---- */}
       {mobileFiltersOpen && (
@@ -272,9 +404,9 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
             role="dialog"
             aria-modal="true"
             aria-label="Filters"
-            className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-1 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
+            className="absolute inset-x-0 bottom-0 flex max-h-[80vh] flex-col rounded-t-2xl border-t border-border bg-surface-1 shadow-2xl"
           >
-            <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center justify-between p-4 pb-3">
               <h2 className="text-sm font-semibold text-text-primary">Filters</h2>
               <button
                 type="button"
@@ -286,43 +418,45 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
               </button>
             </div>
 
-            <div className="flex flex-col gap-4">
-              <div>
-                <label htmlFor="genre-filter-mobile" className="mb-1.5 block text-xs font-semibold text-text-secondary">
-                  Genre
-                </label>
-                <select
-                  id="genre-filter-mobile"
-                  value={genre}
-                  onChange={(e) => setGenre(e.target.value as MainGenreSlug | "all")}
-                  className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
-                >
-                  <option value="all">All genres</option>
-                  {MAIN_GENRES.map((g) => (
-                    <option key={g.slug} value={g.slug}>{g.label}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label htmlFor="genre-filter-mobile" className="mb-1.5 block text-xs font-semibold text-text-secondary">
+                    Genre
+                  </label>
+                  <select
+                    id="genre-filter-mobile"
+                    value={genre}
+                    onChange={(e) => setGenre(e.target.value as MainGenreSlug | "all")}
+                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
+                  >
+                    <option value="all">All genres</option>
+                    {MAIN_GENRES.map((g) => (
+                      <option key={g.slug} value={g.slug}>{g.label}</option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label htmlFor="venue-filter-mobile" className="mb-1.5 block text-xs font-semibold text-text-secondary">
-                  Venue
-                </label>
-                <select
-                  id="venue-filter-mobile"
-                  value={venueId}
-                  onChange={(e) => setVenueId(e.target.value)}
-                  className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
-                >
-                  <option value="all">All venues</option>
-                  {venueOptions.map(([id, name]) => (
-                    <option key={id} value={id}>{name}</option>
-                  ))}
-                </select>
+                <div>
+                  <label htmlFor="venue-filter-mobile" className="mb-1.5 block text-xs font-semibold text-text-secondary">
+                    Venue
+                  </label>
+                  <select
+                    id="venue-filter-mobile"
+                    value={venueId}
+                    onChange={(e) => setVenueId(e.target.value)}
+                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
+                  >
+                    <option value="all">All venues</option>
+                    {venueOptions.map(([id, name]) => (
+                      <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
-            <div className="mt-5 flex gap-2">
+            <div className="sticky bottom-0 flex gap-2 border-t border-border bg-surface-1 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
               {activeDrawerFilterCount > 0 && (
                 <button
                   type="button"
@@ -332,7 +466,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                   }}
                   className="min-h-[2.75rem] flex-1 rounded border border-border-strong text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
                 >
-                  Clear
+                  Clear all
                 </button>
               )}
               <button
