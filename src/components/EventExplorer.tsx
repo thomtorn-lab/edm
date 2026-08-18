@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EventWithVenue } from "@/lib/queries";
 import {
   groupByMonth,
@@ -122,6 +122,37 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
     }
   }, [groups, activeMonthKey]);
 
+  // Tapping a month nav item must win immediately (see handleMonthNavClick)
+  // and stay pinned while the resulting scroll settles — otherwise the
+  // IntersectionObserver below, reacting to whatever happens to be in the
+  // narrow post-header band mid-scroll, can re-assert the PREVIOUS month for
+  // a frame or two. isProgrammaticScrollRef is that pin; scheduleScrollSettle
+  // releases it once scroll position has stopped moving (or, if the target
+  // was already fully in view and no scroll event ever fires, after a fixed
+  // fallback delay armed directly in the click handler).
+  const isProgrammaticScrollRef = useRef(false);
+  const settleTimerRef = useRef<number | null>(null);
+
+  function scheduleScrollSettle() {
+    if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = window.setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+      settleTimerRef.current = null;
+    }, 150);
+  }
+
+  function handleMonthNavClick(monthKey: string) {
+    const el = document.getElementById(`month-${monthKey}`);
+    if (!el) return;
+    isProgrammaticScrollRef.current = true;
+    setActiveMonthKey(monthKey);
+    el.scrollIntoView({ block: "start" }); // no `behavior` -> instant, matching the native anchor jump this replaces
+    if (window.location.hash !== `#month-${monthKey}`) {
+      history.replaceState(null, "", `#month-${monthKey}`);
+    }
+    scheduleScrollSettle();
+  }
+
   useEffect(() => {
     if (groups.length < 2) return;
     const sections = groups
@@ -131,6 +162,9 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
 
     const observer = new IntersectionObserver(
       (entries) => {
+        // A tap-driven scroll is still settling — its own handler already set
+        // the active month and owns it until scroll position stops moving.
+        if (isProgrammaticScrollRef.current) return;
         const visible = entries.filter((entry) => entry.isIntersecting);
         if (visible.length === 0) return;
         const topMost = visible.reduce((a, b) =>
@@ -143,6 +177,42 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
 
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
+  }, [groups]);
+
+  // The intersection band above only covers a strip near the top of the
+  // viewport. When the LAST month's section is short enough (or close enough
+  // to the end of the page) that the page can't scroll any further once that
+  // section reaches the top of the band, the section can end up sitting
+  // lower in the viewport than the band ever reaches — so it never registers
+  // as "intersecting" and the previous month is left active indefinitely.
+  // This isn't month-specific: it happens for whichever month is currently
+  // last AND short/near the page end (right now that's frequently September,
+  // but the fix must not assume that). The generic, robust signal is scroll
+  // position itself: once the viewport has reached the bottom of the page,
+  // the last group is unambiguously the one in view, independent of the
+  // observer's band geometry — this also doubles as this effect's scroll-end
+  // detector for releasing the programmatic-scroll pin above.
+  useEffect(() => {
+    if (groups.length < 2) return;
+    function handleScroll() {
+      const doc = document.documentElement;
+      const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 4;
+      if (atBottom) {
+        const lastKey = groups[groups.length - 1].monthKey;
+        setActiveMonthKey((current) => (current === lastKey ? current : lastKey));
+      }
+      if (isProgrammaticScrollRef.current) scheduleScrollSettle();
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
+      // Safety net: if `groups` changes mid-scroll (e.g. a filter edit) this
+      // effect tears down and its settle timer is cleared without ever
+      // firing — never leave the pin stuck on, or manual scrolling would
+      // stop updating the active month (requirement 4).
+      isProgrammaticScrollRef.current = false;
+    };
   }, [groups]);
 
   const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
@@ -299,6 +369,10 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                   <a
                     key={g.monthKey}
                     href={`#month-${g.monthKey}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleMonthNavClick(g.monthKey);
+                    }}
                     className={
                       "shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors " +
                       (isActive
