@@ -1,0 +1,94 @@
+name: Inspect Poolen Event Description (read-only, diagnostic)
+
+# ONE-OFF, manual, confirmation-gated, strictly READ-ONLY diagnostic. Prints
+# the stored `description` text (and genre classification fields) for a
+# single events row, to root-cause why a specific Poolen candidate resolved
+# to a given genre. Uses the same explicit-transaction read-only pattern as
+# every other snapshot script in this repo (BEGIN; SET LOCAL
+# default_transaction_read_only = on; ...; ROLLBACK) and touches nothing —
+# no INSERT/UPDATE/DELETE anywhere in this file. Intended to be removed
+# again once the diagnosis is complete.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type INSPECT-POOLEN-EVENT to confirm: this only runs a read-only SELECT against the shared Preview/Production database.'
+        required: true
+      official_event_url:
+        description: 'The official_event_url of the events row to inspect.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "INSPECT-POOLEN-EVENT" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: INSPECT-POOLEN-EVENT"
+            exit 1
+          fi
+
+      - name: Verify required secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -u
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Missing required repository secret: DATABASE_URL"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pg
+        run: npm install pg@8
+
+      - name: Read-only SELECT of the events row
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_URL: ${{ inputs.official_event_url }}
+        run: |
+          cat > inspect.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main(client) {
+            await client.connect();
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+
+            const row = await client.query(
+              `SELECT id, title, artists, description, primary_genre, subgenres,
+                      genre_confidence, confidence, published, official_event_url
+               FROM events WHERE official_event_url = $1`,
+              [process.env.TARGET_URL],
+            );
+            console.log(`\n-- events row for ${process.env.TARGET_URL} --`);
+            console.log(JSON.stringify(row.rows, null, 2));
+
+            await client.query('COMMIT');
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('QUERY FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
+          SCRIPT
+          node inspect.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f inspect.cjs
