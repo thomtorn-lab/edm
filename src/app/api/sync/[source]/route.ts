@@ -34,10 +34,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ so
 
   // ok/skipped_concurrent are 200s — a concurrent-run skip is expected,
   // benign behavior, not something a scheduler should alert on. failed/
-  // zero_events return non-2xx so the calling workflow's own failure
-  // handling (a red GitHub Actions run, retries, notifications) surfaces
-  // them — this endpoint's response is the "failure logging" a plain
-  // console.error inside the process wouldn't otherwise expose externally.
-  const status = summary.outcome === "failed" ? 502 : summary.outcome === "zero_events" ? 503 : 200;
+  // zero_events/partial_failure return non-2xx so the calling workflow's
+  // own failure handling (a red GitHub Actions run, retries, notifications)
+  // surfaces them — this endpoint's response is the "failure logging" a
+  // plain console.error inside the process wouldn't otherwise expose
+  // externally. partial_failure means the fetch succeeded but the DB
+  // write pipeline reported failures for one or more candidates (see
+  // src/lib/sync.ts::summarizeWriteErrors) — still a real problem worth a
+  // red run, just distinguished from a total fetch failure.
+  const status =
+    summary.outcome === "failed" ? 502 : summary.outcome === "zero_events" ? 503 : summary.outcome === "partial_failure" ? 500 : 200;
   return NextResponse.json(summary, { status });
 }

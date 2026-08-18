@@ -15,7 +15,8 @@
     "db:seed:dev": "node --env-file=.env.local --import tsx src/db/seedDev.ts",
     "db:seed:production": "node --env-file=.env.local --import tsx src/db/bootstrapProduction.ts",
     "db:verify-sync": "node --env-file=.env.local --import tsx src/db/verifySync.ts",
-    "db:verify-bootstrap": "node --env-file=.env.local --import tsx src/db/verifyProductionBootstrap.ts"
+    "db:verify-bootstrap": "node --env-file=.env.local --import tsx src/db/verifyProductionBootstrap.ts",
+    "db:check-source-health": "node --env-file=.env.local --import tsx src/db/checkSourceHealth.ts"
   },
   "dependencies": {
     "@fontsource/big-shoulders": "^5.3.0",
