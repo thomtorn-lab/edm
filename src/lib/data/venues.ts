@@ -120,6 +120,18 @@ export const VENUES: Venue[] = [
       "Underground club under Dybbølsbro known for queer-friendly, bass-forward electronic nights.",
   },
   {
+    id: "v-poolen",
+    slug: "poolen",
+    name: "Poolen",
+    aliases: ["Poolen Copenhagen", "Poolen Outside"],
+    address: "Refshalevej 189, 1432 København K",
+    city: "Copenhagen",
+    postalCode: "1432",
+    websiteUrl: "https://poolen.dk/",
+    description:
+      "2,500-capacity warehouse venue on Refshaleøen spanning concerts, club nights and its own outdoor extension, Outside.",
+  },
+  {
     id: "v-solvang",
     slug: "solvang-hallen",
     name: "Solvang Hallen",

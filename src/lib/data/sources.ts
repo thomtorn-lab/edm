@@ -141,11 +141,21 @@ export const SOURCES: Source[] = [
     sourceName: "Poolen",
     sourceType: "official-venue",
     baseUrl: "https://poolen.dk/",
-    roles: ["discovery"],
-    adapter: null,
-    trustLevel: "medium",
-    autoPublish: false,
-    syncFrequency: "manual coverage check",
+    roles: ["discovery", "ingestion", "verification", "link"],
+    // Real working adapter (src/lib/adapters/poolenAdapter.ts), built and
+    // tested against genuinely captured pages (see
+    // src/lib/adapters/__fixtures__/poolen-*.html) after this session's own
+    // network egress was confirmed unable to reach the domain directly.
+    // robots.txt itself was not independently fetched/confirmed — the
+    // fixtures prove the plain pages are publicly servable, not that
+    // automated crawling is explicitly permitted; the adapter uses the same
+    // identifying user-agent and single-retry courtesy as Hangaren/Culture
+    // Box regardless. Worth a direct robots.txt check before trusting this
+    // at full 6h cadence long-term.
+    adapter: "poolen-html",
+    trustLevel: "high",
+    autoPublish: true,
+    syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
     lastAttemptedSync: null,
@@ -153,7 +163,7 @@ export const SOURCES: Source[] = [
     eventsFound: 0,
     eventsUpdated: 0,
     integrationNote:
-      "Refshaleøen warehouse/rave venue (run by the Pumpehuset/Byhaven team) with a genuinely electronic-leaning program (Intercell techno nights, Technotoget, Elektronisk Halloween). Individual event pages exist at poolen.dk/en/koncerter/<slug>/, likely sharing Pumpehuset's underlying platform (rendering technology unconfirmed from this session — network egress does not reach the domain). Some events are also Billetto-ticketed (see src-billetto's overlap note). Confirm robots.txt and page structure directly before building an adapter.",
+      "Real working adapter, two-stage: the programme page (poolen.dk/da/) lists every upcoming show with a title, date and a link to its own detail page, but doors/show time, price, full description and support lineup only exist on that per-event page — the adapter fetches the programme page once, then every listed event's own detail page. Poolen is NOT an electronic-only venue (its programme mixes concerts, comedy/bingo nights, hip-hop, house/techno raves and more), so genre is decided per event from that event's own detail-page text, never assumed from the venue: a specific-subgenre keyword is credited high confidence (official-description tier, same as Hangaren/Culture Box's own bio text); an explicit but non-specific 'electronic'/'elektronisk' mention in that same first-party text is tagged the generic 'electronic-other' at the same tier rather than a guessed subgenre; anything short of that is left unresolved for the shared deterministic-mapping fallback and Discogs lineup enrichment to attempt, same as every other source. 'Outside' is Poolen's own outdoor extension of the same physical venue, not a separate one — its events are tagged venueName 'Poolen' (with 'Poolen Outside' registered as an alias), never an invented second venue. Some events are also Billetto-ticketed (see src-billetto's overlap note); dedup/idempotency relies on the existing shared pipeline (officialEventUrl-keyed sourceEventLinks), same as every other source. Not yet run against production — health fields will populate on the first real sync.",
   },
   {
     id: "src-pumpehuset",
