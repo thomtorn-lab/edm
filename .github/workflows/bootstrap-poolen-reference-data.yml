@@ -1,0 +1,228 @@
+name: Bootstrap Poolen Reference Data (v-poolen / src-poolen ONLY)
+
+# ONE-OFF, manual, confirmation-gated, narrowly-scoped write against the
+# shared Preview/Production database. This exists solely because
+# discovery_queue.source_id has a real foreign-key constraint to
+# sources.id, so the real Poolen adapter (claude/sourcing-billetto-and-
+# venue-candidates) cannot write anything — not even a review-queue row —
+# until a src-poolen row (and, for venue resolution, v-poolen) exists.
+# The venue/source *fixture files* on that branch already define both rows;
+# this workflow inserts ONLY those two specific rows into the live
+# database, on a single explicit transaction, and touches nothing else:
+#
+# - No table other than venues/sources is touched.
+# - No row other than id='v-poolen' / id='src-poolen' is read-written
+#   (the write step never iterates the full VENUES/SOURCES arrays — it
+#   filters to exactly these two ids first).
+# - The write step first SELECTs both target ids inside the SAME
+#   transaction; if either already exists, it aborts (ROLLBACK) rather
+#   than overwriting anything, logging the existing row for inspection.
+# - A BEFORE and an AFTER snapshot (both read-only: BEGIN; SET LOCAL
+#   default_transaction_read_only = on; ...; ROLLBACK) bound the write,
+#   each reporting: whether v-poolen/src-poolen exist, total venues/
+#   sources counts, the full Hangaren + Culture Box venue/source rows
+#   (to diff byte-for-byte), and the global manual-override event set.
+#
+# This is intentionally NOT the general bootstrapProduction.ts seed (which
+# upserts every row in both fixture arrays) — that remains reserved for
+# the actual Production merge, when it will naturally pick up v-poolen/
+# src-poolen along with everything else already on the default branch.
+#
+# This workflow is temporary by design: per the task that authorized it,
+# it is removed (a separate workflow-only commit) immediately after a
+# successful run, so it does not remain a standing arbitrary-write path
+# against Production.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type BOOTSTRAP-POOLEN-REFERENCE-DATA to confirm: this inserts ONLY the v-poolen venue row and src-poolen source row into the shared Preview/Production database, in one explicit transaction, aborting if either already exists.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-poolen-reference-data
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "BOOTSTRAP-POOLEN-REFERENCE-DATA" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: BOOTSTRAP-POOLEN-REFERENCE-DATA"
+            exit 1
+          fi
+
+      - name: Checkout the branch that defines v-poolen / src-poolen
+        uses: actions/checkout@v4
+        with:
+          ref: claude/sourcing-billetto-and-venue-candidates
+
+      - name: Record the exact commit this run is bootstrapping from
+        run: git rev-parse HEAD
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -u
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Missing required repository secret: DATABASE_URL"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write read-only DB snapshot script
+        run: |
+          cat > snapshot.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main(client) {
+            await client.connect();
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+
+            const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
+            console.log(`\n========== ${label} ==========`);
+
+            const targetVenue = await client.query(`SELECT * FROM venues WHERE id = 'v-poolen'`);
+            console.log(`\n-- v-poolen exists: ${targetVenue.rows.length > 0} --`);
+            if (targetVenue.rows.length > 0) console.log(JSON.stringify(targetVenue.rows, null, 2));
+
+            const targetSource = await client.query(`SELECT * FROM sources WHERE id = 'src-poolen'`);
+            console.log(`\n-- src-poolen exists: ${targetSource.rows.length > 0} --`);
+            if (targetSource.rows.length > 0) console.log(JSON.stringify(targetSource.rows, null, 2));
+
+            const venueCount = await client.query(`SELECT count(*)::int AS n FROM venues`);
+            const sourceCount = await client.query(`SELECT count(*)::int AS n FROM sources`);
+            console.log(`\n-- total venues: ${venueCount.rows[0].n}, total sources: ${sourceCount.rows[0].n} --`);
+
+            for (const id of ['v-hangaren', 'v-culture-box']) {
+              const row = await client.query(`SELECT * FROM venues WHERE id = $1`, [id]);
+              console.log(`\n-- venue ${id} --`);
+              console.log(JSON.stringify(row.rows, null, 2));
+            }
+            for (const id of ['src-hangaren', 'src-culture-box']) {
+              const row = await client.query(`SELECT * FROM sources WHERE id = $1`, [id]);
+              console.log(`\n-- source ${id} --`);
+              console.log(JSON.stringify(row.rows, null, 2));
+            }
+
+            const overridden = await client.query(
+              `SELECT id, overridden_fields, manual_override, updated_at FROM events
+               WHERE array_length(overridden_fields, 1) > 0 OR manual_override = true
+               ORDER BY id`,
+            );
+            console.log(`\n-- events with any manual override (global): ${overridden.rows.length} rows --`);
+            console.log(JSON.stringify(overridden.rows, null, 2));
+
+            await client.query('COMMIT');
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('SNAPSHOT FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
+          SCRIPT
+
+      - name: "PHASE 1 — BEFORE snapshot (read-only)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: BEFORE (pre-bootstrap)
+        run: node snapshot.cjs
+
+      - name: Write the narrow two-row bootstrap script
+        run: |
+          cat > bootstrap-two-rows.ts << 'SCRIPT'
+          import { drizzle } from "drizzle-orm/node-postgres";
+          import { eq } from "drizzle-orm";
+          import { pool } from "./src/db/client";
+          import { venues, sources } from "./src/db/schema";
+          import * as schema from "./src/db/schema";
+          import { VENUES } from "./src/lib/data/venues";
+          import { SOURCES } from "./src/lib/data/sources";
+          import { toProductionSourceRow } from "./src/lib/sourceRegistry";
+
+          const TARGET_VENUE_ID = "v-poolen";
+          const TARGET_SOURCE_ID = "src-poolen";
+
+          async function main() {
+            const venueDef = VENUES.find((v) => v.id === TARGET_VENUE_ID);
+            const sourceDef = SOURCES.find((s) => s.id === TARGET_SOURCE_ID);
+            if (!venueDef) throw new Error(`${TARGET_VENUE_ID} not found in this branch's VENUES fixture — aborting.`);
+            if (!sourceDef) throw new Error(`${TARGET_SOURCE_ID} not found in this branch's SOURCES fixture — aborting.`);
+
+            // Everything below runs on ONE dedicated connection so the explicit
+            // BEGIN/COMMIT actually wraps every query — going through the pooled
+            // `db` export would let different queries land on different
+            // connections, making the transaction a no-op (same reasoning as
+            // src/db/sync.ts's advisory-lock comment).
+            const client = await pool.connect();
+            const txDb = drizzle(client, { schema });
+            try {
+              await client.query("BEGIN");
+
+              const existingVenue = await txDb.select().from(venues).where(eq(venues.id, TARGET_VENUE_ID));
+              const existingSource = await txDb.select().from(sources).where(eq(sources.id, TARGET_SOURCE_ID));
+              console.log(`Pre-check — existing venue rows for ${TARGET_VENUE_ID}: ${existingVenue.length}`);
+              console.log(`Pre-check — existing source rows for ${TARGET_SOURCE_ID}: ${existingSource.length}`);
+
+              if (existingVenue.length > 0 || existingSource.length > 0) {
+                if (existingVenue.length > 0) console.log("EXISTING VENUE ROW:", JSON.stringify(existingVenue[0], null, 2));
+                if (existingSource.length > 0) console.log("EXISTING SOURCE ROW:", JSON.stringify(existingSource[0], null, 2));
+                throw new Error("Target row(s) already exist — refusing to write. Inspect the logged row(s) manually before proceeding.");
+              }
+
+              await txDb.insert(venues).values(venueDef);
+              console.log(`Inserted venue ${TARGET_VENUE_ID}`);
+
+              const { insertRow } = toProductionSourceRow(sourceDef);
+              await txDb.insert(sources).values(insertRow);
+              console.log(`Inserted source ${TARGET_SOURCE_ID}`);
+
+              await client.query("COMMIT");
+              console.log("COMMIT successful — exactly these two rows were written.");
+            } catch (err) {
+              await client.query("ROLLBACK").catch(() => {});
+              console.error("ROLLBACK — no changes were written.");
+              console.error(err instanceof Error ? err.message : String(err));
+              process.exitCode = 1;
+            } finally {
+              client.release();
+              await pool.end();
+            }
+          }
+
+          main();
+          SCRIPT
+
+      - name: "PHASE 2 — narrow two-row bootstrap (explicit transaction, v-poolen + src-poolen ONLY)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node --import tsx bootstrap-two-rows.ts
+
+      - name: "PHASE 3 — AFTER snapshot (read-only)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER (post-bootstrap)
+        run: node snapshot.cjs
+
+      - name: Remove local scratch scripts
+        if: always()
+        run: rm -f snapshot.cjs bootstrap-two-rows.ts
