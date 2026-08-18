@@ -18,7 +18,11 @@ export type GenreSlug =
   | "trance"
   | "psytrance"
   | "drum-and-bass"
+  | "dubstep"
   | "garage"
+  | "hardstyle"
+  | "rawstyle"
+  | "hardcore"
   | "electro"
   | "disco"
   | "ambient-experimental"
@@ -32,7 +36,7 @@ export interface GenreDef {
   group: GenreGroupSlug;
 }
 
-export type GenreGroupSlug = "techno" | "house" | "trance" | "bass" | "other";
+export type GenreGroupSlug = "techno" | "house" | "trance" | "bass" | "hard-dance" | "other";
 
 export interface GenreGroupDef {
   slug: GenreGroupSlug;
@@ -44,6 +48,7 @@ export const GENRE_GROUPS: GenreGroupDef[] = [
   { slug: "house", label: "House" },
   { slug: "trance", label: "Trance" },
   { slug: "bass", label: "Bass" },
+  { slug: "hard-dance", label: "Hard Dance" },
   { slug: "other", label: "Other" },
 ];
 
@@ -64,7 +69,12 @@ export const GENRES: GenreDef[] = [
   { slug: "psytrance", label: "Psytrance", shortLabel: "Psytrance", group: "trance" },
 
   { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "D&B", group: "bass" },
+  { slug: "dubstep", label: "Dubstep", shortLabel: "Dubstep", group: "bass" },
   { slug: "garage", label: "Garage", shortLabel: "Garage", group: "bass" },
+
+  { slug: "hardstyle", label: "Hardstyle", shortLabel: "Hardstyle", group: "hard-dance" },
+  { slug: "rawstyle", label: "Rawstyle", shortLabel: "Rawstyle", group: "hard-dance" },
+  { slug: "hardcore", label: "Hardcore", shortLabel: "Hardcore", group: "hard-dance" },
 
   { slug: "electro", label: "Electro", shortLabel: "Electro", group: "other" },
   { slug: "disco", label: "Disco", shortLabel: "Disco", group: "other" },
@@ -96,6 +106,7 @@ export type MainGenreSlug =
   | "drum-and-bass"
   | "garage-bass"
   | "breaks"
+  | "hardstyle-hardcore"
   | "disco"
   | "electro"
   | "ambient-experimental"
@@ -115,6 +126,7 @@ export const MAIN_GENRES: MainGenreDef[] = [
   { slug: "drum-and-bass", label: "Drum & Bass" },
   { slug: "garage-bass", label: "Garage / Bass" },
   { slug: "breaks", label: "Breaks" },
+  { slug: "hardstyle-hardcore", label: "Hardstyle / Hardcore" },
   { slug: "disco", label: "Disco" },
   { slug: "electro", label: "Electro" },
   { slug: "ambient-experimental", label: "Ambient / Experimental" },
@@ -136,7 +148,11 @@ const GENRE_TO_MAIN: Record<GenreSlug, MainGenreSlug> = {
   trance: "trance",
   psytrance: "psytrance",
   "drum-and-bass": "drum-and-bass",
+  dubstep: "garage-bass",
   garage: "garage-bass",
+  hardstyle: "hardstyle-hardcore",
+  rawstyle: "hardstyle-hardcore",
+  hardcore: "hardstyle-hardcore",
   disco: "disco",
   electro: "electro",
   "ambient-experimental": "ambient-experimental",
