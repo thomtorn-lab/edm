@@ -13,7 +13,13 @@ import {
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
-import { buildDiscoveryQueueClassificationPatch, buildSyncPatch, findSyncMatch, type SyncTargetEvent } from "@/lib/sync";
+import {
+  buildDiscoveryQueueClassificationPatch,
+  buildSyncPatch,
+  findSyncMatch,
+  summarizeWriteErrors,
+  type SyncTargetEvent,
+} from "@/lib/sync";
 import { enrichEventGenre } from "./enrichment";
 import type { GenreSlug } from "@/lib/taxonomy";
 
@@ -28,7 +34,7 @@ import type { GenreSlug } from "@/lib/taxonomy";
 
 export interface SyncSummary {
   sourceId: string;
-  outcome: "ok" | "zero_events" | "failed" | "skipped_concurrent";
+  outcome: "ok" | "partial_failure" | "zero_events" | "failed" | "skipped_concurrent";
   candidatesFound: number;
   created: number;
   updated: number;
@@ -261,6 +267,18 @@ async function runSourceSyncLocked(
     } catch (err) {
       errors.push(`${raw.title || "(untitled)"}: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  const writeSummary = summarizeWriteErrors(errors, candidates.length);
+  if (writeSummary.outcome === "partial_failure") {
+    console.error(`[sync] "${sourceId}" partial write failure: ${writeSummary.lastErrorMessage}`);
+    await touchSourceSyncStats(sourceId, {
+      success: true,
+      eventsFound: candidates.length,
+      eventsUpdated: updated,
+      error: writeSummary.lastErrorMessage,
+    });
+    return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, errors };
   }
 
   await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated });

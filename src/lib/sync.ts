@@ -176,3 +176,27 @@ export function buildDiscoveryQueueClassificationPatch(
   if (!fresh.genre || fresh.genre === existing.predictedGenre) return {};
   return { predictedGenre: fresh.genre, genreConfidence: fresh.genreConfidence };
 }
+
+export interface WriteFailureSummary {
+  outcome: "ok" | "partial_failure";
+  lastErrorMessage: string | null;
+}
+
+/**
+ * Source-health monitoring (task: automated source-health monitoring):
+ * per-candidate matching/write failures inside runSourceSyncLocked's loop
+ * were previously only returned in the HTTP response body — the overall
+ * summary still reported outcome "ok" and touchSourceSyncStats cleared
+ * lastError to null, so a DB write failure was invisible to anything that
+ * doesn't inspect that one response (a scheduled GitHub Actions run, the
+ * admin source-health panel, this task's health monitor). Any per-candidate
+ * error now degrades the whole run to "partial_failure" so it surfaces the
+ * same way a fetch failure does — never silently swallowed.
+ */
+export function summarizeWriteErrors(errors: string[], candidatesFound: number): WriteFailureSummary {
+  if (errors.length === 0) return { outcome: "ok", lastErrorMessage: null };
+  return {
+    outcome: "partial_failure",
+    lastErrorMessage: `${errors.length}/${candidatesFound} candidate(s) failed during matching/write: ${errors.join("; ")}`,
+  };
+}

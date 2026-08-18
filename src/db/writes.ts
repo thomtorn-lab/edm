@@ -362,7 +362,11 @@ export async function touchSourceSyncStats(
       .set({
         lastSuccessfulSync: now,
         lastAttemptedSync: now,
-        lastError: null,
+        // Usually cleared on a clean success — but a partial-failure run
+        // (fetch succeeded, some candidates failed to write) is still
+        // "success" for stats purposes and must keep its error visible
+        // rather than being wiped, so source health monitoring can see it.
+        lastError: outcome.error ?? null,
         eventsFound: outcome.eventsFound ?? sql`events_found`,
         eventsUpdated: outcome.eventsUpdated ?? sql`events_updated`,
       })
