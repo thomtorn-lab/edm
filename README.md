@@ -25,17 +25,17 @@ npm run db:verify-bootstrap          # end-to-end proof: empty DB -> migrate -> 
 
 Phase 1 (visual/product proof), Phase 2 (taxonomy, venue registry, dedup/normalization, source
 registry, adapter architecture), a real persistent Postgres database with a real admin write path
-and field-level manual-override protection, and **one real, live, working first-party ingestion
-source (Hangaren)** are all implemented and wired end to end: adapter → extraction → validation →
-normalization → dedup → genre classification → confidence gate → database → public site →
-subsequent source update, running **on an actual schedule** (`.github/workflows/sync-hangaren.yml`,
-every 6h — see "Scheduling" below) rather than only being triggerable by hand. `/admin` and
-`/api/admin/*` are gated behind HTTP Basic Auth (see "Admin access" below) — not publicly writable.
+and field-level manual-override protection, and **two real, live, working first-party ingestion
+sources (Hangaren and Culture Box)** are all implemented and wired end to end: adapter →
+extraction → validation → normalization → dedup → genre classification → confidence gate →
+database → public site → subsequent source update, each running **on an actual schedule**
+(`.github/workflows/sync-hangaren.yml` and `.github/workflows/sync-culture-box.yml`, every 6h —
+see "Scheduling" below) rather than only being triggerable by hand. `/admin` and `/api/admin/*`
+are gated behind HTTP Basic Auth (see "Admin access" below) — not publicly writable.
 `src/lib/data/*.ts` is no longer read by the running app — it's the seed source for both seed
-paths (see "Seeding" below) and fixture data for pure-logic unit tests. The other three
-first-party venues (Culture Box, Gravity, Den Anden Side) are evaluated in
-`src/lib/data/sources.ts`'s `integrationNote` per source but do not have a working adapter yet —
-see that file before adding one.
+paths (see "Seeding" below) and fixture data for pure-logic unit tests. The other two first-party
+venues (Gravity, Den Anden Side) are evaluated in `src/lib/data/sources.ts`'s `integrationNote`
+per source but do not have a working adapter yet — see that file before adding one.
 
 ## Seeding
 
@@ -184,12 +184,14 @@ rollovers, weekend boundaries, overnight archival).
 Every external reference is classified independently by role (discovery / ingestion /
 verification / link) — the strongest discovery source isn't automatically the strongest
 ingestion source. All four first-party venue/promoter pages (Culture Box, Hangaren, Den Anden
-Side, Gravity) are marked `autoPublish: true` in the data model, but **only Hangaren currently has
-a real, working adapter wired to the scheduler** (`src/lib/adapters/hangarenAdapter.ts` /
-`POST /api/sync/hangaren`) — the other three are evaluated (structured-data availability, robots.txt
-permission, current reliability) in their `integrationNote` but intentionally not yet implemented;
-Gravity's `/events/` page 404s and its sitemap is over a year stale, and Den Anden Side's own site
-carries no event content at all (it defers entirely to Resident Advisor). Resident Advisor,
+Side, Gravity) are marked `autoPublish: true` in the data model, but **only Hangaren and Culture
+Box currently have a real, working adapter wired to the scheduler**
+(`src/lib/adapters/hangarenAdapter.ts` / `POST /api/sync/hangaren` and
+`src/lib/adapters/cultureBoxAdapter.ts` / `POST /api/sync/culture-box`) — the other two are
+evaluated (structured-data availability, robots.txt permission, current reliability) in their
+`integrationNote` but intentionally not yet implemented; Gravity's `/events/` page 404s and its
+sitemap is over a year stale, and Den Anden Side's own site carries no event content at all (it
+defers entirely to Resident Advisor). Resident Advisor,
 AllEvents, Billetto, Eventbrite and the Facebook groups are discovery/verification/link references
 only —
 **automated ingestion from them is deliberately not implemented** until a permitted access method
@@ -234,17 +236,23 @@ None of them are ever sent to the browser.
 
 ## Scheduling
 
-`.github/workflows/sync-hangaren.yml` calls `POST /api/sync/hangaren` on a schedule — the source
-refreshes automatically once deployed and configured, no manual trigger required.
+`.github/workflows/sync-hangaren.yml` calls `POST /api/sync/hangaren` and
+`.github/workflows/sync-culture-box.yml` calls `POST /api/sync/culture-box` on a schedule — both
+sources refresh automatically once deployed and configured, no manual trigger required. The two
+workflows are identical in structure/safety model; only the endpoint, cron offset and concurrency
+group differ.
 
-- **Frequency**: every 6 hours (`cron: "0 */6 * * *"`), matching `src-hangaren`'s
-  `syncFrequency` in `src/lib/data/sources.ts`. Also runnable on demand via the workflow's
+- **Frequency**: every 6 hours for both — Hangaren at `cron: "0 */6 * * *"`, Culture Box at
+  `cron: "30 */6 * * *"` (offset by 30 minutes purely to spread load across two separate GitHub
+  Actions jobs; not a correctness requirement, since each source has its own advisory lock key —
+  see "Concurrent runs" below). Matches `syncFrequency` in `src/lib/data/sources.ts` for
+  `src-hangaren` and `src-culture-box`. Both are also runnable on demand via their workflow's
   `workflow_dispatch` trigger (e.g. to retry after fixing something).
-- **Retry behavior**: three layers, deliberately not aggressive at any one of them. (1) The
+- **Retry behavior**: three layers, deliberately not aggressive at any one of them. (1) Each
   workflow's `curl` retries the HTTP call itself up to 3 times (15s apart) for transient network
-  issues reaching the deployment. (2) The adapter (`hangarenAdapter.ts`) retries the fetch against
-  hangaren.dk once after a 2s delay — one blip shouldn't flag a healthy source as failed. (3)
-  Beyond that, a persistently failing source is left for the next scheduled run 6h later (or a
+  issues reaching the deployment. (2) The adapter (`hangarenAdapter.ts` / `cultureBoxAdapter.ts`)
+  retries its own fetch once after a 2s delay — one blip shouldn't flag a healthy source as failed.
+  (3) Beyond that, a persistently failing source is left for the next scheduled run 6h later (or a
   manual `workflow_dispatch`) rather than retried in a tight loop.
 - **Failure logging**: every sync outcome is written to `sources.lastError`/`lastSuccessfulSync`
   in Postgres (visible on `/admin`) regardless of how it was triggered. The API route also returns
@@ -256,13 +264,17 @@ refreshes automatically once deployed and configured, no manual trigger required
   (so the workflow can send it) and as an environment variable on the actual deployment (so the
   route can check it); the workflow also needs a repository *variable* `SYNC_BASE_URL` pointing at
   the deployed app. Both are one-time setup after deploying — see the comment at the top of the
-  workflow file. `ADMIN_USERNAME`/`ADMIN_PASSWORD` (below) are separate and only gate `/admin`.
-- **Concurrent runs**: two layers. The workflow's own `concurrency:` group serializes overlapping
-  *GitHub Actions* runs of this workflow. The real guarantee is inside the app: `runSourceSync`
-  (`src/db/sync.ts`) takes a Postgres advisory lock (`pg_try_advisory_lock`, cluster-wide, not just
-  per-process) for the duration of the sync and skips outright (`outcome: "skipped_concurrent"`,
-  HTTP 200 — not an error) if another sync for the same source is already running, however it was
-  triggered (scheduled, manual, or a retried request landing twice).
+  workflow file. `sync-culture-box.yml` reuses these same three repository-level secrets/variable
+  (`SYNC_BASE_URL`, `SYNC_TRIGGER_TOKEN`, `VERCEL_AUTOMATION_BYPASS_SECRET`) rather than needing
+  its own. `ADMIN_USERNAME`/`ADMIN_PASSWORD` (below) are separate and only gate `/admin`.
+- **Concurrent runs**: two layers. Each workflow's own `concurrency:` group (`sync-hangaren` /
+  `sync-culture-box`) serializes overlapping *GitHub Actions* runs of that one workflow. The real
+  guarantee is inside the app: `runSourceSync` (`src/db/sync.ts`) takes a Postgres advisory lock
+  (`pg_try_advisory_lock`, cluster-wide, not just per-process, keyed by source id) for the duration
+  of the sync and skips outright (`outcome: "skipped_concurrent"`, HTTP 200 — not an error) if
+  another sync for the same source is already running, however it was triggered (scheduled,
+  manual, or a retried request landing twice). Because the lock is keyed per source, Hangaren and
+  Culture Box runs never contend with each other even if they land at the same time.
 
 ## Admin access
 

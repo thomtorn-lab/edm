@@ -1,0 +1,87 @@
+name: Sync Culture Box
+
+# Scheduling entry point for the Culture Box ingestion adapter
+# (src/lib/adapters/cultureBoxAdapter.ts). Calls the deployed app's
+# POST /api/sync/culture-box on a fixed schedule, matching
+# src/lib/data/sources.ts's `syncFrequency: "every 6h"` for src-culture-box.
+# Mirrors sync-hangaren.yml's exact pattern; offset by 30 minutes so the two
+# sources' scheduled runs don't land in the same minute (each source has its
+# own Postgres advisory lock key in src/db/sync.ts::runSourceSync, so this
+# offset is purely to spread load, not a correctness requirement).
+#
+# One-time setup after deploying the app somewhere (same secrets/variable as
+# sync-hangaren.yml — no new ones needed):
+#   1. Repository variable SYNC_BASE_URL — the deployed app's base URL
+#      (e.g. https://nattefrekvens.example.com), no trailing slash.
+#   2. Repository secret SYNC_TRIGGER_TOKEN — must match the
+#      SYNC_TRIGGER_TOKEN environment variable set on the deployment itself
+#      (see .env.example). Generate a real random value for production.
+#   3. Repository secret VERCEL_AUTOMATION_BYPASS_SECRET — sent as
+#      x-vercel-protection-bypass so this request can get past Vercel's
+#      deployment protection; must match the bypass secret configured on
+#      the Vercel project.
+# Until all three are set, scheduled runs fail fast with a clear error
+# instead of silently doing nothing.
+
+on:
+  schedule:
+    - cron: "30 */6 * * *"
+  workflow_dispatch: {} # manual re-trigger, e.g. to retry after a fix
+
+# Prevents two runs of this workflow from ever calling the endpoint at the
+# same time (queues instead of overlapping). This is a second, belt-and-
+# suspenders layer — the real correctness guarantee is the Postgres
+# advisory lock in src/db/sync.ts::runSourceSync, which protects against
+# concurrent calls from ANY source (a manual admin trigger, a retried
+# request, etc.), not just two overlapping GitHub Actions runs.
+concurrency:
+  group: sync-culture-box
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Culture Box sync
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set — point it at the deployed app's base URL (Settings > Secrets and variables > Actions > Variables) before this workflow can do anything."
+            exit 1
+          fi
+          if [ -z "${SYNC_TRIGGER_TOKEN}" ]; then
+            echo "::error::Repository secret SYNC_TRIGGER_TOKEN is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the deployment's SYNC_TRIGGER_TOKEN env var."
+            exit 1
+          fi
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the bypass secret configured on the Vercel project."
+            exit 1
+          fi
+
+          # --retry handles transient network blips reaching the endpoint;
+          # a persistently failing source itself is retried once more
+          # *inside* the app (src/lib/adapters/cultureBoxAdapter.ts), and
+          # beyond that is left to the next scheduled run 6h later rather
+          # than retried aggressively here.
+          http_code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 60 \
+            -o /tmp/sync-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/culture-box")
+
+          echo "HTTP status: ${http_code}"
+          echo "Response:"
+          cat /tmp/sync-response.json
+          echo
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Culture Box sync returned HTTP ${http_code} — see response body above (source failure and zero-event anomaly both return non-2xx; not concurrent-run skips, which return 200)."
+            exit 1
+          fi
