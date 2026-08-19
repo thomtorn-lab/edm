@@ -8,6 +8,7 @@ import {
   createEvent,
   insertDiscoveryItem,
   recordSourceLink,
+  resolveDiscoveryItemAsPublished,
   touchSourceSyncStats,
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
@@ -16,6 +17,7 @@ import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
+  findPendingRowToResolve,
   findSyncMatch,
   summarizeWriteErrors,
   type SyncTargetEvent,
@@ -155,6 +157,7 @@ async function runSourceSyncLocked(
 
       const linkedEventId = raw.officialEventUrl ? (linkedByUrl.get(raw.officialEventUrl) ?? null) : null;
       const match = findSyncMatch(linkedEventId, result.duplicateOfEventId, result.duplicateConfidence);
+      const dedupKey = raw.officialEventUrl ?? raw.sourceUrl;
 
       if (match) {
         const existing = existingById.get(match.eventId);
@@ -225,6 +228,20 @@ async function runSourceSyncLocked(
           sourceId,
         );
         created++;
+
+        // A candidate that already had a pending discovery_queue row from an
+        // earlier, lower-confidence sync (see src/lib/sync.ts's
+        // buildDiscoveryQueueClassificationPatch doc) must never be left
+        // behind once this sync's evidence clears the auto-publish bar —
+        // an admin reviewing the queue must never see a "needs review" row
+        // for a night that's already live. Resolved the same way an
+        // admin-initiated publish already does (status "published"), never
+        // deleted (preserves the audit trail), and only ever the one row
+        // keyed to this exact candidate's own dedupKey.
+        const pendingRowId = findPendingRowToResolve(dedupKey, pendingByUrl);
+        if (pendingRowId) {
+          await resolveDiscoveryItemAsPublished(pendingRowId);
+        }
         continue;
       }
 
@@ -233,7 +250,6 @@ async function runSourceSyncLocked(
       // Instead, let the classification-only patch (never identity/status)
       // refresh the existing row if this run's genre resolution improved on
       // what's stored — see buildDiscoveryQueueClassificationPatch.
-      const dedupKey = raw.officialEventUrl ?? raw.sourceUrl;
       const existingPending = pendingByUrl.get(dedupKey);
       if (existingPending) {
         const classificationPatch = buildDiscoveryQueueClassificationPatch(

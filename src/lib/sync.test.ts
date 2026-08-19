@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
+  findPendingRowToResolve,
   findSyncMatch,
   summarizeWriteErrors,
   type DiscoveryQueueTarget,
@@ -72,6 +73,44 @@ describe("findSyncMatch", () => {
 
   it("returns null when nothing matches at all", () => {
     expect(findSyncMatch(null, null, "none")).toBeNull();
+  });
+});
+
+describe("findPendingRowToResolve", () => {
+  // Regression coverage: Culture Box publishing diagnosis, orphaned
+  // discovery_queue rows fix. A candidate that reaches auto_publish on a
+  // later sync than the one that first queued it (e.g. Culture Box's own
+  // detail-page evidence arriving after an earlier listing-only sync) must
+  // have its earlier pending row resolved, not left behind as a stale
+  // "needs review" duplicate of an already-published event.
+
+  it("finds the pending row keyed to exactly this candidate's dedupKey", () => {
+    const pendingByUrl = new Map([
+      ["https://culture-box.com/event/fri-28-august/#black-box", { id: "dq-target" }],
+    ]);
+    expect(findPendingRowToResolve("https://culture-box.com/event/fri-28-august/#black-box", pendingByUrl)).toBe(
+      "dq-target",
+    );
+  });
+
+  it("returns null when no pending row exists for this dedupKey — nothing to resolve, nothing touched", () => {
+    const pendingByUrl = new Map([["https://culture-box.com/event/fri-28-august/#black-box", { id: "dq-target" }]]);
+    expect(findPendingRowToResolve("https://culture-box.com/event/sat-22-august-2026/#black-box", pendingByUrl)).toBeNull();
+  });
+
+  it("never returns an unrelated candidate's row — only an exact dedupKey match, even when many rows are pending", () => {
+    const pendingByUrl = new Map([
+      ["https://culture-box.com/event/fri-28-august/#black-box", { id: "dq-black-box" }],
+      ["https://culture-box.com/event/fri-28-august/#red-box", { id: "dq-red-box" }],
+      ["https://culture-box.com/event/sat-22-august-2026/#black-box", { id: "dq-other-night" }],
+    ]);
+    expect(findPendingRowToResolve("https://culture-box.com/event/fri-28-august/#red-box", pendingByUrl)).toBe(
+      "dq-red-box",
+    );
+  });
+
+  it("empty pending map -> null", () => {
+    expect(findPendingRowToResolve("https://culture-box.com/event/fri-28-august/#black-box", new Map())).toBeNull();
   });
 });
 
@@ -318,6 +357,72 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).not.toHaveProperty("status");
     expect(patch).not.toHaveProperty("published");
     expect(Object.keys(patch).every((k) => ["predictedGenre", "genreConfidence", "overallConfidence"].includes(k))).toBe(true);
+  });
+
+  // ---- Regression coverage: closing the remaining stale overallConfidence
+  // gap (Culture Box publishing diagnosis, follow-up fix). Part A only
+  // recomputed overallConfidence as a side effect of predictedGenre also
+  // changing on that same sync — a row whose genre was already correct
+  // BEFORE Part A shipped (so genre never changes again on a later sync)
+  // stayed stuck at its stale overallConfidence forever. These 4 real live
+  // Culture Box rows (e.g. "Red Box: WHAT HAPPENS") had exactly this shape:
+  // genre_confidence "medium", overall_confidence stuck at "low".
+
+  it("recovers a stale overallConfidence on a plain re-sync even when predictedGenre is UNCHANGED", () => {
+    const staleRow = pendingDiscoveryTarget({ predictedGenre: "electronic-other", overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "electronic-other", genreConfidence: "medium", decision: "review_queue" },
+      staleRow,
+    );
+    expect(patch).toEqual({ overallConfidence: "medium" });
+    expect(patch).not.toHaveProperty("predictedGenre");
+    expect(patch).not.toHaveProperty("genreConfidence");
+  });
+
+  it("does not change genre when only overallConfidence needed correcting — genre patch logic is untouched", () => {
+    // Same scenario as above, phrased the other way: the genre-patch
+    // condition (`fresh.genre !== existing.predictedGenre`) is false here,
+    // so predictedGenre/genreConfidence must never appear in the patch,
+    // regardless of what overallConfidence does.
+    const staleRow = pendingDiscoveryTarget({ predictedGenre: "techno", overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "medium", decision: "review_queue" },
+      staleRow,
+    );
+    expect(Object.keys(patch)).toEqual(["overallConfidence"]);
+  });
+
+  it("a transient lookup failure this run still freezes the ENTIRE row, overallConfidence included — not just predictedGenre", () => {
+    // Guards the exact regression this fix could have introduced: without
+    // the `!fresh.genre` short-circuit staying a full early return, a
+    // failed lookup (fresh.genre null) would compute freshOverallConfidence
+    // from decision "hold" -> "low" and silently downgrade an
+    // already-correct medium/medium row on a transient blip.
+    const healthyRow = pendingDiscoveryTarget({ predictedGenre: "techno", overallConfidence: "medium" });
+    const patch = buildDiscoveryQueueClassificationPatch({ genre: null, genreConfidence: "low", decision: "hold" }, healthyRow);
+    expect(patch).toEqual({});
+  });
+
+  it("still a no-op when both predictedGenre and overallConfidence already correctly match — fully idempotent", () => {
+    const correctRow = pendingDiscoveryTarget({ predictedGenre: "techno", overallConfidence: "medium" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "medium", decision: "review_queue" },
+      correctRow,
+    );
+    expect(patch).toEqual({});
+  });
+
+  it("an admin's manual predictedGenre override still freezes overallConfidence too — the override guard applies to the whole row, not just the genre fields", () => {
+    const overriddenRow = pendingDiscoveryTarget({
+      predictedGenre: "house",
+      overriddenFields: ["predictedGenre"],
+      overallConfidence: "low",
+    });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "medium", decision: "review_queue" },
+      overriddenRow,
+    );
+    expect(patch).toEqual({});
   });
 });
 

@@ -304,6 +304,26 @@ export async function applyDiscoveryClassificationUpdate(
     .where(and(eq(discoveryQueue.id, queueId), eq(discoveryQueue.status, "pending")));
 }
 
+/**
+ * Resolves a pending discovery_queue row as "published" without creating a
+ * new event — used when a later sync's auto_publish decision creates the
+ * event directly (src/db/sync.ts), for a candidate that already had a
+ * pending row from an earlier, lower-confidence sync. Mirrors exactly the
+ * status transition publishDiscoveryItem makes for an admin-initiated
+ * publish (status "published", resolvedAt set); only the discoveryQueue
+ * side of that transition happens here, since the event itself is already
+ * created by the caller. The status='pending' guard mirrors
+ * applyDiscoveryClassificationUpdate's — never resolves a row an admin
+ * already acted on (published/ignored/merged) between this sync's read and
+ * this write.
+ */
+export async function resolveDiscoveryItemAsPublished(queueId: string) {
+  await db
+    .update(discoveryQueue)
+    .set({ status: "published", resolvedAt: new Date() })
+    .where(and(eq(discoveryQueue.id, queueId), eq(discoveryQueue.status, "pending")));
+}
+
 export async function insertDiscoveryItem(item: {
   id: string;
   probableTitle: string;
