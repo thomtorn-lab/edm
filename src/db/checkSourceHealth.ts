@@ -10,11 +10,10 @@ import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
  * script is the proactive/automated half.
  *
  * Deliberately scoped to only the sources that are actually automated in
- * Production today. Do NOT add src-poolen here until it's merged to
- * Production — see the task brief this was built for. Only ever reads the
- * `sources` table; never writes anything.
+ * Production today: Hangaren, Culture Box, and (since its Production merge)
+ * Poolen. Only ever reads the `sources` table; never writes anything.
  */
-const MONITORED_SOURCE_IDS = ["src-hangaren", "src-culture-box"];
+const MONITORED_SOURCE_IDS = ["src-hangaren", "src-culture-box", "src-poolen"];
 
 async function main() {
   const now = new Date();

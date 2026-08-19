@@ -17,8 +17,7 @@ name: Monitor Source Health
 #
 # Deliberately scoped to only the sources that are actually automated in
 # Production today (src/db/checkSourceHealth.ts's MONITORED_SOURCE_IDS):
-# Hangaren and Culture Box. Do not add Poolen here until it's merged to
-# Production.
+# Hangaren, Culture Box, and Poolen.
 #
 # Strictly read-only: only ever SELECTs from the `sources` table (via
 # src/lib/queries.ts::getSources), never writes anything, never runs a
