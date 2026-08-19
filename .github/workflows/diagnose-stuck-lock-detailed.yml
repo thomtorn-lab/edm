@@ -1,0 +1,182 @@
+name: Diagnose Stuck Advisory Lock (Read-Only)
+
+# One-off, manual, strictly read-only diagnostic to identify the exact
+# backend PID holding the Culture Box advisory lock (objid = hashtext
+# of 'src-culture-box'), before any recovery action is considered.
+#
+# Strictly read-only:
+#   - workflow_dispatch only.
+#   - No pg_terminate_backend, no pg_advisory_unlock, no writes of any kind.
+#   - Opens one dedicated connection, BEGINs, SET LOCAL
+#     default_transaction_read_only = on, issues only SELECT statements
+#     against pg_locks / pg_stat_activity, always ROLLBACKs.
+#
+# This workflow file is removed after use, per repo convention for
+# one-off diagnostic workflows.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run read-only diagnostic
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > ./.diagnose-lock.mjs <<'EOF'
+          import pg from "pg";
+
+          const SOURCE_IDS = ["src-culture-box", "src-hangaren", "src-poolen"];
+
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          function section(title) {
+            console.log(`\n=== ${title} ===`);
+          }
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '20s'");
+
+            section("hashtext() for each known source id");
+            const hashRes = await client.query(
+              `SELECT id, hashtext(id) AS h FROM (SELECT unnest($1::text[]) AS id) t`,
+              [SOURCE_IDS],
+            );
+            for (const r of hashRes.rows) console.log(" ", r);
+            const hashById = Object.fromEntries(hashRes.rows.map((r) => [r.id, r.h]));
+
+            section("All advisory locks currently held (any objid)");
+            const advRes = await client.query(`
+              SELECT
+                l.locktype, l.database, l.classid, l.objid, l.objsubid,
+                l.transactionid, l.mode, l.granted, l.fastpath,
+                l.pid
+              FROM pg_locks l
+              WHERE l.locktype = 'advisory'
+              ORDER BY l.pid
+            `);
+            console.log(`Advisory lock rows: ${advRes.rowCount}`);
+            for (const r of advRes.rows) console.log(" ", r);
+
+            const cultureBoxHash = hashById["src-culture-box"];
+            const holders = advRes.rows.filter((r) => String(r.objid) === String(cultureBoxHash));
+            console.log(`\nRows matching Culture Box hashtext (${cultureBoxHash}): ${holders.length}`);
+            for (const r of holders) console.log(" ", r);
+
+            if (holders.length === 0) {
+              console.log("\nNo backend currently holds the Culture Box advisory lock. Nothing to diagnose further.");
+            }
+
+            for (const holder of holders) {
+              const pid = holder.pid;
+              section(`pg_stat_activity for PID ${pid} (Culture Box lock holder)`);
+              const actRes = await client.query(
+                `SELECT
+                   pid, datname, usename, application_name, client_addr, client_port,
+                   backend_start, xact_start, query_start, state_change,
+                   wait_event_type, wait_event, state, backend_xid, backend_xmin,
+                   query
+                 FROM pg_stat_activity
+                 WHERE pid = $1`,
+                [pid],
+              );
+              if (actRes.rowCount === 0) {
+                console.log(`  No pg_stat_activity row found for PID ${pid} (backend may have already exited).`);
+                continue;
+              }
+              const row = actRes.rows[0];
+              console.log(" ", row);
+
+              const now = new Date();
+              const stateChangeAgeSec = row.state_change ? (now - new Date(row.state_change)) / 1000 : null;
+              const queryStartAgeSec = row.query_start ? (now - new Date(row.query_start)) / 1000 : null;
+              const backendAgeSec = row.backend_start ? (now - new Date(row.backend_start)) / 1000 : null;
+              console.log("  Derived ages (seconds):", {
+                backendAgeSec,
+                queryStartAgeSec,
+                stateChangeAgeSec,
+                hasActiveXact: row.xact_start !== null,
+              });
+
+              section(`ALL locks held by PID ${pid} (not just advisory)`);
+              const allLocksRes = await client.query(
+                `SELECT locktype, database, relation::regclass::text AS relation, page, tuple,
+                        virtualxid, transactionid, classid, objid, objsubid, mode, granted, fastpath
+                 FROM pg_locks
+                 WHERE pid = $1
+                 ORDER BY locktype`,
+                [pid],
+              );
+              console.log(`  Lock rows for PID ${pid}: ${allLocksRes.rowCount}`);
+              for (const r of allLocksRes.rows) console.log("   ", r);
+
+              const nonAdvisory = allLocksRes.rows.filter((r) => r.locktype !== "advisory");
+              const advisoryOther = allLocksRes.rows.filter(
+                (r) => r.locktype === "advisory" && String(r.objid) !== String(cultureBoxHash),
+              );
+              console.log(`  Non-advisory locks held: ${nonAdvisory.length}`);
+              console.log(`  Other advisory locks held (not Culture Box): ${advisoryOther.length}`);
+
+              const isIdle = row.state === "idle";
+              const hasActiveXact = row.xact_start !== null;
+              const looksStale = isIdle && !hasActiveXact && nonAdvisory.length === 0;
+              console.log("\n  ASSESSMENT:", {
+                state: row.state,
+                isIdle,
+                hasActiveXact,
+                nonAdvisoryLockCount: nonAdvisory.length,
+                otherAdvisoryLockCount: advisoryOther.length,
+                looksStaleAndSafeToConsiderForRecovery: looksStale,
+              });
+            }
+
+            section("Hangaren / Poolen advisory lock holders (for comparison, should be unaffected)");
+            for (const sid of ["src-hangaren", "src-poolen"]) {
+              const h = hashById[sid];
+              const rows = advRes.rows.filter((r) => String(r.objid) === String(h));
+              console.log(`  ${sid} (hashtext=${h}): ${rows.length} holder(s)`);
+              for (const r of rows) console.log("   ", r);
+            }
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only). No changes made.");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("DIAGNOSTIC SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.diagnose-lock.mjs
+          rm -f ./.diagnose-lock.mjs
