@@ -10,12 +10,11 @@ name: Verify Culture Box Detail-Page Preview Sync
 # the already-deployed Preview app's own /api/sync/culture-box handler,
 # exactly once.
 #
-# Unlike verify-culture-box-preview.yml, the Preview base URL is NOT
-# hardcoded here — it's looked up from GitHub's own Deployments API for
-# this exact branch/commit using the workflow's built-in GITHUB_TOKEN,
-# rather than guessed from Vercel's branch-slug URL convention (which
-# truncates/hashes for long branch names and would be unreliable to
-# hand-construct for this branch name).
+# The Preview base URL follows Vercel's standard git-branch alias
+# convention (same as verify-culture-box-preview.yml) and was independently
+# confirmed reachable via a same-day read-only network probe from a GitHub
+# Actions runner before this workflow was trusted to use it — see the URL's
+# own comment below.
 #
 # Secrets used: DATABASE_URL (read-only queries only), SYNC_TRIGGER_TOKEN
 # and VERCEL_AUTOMATION_BYPASS_SECRET (sync trigger headers). None are ever
@@ -30,11 +29,23 @@ on:
 
 permissions:
   contents: read
-  deployments: read
 
 concurrency:
   group: verify-culture-box-detail-preview
   cancel-in-progress: false
+
+env:
+  # Verified reachable (HTTP 302 -> Vercel deployment-protection redirect,
+  # confirming a real deployment exists) by a same-day read-only network
+  # probe run from a GitHub Actions runner — see
+  # probe-culture-box-preview-url.yml (removed after use). GitHub's own
+  # Deployments API returned no records for this project's Vercel
+  # integration for either this branch or the older
+  # claude/culture-box-ingestion precedent branch, even though both
+  # deployments are demonstrably live — so, same as
+  # verify-culture-box-preview.yml, the URL is hardcoded here rather than
+  # looked up.
+  PREVIEW_BASE_URL: https://edm-git-claude-culture-box-publishing-diagnosis-0qszf8-edm9.vercel.app
 
 jobs:
   verify:
@@ -54,28 +65,6 @@ jobs:
 
       - name: Record the exact commit this run is verifying
         run: git rev-parse HEAD
-
-      - name: Look up the real Preview deployment URL for this branch
-        id: preview
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -u
-          repo="${{ github.repository }}"
-          branch="claude/culture-box-publishing-diagnosis-0qszf8"
-          deployment_id=$(gh api "repos/${repo}/deployments?ref=${branch}&environment=Preview&per_page=1" --jq '.[0].id')
-          if [ -z "${deployment_id}" ] || [ "${deployment_id}" == "null" ]; then
-            echo "::error::No Preview deployment found via GitHub Deployments API for branch ${branch}. Has Vercel finished building this branch yet?"
-            exit 1
-          fi
-          echo "Deployment id: ${deployment_id}"
-          url=$(gh api "repos/${repo}/deployments/${deployment_id}/statuses?per_page=1" --jq '.[0].environment_url')
-          if [ -z "${url}" ] || [ "${url}" == "null" ]; then
-            echo "::error::Deployment ${deployment_id} has no environment_url yet — it may still be building."
-            exit 1
-          fi
-          echo "Resolved Preview URL: ${url}"
-          echo "base_url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -102,7 +91,6 @@ jobs:
       - name: Confirm the Preview deployment is actually reachable before touching anything
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          PREVIEW_BASE_URL: ${{ steps.preview.outputs.base_url }}
         run: |
           set -u
           http_code=$(curl -sS --max-time 30 -o /tmp/preview-home.html -w '%{http_code}' \
@@ -215,7 +203,6 @@ jobs:
         env:
           SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          PREVIEW_BASE_URL: ${{ steps.preview.outputs.base_url }}
         run: |
           set -u
           response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
@@ -236,7 +223,6 @@ jobs:
         env:
           SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          PREVIEW_BASE_URL: ${{ steps.preview.outputs.base_url }}
         run: |
           set -u
           response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
