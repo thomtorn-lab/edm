@@ -1,0 +1,157 @@
+name: Inspect Culture Box Publishing Pipeline (read-only, diagnostic)
+
+# ONE-OFF, manual, confirmation-gated, strictly READ-ONLY diagnostic.
+# Investigates why Culture Box (src-culture-box) reports healthy
+# source-health status but currently has 0 publicly visible published
+# events, while its candidates sit in discovery_queue. Reads the sources
+# row (health/sync stats), the events table (Culture Box venue rows and
+# their published/confidence state), and discovery_queue (pending Culture
+# Box candidates with genre confidence and missing-fields reasons). No
+# writes anywhere in this file (BEGIN; SET LOCAL
+# default_transaction_read_only = on; SELECT; ROLLBACK). Intended to be
+# removed once the diagnosis is complete, mirroring
+# inspect-ca7riel-post-production-sync.yml's precedent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type INSPECT-CULTURE-BOX to confirm: this only runs read-only SELECTs against the shared Preview/Production database.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "INSPECT-CULTURE-BOX" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: INSPECT-CULTURE-BOX"
+            exit 1
+          fi
+
+      - name: Verify required secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -u
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Missing required repository secret: DATABASE_URL"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pg
+        run: npm install pg@8
+
+      - name: Read-only inspection of Culture Box pipeline state
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > inspect.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main(client) {
+            await client.connect();
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+
+            const source = await client.query(
+              `SELECT id, source_name, trust_level, auto_publish, sync_frequency, active,
+                      last_successful_sync, last_attempted_sync, last_error,
+                      events_found, events_updated, integration_note
+               FROM sources WHERE id = 'src-culture-box'`,
+            );
+            console.log('\n-- sources row: src-culture-box --');
+            console.log(JSON.stringify(source.rows, null, 2));
+
+            const eventCounts = await client.query(
+              `SELECT e.published, e.genre_confidence, e.confidence, e.canonical_source_id, count(*) AS n
+               FROM events e
+               JOIN venues v ON v.id = e.venue_id
+               WHERE v.id = 'v-culture-box'
+               GROUP BY 1,2,3,4
+               ORDER BY 1,2,3,4`,
+            );
+            console.log('\n-- events at Culture Box venue: grouped by published/genre_confidence/confidence/canonical_source_id --');
+            console.log(JSON.stringify(eventCounts.rows, null, 2));
+
+            const eventRows = await client.query(
+              `SELECT e.id, e.title, e.start_datetime, e.published, e.genre_confidence,
+                      e.confidence, e.primary_genre, e.canonical_source_id, e.manual_override,
+                      e.overridden_fields, e.updated_at
+               FROM events e
+               JOIN venues v ON v.id = e.venue_id
+               WHERE v.id = 'v-culture-box'
+               ORDER BY e.start_datetime`,
+            );
+            console.log('\n-- all events rows at Culture Box venue --');
+            console.log(JSON.stringify(eventRows.rows, null, 2));
+
+            const dqCounts = await client.query(
+              `SELECT status, genre_confidence, overall_confidence, count(*) AS n
+               FROM discovery_queue
+               WHERE source_id = 'src-culture-box'
+               GROUP BY 1,2,3
+               ORDER BY 1,2,3`,
+            );
+            console.log('\n-- discovery_queue for src-culture-box: grouped by status/genre_confidence/overall_confidence --');
+            console.log(JSON.stringify(dqCounts.rows, null, 2));
+
+            const dqRows = await client.query(
+              `SELECT id, probable_title, probable_start, probable_venue_name, detected_lineup,
+                      predicted_genre, genre_confidence, overall_confidence, missing_fields,
+                      suspected_duplicate_of_event_id, status, overridden_fields, created_at
+               FROM discovery_queue
+               WHERE source_id = 'src-culture-box'
+               ORDER BY probable_start`,
+            );
+            console.log('\n-- all discovery_queue rows for src-culture-box --');
+            console.log(JSON.stringify(dqRows.rows, null, 2));
+
+            const dqByVenueNameFallback = await client.query(
+              `SELECT id, probable_title, probable_start, source_id, source_name, status,
+                      genre_confidence, overall_confidence, missing_fields
+               FROM discovery_queue
+               WHERE source_id IS DISTINCT FROM 'src-culture-box'
+                 AND probable_venue_name ILIKE '%culture box%'
+               ORDER BY probable_start`,
+            );
+            console.log('\n-- discovery_queue rows mentioning Culture Box by venue name but NOT tagged src-culture-box (sanity check) --');
+            console.log(JSON.stringify(dqByVenueNameFallback.rows, null, 2));
+
+            const allSourceCounts = await client.query(
+              `SELECT canonical_source_id, published, count(*) AS n
+               FROM events
+               GROUP BY 1,2
+               ORDER BY 1,2`,
+            );
+            console.log('\n-- ALL events grouped by canonical_source_id/published (context: what IS live today) --');
+            console.log(JSON.stringify(allSourceCounts.rows, null, 2));
+
+            await client.query('COMMIT');
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('QUERY FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
+          SCRIPT
+          node inspect.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f inspect.cjs
