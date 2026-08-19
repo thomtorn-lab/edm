@@ -1,0 +1,174 @@
+name: Correct Poolen Ca7riel y Paco Amoroso Misclassification (ONE ROW)
+
+# ONE-OFF, manual, confirmation-gated, narrowly-scoped write against the
+# shared Preview/Production database. Fixes a single stale row: before the
+# deterministicGenreMapping.ts "experimental" over-match was fixed
+# (claude/sourcing-billetto-and-venue-candidates @ 545e920), the Poolen
+# sync auto-published event e-2a630663 ("Ca7riel y Paco Amoroso") as
+# ambient-experimental/high confidence, purely because its bio used the
+# generic word "experimental" in a non-electronic (trap/rock/pop) sense.
+# After the fix, this event's genre resolves to null (no credible
+# electronic-music evidence) — per Electronic CPH's inclusion rule
+# ("electronic music must be central to the event"), it should not be
+# publicly published. The classifier fix only prevents *future*
+# misclassifications; it does not retroactively touch already-created rows
+# (src/lib/sync.ts's buildSyncPatch deliberately never nulls out an
+# already-resolved field), so this one row needs a one-time manual
+# correction.
+#
+# primaryGenre/genreConfidence/subgenres are NOT NULL columns in the events
+# table (see src/db/schema.ts) with no "unresolved" sentinel value in the
+# genre taxonomy, so this workflow does NOT invent a substitute genre — it
+# only flips `published` to false, exactly as instructed. The stale
+# primary_genre="ambient-experimental"/genre_confidence="high" values are
+# left in place as historical/internal-only data; they no longer drive
+# public visibility once published=false.
+#
+# Safety:
+# - The single UPDATE's WHERE clause requires every one of the expected
+#   BEFORE-state values (id, title, primary_genre, genre_confidence,
+#   published=true, manual_override=false) to still hold — if the row has
+#   drifted from what was diagnosed, 0 rows match and the script aborts
+#   instead of blindly overwriting anything.
+# - Runs in one explicit transaction (BEGIN ... COMMIT) on a single
+#   dedicated connection.
+# - Touches only event id e-2a630663. No other event, source, venue, or
+#   discovery_queue row is read or written.
+# - BEFORE and AFTER snapshots (read-only: BEGIN; SET LOCAL
+#   default_transaction_read_only = on; ...; ROLLBACK) bound the write.
+# - Intended to be removed via a follow-up workflow-only commit once the
+#   correction is confirmed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type CORRECT-CA7RIEL-GENRE to confirm: this sets published=false on ONLY event e-2a630663 (Ca7riel y Paco Amoroso), in one explicit transaction, only if its current state matches the diagnosed stale values exactly.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: correct-poolen-ca7riel-genre
+  cancel-in-progress: false
+
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "CORRECT-CA7RIEL-GENRE" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: CORRECT-CA7RIEL-GENRE"
+            exit 1
+          fi
+
+      - name: Verify required secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -u
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Missing required repository secret: DATABASE_URL"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pg
+        run: npm install pg@8
+
+      - name: Write snapshot + correction script
+        run: |
+          cat > correct.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+          const TARGET_ID = 'e-2a630663';
+
+          async function snapshot(client, label) {
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+            const row = await client.query(
+              `SELECT id, title, description, venue_id, start_datetime, end_datetime,
+                      official_event_url, primary_genre, subgenres, genre_confidence,
+                      confidence, published, manual_override, overridden_fields, updated_at
+               FROM events WHERE id = $1`,
+              [TARGET_ID],
+            );
+            console.log(`\n========== ${label} ==========`);
+            console.log(JSON.stringify(row.rows, null, 2));
+            await client.query('COMMIT');
+            return row.rows[0] ?? null;
+          }
+
+          async function main() {
+            const client = new Client({ connectionString: process.env.DATABASE_URL });
+            await client.connect();
+
+            const before = await snapshot(client, 'BEFORE');
+            if (!before) throw new Error(`No events row found for id ${TARGET_ID} — aborting.`);
+            if (
+              before.title !== 'Ca7riel y Paco Amoroso' ||
+              before.primary_genre !== 'ambient-experimental' ||
+              before.genre_confidence !== 'high' ||
+              before.published !== true ||
+              before.manual_override !== false
+            ) {
+              console.error('BEFORE state does not match the diagnosed assumptions — aborting without writing.');
+              console.error('Expected: title=Ca7riel y Paco Amoroso, primary_genre=ambient-experimental, genre_confidence=high, published=true, manual_override=false');
+              process.exitCode = 1;
+              await client.end();
+              return;
+            }
+
+            await client.query('BEGIN');
+            try {
+              const result = await client.query(
+                `UPDATE events
+                 SET published = false, updated_at = now()
+                 WHERE id = $1
+                   AND title = 'Ca7riel y Paco Amoroso'
+                   AND primary_genre = 'ambient-experimental'
+                   AND genre_confidence = 'high'
+                   AND published = true
+                   AND manual_override = false`,
+                [TARGET_ID],
+              );
+              if (result.rowCount !== 1) {
+                throw new Error(`Expected exactly 1 row updated, got ${result.rowCount} — the row must have changed between the BEFORE check and the write. Rolling back.`);
+              }
+              await client.query('COMMIT');
+              console.log(`\nCOMMIT successful — set published=false on exactly ${TARGET_ID}.`);
+            } catch (err) {
+              await client.query('ROLLBACK').catch(() => {});
+              console.error('ROLLBACK — no changes were written.');
+              console.error(err instanceof Error ? err.message : String(err));
+              process.exitCode = 1;
+              await client.end();
+              return;
+            }
+
+            await snapshot(client, 'AFTER');
+            await client.end();
+          }
+
+          main().catch((err) => {
+            console.error('SCRIPT FAILED:', err.message);
+            process.exitCode = 1;
+          });
+          SCRIPT
+
+      - name: Run BEFORE snapshot, assumption check, correction, AFTER snapshot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node correct.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f correct.cjs
