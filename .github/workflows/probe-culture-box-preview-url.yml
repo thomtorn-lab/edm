@@ -1,0 +1,37 @@
+name: Probe Culture Box Preview URL (read-only diagnostic)
+
+# ONE-OFF, manual, read-only network probe. Determines whether a Vercel
+# Preview deployment exists for claude/culture-box-publishing-diagnosis-0qszf8
+# (or the older claude/culture-box-ingestion precedent branch) by checking
+# HTTP reachability from a GitHub Actions runner (which has real network
+# access, unlike this session's own sandboxed environment, whose outbound
+# proxy blocks *.vercel.app entirely). No secrets used, no writes, no sync
+# triggers — a bare GET to each candidate homepage URL only. A 401/403 from
+# Vercel's own deployment-protection page means the deployment DOES exist;
+# a DNS failure or Vercel's generic "not found" response means it doesn't.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe candidate Preview URLs
+        run: |
+          set -u
+          for url in \
+            "https://edm-git-claude-culture-box-publishing-diagnosis-0qszf8-edm9.vercel.app/" \
+            "https://edm-git-claude-culture-box-ingestion-edm9.vercel.app/" \
+            "https://edm.vercel.app/"; do
+            echo "=== ${url} ==="
+            http_code=$(curl -sS --max-time 15 -o /tmp/body.html -w '%{http_code}' "${url}" || echo "CURL_FAILED")
+            echo "HTTP status: ${http_code}"
+            echo "First 500 bytes of body:"
+            head -c 500 /tmp/body.html 2>/dev/null || true
+            echo ""
+            echo ""
+          done
