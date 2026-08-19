@@ -22,6 +22,7 @@ import {
 } from "@/lib/sync";
 import { enrichEventGenre } from "./enrichment";
 import type { GenreSlug } from "@/lib/taxonomy";
+import type { ConfidenceLevel } from "@/lib/types";
 
 /**
  * Orchestrates one full sync run for one source (task 4/5/6): fetch ->
@@ -236,11 +237,12 @@ async function runSourceSyncLocked(
       const existingPending = pendingByUrl.get(dedupKey);
       if (existingPending) {
         const classificationPatch = buildDiscoveryQueueClassificationPatch(
-          { genre: result.genre, genreConfidence: result.genreConfidence },
+          { genre: result.genre, genreConfidence: result.genreConfidence, decision: result.decision },
           {
             status: existingPending.status,
             predictedGenre: existingPending.predictedGenre as GenreSlug | null,
             overriddenFields: existingPending.overriddenFields,
+            overallConfidence: existingPending.overallConfidence as ConfidenceLevel,
           },
         );
         await applyDiscoveryClassificationUpdate(existingPending.id, classificationPatch);

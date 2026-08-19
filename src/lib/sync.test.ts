@@ -145,6 +145,7 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     status: "pending",
     predictedGenre: null,
     overriddenFields: [],
+    overallConfidence: "low",
     ...overrides,
   };
 }
@@ -156,65 +157,69 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
   // discarding a freshly-resolved genre instead of ever persisting it.
 
   it("Sunday Psy: an existing pending item receives a newly-available predicted genre (deterministic 'psy' mapping)", () => {
+    // Was queued with no genre evidence at all (predictedGenre null,
+    // overallConfidence "low" — a "hold" outcome). A later sync resolves a
+    // medium-confidence genre, so the decision is now "review_queue": both
+    // genreConfidence AND overallConfidence move together.
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "psytrance", genreConfidence: "medium" },
-      pendingDiscoveryTarget({ predictedGenre: null }),
+      { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" },
+      pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" }),
     );
-    expect(patch).toEqual({ predictedGenre: "psytrance", genreConfidence: "medium" });
+    expect(patch).toEqual({ predictedGenre: "psytrance", genreConfidence: "medium", overallConfidence: "medium" });
   });
 
   it("Oliver Koletzki: an existing pending item receives a newly-available predicted genre (Discogs enrichment)", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "tech-house", genreConfidence: "medium" },
-      pendingDiscoveryTarget({ predictedGenre: null }),
+      { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+      pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" }),
     );
-    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium" });
+    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium", overallConfidence: "medium" });
   });
 
   it("second identical sync is idempotent — no patch when the fresh genre already matches what's stored", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "psytrance", genreConfidence: "medium" },
-      pendingDiscoveryTarget({ predictedGenre: "psytrance" }),
+      { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" },
+      pendingDiscoveryTarget({ predictedGenre: "psytrance", overallConfidence: "medium" }),
     );
     expect(patch).toEqual({});
   });
 
   it("a transient lookup failure (fresh genre unresolved) never clears a previously-resolved genre", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: null, genreConfidence: "low" },
-      pendingDiscoveryTarget({ predictedGenre: "psytrance" }),
+      { genre: null, genreConfidence: "low", decision: "hold" },
+      pendingDiscoveryTarget({ predictedGenre: "psytrance", overallConfidence: "medium" }),
     );
     expect(patch).toEqual({});
   });
 
   it("never overwrites an admin's manual predictedGenre correction", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "tech-house", genreConfidence: "medium" },
-      pendingDiscoveryTarget({ predictedGenre: "house", overriddenFields: ["predictedGenre"] }),
+      { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+      pendingDiscoveryTarget({ predictedGenre: "house", overriddenFields: ["predictedGenre"], overallConfidence: "low" }),
     );
     expect(patch).toEqual({});
   });
 
   it("a manual edit to an unrelated field (e.g. probableTitle) does not block a genre refresh", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "tech-house", genreConfidence: "medium" },
-      pendingDiscoveryTarget({ predictedGenre: null, overriddenFields: ["probableTitle"] }),
+      { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+      pendingDiscoveryTarget({ predictedGenre: null, overriddenFields: ["probableTitle"], overallConfidence: "low" }),
     );
-    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium" });
+    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium", overallConfidence: "medium" });
   });
 
   it("never proposes a status change — the patch shape can only ever contain classification fields, so a medium-confidence suggestion keeps the item in review", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "psytrance", genreConfidence: "medium" },
-      pendingDiscoveryTarget({ predictedGenre: null }),
+      { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" },
+      pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" }),
     );
-    expect(Object.keys(patch).sort()).toEqual(["genreConfidence", "predictedGenre"]);
+    expect(Object.keys(patch).sort()).toEqual(["genreConfidence", "overallConfidence", "predictedGenre"]);
     expect(patch).not.toHaveProperty("status");
   });
 
   it("published rows are unaffected — a non-pending item never receives a patch even with a differing fresh genre", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "tech-house", genreConfidence: "medium" },
+      { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
       pendingDiscoveryTarget({ status: "published", predictedGenre: null }),
     );
     expect(patch).toEqual({});
@@ -223,16 +228,96 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
   it("ignored and merged rows are equally frozen", () => {
     expect(
       buildDiscoveryQueueClassificationPatch(
-        { genre: "tech-house", genreConfidence: "medium" },
+        { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
         pendingDiscoveryTarget({ status: "ignored" }),
       ),
     ).toEqual({});
     expect(
       buildDiscoveryQueueClassificationPatch(
-        { genre: "tech-house", genreConfidence: "medium" },
+        { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
         pendingDiscoveryTarget({ status: "merged" }),
       ),
     ).toEqual({});
+  });
+
+  // ---- Regression coverage: Culture Box publishing diagnosis, Phase 2 Part A ----
+  // Live Production bug: 6 src-culture-box discovery_queue rows had
+  // genre_confidence "medium" (correctly resolved by a later Discogs pass)
+  // sitting next to overall_confidence still stuck at "low" (from the
+  // original insert, when genre was still unresolved). E.g. "Red Box: WHAT
+  // HAPPENS" (2026-09-19): predictedGenre resolved to "electronic-other" at
+  // medium confidence, but overallConfidence never moved off "low".
+
+  it("bug repro: a stale 'low' overallConfidence recovers to 'medium' when a later sync resolves genre at medium confidence (Culture Box 'Red Box: WHAT HAPPENS' case)", () => {
+    const staleRow = pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "electronic-other", genreConfidence: "medium", decision: "review_queue" },
+      staleRow,
+    );
+    expect(patch).toEqual({
+      predictedGenre: "electronic-other",
+      genreConfidence: "medium",
+      overallConfidence: "medium",
+    });
+  });
+
+  it("bug repro: still recovers when the row already had SOME genre guess (not just null) but the wrong overallConfidence", () => {
+    // Guards against a narrower fix that only checked `predictedGenre === null`
+    // instead of comparing overallConfidence directly.
+    const staleRow = pendingDiscoveryTarget({ predictedGenre: "house", overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+      staleRow,
+    );
+    expect(patch.overallConfidence).toBe("medium");
+  });
+
+  it("existing correct rows remain unchanged: overallConfidence is omitted from the patch when it already matches the fresh decision", () => {
+    // The row was already correctly "medium" (review_queue) from a prior
+    // sync; this sync just swaps which medium-confidence genre applies.
+    // Only the genre fields should move — overallConfidence must NOT appear
+    // in the patch (it's already right, so no write is proposed for it).
+    const alreadyCorrectRow = pendingDiscoveryTarget({ predictedGenre: "techno", overallConfidence: "medium" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+      alreadyCorrectRow,
+    );
+    expect(patch).toEqual({ predictedGenre: "tech-house", genreConfidence: "medium" });
+    expect(patch).not.toHaveProperty("overallConfidence");
+  });
+
+  it("existing correct rows remain unchanged: a 'hold' row with an already-correct 'low' overallConfidence gets no overallConfidence write even as its (still low-confidence) genre guess changes", () => {
+    const alreadyCorrectRow = pendingDiscoveryTarget({ predictedGenre: "house", overallConfidence: "low" });
+    // Note: genreConfidence "low" candidates never reach this function with a
+    // non-null genre in production (see pipeline.ts), but the pure function
+    // itself must still behave correctly if it did.
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "low", decision: "hold" },
+      alreadyCorrectRow,
+    );
+    expect(patch).toEqual({ predictedGenre: "techno", genreConfidence: "low" });
+    expect(patch).not.toHaveProperty("overallConfidence");
+  });
+
+  it("no candidate can move to auto_publish solely because of this fix — the patch never contains a status field, and overallConfidence has no 'high' branch to fall into", () => {
+    // In real usage `fresh.decision` is always "review_queue" or "hold" (an
+    // "auto_publish" candidate is created as an event directly by a different
+    // code path in src/db/sync.ts and never reaches this function at all —
+    // see this function's own doc comment). Even if a caller mistakenly
+    // passed "auto_publish" here, the recompute rule
+    // (`decision === "review_queue" ? "medium" : "low"`) has only two
+    // possible outputs — there is no code path that can ever produce "high",
+    // and the returned patch shape can never include a status/published key.
+    const row = pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "high", decision: "auto_publish" },
+      row,
+    );
+    expect(patch.overallConfidence).not.toBe("high");
+    expect(["low", "medium", undefined]).toContain(patch.overallConfidence);
+    expect(patch).not.toHaveProperty("status");
+    expect(patch).not.toHaveProperty("published");
+    expect(Object.keys(patch).every((k) => ["predictedGenre", "genreConfidence", "overallConfidence"].includes(k))).toBe(true);
   });
 });
 
