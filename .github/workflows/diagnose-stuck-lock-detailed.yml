@@ -66,13 +66,23 @@ jobs:
             await client.query("SET LOCAL default_transaction_read_only = on");
             await client.query("SET LOCAL statement_timeout = '20s'");
 
-            section("hashtext() for each known source id");
+            section("hashtext() for each known source id, plus the (classid, objid) pg_locks actually stores");
+            // pg_try_advisory_lock(hashtext(id)) implicitly casts the int4 result of
+            // hashtext() to bigint (sign-extending), then Postgres splits that 64-bit
+            // key into two uint32 halves for storage in pg_locks: classid = high 32
+            // bits, objid = low 32 bits. Reproduce that exact split here instead of
+            // comparing against the raw signed hashtext() output.
             const hashRes = await client.query(
-              `SELECT id, hashtext(id) AS h FROM (SELECT unnest($1::text[]) AS id) t`,
+              `SELECT id,
+                      hashtext(id) AS h,
+                      (hashtext(id)::bigint >> 32) & 4294967295 AS classid,
+                      hashtext(id)::bigint & 4294967295 AS objid
+               FROM (SELECT unnest($1::text[]) AS id) t`,
               [SOURCE_IDS],
             );
             for (const r of hashRes.rows) console.log(" ", r);
-            const hashById = Object.fromEntries(hashRes.rows.map((r) => [r.id, r.h]));
+            const objidById = Object.fromEntries(hashRes.rows.map((r) => [r.id, r.objid]));
+            const classidById = Object.fromEntries(hashRes.rows.map((r) => [r.id, r.classid]));
 
             section("All advisory locks currently held (any objid)");
             const advRes = await client.query(`
@@ -87,9 +97,12 @@ jobs:
             console.log(`Advisory lock rows: ${advRes.rowCount}`);
             for (const r of advRes.rows) console.log(" ", r);
 
-            const cultureBoxHash = hashById["src-culture-box"];
-            const holders = advRes.rows.filter((r) => String(r.objid) === String(cultureBoxHash));
-            console.log(`\nRows matching Culture Box hashtext (${cultureBoxHash}): ${holders.length}`);
+            const cultureBoxObjid = objidById["src-culture-box"];
+            const cultureBoxClassid = classidById["src-culture-box"];
+            const holders = advRes.rows.filter(
+              (r) => String(r.objid) === String(cultureBoxObjid) && String(r.classid) === String(cultureBoxClassid),
+            );
+            console.log(`\nRows matching Culture Box (classid=${cultureBoxClassid}, objid=${cultureBoxObjid}): ${holders.length}`);
             for (const r of holders) console.log(" ", r);
 
             if (holders.length === 0) {
@@ -141,7 +154,9 @@ jobs:
 
               const nonAdvisory = allLocksRes.rows.filter((r) => r.locktype !== "advisory");
               const advisoryOther = allLocksRes.rows.filter(
-                (r) => r.locktype === "advisory" && String(r.objid) !== String(cultureBoxHash),
+                (r) =>
+                  r.locktype === "advisory" &&
+                  !(String(r.objid) === String(cultureBoxObjid) && String(r.classid) === String(cultureBoxClassid)),
               );
               console.log(`  Non-advisory locks held: ${nonAdvisory.length}`);
               console.log(`  Other advisory locks held (not Culture Box): ${advisoryOther.length}`);
@@ -161,9 +176,12 @@ jobs:
 
             section("Hangaren / Poolen advisory lock holders (for comparison, should be unaffected)");
             for (const sid of ["src-hangaren", "src-poolen"]) {
-              const h = hashById[sid];
-              const rows = advRes.rows.filter((r) => String(r.objid) === String(h));
-              console.log(`  ${sid} (hashtext=${h}): ${rows.length} holder(s)`);
+              const objid = objidById[sid];
+              const classid = classidById[sid];
+              const rows = advRes.rows.filter(
+                (r) => String(r.objid) === String(objid) && String(r.classid) === String(classid),
+              );
+              console.log(`  ${sid} (classid=${classid}, objid=${objid}): ${rows.length} holder(s)`);
               for (const r of rows) console.log("   ", r);
             }
 
