@@ -1,0 +1,245 @@
+name: Verify Lease-Based Sync Locking (Preview)
+
+# One-off, manual, confirmation-gated real validation of the new
+# lease-based sync-concurrency mechanism (src/db/sync.ts's
+# acquireSyncLock/releaseSyncLock, replacing the session-scoped advisory
+# lock that got stuck in production) against the Preview deployment for
+# claude/culture-box-publishing-diagnosis-0qszf8.
+#
+# Mirrors the established safe pattern from prior Culture Box validation
+# workflows: every database read runs inside its own explicit read-only
+# transaction (BEGIN; SET LOCAL default_transaction_read_only = on; ...;
+# ROLLBACK). The only writes anywhere in this run happen inside the
+# already-deployed Preview app's own /api/sync/culture-box handler.
+#
+# Unlike the old advisory-lock validation runs, this deliberately does NOT
+# wait between the two sync triggers: runSourceSync's `finally` releases
+# the lease before the HTTP handler returns its response (see
+# src/app/api/sync/[source]/route.ts — `await runSourceSync(...)` is fully
+# awaited before NextResponse.json is built), so the moment the first curl
+# call returns, the lease is already gone and a second trigger is a
+# genuinely independent run with no artificial delay needed. That absence
+# of a wait is itself part of what this run is verifying.
+#
+# Secrets used: DATABASE_URL (read-only queries + one lease-table read),
+# SYNC_TRIGGER_TOKEN and VERCEL_AUTOMATION_BYPASS_SECRET (sync trigger
+# headers). None are ever echoed, printed, or included in any step output.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN-LEASE-LOCKING-PREVIEW-VERIFICATION to confirm: this triggers TWO real, back-to-back Culture Box syncs against the Preview deployment and the shared database.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-culture-box-cleanup-preview
+  cancel-in-progress: false
+
+env:
+  PREVIEW_BASE_URL: https://edm-git-claude-culture-box-publishing-diagnosis-0qszf8-edm9.vercel.app
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "RUN-LEASE-LOCKING-PREVIEW-VERIFICATION" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: RUN-LEASE-LOCKING-PREVIEW-VERIFICATION"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: claude/culture-box-publishing-diagnosis-0qszf8
+
+      - name: Record the exact commit this run is verifying
+        run: git rev-parse HEAD
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required secrets are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          missing=""
+          [ -z "${DATABASE_URL:-}" ] && missing="${missing} DATABASE_URL"
+          [ -z "${SYNC_TRIGGER_TOKEN:-}" ] && missing="${missing} SYNC_TRIGGER_TOKEN"
+          [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ] && missing="${missing} VERCEL_AUTOMATION_BYPASS_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repository secret(s):${missing}"
+            exit 1
+          fi
+
+      - name: Confirm the Preview deployment is actually reachable before touching anything
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          http_code=$(curl -sS --max-time 30 -o /tmp/preview-home.html -w '%{http_code}' \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${PREVIEW_BASE_URL}/")
+          echo "Preview homepage HTTP status: ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Preview base URL ${PREVIEW_BASE_URL} did not return 2xx (got ${http_code}) — stopping before any database read/write."
+            exit 1
+          fi
+
+      - name: Install dependencies (pg only needed, but npm ci matches repo convention)
+        run: npm ci
+
+      - name: Write read-only DB snapshot script
+        run: |
+          cat > snapshot.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main(client) {
+            await client.connect();
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+
+            const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
+            console.log(`\n========== ${label} ==========`);
+
+            const leases = await client.query(`SELECT source_id, lock_token, locked_at, expires_at FROM sync_locks ORDER BY source_id`);
+            console.log(`\n-- sync_locks (ALL rows, should be empty once no sync is in flight): ${leases.rows.length} --`);
+            console.log(JSON.stringify(leases.rows, null, 2));
+
+            for (const sourceId of ['src-culture-box', 'src-hangaren', 'src-poolen']) {
+              const dqStatus = await client.query(
+                `SELECT status, genre_confidence, overall_confidence, count(*)::int AS n
+                 FROM discovery_queue WHERE source_id = $1
+                 GROUP BY status, genre_confidence, overall_confidence
+                 ORDER BY status, genre_confidence, overall_confidence`,
+                [sourceId],
+              );
+              console.log(`\n-- discovery_queue (source_id=${sourceId}) grouped by status/genre_confidence/overall_confidence --`);
+              console.log(JSON.stringify(dqStatus.rows, null, 2));
+
+              const dqPendingRows = await client.query(
+                `SELECT id, probable_title, source_url, predicted_genre, genre_confidence, overall_confidence
+                 FROM discovery_queue WHERE source_id = $1 AND status = 'pending' ORDER BY source_url`,
+                [sourceId],
+              );
+              console.log(`\n-- discovery_queue (source_id=${sourceId}) PENDING rows: ${dqPendingRows.rows.length} --`);
+              console.log(JSON.stringify(dqPendingRows.rows, null, 2));
+
+              const ev = await client.query(
+                `SELECT id, title, official_event_url, published, genre_confidence, manual_override, overridden_fields
+                 FROM events WHERE canonical_source_id = $1 ORDER BY official_event_url`,
+                [sourceId],
+              );
+              console.log(`\n-- events (canonical_source_id=${sourceId}): ${ev.rows.length} rows --`);
+              console.log(JSON.stringify(ev.rows, null, 2));
+            }
+
+            const byCanonicalSource = await client.query(
+              `SELECT canonical_source_id, published, count(*)::int AS n FROM events GROUP BY canonical_source_id, published ORDER BY canonical_source_id NULLS FIRST, published`,
+            );
+            console.log(`\n-- events grouped by canonical_source_id + published (global) --`);
+            console.log(JSON.stringify(byCanonicalSource.rows, null, 2));
+
+            const overridden = await client.query(
+              `SELECT id, overridden_fields, manual_override, published FROM events
+               WHERE array_length(overridden_fields, 1) > 0 OR manual_override = true OR published = false
+               ORDER BY id`,
+            );
+            console.log(`\n-- events with any manual override OR unpublished (global): ${overridden.rows.length} rows --`);
+            console.log(JSON.stringify(overridden.rows, null, 2));
+
+            const totalEvents = await client.query(`SELECT count(*)::int AS n FROM events`);
+            console.log(`\n-- total events (global): ${totalEvents.rows[0].n} --`);
+
+            await client.query('COMMIT');
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('SNAPSHOT FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
+          SCRIPT
+
+      - name: "PHASE 1 — BEFORE snapshot"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: BEFORE (pre-sync)
+        run: node snapshot.cjs
+
+      - name: "PHASE 2a — trigger the FIRST real Preview Culture Box sync"
+        env:
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${PREVIEW_BASE_URL}/api/sync/culture-box")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "First sync HTTP status: ${http_code}"
+          echo "First sync response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::First Culture Box sync request failed with HTTP ${http_code} — see response body above."
+            exit 1
+          fi
+          if echo "$body" | grep -q 'skipped_concurrent'; then
+            echo "::error::First sync came back skipped_concurrent — the lease mechanism is not behaving as designed (nothing should have been holding it)."
+            exit 1
+          fi
+
+      - name: "PHASE 2b — AFTER-FIRST-SYNC snapshot (also proves the lease was released before this ran)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER FIRST SYNC
+        run: node snapshot.cjs
+
+      - name: "PHASE 2c — trigger the SECOND real, independent Preview Culture Box sync — NO artificial wait"
+        env:
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${PREVIEW_BASE_URL}/api/sync/culture-box")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Second sync HTTP status: ${http_code}"
+          echo "Second sync response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Second Culture Box sync request failed with HTTP ${http_code} — see response body above."
+            exit 1
+          fi
+          if echo "$body" | grep -q 'skipped_concurrent'; then
+            echo "::error::Second sync came back skipped_concurrent even with no artificial wait — this is exactly the failure mode the lease redesign exists to eliminate."
+            exit 1
+          fi
+
+      - name: "PHASE 3 — FINAL AFTER snapshot (post both syncs, proves no lingering lease)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: FINAL (post both syncs)
+        run: node snapshot.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f snapshot.cjs
