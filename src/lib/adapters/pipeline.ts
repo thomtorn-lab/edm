@@ -94,7 +94,16 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   let duplicateConfidence: "high" | "medium" | "low" | "none" = "none";
   if (raw.startDatetime) {
     const best = findBestDuplicateMatch(
-      { title: raw.title, artists: normalizedArtists, venueId: resolvedVenue?.id ?? null, startDatetime: raw.startDatetime },
+      {
+        title: raw.title,
+        artists: normalizedArtists,
+        venueId: resolvedVenue?.id ?? null,
+        startDatetime: raw.startDatetime,
+        sourceId: raw.sourceId,
+        officialEventUrl: raw.officialEventUrl,
+        ticketUrl: raw.ticketUrl,
+        residentAdvisorUrl: raw.residentAdvisorUrl,
+      },
       options.existingEvents,
     );
     if (best) {

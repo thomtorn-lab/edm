@@ -166,6 +166,10 @@ async function runSourceSyncLocked(
     artists: e.artists,
     venueId: e.venueId,
     startDatetime: e.startDatetime,
+    sourceId: e.canonicalSourceId,
+    officialEventUrl: e.officialEventUrl,
+    ticketUrl: e.ticketUrl,
+    residentAdvisorUrl: e.residentAdvisorUrl,
   }));
   const existingById = new Map(existingEventRows.map((e) => [e.id, e]));
 

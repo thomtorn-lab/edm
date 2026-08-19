@@ -289,16 +289,48 @@ describe("pipeline integration — real Culture Box candidates through runIngest
     expect(blackBox.officialEventUrl).not.toBe(redBox.officialEventUrl); // distinct identity either way
   });
 
-  it("known, accepted nuance: if a room's own provenance link were ever missing, a same-night shared showcase title CAN read as a high-confidence duplicate against the OTHER room — routes to review_queue, never a silent merge or data loss", () => {
-    // This only matters on a re-sync after the normal case above, and only
-    // if findSyncMatch's URL-based link lookup somehow finds nothing (see
-    // src/lib/sync.ts's own comment on that fallback). The two rooms here
-    // share a venue-authored showcase name ("HYGGELIT SHOWCASE") with a
-    // completely disjoint lineup (artistOverlap 0) — dedup.ts's existing,
-    // unmodified rule still calls that "high" confidence off title
-    // similarity alone. Documented here as an accepted characteristic
-    // rather than silently relied upon: the safe fallback is an extra
-    // human review, never a wrong auto-merge.
+  it("Black Box vs Red Box sharing an RA/Facebook link never auto-merges — the officialEventUrl room anchor is the deciding evidence", () => {
+    // The venue publishes ONE Resident Advisor / Facebook link and one set
+    // of door hours per NIGHT, shared across every room — real Production
+    // data confirmed both rooms on a given night can carry an IDENTICAL
+    // residentAdvisorUrl. A naive "shared RA URL = same event" rule would
+    // wrongly auto-merge these two genuinely distinct shows. The room
+    // anchor on officialEventUrl (#black-box vs #red-box) is what actually
+    // distinguishes them, and it must override the shared RA URL.
+    const blackBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#black-box"))!;
+    const redBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#red-box"))!;
+    const sharedRaUrl = "https://ra.co/events/9999999";
+    const existing: ExistingEventForDedup[] = [
+      {
+        id: "e-existing-black-box",
+        title: blackBox.title,
+        artists: blackBox.artists,
+        venueId: "v-culture-box",
+        startDatetime: blackBox.startDatetime!,
+        officialEventUrl: blackBox.officialEventUrl,
+        residentAdvisorUrl: sharedRaUrl,
+      },
+    ];
+    const match = findBestDuplicateMatch(
+      {
+        title: redBox.title,
+        artists: redBox.artists,
+        venueId: "v-culture-box",
+        startDatetime: redBox.startDatetime!,
+        officialEventUrl: redBox.officialEventUrl,
+        residentAdvisorUrl: sharedRaUrl,
+      },
+      existing,
+    );
+    expect(match).toBeNull(); // room-identity conflict vetoes the match outright — never even "review"
+  });
+
+  it("if a room's own provenance link were ever missing, a shared showcase title now correctly routes to review, never a silent high-confidence auto-merge", () => {
+    // Degraded case: no officialEventUrl at all, so the room-anchor veto
+    // above can't apply and the only remaining signal is the venue-authored
+    // showcase title ("HYGGELIT SHOWCASE") with a completely disjoint
+    // lineup (artistOverlap 0). Without a confirmed strong lineup match,
+    // that alone must land in review, never auto-merge.
     const blackBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#black-box"))!;
     const redBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#red-box"))!;
     const existing: ExistingEventForDedup[] = [
@@ -308,7 +340,7 @@ describe("pipeline integration — real Culture Box candidates through runIngest
       { title: redBox.title, artists: redBox.artists, venueId: "v-culture-box", startDatetime: redBox.startDatetime! },
       existing,
     );
-    expect(match?.assessment.confidence).toBe("high");
+    expect(match?.assessment.confidence).toBe("medium");
     expect(match?.assessment.artistOverlap).toBe(0); // confirms this is title-similarity-driven, not a real lineup match
   });
 

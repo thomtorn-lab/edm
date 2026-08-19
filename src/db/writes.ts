@@ -345,9 +345,18 @@ export async function insertDiscoveryItem(item: {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
 }
 
-/** Finds the strongest same-night duplicate among currently published events, for merge suggestions. */
+/** Finds the strongest duplicate among currently published events, for merge suggestions. */
 export async function findDuplicateEventId(
-  candidate: { title: string; artists: string[]; venueId: string | null; startDatetime: string },
+  candidate: {
+    title: string;
+    artists: string[];
+    venueId: string | null;
+    startDatetime: string;
+    sourceId?: string | null;
+    officialEventUrl?: string | null;
+    ticketUrl?: string | null;
+    residentAdvisorUrl?: string | null;
+  },
 ): Promise<string | null> {
   const rows = await db.select().from(events).where(eq(events.published, true));
   let best: { id: string; confidence: string } | null = null;
@@ -357,6 +366,10 @@ export async function findDuplicateEventId(
       artists: row.artists,
       venueId: row.venueId,
       startDatetime: row.startDatetime.toISOString(),
+      sourceId: row.canonicalSourceId,
+      officialEventUrl: row.officialEventUrl,
+      ticketUrl: row.ticketUrl,
+      residentAdvisorUrl: row.residentAdvisorUrl,
     });
     if (assessment.confidence === "none") continue;
     if (!best || rank(assessment.confidence) > rank(best.confidence)) {
