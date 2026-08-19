@@ -3,6 +3,7 @@ import type { ConfidenceLevel } from "./types";
 import type { GenreSlug } from "./taxonomy";
 import { getCopenhagenParts } from "./datetime";
 import type { DuplicateConfidence } from "./dedup";
+import type { PublishDecision } from "./classification";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -142,16 +143,30 @@ export interface DiscoveryQueueTarget {
   status: string;
   predictedGenre: GenreSlug | null;
   overriddenFields: string[];
+  /** Currently stored overall_confidence, so a refreshed classification can
+   *  detect staleness (see buildDiscoveryQueueClassificationPatch) instead of
+   *  assuming it's already correct. */
+  overallConfidence: ConfidenceLevel;
 }
 
 export interface DiscoveryQueueClassification {
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
+  /**
+   * The full pipeline's decision for this fresh classification. At the one
+   * call site (src/db/sync.ts's existingPending branch) this is always
+   * "review_queue" or "hold" — an "auto_publish" candidate is handled by a
+   * different branch entirely and never reaches this function. Used only to
+   * keep overallConfidence in sync with genreConfidence below; never widens
+   * what this function is allowed to change (see the function's own doc).
+   */
+  decision: PublishDecision;
 }
 
 export interface DiscoveryQueueClassificationPatch {
   predictedGenre?: GenreSlug;
   genreConfidence?: ConfidenceLevel;
+  overallConfidence?: ConfidenceLevel;
 }
 
 /**
@@ -166,6 +181,22 @@ export interface DiscoveryQueueClassificationPatch {
  * previously-resolved one (no flicker from a transient lookup failure), a
  * non-pending item is never touched, and an admin's own correction (tracked
  * in overriddenFields by updateDiscoveryItem) is never clobbered.
+ *
+ * Bug fix (Culture Box publishing diagnosis, Phase 2 Part A): overallConfidence
+ * used to only ever be set once, at insert time (src/db/sync.ts's
+ * insertDiscoveryItem call) — a candidate first queued with no genre evidence
+ * ("low") that later resolved to a medium-confidence genre via Discogs
+ * enrichment kept showing "low" overall confidence forever, even once its own
+ * genreConfidence field correctly said "medium" (confirmed against 6 live
+ * Culture Box rows). overallConfidence is now recomputed alongside the genre
+ * patch using the exact same rule the original insert used (decision
+ * "review_queue" -> "medium", "hold" -> "low"), and only included when it
+ * actually differs from what's stored — the same idempotency guarantee every
+ * other field here already has. This only fires when the genre patch itself
+ * fires (same gating as before): it does not add a new way for a row to
+ * change, does not touch the auto-publish threshold, the genre evidence
+ * hierarchy, or dedup, and — since "auto_publish" never reaches this
+ * function — can never move a candidate to auto_publish.
  */
 export function buildDiscoveryQueueClassificationPatch(
   fresh: DiscoveryQueueClassification,
@@ -174,7 +205,13 @@ export function buildDiscoveryQueueClassificationPatch(
   if (existing.status !== "pending") return {};
   if (existing.overriddenFields.includes("predictedGenre")) return {};
   if (!fresh.genre || fresh.genre === existing.predictedGenre) return {};
-  return { predictedGenre: fresh.genre, genreConfidence: fresh.genreConfidence };
+
+  const patch: DiscoveryQueueClassificationPatch = { predictedGenre: fresh.genre, genreConfidence: fresh.genreConfidence };
+  const freshOverallConfidence: ConfidenceLevel = fresh.decision === "review_queue" ? "medium" : "low";
+  if (freshOverallConfidence !== existing.overallConfidence) {
+    patch.overallConfidence = freshOverallConfidence;
+  }
+  return patch;
 }
 
 export interface WriteFailureSummary {

@@ -295,7 +295,7 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
  */
 export async function applyDiscoveryClassificationUpdate(
   queueId: string,
-  patch: { predictedGenre?: GenreSlug; genreConfidence?: ConfidenceLevel },
+  patch: { predictedGenre?: GenreSlug; genreConfidence?: ConfidenceLevel; overallConfidence?: ConfidenceLevel },
 ) {
   if (Object.keys(patch).length === 0) return;
   await db
