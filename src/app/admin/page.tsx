@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getAllEventsAdmin, getDiscoveryQueue, getSources, getVenues } from "@/lib/queries";
-import { getSourceHealth } from "@/lib/sourceHealth";
+import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
 import AddEventFromUrl from "@/components/admin/AddEventFromUrl";
 import DiscoveryQueue from "@/components/admin/DiscoveryQueue";
@@ -16,6 +16,7 @@ export const revalidate = 0;
 const HEALTH_ICON: Record<string, string> = {
   ok: "✓",
   degraded: "⚠",
+  stale: "⏱",
   inactive: "⏻",
   "discovery-only": "◌",
 };
@@ -23,6 +24,7 @@ const HEALTH_ICON: Record<string, string> = {
 const HEALTH_COLOR: Record<string, string> = {
   ok: "text-accent-strong",
   degraded: "text-status-warn",
+  stale: "text-status-warn",
   inactive: "text-text-tertiary",
   "discovery-only": "text-text-tertiary",
 };
@@ -84,7 +86,7 @@ export default async function AdminPage() {
         </p>
         <ul className="mt-3">
           {sources.map((source) => {
-            const health = getSourceHealth(source);
+            const health = getSourceHealth(source, now);
             return (
               <li key={source.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-border py-3 last:border-b-0">
                 <div>
@@ -94,6 +96,7 @@ export default async function AdminPage() {
                   </p>
                   <p className="mt-0.5 text-xs text-text-tertiary">{source.integrationNote}</p>
                   {source.lastError && <p className="mt-0.5 text-xs text-status-warn">{source.lastError}</p>}
+                  {health === "stale" && <p className="mt-0.5 text-xs text-status-warn">{describeSourceHealth(source, now)}</p>}
                 </div>
                 <div className="text-right text-xs text-text-secondary">
                   <p>{source.adapter ? `${source.eventsFound} events` : "discovery only"}</p>

@@ -3,6 +3,7 @@ import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
   findSyncMatch,
+  summarizeWriteErrors,
   type DiscoveryQueueTarget,
   type SyncTargetEvent,
 } from "./sync";
@@ -232,5 +233,23 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
         pendingDiscoveryTarget({ status: "merged" }),
       ),
     ).toEqual({});
+  });
+});
+
+describe("summarizeWriteErrors", () => {
+  it("is ok with no error message when nothing failed", () => {
+    expect(summarizeWriteErrors([], 9)).toEqual({ outcome: "ok", lastErrorMessage: null });
+  });
+
+  it("degrades to partial_failure and surfaces a count + detail when any candidate failed to write", () => {
+    const result = summarizeWriteErrors(["Kander: duplicate key value violates unique constraint"], 9);
+    expect(result.outcome).toBe("partial_failure");
+    expect(result.lastErrorMessage).toContain("1/9");
+    expect(result.lastErrorMessage).toContain("duplicate key value violates unique constraint");
+  });
+
+  it("reports the full failure count against the total candidates found, not just the failed ones", () => {
+    const result = summarizeWriteErrors(["A: boom", "B: boom"], 9);
+    expect(result.lastErrorMessage).toContain("2/9");
   });
 });

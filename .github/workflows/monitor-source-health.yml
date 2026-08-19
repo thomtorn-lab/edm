@@ -1,0 +1,90 @@
+name: Monitor Source Health
+
+# Proactive, read-only source-health monitor (automated source-health
+# monitoring task). Runs src/db/checkSourceHealth.ts on a schedule against
+# the shared database and turns this workflow run red — the only alerting
+# channel this project has configured (no Slack/email/paid monitoring
+# service) — whenever a monitored source is "degraded" (a recorded sync
+# error, including a DB-write-pipeline partial failure — see
+# src/lib/sync.ts::summarizeWriteErrors) or "stale" (no successful sync
+# within 2x its configured syncFrequency — see src/lib/sourceHealth.ts).
+#
+# This catches what the individual sync-*.yml workflows can't: a source
+# that's simply stopped being triggered at all (a scheduler outage, a
+# workflow accidentally disabled) produces no failed run to go red on its
+# own, but its `sources` row goes stale and this workflow catches that on
+# its own independent schedule.
+#
+# Deliberately scoped to only the sources that are actually automated in
+# Production today (src/db/checkSourceHealth.ts's MONITORED_SOURCE_IDS):
+# Hangaren and Culture Box. Do not add Poolen here until it's merged to
+# Production.
+#
+# Strictly read-only: only ever SELECTs from the `sources` table (via
+# src/lib/queries.ts::getSources), never writes anything, never runs a
+# migration, seed, or sync. Same DATABASE_URL secret already used by
+# verify-db-readonly.yml / verify-poolen-preview.yml.
+#
+# One-time setup: repository secret DATABASE_URL must be configured
+# (Settings > Secrets and variables > Actions > Secrets). Until it's set,
+# every run fails fast with a clear error instead of silently doing
+# nothing.
+
+on:
+  schedule:
+    # Hourly, offset from the top of the hour. A read-only single-table
+    # query is cheap enough to run far more often than the sources sync on
+    # (every 6h) — more frequent checking only shortens how long a stale or
+    # degraded source can go unnoticed, it doesn't create noise, since a
+    # healthy run produces a green workflow with no alert of any kind.
+    - cron: "20 * * * *"
+  workflow_dispatch: {} # manual on-demand check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitor-source-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets). Add it before this workflow can check anything."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same pattern as prepare-production-db.yml: written to a file, never
+      # to stdout/logs — the db: scripts read DATABASE_URL via
+      # `node --env-file=.env.local` (see package.json). .env.local is
+      # git-ignored and this runner is destroyed after the job, but it's
+      # still removed explicitly in the last step below.
+      - name: Write DATABASE_URL for the health-check script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Check monitored source health
+        run: npm run db:check-source-health
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
