@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   parseCultureBoxEventsHtml,
   createCultureBoxAdapter,
+  extractDescriptionParagraphs,
+  extractResidentAdvisorUrl,
+  attributeGenreToRoom,
+  enrichCandidatesWithDetailPages,
   CULTURE_BOX_EVENTS_URL,
   CULTURE_BOX_SOURCE_ID,
 } from "./cultureBoxAdapter";
@@ -187,25 +191,35 @@ describe("parseCultureBoxEventsHtml — malformed / changed markup", () => {
 });
 
 describe("createCultureBoxAdapter", () => {
-  it("fetches the unrestricted /events/ URL and parses the response", async () => {
+  it("fetches the unrestricted /events/ URL first and parses the listing response", async () => {
+    // Detail pages aren't mocked here — enrichCandidatesWithDetailPages must
+    // degrade every night gracefully (404) without dropping any candidate or
+    // affecting the listing-derived result. Two-stage orchestration itself is
+    // covered separately below with real detail fixtures.
+    const calledUrls: string[] = [];
     const fetchImpl = async (url: string | URL) => {
-      expect(String(url)).toBe(CULTURE_BOX_EVENTS_URL);
-      return new Response(FIXTURE_HTML, { status: 200 });
+      calledUrls.push(String(url));
+      if (String(url) === CULTURE_BOX_EVENTS_URL) return new Response(FIXTURE_HTML, { status: 200 });
+      return new Response("", { status: 404 });
     };
-    const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch);
+    const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
+    expect(calledUrls[0]).toBe(CULTURE_BOX_EVENTS_URL);
     expect(candidates).toHaveLength(30);
   });
 
-  it("retries once on a 5xx before giving up", async () => {
-    let calls = 0;
-    const fetchImpl = async () => {
-      calls++;
-      return calls === 1 ? new Response("", { status: 503 }) : new Response(FIXTURE_HTML, { status: 200 });
+  it("retries once on a 5xx before giving up on the listing page specifically", async () => {
+    let listingCalls = 0;
+    const fetchImpl = async (url: string | URL) => {
+      if (String(url) === CULTURE_BOX_EVENTS_URL) {
+        listingCalls++;
+        return listingCalls === 1 ? new Response("", { status: 503 }) : new Response(FIXTURE_HTML, { status: 200 });
+      }
+      return new Response("", { status: 404 }); // detail pages: not mocked, enrichment gracefully no-ops
     };
-    const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0);
+    const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
-    expect(calls).toBe(2);
+    expect(listingCalls).toBe(2);
     expect(candidates).toHaveLength(30);
   });
 
@@ -302,5 +316,244 @@ describe("pipeline integration — real Culture Box candidates through runIngest
     const first = parseCultureBoxEventsHtml(FIXTURE_HTML);
     const second = parseCultureBoxEventsHtml(FIXTURE_HTML);
     expect(first.map((e) => e.officialEventUrl)).toEqual(second.map((e) => e.officialEventUrl));
+  });
+});
+
+/**
+ * Real, unmodified detail-page recordings (fetched 2026-08-19 from
+ * culture-box.com/event/<slug>/, robots.txt-permitted — same courtesy
+ * fetch pattern as the /events/ listing fixture above) for every night
+ * present in the committed listing fixture. Building this full 15-page set
+ * before writing any adapter code was deliberate (task: don't trust a small
+ * sample) — see the diagnosis notes; a 5-page sample and the full 15-page
+ * set agreed almost exactly (13/32 vs. an earlier ~40% estimate), so the
+ * pattern is real, not an artifact of which pages happened to be sampled.
+ */
+function loadDetailFixture(slug: string): string {
+  return readFileSync(path.join(__dirname, "__fixtures__", `culture-box-detail-${slug}.html`), "utf-8");
+}
+
+function loadListingRoom(slug: string, room: "black-box" | "red-box") {
+  const events = parseCultureBoxEventsHtml(FIXTURE_HTML);
+  return events.find((e) => e.officialEventUrl === `https://culture-box.com/event/${slug}/#${room}`);
+}
+
+describe("extractDescriptionParagraphs — real fixtures", () => {
+  it("extracts the real free-text description paragraphs from a detail page (fri-21-august-2026)", () => {
+    const paragraphs = extractDescriptionParagraphs(loadDetailFixture("fri-21-august-2026"));
+    expect(paragraphs.length).toBeGreaterThan(0);
+    expect(paragraphs.some((p) => p.includes("peaktime techno and tech house"))).toBe(true);
+  });
+
+  it("returns [] (never throws) when the additional-text block isn't present — a page-structure change degrades to no evidence", () => {
+    expect(extractDescriptionParagraphs("<html><body>totally different layout</body></html>")).toEqual([]);
+  });
+});
+
+describe("extractResidentAdvisorUrl — real fixtures", () => {
+  it("extracts the night's real Resident Advisor event link", () => {
+    const url = extractResidentAdvisorUrl(loadDetailFixture("fri-21-august-2026"));
+    expect(url).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+  });
+
+  it("returns null (never invented) when no RA link is present", () => {
+    expect(extractResidentAdvisorUrl("<html><body>no RA link here</body></html>")).toBeNull();
+  });
+});
+
+describe("attributeGenreToRoom — room-attribution guard", () => {
+  it("real: fri-28-august credits BOTH rooms cleanly with DIFFERENT genres from the same shared description — each room's own paragraph names only that room's artists", () => {
+    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
+    const redBox = loadListingRoom("fri-28-august", "red-box")!;
+    const paragraphs = extractDescriptionParagraphs(loadDetailFixture("fri-28-august"));
+
+    expect(attributeGenreToRoom(paragraphs, blackBox.artists, redBox.artists)).toBe("drum-and-bass");
+    expect(attributeGenreToRoom(paragraphs, redBox.artists, blackBox.artists)).toBe("drum-and-bass");
+  });
+
+  it("real: fri-21-august-2026's genre-bearing sentence names artists from BOTH rooms in one breath ('...Rozgu...and Hermann Bravo...are in Red Box and rounding a truly stellar lineup of peaktime techno and tech house') — stays unresolved for both, never guessed toward either", () => {
+    const blackBox = loadListingRoom("fri-21-august-2026", "black-box")!;
+    const redBox = loadListingRoom("fri-21-august-2026", "red-box")!;
+    const paragraphs = extractDescriptionParagraphs(loadDetailFixture("fri-21-august-2026"));
+
+    expect(attributeGenreToRoom(paragraphs, blackBox.artists, redBox.artists)).toBeNull();
+    expect(attributeGenreToRoom(paragraphs, redBox.artists, blackBox.artists)).toBeNull();
+  });
+
+  it("real: sat-19-september-2026 has real description paragraphs but none contain a mapped genre keyword — unresolved, not guessed", () => {
+    const blackBox = loadListingRoom("sat-19-september-2026", "black-box")!;
+    const redBox = loadListingRoom("sat-19-september-2026", "red-box")!;
+    const paragraphs = extractDescriptionParagraphs(loadDetailFixture("sat-19-september-2026"));
+
+    expect(paragraphs.length).toBeGreaterThan(0); // real prose exists...
+    expect(attributeGenreToRoom(paragraphs, blackBox.artists, redBox.artists)).toBeNull(); // ...just no genre evidence in it
+    expect(attributeGenreToRoom(paragraphs, redBox.artists, blackBox.artists)).toBeNull();
+  });
+
+  it("no paragraphs at all -> unresolved", () => {
+    expect(attributeGenreToRoom([], ["Some Artist"], ["Other Artist"])).toBeNull();
+  });
+
+  it("synthetic: two qualifying paragraphs for the same room that DISAGREE on genre stay unresolved rather than picking one arbitrarily", () => {
+    const paragraphs = [
+      "Headliner Some Artist brings a heavy techno set to Black Box.",
+      "Some Artist also draws from deep house influences in Black Box.",
+    ];
+    expect(attributeGenreToRoom(paragraphs, ["Some Artist"], ["Other Room Artist"])).toBeNull();
+  });
+
+  it("synthetic: a paragraph naming neither room's artists is never credited to either", () => {
+    const paragraphs = ["A completely unrelated techno night happened elsewhere last year."];
+    expect(attributeGenreToRoom(paragraphs, ["Some Artist"], ["Other Room Artist"])).toBeNull();
+  });
+
+  it("never guesses genre from venue identity alone — an artist-name match with no genre keyword in the paragraph contributes nothing", () => {
+    const paragraphs = ["Some Artist is a beloved fixture of the Copenhagen nightlife scene."];
+    expect(attributeGenreToRoom(paragraphs, ["Some Artist"], ["Other Room Artist"])).toBeNull();
+  });
+});
+
+describe("enrichCandidatesWithDetailPages — orchestration", () => {
+  function fetchImplFor(urlToHtml: Record<string, string>) {
+    return async (url: string | URL) => {
+      const html = urlToHtml[String(url)];
+      if (html === undefined) return new Response("", { status: 404 });
+      return new Response(html, { status: 200 });
+    };
+  }
+
+  it("fetches one night's detail page exactly ONCE and reuses it for both room candidates", async () => {
+    const nightUrl = "https://culture-box.com/event/fri-28-august/";
+    let fetchCount = 0;
+    const fetchImpl = async (url: string | URL) => {
+      if (String(url) === nightUrl) {
+        fetchCount++;
+        return new Response(loadDetailFixture("fri-28-august"), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+
+    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
+    const redBox = loadListingRoom("fri-28-august", "red-box")!;
+    const enriched = await enrichCandidatesWithDetailPages([blackBox, redBox], fetchImpl as unknown as typeof fetch, 0, 0);
+
+    expect(fetchCount).toBe(1); // one detail fetch for the night, not one per room
+    expect(enriched).toHaveLength(2);
+    expect(enriched.find((e) => e.officialEventUrl === blackBox.officialEventUrl)?.genreHint).toBe("drum-and-bass");
+    expect(enriched.find((e) => e.officialEventUrl === redBox.officialEventUrl)?.genreHint).toBe("drum-and-bass");
+  });
+
+  it("populates residentAdvisorUrl and description on both rooms from the shared detail page", async () => {
+    const fetchImpl = fetchImplFor({
+      "https://culture-box.com/event/fri-28-august/": loadDetailFixture("fri-28-august"),
+    });
+    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
+    const redBox = loadListingRoom("fri-28-august", "red-box")!;
+    const enriched = await enrichCandidatesWithDetailPages([blackBox, redBox], fetchImpl as unknown as typeof fetch, 0, 0);
+
+    for (const e of enriched) {
+      expect(e.residentAdvisorUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+      expect(e.description).toBeTruthy();
+    }
+  });
+
+  it("a single night's detail-page fetch failure degrades only that night — other nights are still enriched, and no candidate anywhere is dropped", async () => {
+    const fetchImpl = fetchImplFor({
+      // fri-28-august deliberately NOT mocked -> 404, simulating a fetch failure for that one night
+      "https://culture-box.com/event/sat-22-august-2026/": loadDetailFixture("sat-22-august-2026"),
+    });
+    const brokenBB = loadListingRoom("fri-28-august", "black-box")!;
+    const brokenRB = loadListingRoom("fri-28-august", "red-box")!;
+    const healthyBB = loadListingRoom("sat-22-august-2026", "black-box")!;
+
+    const enriched = await enrichCandidatesWithDetailPages(
+      [brokenBB, brokenRB, healthyBB],
+      fetchImpl as unknown as typeof fetch,
+      0,
+      0,
+    );
+
+    expect(enriched).toHaveLength(3); // nothing dropped
+    const brokenResult = enriched.find((e) => e.officialEventUrl === brokenBB.officialEventUrl)!;
+    expect(brokenResult.genreHint).toBe(brokenBB.genreHint); // exactly the listing-page fallback, untouched
+    expect(brokenResult.residentAdvisorUrl).toBeNull();
+    expect(brokenResult.description).toBeNull();
+
+    const healthyResult = enriched.find((e) => e.officialEventUrl === healthyBB.officialEventUrl)!;
+    expect(healthyResult.genreHint).toBe("techno"); // the healthy night still gets enriched normally
+  });
+
+  it("never overrides a genre already resolved from the listing page's own showcase title", async () => {
+    const fetchImpl = fetchImplFor({
+      "https://culture-box.com/event/fri-28-august/": loadDetailFixture("fri-28-august"),
+    });
+    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
+    // Simulate a listing page that already resolved a (different) genre from its own showcase title.
+    const alreadyResolved = { ...blackBox, genreHint: "house" as const, genreConfidenceHint: "high" as const };
+    const enriched = await enrichCandidatesWithDetailPages([alreadyResolved], fetchImpl as unknown as typeof fetch, 0, 0);
+    expect(enriched[0].genreHint).toBe("house"); // untouched, even though the description says drum-and-bass
+  });
+
+  it("candidates with no officialEventUrl are left untouched rather than crashing the grouping step", async () => {
+    const candidate = { ...loadListingRoom("fri-28-august", "black-box")!, officialEventUrl: null };
+    const enriched = await enrichCandidatesWithDetailPages([candidate], (async () => new Response("", { status: 404 })) as unknown as typeof fetch, 0, 0);
+    expect(enriched).toEqual([candidate]);
+  });
+});
+
+describe("createCultureBoxAdapter — full two-stage integration against all real fixtures", () => {
+  it("real end-to-end run: candidates newly reaching high genre confidence from official detail descriptions match the validation matrix built before implementation", async () => {
+    const ALL_NIGHTS = [
+      "fri-21-august-2026", "sat-22-august-2026", "fri-28-august", "sat-29-august-2026",
+      "fri-4-september-2026", "sat-5-september-2026", "fri-11-september-2026", "sat-12-september-2026",
+      "fri-18-september-2026", "sat-19-september-2026", "fri-25-september-2026", "sat-26-september-2026",
+      "fri-2-october-2026", "sat-3-october-2026", "fri-23-october-2026",
+    ];
+    const urlToHtml: Record<string, string> = { [CULTURE_BOX_EVENTS_URL]: FIXTURE_HTML };
+    for (const slug of ALL_NIGHTS) {
+      urlToHtml[`https://culture-box.com/event/${slug}/`] = loadDetailFixture(slug);
+    }
+    const fetchImpl = async (url: string | URL) => {
+      const html = urlToHtml[String(url)];
+      return html === undefined ? new Response("", { status: 404 }) : new Response(html, { status: 200 });
+    };
+
+    const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
+    const candidates = await adapter.fetchCandidates();
+
+    expect(candidates).toHaveLength(30); // nothing dropped, nothing invented
+
+    const highConfidence = candidates.filter((c) => c.genreConfidenceHint === "high");
+    // 12 of 30 in this 15-night committed fixture set. The pre-implementation
+    // validation matrix (built against all 16 live nights, 32 candidates,
+    // including a Oct-24 night added to the site after this fixture was
+    // captured) found 13 — one more, entirely accounted for by that extra
+    // night's own single confident Black Box result.
+    expect(highConfidence.length).toBe(12);
+    for (const c of highConfidence) {
+      expect(runIngestionPipeline(c, { venues: VENUES, existingEvents: [] }).decision).toBe("auto_publish");
+    }
+
+    // Every candidate's RA link is real and well-formed when present.
+    for (const c of candidates) {
+      if (c.residentAdvisorUrl) expect(c.residentAdvisorUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+    }
+  });
+
+  it("a second identical sync run is idempotent — same candidates, same classifications", async () => {
+    const urlToHtml: Record<string, string> = {
+      [CULTURE_BOX_EVENTS_URL]: FIXTURE_HTML,
+      "https://culture-box.com/event/fri-28-august/": loadDetailFixture("fri-28-august"),
+    };
+    const fetchImpl = async (url: string | URL) => {
+      const html = urlToHtml[String(url)];
+      return html === undefined ? new Response("", { status: 404 }) : new Response(html, { status: 200 });
+    };
+    const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
+    const first = await adapter.fetchCandidates();
+    const second = await adapter.fetchCandidates();
+    expect(first.map((c) => [c.officialEventUrl, c.genreHint, c.genreConfidenceHint])).toEqual(
+      second.map((c) => [c.officialEventUrl, c.genreHint, c.genreConfidenceHint]),
+    );
   });
 });
