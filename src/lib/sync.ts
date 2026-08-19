@@ -140,19 +140,24 @@ export function findSyncMatch(
 
 /**
  * Decides which pending discovery_queue row (if any) must be resolved as
- * "published" when a candidate's sync-time decision is auto_publish and a
- * new event was just successfully created for it. A candidate can reach
- * auto_publish on a LATER sync than the one that first queued it at
- * medium/low confidence (e.g. Culture Box's own detail-page evidence
- * arriving after an earlier sync only had the listing page to go on) — left
- * unresolved, that earlier pending row would sit in the review queue
- * forever, showing "needs review" for a night that's already live. Kept as
- * its own pure function (mirrors findSyncMatch's shape) purely so this exact
- * decision — which row, if any, keyed by exactly this candidate's own
- * dedupKey — is independently testable without touching Postgres; the
- * actual write (src/db/writes.ts::resolveDiscoveryItemAsPublished) is
- * separate I/O the caller (src/db/sync.ts) performs only when this returns
- * non-null.
+ * "published" once a sync has confirmed this exact candidate's event
+ * already exists — whether that event was just created this run
+ * (auto_publish) or already existed and was matched-and-updated this run.
+ * Both call sites in src/db/sync.ts share this because a pending row can
+ * outlive the sync that first creates its event in either shape: a
+ * candidate can reach auto_publish on a LATER sync than the one that first
+ * queued it at medium/low confidence (e.g. Culture Box's own detail-page
+ * evidence arriving after an earlier sync only had the listing page to go
+ * on), and a row already orphaned that way keeps matching via the existing
+ * sourceEventLinks/dedup path on every subsequent sync rather than ever
+ * routing through auto_publish again. Left unresolved either way, that
+ * pending row would sit in the review queue forever, showing "needs
+ * review" for a night that's already live. Kept as its own pure function
+ * (mirrors findSyncMatch's shape) purely so this exact decision — which
+ * row, if any, keyed by exactly this candidate's own dedupKey — is
+ * independently testable without touching Postgres; the actual write
+ * (src/db/writes.ts::resolveDiscoveryItemAsPublished) is separate I/O the
+ * caller performs only when this returns non-null.
  */
 export function findPendingRowToResolve(
   dedupKey: string,

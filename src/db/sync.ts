@@ -194,6 +194,19 @@ async function runSourceSyncLocked(
         if (raw.officialEventUrl) {
           await recordSourceLink(match.eventId, sourceId, raw.officialEventUrl, "official");
         }
+        // A pending discovery_queue row for this exact candidate can outlive
+        // the sync that first created its matching event — e.g. it was
+        // orphaned by an auto_publish that predates the fix below, or (in
+        // principle) any other path that created the event without going
+        // through this loop. Any time a sync confirms the event for this
+        // dedupKey already exists, a still-pending row for that same
+        // dedupKey is stale by definition and must be resolved, not just at
+        // the moment of creation — reusing the exact same resolution the
+        // auto_publish branch below already performs.
+        const matchedPendingRowId = findPendingRowToResolve(dedupKey, pendingByUrl);
+        if (matchedPendingRowId) {
+          await resolveDiscoveryItemAsPublished(matchedPendingRowId);
+        }
         updated++;
         continue;
       }
