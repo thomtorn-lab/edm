@@ -1,0 +1,203 @@
+name: Verify Production Culture Box Sync (Post-Merge)
+
+# One-off, manual, confirmation-gated real validation of the Culture Box
+# publishing fixes and the lease-based sync-locking redesign against the
+# actual Production deployment, immediately after merging
+# claude/culture-box-publishing-diagnosis-0qszf8 to the default branch.
+#
+# Uses the SAME SYNC_BASE_URL repository variable and SYNC_TRIGGER_TOKEN /
+# VERCEL_AUTOMATION_BYPASS_SECRET secrets that sync-culture-box.yml's
+# scheduled Production runs already use — this is the real Production
+# endpoint, not a Preview deployment.
+#
+# Mirrors the established safe pattern: every database read runs inside its
+# own explicit read-only transaction (BEGIN; SET LOCAL
+# default_transaction_read_only = on; ...; ROLLBACK). The only write
+# anywhere in this run happens inside the already-deployed Production app's
+# own /api/sync/culture-box handler, exactly once.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN-PRODUCTION-CULTURE-BOX-SYNC to confirm: this triggers ONE real Culture Box sync against PRODUCTION and the shared database.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-production-culture-box-sync
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "RUN-PRODUCTION-CULTURE-BOX-SYNC" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: RUN-PRODUCTION-CULTURE-BOX-SYNC"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record the exact commit this run is verifying
+        run: git rev-parse HEAD
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required secrets/variables are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          missing=""
+          [ -z "${DATABASE_URL:-}" ] && missing="${missing} DATABASE_URL"
+          [ -z "${SYNC_BASE_URL:-}" ] && missing="${missing} SYNC_BASE_URL"
+          [ -z "${SYNC_TRIGGER_TOKEN:-}" ] && missing="${missing} SYNC_TRIGGER_TOKEN"
+          [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ] && missing="${missing} VERCEL_AUTOMATION_BYPASS_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repository secret/variable(s):${missing}"
+            exit 1
+          fi
+
+      - name: Confirm the Production deployment is reachable (READY) before touching anything
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          http_code=$(curl -sS --max-time 30 -o /tmp/prod-home.html -w '%{http_code}' \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/")
+          echo "Production homepage HTTP status: ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Production base URL did not return 2xx (got ${http_code}) — stopping before any database read/write."
+            exit 1
+          fi
+          echo "Production deployment is READY (reachable, 2xx)."
+
+      - name: Install dependencies (pg only needed, but npm ci matches repo convention)
+        run: npm ci
+
+      - name: Write read-only DB snapshot script
+        run: |
+          cat > snapshot.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main(client) {
+            await client.connect();
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+
+            const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
+            console.log(`\n========== ${label} ==========`);
+
+            const leases = await client.query(`SELECT source_id, lock_token, locked_at, expires_at FROM sync_locks ORDER BY source_id`);
+            console.log(`\n-- sync_locks (ALL rows, should be empty once no sync is in flight): ${leases.rows.length} --`);
+            console.log(JSON.stringify(leases.rows, null, 2));
+
+            for (const sourceId of ['src-culture-box', 'src-hangaren', 'src-poolen']) {
+              const dqStatus = await client.query(
+                `SELECT status, genre_confidence, overall_confidence, count(*)::int AS n
+                 FROM discovery_queue WHERE source_id = $1
+                 GROUP BY status, genre_confidence, overall_confidence
+                 ORDER BY status, genre_confidence, overall_confidence`,
+                [sourceId],
+              );
+              console.log(`\n-- discovery_queue (source_id=${sourceId}) grouped by status/genre_confidence/overall_confidence --`);
+              console.log(JSON.stringify(dqStatus.rows, null, 2));
+
+              const dqPendingCount = await client.query(
+                `SELECT count(*)::int AS n FROM discovery_queue WHERE source_id = $1 AND status = 'pending'`,
+                [sourceId],
+              );
+              console.log(`-- discovery_queue (source_id=${sourceId}) PENDING count: ${dqPendingCount.rows[0].n} --`);
+
+              const evCount = await client.query(
+                `SELECT published, count(*)::int AS n FROM events WHERE canonical_source_id = $1 GROUP BY published ORDER BY published`,
+                [sourceId],
+              );
+              console.log(`\n-- events (canonical_source_id=${sourceId}) grouped by published --`);
+              console.log(JSON.stringify(evCount.rows, null, 2));
+            }
+
+            const ca7riel = await client.query(
+              `SELECT id, title, published, manual_override, overridden_fields FROM events WHERE official_event_url = 'https://poolen.dk/da/koncerter/ca7riel-paco-amoroso/'`,
+            );
+            console.log(`\n-- Ca7riel y Paco Amoroso (Poolen manual override check) --`);
+            console.log(JSON.stringify(ca7riel.rows, null, 2));
+
+            const overridden = await client.query(
+              `SELECT id, overridden_fields, manual_override, published FROM events
+               WHERE array_length(overridden_fields, 1) > 0 OR manual_override = true OR published = false
+               ORDER BY id`,
+            );
+            console.log(`\n-- events with any manual override OR unpublished (global): ${overridden.rows.length} rows --`);
+            console.log(JSON.stringify(overridden.rows, null, 2));
+
+            const totalEvents = await client.query(`SELECT count(*)::int AS n FROM events`);
+            console.log(`\n-- total events (global): ${totalEvents.rows[0].n} --`);
+
+            await client.query('COMMIT');
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('SNAPSHOT FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
+          SCRIPT
+
+      - name: "PHASE 1 — BEFORE snapshot"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: BEFORE (pre-sync, Production)
+        run: node snapshot.cjs
+
+      - name: "PHASE 2 — trigger the ONE real Production Culture Box sync"
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/culture-box")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Production sync HTTP status: ${http_code}"
+          echo "Production sync response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Production Culture Box sync request failed with HTTP ${http_code} — see response body above."
+            exit 1
+          fi
+          if echo "$body" | grep -q 'skipped_concurrent'; then
+            echo "::error::Production sync came back skipped_concurrent — unexpected on a fresh deployment with no in-flight sync."
+            exit 1
+          fi
+
+      - name: "PHASE 3 — AFTER snapshot (also proves no lingering sync_locks row)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER (post-sync, Production)
+        run: node snapshot.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f snapshot.cjs
