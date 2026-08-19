@@ -138,6 +138,34 @@ export function findSyncMatch(
   return null;
 }
 
+/**
+ * Decides which pending discovery_queue row (if any) must be resolved as
+ * "published" once a sync has confirmed this exact candidate's event
+ * already exists — whether that event was just created this run
+ * (auto_publish) or already existed and was matched-and-updated this run.
+ * Both call sites in src/db/sync.ts share this because a pending row can
+ * outlive the sync that first creates its event in either shape: a
+ * candidate can reach auto_publish on a LATER sync than the one that first
+ * queued it at medium/low confidence (e.g. Culture Box's own detail-page
+ * evidence arriving after an earlier sync only had the listing page to go
+ * on), and a row already orphaned that way keeps matching via the existing
+ * sourceEventLinks/dedup path on every subsequent sync rather than ever
+ * routing through auto_publish again. Left unresolved either way, that
+ * pending row would sit in the review queue forever, showing "needs
+ * review" for a night that's already live. Kept as its own pure function
+ * (mirrors findSyncMatch's shape) purely so this exact decision — which
+ * row, if any, keyed by exactly this candidate's own dedupKey — is
+ * independently testable without touching Postgres; the actual write
+ * (src/db/writes.ts::resolveDiscoveryItemAsPublished) is separate I/O the
+ * caller performs only when this returns non-null.
+ */
+export function findPendingRowToResolve(
+  dedupKey: string,
+  pendingByUrl: Map<string, { id: string }>,
+): string | null {
+  return pendingByUrl.get(dedupKey)?.id ?? null;
+}
+
 export interface DiscoveryQueueTarget {
   /** Only ever proposes a patch for "pending" — a resolved item (published/ignored/merged) is frozen. */
   status: string;
@@ -192,11 +220,21 @@ export interface DiscoveryQueueClassificationPatch {
  * patch using the exact same rule the original insert used (decision
  * "review_queue" -> "medium", "hold" -> "low"), and only included when it
  * actually differs from what's stored — the same idempotency guarantee every
- * other field here already has. This only fires when the genre patch itself
- * fires (same gating as before): it does not add a new way for a row to
- * change, does not touch the auto-publish threshold, the genre evidence
- * hierarchy, or dedup, and — since "auto_publish" never reaches this
- * function — can never move a candidate to auto_publish.
+ * other field here already has. Does not touch the auto-publish threshold,
+ * the genre evidence hierarchy, or dedup, and — since "auto_publish" never
+ * reaches this function — can never move a candidate to auto_publish.
+ *
+ * overallConfidence is checked independently of whether predictedGenre
+ * itself changed (second bug fix, same diagnosis): a row whose genre was
+ * already correct from an earlier sync — including one resolved before the
+ * first overallConfidence-recompute fix shipped — but whose
+ * overallConfidence was never itself recomputed must still self-heal on a
+ * plain re-sync, not only when the genre value also happens to move on that
+ * same run. Both checks share the same top guards (non-pending, admin
+ * override, and — critically — a transient lookup failure this run,
+ * `!fresh.genre`, which must freeze the ENTIRE row, overallConfidence
+ * included, exactly as before: a blip must never make an already-correct
+ * row look stale).
  */
 export function buildDiscoveryQueueClassificationPatch(
   fresh: DiscoveryQueueClassification,
@@ -204,13 +242,19 @@ export function buildDiscoveryQueueClassificationPatch(
 ): DiscoveryQueueClassificationPatch {
   if (existing.status !== "pending") return {};
   if (existing.overriddenFields.includes("predictedGenre")) return {};
-  if (!fresh.genre || fresh.genre === existing.predictedGenre) return {};
+  if (!fresh.genre) return {};
 
-  const patch: DiscoveryQueueClassificationPatch = { predictedGenre: fresh.genre, genreConfidence: fresh.genreConfidence };
+  const patch: DiscoveryQueueClassificationPatch = {};
+  if (fresh.genre !== existing.predictedGenre) {
+    patch.predictedGenre = fresh.genre;
+    patch.genreConfidence = fresh.genreConfidence;
+  }
+
   const freshOverallConfidence: ConfidenceLevel = fresh.decision === "review_queue" ? "medium" : "low";
   if (freshOverallConfidence !== existing.overallConfidence) {
     patch.overallConfidence = freshOverallConfidence;
   }
+
   return patch;
 }
 
@@ -236,4 +280,28 @@ export function summarizeWriteErrors(errors: string[], candidatesFound: number):
     outcome: "partial_failure",
     lastErrorMessage: `${errors.length}/${candidatesFound} candidate(s) failed during matching/write: ${errors.join("; ")}`,
   };
+}
+
+export interface SyncLeaseRow {
+  lockToken: string;
+  expiresAt: Date;
+}
+
+/**
+ * Concurrency safety (replaces the session-scoped pg_advisory_lock design —
+ * see src/db/sync.ts's acquireSyncLock/releaseSyncLock doc comment for why
+ * that design broke under Supavisor's connection pooling). A sync holds the
+ * lease named by its own sourceId, so two different sources always proceed
+ * independently no matter what's happening with any other source's lease.
+ *
+ * This mirrors the exact WHERE condition the real acquisition SQL uses
+ * (`sync_locks.expires_at < now()` in the ON CONFLICT DO UPDATE clause) so
+ * the boundary semantics are unit-tested without a live Postgres connection
+ * — but the real grant decision is never made by calling this function and
+ * then writing separately; it must stay inside one atomic SQL statement, or
+ * two concurrent callers could both observe "no valid lease" and both
+ * proceed (the exact race this whole design exists to prevent).
+ */
+export function decideSyncLeaseAcquisition(existing: SyncLeaseRow | null, now: Date): boolean {
+  return existing === null || existing.expiresAt.getTime() <= now.getTime();
 }

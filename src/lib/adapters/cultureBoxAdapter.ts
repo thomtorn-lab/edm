@@ -3,6 +3,7 @@ import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText, extractAnchorTexts, extractLowestDkkAmount } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
+import type { GenreSlug } from "../taxonomy";
 
 /**
  * Real first-party adapter for Culture Box (src-culture-box in
@@ -225,50 +226,207 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
   return results;
 }
 
+/**
+ * Detail-page enrichment (per-night `/event/<slug>/` page, distinct from the
+ * `/events/` listing above). The listing gives every night's rooms a
+ * showcase title (sometimes genre-bearing) and lineup; the venue's own
+ * per-night detail page additionally carries a real free-text description
+ * (`.post-block__additional-text`, shared across both rooms in one article)
+ * and, separately, a Resident Advisor event link. Neither exists on the
+ * listing page — this is genuinely new evidence, not a reformat of what's
+ * already scraped.
+ *
+ * The description text is real, but it talks about the whole NIGHT, not one
+ * room in isolation — a genre word appearing in it cannot be blindly applied
+ * to both rooms without risking crediting the wrong room's genre (a
+ * night's two rooms routinely run different styles — see
+ * "attributeGenreToRoom" below). Extraction and room-attribution are kept as
+ * separate, independently testable steps for exactly that reason.
+ */
+
+/**
+ * Extracts the night's own free-text description as plain-text paragraphs,
+ * from the detail page's `.post-block__additional-text` block (bounded by
+ * that div's enclosing `</article>` — verified against 15 real recorded
+ * detail pages to reliably close the block, unlike scanning for any
+ * particular sentence of boilerplate). Returns [] rather than throwing when
+ * the block isn't present — a page-structure change here must degrade to
+ * "no description evidence", never take down parsing.
+ */
+export function extractDescriptionParagraphs(detailHtml: string): string[] {
+  const blockIdx = detailHtml.indexOf("post-block__additional-text");
+  if (blockIdx === -1) return [];
+  const articleEndIdx = detailHtml.indexOf("</article>", blockIdx);
+  const fragment = articleEndIdx === -1 ? detailHtml.slice(blockIdx) : detailHtml.slice(blockIdx, articleEndIdx);
+
+  const paragraphs: string[] = [];
+  for (const m of fragment.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)) {
+    const text = htmlToText(m[1]).replace(/\n/g, " ").trim();
+    if (text) paragraphs.push(text);
+  }
+  return paragraphs;
+}
+
+/** The night's own Resident Advisor event link from its detail page, if the venue linked one. Never guessed/constructed. */
+export function extractResidentAdvisorUrl(detailHtml: string): string | null {
+  const match = detailHtml.match(/https:\/\/ra\.co\/events\/\d+/);
+  return match ? match[0] : null;
+}
+
+/**
+ * Whether `text` names this artist. Deliberately exact-substring only (full
+ * display name, case-insensitive) — a looser first-name/partial match was
+ * evaluated against all 15 real detail-page fixtures collected for this
+ * feature and never changed a single outcome, so it's dropped: it could only
+ * ever add cross-room misattribution risk for zero real-world benefit.
+ */
+function mentionsArtist(text: string, artistName: string): boolean {
+  return text.toUpperCase().includes(artistName.toUpperCase());
+}
+
+/**
+ * Room-attribution guard: a genre keyword found in the night's shared
+ * description is credited to THIS room only when a paragraph containing it
+ * names at least one of this room's own artists and names none of the other
+ * room's artists (artists from every other room sharing the night, not just
+ * "the" other room — a night is never assumed to have exactly two).
+ * Under-attribution is always acceptable (leaves genre unresolved for the
+ * existing deterministic/Discogs fallback, exactly like a night with no
+ * showcase title behaves today); crediting the wrong room's genre is not, so
+ * a paragraph naming both sides, or neither, is excluded outright. If more
+ * than one qualifying paragraph disagrees on genre, the room is left
+ * unresolved rather than picking one arbitrarily.
+ */
+export function attributeGenreToRoom(paragraphs: string[], roomArtists: string[], otherRoomsArtists: string[]): GenreSlug | null {
+  const distinctGenres = new Set<GenreSlug>();
+  for (const paragraph of paragraphs) {
+    const genre = deterministicGenreFromText(paragraph);
+    if (!genre) continue;
+    const mentionsThisRoom = roomArtists.some((a) => mentionsArtist(paragraph, a));
+    const mentionsOtherRoom = otherRoomsArtists.some((a) => mentionsArtist(paragraph, a));
+    if (mentionsThisRoom && !mentionsOtherRoom) distinctGenres.add(genre);
+  }
+  if (distinctGenres.size !== 1) return null; // nothing qualified, or qualifying paragraphs disagreed
+  return [...distinctGenres][0];
+}
+
+/**
+ * Enriches already-parsed listing candidates with each night's detail page:
+ * one room-attributed genre fill-in (only when the listing's own showcase
+ * title left genre unresolved — this never second-guesses evidence the
+ * listing page already credited), a real description, and the Resident
+ * Advisor link, all applied to every room sharing that night. Candidates are
+ * grouped by their shared night (the part of officialEventUrl before `#`) so
+ * a night's detail page is fetched exactly once regardless of how many rooms
+ * it has. A single night's detail-page fetch failing degrades only that
+ * night to the plain listing-page candidates it already had — logged, never
+ * thrown, never dropped, picked up again on the next sync — so one broken
+ * page can never take down an otherwise-healthy Culture Box sync.
+ */
+export async function enrichCandidatesWithDetailPages(
+  candidates: RawCandidateEvent[],
+  fetchImpl: typeof fetch,
+  retryDelayMs: number,
+  politenessDelayMs: number,
+): Promise<RawCandidateEvent[]> {
+  const byNight = new Map<string, RawCandidateEvent[]>();
+  for (const candidate of candidates) {
+    if (!candidate.officialEventUrl) continue;
+    const [nightUrl] = candidate.officialEventUrl.split("#");
+    if (!byNight.has(nightUrl)) byNight.set(nightUrl, []);
+    byNight.get(nightUrl)!.push(candidate);
+  }
+
+  const enriched = new Map<RawCandidateEvent, RawCandidateEvent>();
+
+  for (const [nightUrl, nightCandidates] of byNight) {
+    let detailHtml: string;
+    try {
+      const res = await fetchWithRetry(fetchImpl, nightUrl, retryDelayMs, `Culture Box event page (${nightUrl})`);
+      detailHtml = await res.text();
+    } catch (err) {
+      console.error(
+        `[culture-box-adapter] detail page fetch failed for ${nightUrl}, keeping listing-only data for this night: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      if (politenessDelayMs > 0) await delay(politenessDelayMs);
+      continue; // this night's candidates are left exactly as parsed from the listing
+    }
+
+    const paragraphs = extractDescriptionParagraphs(detailHtml);
+    const residentAdvisorUrl = extractResidentAdvisorUrl(detailHtml);
+    const description = paragraphs.length > 0 ? paragraphs.join("\n\n") : null;
+
+    for (const candidate of nightCandidates) {
+      const otherRoomsArtists = nightCandidates.filter((c) => c !== candidate).flatMap((c) => c.artists);
+      const next: RawCandidateEvent = { ...candidate };
+      if (residentAdvisorUrl) next.residentAdvisorUrl = residentAdvisorUrl;
+      if (description) next.description = description;
+
+      if (!next.genreHint) {
+        const genre = attributeGenreToRoom(paragraphs, candidate.artists, otherRoomsArtists);
+        if (genre) {
+          next.genreHint = genre;
+          next.genreConfidenceHint = genreConfidenceForEvidence("official-description");
+        }
+      }
+      enriched.set(candidate, next);
+    }
+
+    if (politenessDelayMs > 0) await delay(politenessDelayMs);
+  }
+
+  return candidates.map((c) => enriched.get(c) ?? c);
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchOnce(fetchImpl: typeof fetch): Promise<Response> {
-  return fetchImpl(CULTURE_BOX_EVENTS_URL, {
-    signal: AbortSignal.timeout(15_000),
-    headers: {
-      "user-agent": "NattefrekvensBot/1.0 (+https://nattefrekvens.dk/about; first-party sync)",
-      accept: "text/html",
-    },
-  });
+async function fetchWithRetry(fetchImpl: typeof fetch, url: string, retryDelayMs: number, label: string): Promise<Response> {
+  let lastError: string | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetchImpl(url, {
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          "user-agent": "NattefrekvensBot/1.0 (+https://nattefrekvens.dk/about; first-party sync)",
+          accept: "text/html",
+        },
+      });
+      if (res.ok) return res;
+      lastError = `${label} responded with HTTP ${res.status}`;
+      if (res.status < 500) break; // a 4xx won't fix itself on retry
+    } catch (err) {
+      lastError = `${label} fetch failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    if (attempt === 1) {
+      console.error(`[culture-box-adapter] attempt 1 failed (${lastError}), retrying once in ${retryDelayMs}ms`);
+      await delay(retryDelayMs);
+    }
+  }
+  throw new Error(`${lastError} (after retry)`);
 }
 
 /**
- * Real HTTP fetch against the permitted, unrestricted /events/ page. Retries
+ * Real HTTP fetch against the permitted, unrestricted /events/ page, then
+ * (task: Culture Box detail-page evidence) each distinct night's own
+ * `/event/<slug>/` page — a short politeness delay between each, same
+ * pattern as poolenAdapter.ts's programme+detail two-stage fetch. Retries
  * once after a short delay on a transient failure (network error or 5xx) —
- * a single blip shouldn't flag a healthy source as failed. Throws a
- * descriptive error only after both attempts fail, so the sync runner
- * records it as a distinct source failure, never as "zero events".
+ * a single blip shouldn't flag a healthy source as failed. The listing fetch
+ * throws a descriptive error after both attempts fail, so the sync runner
+ * records it as a distinct source failure, never as "zero events"; a
+ * detail-page fetch failure is handled entirely inside
+ * enrichCandidatesWithDetailPages and never reaches here.
  */
-export function createCultureBoxAdapter(fetchImpl: typeof fetch = fetch, retryDelayMs = 2_000): SourceAdapter {
+export function createCultureBoxAdapter(fetchImpl: typeof fetch = fetch, retryDelayMs = 2_000, politenessDelayMs = 250): SourceAdapter {
   return {
     sourceId: CULTURE_BOX_SOURCE_ID,
     async fetchCandidates(): Promise<RawCandidateEvent[]> {
-      let lastError: string | null = null;
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          const res = await fetchOnce(fetchImpl);
-          if (res.ok) {
-            const html = await res.text();
-            return parseCultureBoxEventsHtml(html, CULTURE_BOX_EVENTS_URL);
-          }
-          lastError = `Culture Box responded with HTTP ${res.status}`;
-          if (res.status < 500) break; // a 4xx won't fix itself on retry
-        } catch (err) {
-          lastError = `Culture Box fetch failed: ${err instanceof Error ? err.message : String(err)}`;
-        }
-        if (attempt === 1) {
-          console.error(`[culture-box-adapter] attempt 1 failed (${lastError}), retrying once in ${retryDelayMs}ms`);
-          await delay(retryDelayMs);
-        }
-      }
-      throw new Error(`${lastError} (after retry)`);
+      const res = await fetchWithRetry(fetchImpl, CULTURE_BOX_EVENTS_URL, retryDelayMs, "Culture Box");
+      const html = await res.text();
+      const candidates = parseCultureBoxEventsHtml(html, CULTURE_BOX_EVENTS_URL);
+      return enrichCandidatesWithDetailPages(candidates, fetchImpl, retryDelayMs, politenessDelayMs);
     },
   };
 }
