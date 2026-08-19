@@ -164,6 +164,22 @@ export const artistGenreCache = pgTable("artist_genre_cache", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
+/**
+ * Per-source sync concurrency lease (replaces a session-scoped
+ * pg_advisory_lock design that broke under Supavisor's connection pooling
+ * — see src/db/sync.ts's acquireSyncLock/releaseSyncLock). One row per
+ * source that currently has a sync in flight; expiresAt is what guarantees
+ * a crashed/killed sync can never leave a permanent lock — no row is ever
+ * treated as held once its expiresAt has passed, regardless of whether the
+ * request that created it ever runs its release step.
+ */
+export const syncLocks = pgTable("sync_locks", {
+  sourceId: text("source_id").primaryKey(),
+  lockToken: text("lock_token").notNull(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
 export const sourceEventLinks = pgTable(
   "source_event_links",
   {

@@ -29,12 +29,3 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export const db = drizzle(pool, { schema });
-
-/**
- * The raw pg Pool, exported for src/db/sync.ts's advisory lock: Postgres
- * advisory locks are session-scoped, so acquiring/releasing one must
- * happen on a single dedicated connection checked out from this pool —
- * going through `db`'s query methods would let the pool hand different
- * queries to different connections, making the "lock" a no-op.
- */
-export { pool };

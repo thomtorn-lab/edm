@@ -281,3 +281,27 @@ export function summarizeWriteErrors(errors: string[], candidatesFound: number):
     lastErrorMessage: `${errors.length}/${candidatesFound} candidate(s) failed during matching/write: ${errors.join("; ")}`,
   };
 }
+
+export interface SyncLeaseRow {
+  lockToken: string;
+  expiresAt: Date;
+}
+
+/**
+ * Concurrency safety (replaces the session-scoped pg_advisory_lock design —
+ * see src/db/sync.ts's acquireSyncLock/releaseSyncLock doc comment for why
+ * that design broke under Supavisor's connection pooling). A sync holds the
+ * lease named by its own sourceId, so two different sources always proceed
+ * independently no matter what's happening with any other source's lease.
+ *
+ * This mirrors the exact WHERE condition the real acquisition SQL uses
+ * (`sync_locks.expires_at < now()` in the ON CONFLICT DO UPDATE clause) so
+ * the boundary semantics are unit-tested without a live Postgres connection
+ * — but the real grant decision is never made by calling this function and
+ * then writing separately; it must stay inside one atomic SQL statement, or
+ * two concurrent callers could both observe "no valid lease" and both
+ * proceed (the exact race this whole design exists to prevent).
+ */
+export function decideSyncLeaseAcquisition(existing: SyncLeaseRow | null, now: Date): boolean {
+  return existing === null || existing.expiresAt.getTime() <= now.getTime();
+}

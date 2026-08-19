@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { db, pool } from "./client";
-import { discoveryQueue, sourceEventLinks } from "./schema";
+import { and, eq, lte } from "drizzle-orm";
+import { db } from "./client";
+import { discoveryQueue, sourceEventLinks, syncLocks } from "./schema";
 import {
   applyDiscoveryClassificationUpdate,
   applySourceSyncPatch,
@@ -50,37 +50,75 @@ const ZERO_EVENTS_MESSAGE =
 
 /**
  * Concurrency safety: a scheduled run, a manual re-trigger, and a retried
- * HTTP request could all reach here for the same source at once. Postgres
- * advisory locks are cluster-wide (visible to every connection, not just
- * this process) and session-scoped, so the lock must be acquired and
- * released on ONE dedicated connection checked out from the pool — routing
- * the acquire/release through drizzle's `db` would let the pool hand each
- * query to a different connection, making the "lock" a no-op. A concurrent
- * run is skipped outright (pg_try_advisory_lock, non-blocking) rather than
- * queued, since a healthy sync finishes in seconds and piling up blocked
- * runs behind a stuck one is worse than just trying again next cycle.
+ * HTTP request could all reach here for the same source at once.
+ *
+ * This used to be a Postgres advisory lock (pg_try_advisory_lock /
+ * pg_advisory_unlock) acquired and released on one dedicated connection
+ * checked out from the pool. That broke in production: advisory locks are
+ * session-scoped, but this app connects through Supabase's Supavisor
+ * pooler, which can hand a *later, unrelated* connection the exact same
+ * backend process that an earlier request's connection used — and that
+ * backend still remembers whatever advisory locks it was holding. A single
+ * request that acquired the lock and then never got to release it (a
+ * timeout, a killed serverless invocation, anything that skips the
+ * `finally`) left that backend holding the lock indefinitely; every future
+ * sync for that source then failed with "skipped_concurrent" forever,
+ * requiring a manual pg_terminate_backend to recover — this is exactly
+ * what happened to src-culture-box in production.
+ *
+ * The replacement is a lease row in `sync_locks`, one per source, with an
+ * expiry. Acquiring and releasing are each a single atomic SQL statement
+ * against the ordinary pooled `db` — no dedicated connection, no session
+ * affinity required, because the atomicity lives entirely inside one
+ * INSERT ... ON CONFLICT ... WHERE ... RETURNING statement (Postgres
+ * guarantees that regardless of which pooled backend runs it). Crucially,
+ * neither acquireSyncLock nor releaseSyncLock is held open across
+ * runSourceSyncLocked's adapter.fetchCandidates() call — that HTTP fetch
+ * (up to ~17 sequential requests for Culture Box's two-stage adapter) runs
+ * with no DB connection or transaction held at all, only the lease *row*
+ * existing in the table. If a request dies mid-sync without ever reaching
+ * the `finally`, the lease simply expires (LEASE_TTL_MS) and the next sync
+ * attempt acquires it normally — no manual cleanup, no permanent lock,
+ * ever. A concurrent run is skipped outright rather than queued, since a
+ * healthy sync finishes in seconds and piling up blocked runs behind a
+ * stuck one is worse than just trying again next cycle.
  */
+const LEASE_TTL_MS = 5 * 60 * 1000;
+
+export async function acquireSyncLock(sourceId: string): Promise<string | null> {
+  const lockToken = randomUUID();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + LEASE_TTL_MS);
+  const rows = await db
+    .insert(syncLocks)
+    .values({ sourceId, lockToken, lockedAt: now, expiresAt })
+    .onConflictDoUpdate({
+      target: syncLocks.sourceId,
+      set: { lockToken, lockedAt: now, expiresAt },
+      where: lte(syncLocks.expiresAt, now),
+    })
+    .returning({ lockToken: syncLocks.lockToken });
+  return rows[0]?.lockToken === lockToken ? lockToken : null;
+}
+
+export async function releaseSyncLock(sourceId: string, lockToken: string): Promise<void> {
+  await db.delete(syncLocks).where(and(eq(syncLocks.sourceId, sourceId), eq(syncLocks.lockToken, lockToken)));
+}
+
 export async function runSourceSync(
   sourceId: string,
   sourceDisplayName: string,
   adapter: SourceAdapter,
 ): Promise<SyncSummary> {
-  const lockClient = await pool.connect();
+  const lockToken = await acquireSyncLock(sourceId);
+  if (!lockToken) {
+    console.error(`[sync] skipped: another sync for "${sourceId}" is already running`);
+    return { sourceId, outcome: "skipped_concurrent", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, errors: [] };
+  }
   try {
-    const {
-      rows: [{ locked }],
-    } = await lockClient.query<{ locked: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [sourceId]);
-    if (!locked) {
-      console.error(`[sync] skipped: another sync for "${sourceId}" is already running`);
-      return { sourceId, outcome: "skipped_concurrent", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, errors: [] };
-    }
-    try {
-      return await runSourceSyncLocked(sourceId, sourceDisplayName, adapter);
-    } finally {
-      await lockClient.query("SELECT pg_advisory_unlock(hashtext($1))", [sourceId]);
-    }
+    return await runSourceSyncLocked(sourceId, sourceDisplayName, adapter);
   } finally {
-    lockClient.release();
+    await releaseSyncLock(sourceId, lockToken);
   }
 }
 

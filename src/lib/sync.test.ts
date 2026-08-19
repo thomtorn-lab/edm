@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
+  decideSyncLeaseAcquisition,
   findPendingRowToResolve,
   findSyncMatch,
   summarizeWriteErrors,
@@ -441,5 +442,28 @@ describe("summarizeWriteErrors", () => {
   it("reports the full failure count against the total candidates found, not just the failed ones", () => {
     const result = summarizeWriteErrors(["A: boom", "B: boom"], 9);
     expect(result.lastErrorMessage).toContain("2/9");
+  });
+});
+
+describe("decideSyncLeaseAcquisition", () => {
+  const now = new Date("2026-08-19T12:00:00Z");
+
+  it("grants when no lease row exists for this source", () => {
+    expect(decideSyncLeaseAcquisition(null, now)).toBe(true);
+  });
+
+  it("denies when an existing lease has not yet expired", () => {
+    const stillValid = { lockToken: "held-by-someone-else", expiresAt: new Date("2026-08-19T12:04:59Z") };
+    expect(decideSyncLeaseAcquisition(stillValid, now)).toBe(false);
+  });
+
+  it("grants once an existing lease's expiry has passed — the mechanism that guarantees no permanent lock survives a crashed sync", () => {
+    const expired = { lockToken: "abandoned-by-a-crashed-request", expiresAt: new Date("2026-08-19T11:59:00Z") };
+    expect(decideSyncLeaseAcquisition(expired, now)).toBe(true);
+  });
+
+  it("grants exactly at the expiry instant (matches the real SQL's <= boundary)", () => {
+    const expiringNow = { lockToken: "expiring-right-now", expiresAt: now };
+    expect(decideSyncLeaseAcquisition(expiringNow, now)).toBe(true);
   });
 });
