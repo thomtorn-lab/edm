@@ -33,11 +33,19 @@ export async function seedVenues(): Promise<number> {
  * source (upsert by primary key) and never resets an already-synced
  * source's real health data — only the static fields are in the
  * update-on-conflict `set`.
+ *
+ * `sourceIds`, when given, scopes the upsert to only those ids (used by
+ * src/db/syncSourceRegistry.ts to correct one source's drifted static
+ * fields — e.g. registry.ts/adapter renamed in code after a source's row
+ * was already seeded — without touching every other source's row). Omit it
+ * (the default, used by bootstrapProduction.ts) to seed every source, as
+ * before.
  */
-export async function seedSourcesProduction(): Promise<number> {
-  for (const fixture of SOURCES) {
+export async function seedSourcesProduction(sourceIds?: string[]): Promise<number> {
+  const targets = sourceIds ? SOURCES.filter((s) => sourceIds.includes(s.id)) : SOURCES;
+  for (const fixture of targets) {
     const { insertRow, updateSet } = toProductionSourceRow(fixture);
     await db.insert(sources).values(insertRow).onConflictDoUpdate({ target: sources.id, set: updateSet });
   }
-  return SOURCES.length;
+  return targets.length;
 }
