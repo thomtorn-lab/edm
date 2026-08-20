@@ -24,7 +24,10 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
 
   add("Official event", event.officialEventUrl, true);
   add("Tickets", event.ticketUrl);
-  add("Resident Advisor", event.residentAdvisorUrl);
+  // Provider-agnostic CTA (spec section 12): when no dedicated ticketUrl
+  // exists, the Resident Advisor link *is* the ticket destination, so it
+  // must read "Tickets" too rather than leaking the provider's name.
+  add(event.ticketUrl ? "Resident Advisor" : "Tickets", event.residentAdvisorUrl);
   add("Facebook", event.facebookUrl);
   for (const url of event.otherSourceUrls) add("Source", url);
 
