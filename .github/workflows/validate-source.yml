@@ -1,0 +1,234 @@
+name: Validate Source
+
+# Permanent, parameterized source-validation workflow (source onboarding
+# factory, Phase 2.2 — see SOURCE_ONBOARDING.md). Replaces the old pattern
+# of hand-writing a brand-new one-off "verify-<source>-preview.yml" workflow
+# for every source (verify-culture-box-preview.yml, verify-poolen-preview.yml,
+# verify-billetto-preview.yml) — those three were >90% identical boilerplate,
+# hardcoded to one branch/URL, and discarded after use. This workflow is
+# never deleted and is driven entirely by inputs.
+#
+# Static checks (lint, typecheck+build, unit tests) always run. The live
+# Preview validation phase (source sync against the shared DB, before/after
+# snapshots, idempotency, regression fingerprints) is gated behind
+# `run_live_sync` + an explicit confirmation string, exactly like the
+# one-off workflows it replaces — Preview and Production currently share one
+# Supabase database (see README), so a live sync here is a REAL sync against
+# the real shared instance, same as before.
+#
+# Safety, unchanged from the workflows this replaces:
+#   - workflow_dispatch only.
+#   - Every DB read here is inside src/db/inspectSource.ts's read-only
+#     transaction (see that file). The only writes anywhere in this run
+#     happen inside the already-deployed Preview app's own
+#     /api/sync/<endpoint> handler — never a migration, seed script, or any
+#     other mutating path invoked directly by this workflow.
+#   - Secrets (DATABASE_URL, SYNC_TRIGGER_TOKEN, VERCEL_AUTOMATION_BYPASS_SECRET)
+#     are never echoed, printed, or included in any step output.
+#
+# One-time setup: repository secrets DATABASE_URL, SYNC_TRIGGER_TOKEN,
+# VERCEL_AUTOMATION_BYPASS_SECRET (same three already used by
+# sync-hangaren.yml and friends).
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_id:
+        description: 'Source id under test, e.g. "src-hangaren" (must match src-[a-z0-9-]+)'
+        required: true
+      ref:
+        description: "Branch or commit SHA to check out and validate"
+        required: true
+      run_live_sync:
+        description: "Also run the live Preview sync phase (before/after snapshots, idempotency, regression check). If false, only static checks (lint/typecheck/build/tests) run."
+        required: true
+        type: boolean
+        default: true
+      preview_base_url:
+        description: "Vercel Preview base URL for this branch, no trailing slash (required when run_live_sync is true)"
+        required: false
+      sync_endpoint:
+        description: 'Path segment for POST /api/sync/<this>, e.g. "hangaren". Defaults to source_id with its "src-" prefix stripped.'
+        required: false
+      sync_count:
+        description: "How many times to trigger the sync (>=2 recommended to prove idempotency)"
+        required: true
+        default: "2"
+      confirm:
+        description: 'Type VALIDATE-SOURCE to confirm (only required/checked when run_live_sync is true — this triggers real syncs against the shared database).'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-source-${{ inputs.source_id }}
+  cancel-in-progress: false
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source_id format
+        run: |
+          if ! [[ "${{ inputs.source_id }}" =~ ^src-[a-z0-9-]+$ ]]; then
+            echo "::error::source_id must match src-[a-z0-9-]+ (e.g. src-hangaren), got: ${{ inputs.source_id }}"
+            exit 1
+          fi
+
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Record the exact commit this run is validating
+        run: git rev-parse HEAD
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Verify DATABASE_URL secret is configured (required for build — see next step)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set. It's required even for the build-only check: /sitemap.xml is statically prerendered and genuinely queries the events table at build time (src/app/sitemap.ts -> getPublishedEventsWithVenue), unlike every other page here (revalidate = 0, rendered per-request)."
+            exit 1
+          fi
+
+      - name: Typecheck + build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run build
+
+  live-preview-validation:
+    needs: static-checks
+    if: ${{ inputs.run_live_sync == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation for a live sync
+        run: |
+          if [ "${{ inputs.confirm }}" != "VALIDATE-SOURCE" ]; then
+            echo "::error::run_live_sync is true but confirm did not match. Re-run and enter exactly: VALIDATE-SOURCE"
+            exit 1
+          fi
+          if [ -z "${{ inputs.preview_base_url }}" ]; then
+            echo "::error::preview_base_url is required when run_live_sync is true."
+            exit 1
+          fi
+
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required secrets are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          missing=""
+          [ -z "${DATABASE_URL:-}" ] && missing="${missing} DATABASE_URL"
+          [ -z "${SYNC_TRIGGER_TOKEN:-}" ] && missing="${missing} SYNC_TRIGGER_TOKEN"
+          [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ] && missing="${missing} VERCEL_AUTOMATION_BYPASS_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repository secret(s):${missing}"
+            exit 1
+          fi
+
+      - name: Confirm the Preview deployment is actually reachable before touching anything
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          http_code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${{ inputs.preview_base_url }}/")
+          echo "Preview homepage HTTP status: ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Preview base URL ${{ inputs.preview_base_url }} did not return 2xx (got ${http_code}) — stopping before any database read/write."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the diagnostic script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Resolve sync endpoint path
+        id: endpoint
+        run: |
+          endpoint="${{ inputs.sync_endpoint }}"
+          if [ -z "$endpoint" ]; then
+            endpoint="${{ inputs.source_id }}"
+            endpoint="${endpoint#src-}"
+          fi
+          echo "path=${endpoint}" >> "$GITHUB_OUTPUT"
+          echo "Resolved sync endpoint: /api/sync/${endpoint}"
+
+      - name: "BEFORE snapshot"
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=snapshot --source="${{ inputs.source_id }}" --label="BEFORE (pre-sync)"
+
+      - name: Trigger sync N times (idempotency check)
+        env:
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          count="${{ inputs.sync_count }}"
+          for i in $(seq 1 "$count"); do
+            echo "--- sync attempt $i/$count ---"
+            response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+              -X POST \
+              -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+              "${{ inputs.preview_base_url }}/api/sync/${{ steps.endpoint.outputs.path }}")
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+            echo "HTTP status: ${http_code}"
+            echo "Response body: ${body}"
+            if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+              echo "::error::Sync attempt $i failed with HTTP ${http_code} — see response body above."
+              exit 1
+            fi
+            if [ "$i" -gt 1 ]; then
+              echo "Attempt $i is a re-run — a healthy adapter should report created:0 here (everything already exists as a published event or a pending discovery_queue row)."
+            fi
+            node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=snapshot --source="${{ inputs.source_id }}" --label="AFTER SYNC #${i}"
+          done
+
+      - name: Source health verdict
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=health --source="${{ inputs.source_id }}"
+
+      - name: Sync lock status (should be clear — sync already finished)
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=lock-status --source="${{ inputs.source_id }}"
+
+      - name: Discovery queue results
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=discovery-queue --source="${{ inputs.source_id }}" --limit=50
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local

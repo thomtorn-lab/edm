@@ -1,0 +1,141 @@
+name: Inspect Source
+
+# Permanent, parameterized, READ-ONLY source diagnostic workflow (source
+# onboarding factory, Phase 2.1 — see SOURCE_ONBOARDING.md). Replaces the
+# old pattern of hand-writing a brand-new one-off workflow every time a
+# source needed inspecting (verify-db-readonly.yml, monitor-source-health's
+# bespoke inline script, verify-discogs-reachability.yml). This workflow is
+# never deleted and never source-specific — it wraps
+# src/db/inspectSource.ts, which does the actual work.
+#
+# Safety, unchanged from the one-off workflows it replaces:
+#   - workflow_dispatch only — never runs on push/PR/schedule.
+#   - Every DB-touching mode opens one dedicated read-only Postgres
+#     transaction (BEGIN; SET LOCAL default_transaction_read_only = on;
+#     ...; ROLLBACK) — see src/db/inspectSource.ts's withReadOnlyTx.
+#   - No migration, seed, sync, or write path is ever reachable from here.
+#   - DATABASE_URL is read only into the step environment via .env.local,
+#     removed at the end of the run — never echoed or logged.
+#   - "reachability" mode never prints a credential value, only whether one
+#     was configured and the HTTP status a request using it returned.
+#
+# One-time setup: repository secret DATABASE_URL. For --with-credentials
+# reachability checks against src-billetto, also BILLETTO_ACCESS_KEY_ID /
+# BILLETTO_ACCESS_KEY_SECRET (already required for that source's real sync
+# to work at all).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Diagnostic mode"
+        required: true
+        type: choice
+        options:
+          - inventory
+          - health
+          - discovery-queue
+          - source-links
+          - lock-status
+          - dedup-simulate
+          - reachability
+          - snapshot
+      source_id:
+        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability with no source scoping; must match src-[a-z0-9-]+)'
+        required: false
+      endpoint:
+        description: "https:// URL to check (reachability mode only)"
+        required: false
+      with_credentials:
+        description: "Also test with real credentials, where wired (currently src-billetto only)"
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: "Row cap for list-style modes (discovery-queue, source-links)"
+        required: false
+        default: "20"
+      dedup_title:
+        description: "Candidate title (dedup-simulate mode only)"
+        required: false
+      dedup_artists:
+        description: 'Candidate artists, comma-separated, e.g. "Artist A, Artist B" (dedup-simulate mode only)'
+        required: false
+      dedup_venue:
+        description: "Candidate venue name (dedup-simulate mode only)"
+        required: false
+      dedup_start:
+        description: "Candidate start datetime, ISO 8601 (dedup-simulate mode only)"
+        required: false
+      dedup_url:
+        description: "Candidate official event URL, optional (dedup-simulate mode only)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source_id format (when given)
+        if: ${{ inputs.source_id != '' }}
+        run: |
+          if ! [[ "${{ inputs.source_id }}" =~ ^src-[a-z0-9-]+$ ]]; then
+            echo "::error::source_id must match src-[a-z0-9-]+ (e.g. src-hangaren), got: ${{ inputs.source_id }}"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured (skipped for reachability mode with no DB access)
+        if: ${{ inputs.mode != 'reachability' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the diagnostic script
+        if: ${{ inputs.mode != 'reachability' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run inspection
+        env:
+          BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
+          BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.source_id }}" ] && args+=(--source="${{ inputs.source_id }}")
+          [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
+          [ "${{ inputs.with_credentials }}" = "true" ] && args+=(--with-credentials)
+          [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
+          [ -n "${{ inputs.dedup_title }}" ] && args+=(--title="${{ inputs.dedup_title }}")
+          [ -n "${{ inputs.dedup_artists }}" ] && args+=(--artists="${{ inputs.dedup_artists }}")
+          [ -n "${{ inputs.dedup_venue }}" ] && args+=(--venue="${{ inputs.dedup_venue }}")
+          [ -n "${{ inputs.dedup_start }}" ] && args+=(--start="${{ inputs.dedup_start }}")
+          [ -n "${{ inputs.dedup_url }}" ] && args+=(--url="${{ inputs.dedup_url }}")
+          if [ "${{ inputs.mode }}" = "reachability" ]; then
+            node --import tsx src/db/inspectSource.ts "${args[@]}"
+          else
+            node --env-file=.env.local --import tsx src/db/inspectSource.ts "${args[@]}"
+          fi
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local

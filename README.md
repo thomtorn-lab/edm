@@ -129,7 +129,13 @@ src/db/
                                          -> production bootstrap -> real sync end to end
 src/app/api/sync/[source]/route.ts      Scheduling entry point, `x-sync-token`-protected
 src/proxy.ts                             HTTP Basic Auth gate for /admin + /api/admin/*
+src/db/inspectSource.ts                  Permanent read-only source diagnostics (see
+                                          SOURCE_ONBOARDING.md), wrapped by inspect-source.yml
+scripts/scaffold-source.mjs              New-source adapter/test/workflow scaffold generator
 .github/workflows/sync-hangaren.yml      Actual cron trigger — see "Scheduling" below
+.github/workflows/inspect-source.yml     Permanent read-only source diagnostic workflow
+.github/workflows/validate-source.yml    Permanent source-branch validation workflow
+SOURCE_ONBOARDING.md                     The end-to-end process for adding a new source
 ```
 
 ### Hangaren ingestion (the one real, live source)
@@ -198,6 +204,18 @@ only —
 (API, confirmed ToS allowance) is confirmed and documented on that source's `integrationNote`. Do
 not add scraping for them without doing that first. `/about` renders this table for anyone
 non-technical.
+
+### Adding a new source
+
+See `SOURCE_ONBOARDING.md` for the full process (DISCOVER → DIAGNOSE → IMPLEMENT → TEST → VALIDATE
+→ FIX/RETRY → MERGE GATE → PRODUCTION VERIFY) and the explicit conditions that require stopping to
+ask a human. The permanent tooling it's built on: `.github/workflows/inspect-source.yml`
+(parameterized read-only diagnostics — source inventory, discovery-queue/source-links inspection,
+health, dedup simulation, lock status, reachability, snapshot), `.github/workflows/validate-source.yml`
+(parameterized branch validation — lint/tests/build plus an optional live Preview sync/idempotency/
+regression check), and `scripts/scaffold-source.mjs` (adapter/test/sync-workflow skeleton
+generator). None of these are source-specific or one-off — a new source never needs its own
+diagnostic or preview-verification workflow file.
 
 ### Quality gate & dedup
 
