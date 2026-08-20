@@ -92,7 +92,7 @@ jobs:
           echo "page2 HTTP status: ${http_code}"
           cat page2.json | jq '.data | length' || true
 
-      - name: Search for known overlap events (Arcanum Collective: POSSESSED / Infected Mushroom)
+      - name: "Search for known overlap events (Arcanum Collective: POSSESSED / Infected Mushroom)"
         env:
           BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
           BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
