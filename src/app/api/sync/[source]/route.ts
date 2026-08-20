@@ -3,6 +3,7 @@ import { runSourceSync } from "@/db/sync";
 import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangarenAdapter";
 import { createCultureBoxAdapter, CULTURE_BOX_SOURCE_ID } from "@/lib/adapters/cultureBoxAdapter";
 import { createPoolenAdapter, POOLEN_SOURCE_ID } from "@/lib/adapters/poolenAdapter";
+import { createBillettoAdapter, BILLETTO_SOURCE_ID } from "@/lib/adapters/billettoAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
@@ -15,6 +16,7 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   hangaren: { sourceId: HANGAREN_SOURCE_ID, displayName: "Hangaren", create: createHangarenAdapter },
   "culture-box": { sourceId: CULTURE_BOX_SOURCE_ID, displayName: "Culture Box", create: createCultureBoxAdapter },
   poolen: { sourceId: POOLEN_SOURCE_ID, displayName: "Poolen", create: createPoolenAdapter },
+  billetto: { sourceId: BILLETTO_SOURCE_ID, displayName: "Billetto", create: createBillettoAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {

@@ -1,0 +1,104 @@
+name: Sync Billetto
+
+# Scheduling entry point for the Billetto ingestion adapter
+# (src/lib/adapters/billettoAdapter.ts). Calls the deployed app's
+# POST /api/sync/billetto on a fixed schedule, matching
+# src/lib/data/sources.ts's `syncFrequency: "every 6h"` for src-billetto.
+# Mirrors sync-hangaren.yml / sync-culture-box.yml / sync-poolen.yml
+# exactly — same base URL, same secrets, same retry/error-handling shape —
+# offset by 45 minutes past the hour so it never fires alongside Hangaren
+# (:00), Culture Box (:30) or Poolen (:15).
+#
+# Billetto is an aggregator (not a single first-party venue), so a run
+# fetches every current Copenhagen event page-by-page rather than one
+# page — still well within a reasonable API load for a 6h cadence (Phase 1
+# diagnosis observed ~100-300 Copenhagen-scoped events per full pass).
+#
+# One-time setup after deploying the app somewhere:
+#   1. Repository variable SYNC_BASE_URL — the deployed app's base URL
+#      (e.g. https://nattefrekvens.example.com), no trailing slash.
+#   2. Repository secret SYNC_TRIGGER_TOKEN — must match the
+#      SYNC_TRIGGER_TOKEN environment variable set on the deployment itself
+#      (see .env.example).
+#   3. Repository secret VERCEL_AUTOMATION_BYPASS_SECRET — sent as
+#      x-vercel-protection-bypass so this request can get past Vercel's
+#      deployment protection; must match the bypass secret configured on
+#      the Vercel project.
+#   4. BILLETTO_ACCESS_KEY_ID / BILLETTO_ACCESS_KEY_SECRET must be set as
+#      environment variables on the deployment itself (Vercel project
+#      settings) — the adapter reads them directly via process.env, not
+#      via this workflow. This workflow only triggers the sync; it never
+#      touches the Billetto credentials itself.
+# All of SYNC_BASE_URL/SYNC_TRIGGER_TOKEN/VERCEL_AUTOMATION_BYPASS_SECRET
+# are already configured for Hangaren/Culture Box/Poolen — this reuses the
+# same repository variable/secrets, nothing new to set up there.
+
+on:
+  schedule:
+    - cron: "45 */6 * * *"
+  workflow_dispatch: {} # manual re-trigger, e.g. to retry after a fix
+
+# Prevents two runs of this workflow from ever calling the endpoint at the
+# same time (queues instead of overlapping). This is a second, belt-and-
+# suspenders layer — the real correctness guarantee is the sync-lease row
+# in src/db/sync.ts::acquireSyncLock, which protects against concurrent
+# calls from ANY source (a manual admin trigger, a retried request, etc.),
+# not just two overlapping GitHub Actions runs. Its own concurrency group
+# keeps it fully independent from sync-hangaren / sync-culture-box /
+# sync-poolen — a slow Billetto sync never queues behind, or blocks, any
+# of the other three.
+concurrency:
+  group: sync-billetto
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Billetto sync
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set — point it at the deployed app's base URL (Settings > Secrets and variables > Actions > Variables) before this workflow can do anything."
+            exit 1
+          fi
+          if [ -z "${SYNC_TRIGGER_TOKEN}" ]; then
+            echo "::error::Repository secret SYNC_TRIGGER_TOKEN is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the deployment's SYNC_TRIGGER_TOKEN env var."
+            exit 1
+          fi
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the bypass secret configured on the Vercel project."
+            exit 1
+          fi
+
+          # --retry handles transient network blips reaching the endpoint;
+          # a persistently failing source itself is retried once more
+          # *inside* the app (src/lib/adapters/billettoAdapter.ts, and only
+          # on a 5xx — a 401/403 credential failure never retries there
+          # either), and beyond that is left to the next scheduled run 6h
+          # later rather than retried aggressively here. Billetto's
+          # page-by-page pagination can take longer than a single-page
+          # first-party adapter, hence the longer --max-time than
+          # sync-hangaren.yml/sync-poolen.yml use.
+          http_code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 120 \
+            -o /tmp/sync-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/billetto")
+
+          echo "HTTP status: ${http_code}"
+          echo "Response:"
+          cat /tmp/sync-response.json
+          echo
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Billetto sync returned HTTP ${http_code} — see response body above (source failure and zero-event anomaly both return non-2xx; not concurrent-run skips, which return 200)."
+            exit 1
+          fi

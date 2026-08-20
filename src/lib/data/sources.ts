@@ -5,10 +5,11 @@ import type { Source } from "../types";
  * product uses is classified by role — DISCOVERY / INGESTION / VERIFICATION
  * / LINK — independently, because the strongest discovery source is not
  * automatically the strongest ingestion source. Resident Advisor, Facebook,
- * Eventbrite and (until access is confirmed) Billetto and AllEvents are
- * deliberately NOT wired for automated ingestion per spec sections 26-30 and
- * 59 — do not add scraping for them without documenting a permitted access
- * method here first.
+ * Eventbrite and AllEvents are deliberately NOT wired for automated
+ * ingestion per spec sections 26-30 and 59 — do not add scraping for them
+ * without documenting a permitted access method here first. Billetto (see
+ * src-billetto below) is wired for ingestion via its documented public API
+ * with a real credential, not scraping.
  */
 export const SOURCES: Source[] = [
   // ---- First-party venues/promoters: highest verification priority, only sources with a working adapter ----
@@ -304,11 +305,25 @@ export const SOURCES: Source[] = [
     sourceName: "Billetto — Copenhagen Electronic / EDM",
     sourceType: "ticketing",
     baseUrl: "https://billetto.dk/",
-    roles: ["discovery", "verification", "link"],
-    adapter: null,
+    roles: ["discovery", "ingestion", "verification", "link"],
+    // Real working adapter (src/lib/adapters/billettoAdapter.ts): the
+    // documented public API (GET /api/v3/public/events, Api-Keypair header,
+    // after-cursor pagination), filtered server-side to subregion=Byen
+    // København and re-validated client-side per candidate, so an organiser
+    // being Copenhagen-based can never smuggle an out-of-scope event in.
+    // Explicit categorization.subcategory (techno/house/electro/
+    // edm_electronic/trance) is trusted as official-source-metadata
+    // (highest evidence tier); "hardcore" and "disco" are deliberately
+    // NOT trusted (a real hardcore-punk false positive was found live during
+    // diagnosis) — those fall through to the same deterministic title/
+    // description text evidence and shared pipeline fallback every other
+    // adapter already uses. As an aggregator, provenance/dedup matters more
+    // here than for any first-party source: the shared evidence-based dedup
+    // model (src/lib/dedup.ts) is reused completely unchanged.
+    adapter: "billetto-api",
     trustLevel: "medium",
-    autoPublish: false,
-    syncFrequency: "manual coverage check",
+    autoPublish: true,
+    syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
     lastAttemptedSync: null,
