@@ -46,6 +46,9 @@ on:
       endpoint:
         description: "https:// URL to check (reachability mode only)"
         required: false
+      save_body_path:
+        description: "Reachability mode only: path (under a runner-local scratch dir, e.g. /tmp/fixture.html) to save the full response body to, uploaded as a downloadable artifact — for capturing a real page fixture (see SOURCE_ONBOARDING.md's IMPLEMENT step). Omit for a bounded 4000-char body preview printed to the log instead."
+        required: false
       with_credentials:
         description: "Also test with real credentials, where wired (currently src-billetto only)"
         required: false
@@ -123,6 +126,7 @@ jobs:
           args=(--mode="${{ inputs.mode }}")
           [ -n "${{ inputs.source_id }}" ] && args+=(--source="${{ inputs.source_id }}")
           [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
+          [ -n "${{ inputs.save_body_path }}" ] && args+=(--save-body="${{ inputs.save_body_path }}")
           [ "${{ inputs.with_credentials }}" = "true" ] && args+=(--with-credentials)
           [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
           [ -n "${{ inputs.dedup_title }}" ] && args+=(--title="${{ inputs.dedup_title }}")
@@ -135,6 +139,14 @@ jobs:
           else
             node --env-file=.env.local --import tsx src/db/inspectSource.ts "${args[@]}"
           fi
+
+      - name: Upload saved body as artifact
+        if: ${{ inputs.save_body_path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reachability-body
+          path: ${{ inputs.save_body_path }}
+          retention-days: 7
 
       - name: Remove local env file
         if: always()

@@ -340,6 +340,26 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   console.log(`content-type: ${res.headers.get("content-type") ?? "(none)"}`);
   console.log(`content-length: ${res.headers.get("content-length") ?? "(unknown)"}`);
 
+  // Body preview + optional full-body save, so DIAGNOSE/IMPLEMENT (per
+  // SOURCE_ONBOARDING.md) can confirm robots.txt permission and capture a
+  // real, unmodified fixture from a GitHub-hosted runner (agent sandboxes
+  // in this project cannot reach external hosts at all) without a fresh
+  // one-off diagnostic workflow per source. Never used for anything but a
+  // plain GET against a public https:// URL — no credentials, no DB.
+  const bodyText = await res.text();
+  console.log(`body length: ${bodyText.length} chars`);
+  const saveBodyPath = typeof args["save-body"] === "string" ? args["save-body"] : null;
+  if (saveBodyPath) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    mkdirSync(dirname(saveBodyPath), { recursive: true });
+    writeFileSync(saveBodyPath, bodyText, "utf-8");
+    console.log(`Full body saved to ${saveBodyPath} (not printed here — see uploaded artifact).`);
+  } else {
+    console.log("-- body preview (first 4000 chars; pass --save-body=<path> for the full body as an artifact) --");
+    console.log(bodyText.slice(0, 4000));
+  }
+
   if (args["with-credentials"] && typeof args.source === "string" && args.source === "src-billetto") {
     const accessKeyId = process.env.BILLETTO_ACCESS_KEY_ID;
     const accessKeySecret = process.env.BILLETTO_ACCESS_KEY_SECRET;
