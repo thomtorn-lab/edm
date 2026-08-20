@@ -127,7 +127,7 @@ jobs:
                 [sourceId],
               );
               console.log(`\n-- sources row (${sourceId}) --`);
-              console.log(JSON.stringify(src.rows, null, 2));
+              console.log(JSON.stringify(src.rows));
 
               if (sourceId !== 'src-billetto') {
                 const fp = await client.query(
@@ -141,34 +141,39 @@ jobs:
                   [sourceId],
                 );
                 console.log(`\n-- regression fingerprint (${sourceId}) --`);
-                console.log(JSON.stringify(fp.rows, null, 2));
+                console.log(JSON.stringify(fp.rows));
                 continue;
               }
 
+              // Compact (single-line) JSON for Billetto's own rows too --
+              // pretty-printing blew the discovery_queue dump alone past
+              // the retrievable log window on its own. Trimmed columns to
+              // what the report actually needs (dropped detected_lineup /
+              // missing_fields / created_at, kept everything used to judge
+              // qualification + dedup decisions).
               const dq = await client.query(
                 `SELECT id, probable_title, status, predicted_genre, genre_confidence, overall_confidence,
-                        detected_lineup, missing_fields, suspected_duplicate_of_event_id, source_url, created_at
+                        suspected_duplicate_of_event_id, source_url
                  FROM discovery_queue WHERE source_id = $1 ORDER BY created_at`,
                 [sourceId],
               );
               console.log(`\n-- discovery_queue (source_id=${sourceId}): ${dq.rows.length} rows --`);
-              console.log(JSON.stringify(dq.rows, null, 2));
+              console.log(JSON.stringify(dq.rows));
 
               const dqByConfidence = await client.query(
                 `SELECT overall_confidence, count(*)::int AS n FROM discovery_queue WHERE source_id = $1 GROUP BY overall_confidence ORDER BY overall_confidence`,
                 [sourceId],
               );
               console.log(`\n-- discovery_queue for src-billetto grouped by overall_confidence (medium ~= review_queue, low ~= hold) --`);
-              console.log(JSON.stringify(dqByConfidence.rows, null, 2));
+              console.log(JSON.stringify(dqByConfidence.rows));
 
               const ev = await client.query(
-                `SELECT id, title, venue_id, start_datetime, primary_genre, subgenres, genre_confidence,
-                        confidence, published, manual_override, overridden_fields, official_event_url, ticket_url, created_at
+                `SELECT id, title, primary_genre, genre_confidence, confidence, published, official_event_url, ticket_url
                  FROM events WHERE canonical_source_id = $1 ORDER BY created_at`,
                 [sourceId],
               );
               console.log(`\n-- events (canonical_source_id=${sourceId}): ${ev.rows.length} rows --`);
-              console.log(JSON.stringify(ev.rows, null, 2));
+              console.log(JSON.stringify(ev.rows));
 
               const links = await client.query(
                 `SELECT event_id, source_id, source_url, role, first_seen_at
@@ -176,7 +181,7 @@ jobs:
                 [sourceId],
               );
               console.log(`\n-- source_event_links (source_id=${sourceId}): ${links.rows.length} rows --`);
-              console.log(JSON.stringify(links.rows, null, 2));
+              console.log(JSON.stringify(links.rows));
             }
 
             // The specific overlap events -- did Billetto correctly attach
@@ -187,14 +192,14 @@ jobs:
                ORDER BY id`,
             );
             console.log(`\n-- known overlap events (Infected Mushroom / Arcanum Collective: POSSESSED) --`);
-            console.log(JSON.stringify(overlap.rows, null, 2));
+            console.log(JSON.stringify(overlap.rows));
 
             const overlapLinks = await client.query(
               `SELECT event_id, source_id, source_url, role, first_seen_at
                FROM source_event_links WHERE event_id IN ('e-14bc847e', 'e-bb5fbae5') ORDER BY event_id, source_id`,
             );
             console.log(`\n-- source_event_links for the known overlap events --`);
-            console.log(JSON.stringify(overlapLinks.rows, null, 2));
+            console.log(JSON.stringify(overlapLinks.rows));
 
             // Global cross-checks: total counts by canonical source (did
             // anything outside Billetto move?), and the full set of
@@ -203,13 +208,13 @@ jobs:
               `SELECT canonical_source_id, count(*)::int AS n FROM events GROUP BY canonical_source_id ORDER BY canonical_source_id NULLS FIRST`,
             );
             console.log(`\n-- events grouped by canonical_source_id (global) --`);
-            console.log(JSON.stringify(byCanonicalSource.rows, null, 2));
+            console.log(JSON.stringify(byCanonicalSource.rows));
 
             const dqByStatus = await client.query(
               `SELECT source_id, status, count(*)::int AS n FROM discovery_queue GROUP BY source_id, status ORDER BY source_id NULLS FIRST, status`,
             );
             console.log(`\n-- discovery_queue grouped by source_id + status (global) --`);
-            console.log(JSON.stringify(dqByStatus.rows, null, 2));
+            console.log(JSON.stringify(dqByStatus.rows));
 
             const overridden = await client.query(
               `SELECT id, overridden_fields, manual_override, updated_at FROM events
@@ -217,7 +222,7 @@ jobs:
                ORDER BY id`,
             );
             console.log(`\n-- events with any manual override (global): ${overridden.rows.length} rows --`);
-            console.log(JSON.stringify(overridden.rows, null, 2));
+            console.log(JSON.stringify(overridden.rows));
 
             const totalEvents = await client.query(`SELECT count(*)::int AS n FROM events`);
             console.log(`\n-- total events (global): ${totalEvents.rows[0].n} --`);
