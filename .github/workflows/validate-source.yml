@@ -115,7 +115,12 @@ jobs:
 
   live-preview-validation:
     needs: static-checks
-    if: ${{ inputs.run_live_sync == 'true' }}
+    # run_live_sync is declared `type: boolean` above, so inputs.run_live_sync
+    # is a real boolean at evaluation time here — comparing it with `== 'true'`
+    # triggers GitHub Actions' boolean-vs-string coercion (both sides convert
+    # to numbers: true -> 1, the string 'true' -> NaN), so that comparison is
+    # ALWAYS false regardless of the actual input. Use the boolean directly.
+    if: ${{ inputs.run_live_sync }}
     runs-on: ubuntu-latest
     steps:
       - name: Require explicit confirmation for a live sync
