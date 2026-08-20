@@ -1,0 +1,241 @@
+name: Verify Billetto Production Sync
+
+# One-off, manual, confirmation-gated post-merge verification of the real
+# Billetto adapter against the actual Production deployment, run once right
+# after merging claude/billetto-electronic-cph-pn5ggy to the default branch.
+# Mirrors verify-billetto-preview.yml's safe pattern: every database
+# connection runs its queries inside one explicit read-only transaction
+# (BEGIN; SET LOCAL default_transaction_read_only = on; ...; ROLLBACK). The
+# only writes anywhere in this run happen inside the already-deployed
+# Production app's own /api/sync/billetto handler, exactly as the recurring
+# sync-billetto.yml workflow would trigger on its normal schedule.
+#
+# Deleted immediately after use -- this is a one-shot post-merge check, not
+# a permanent fixture (unlike verify-billetto-preview.yml, which stays on
+# the feature branch for future Preview re-runs).
+#
+# Secrets/vars used: DATABASE_URL (read-only queries only), SYNC_BASE_URL
+# (repo variable, the Production base URL), SYNC_TRIGGER_TOKEN and
+# VERCEL_AUTOMATION_BYPASS_SECRET (sync trigger headers). None are ever
+# echoed, printed, or included in any step output.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN-BILLETTO-PRODUCTION-SYNC to confirm: this triggers TWO real Billetto syncs against PRODUCTION.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-billetto-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "RUN-BILLETTO-PRODUCTION-SYNC" ]; then
+            echo "::error::Confirmation input did not match. Re-run and enter exactly: RUN-BILLETTO-PRODUCTION-SYNC"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record the exact commit this run is verifying
+        run: git rev-parse HEAD
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required secrets/vars are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          missing=""
+          [ -z "${DATABASE_URL:-}" ] && missing="${missing} DATABASE_URL"
+          [ -z "${SYNC_BASE_URL:-}" ] && missing="${missing} SYNC_BASE_URL"
+          [ -z "${SYNC_TRIGGER_TOKEN:-}" ] && missing="${missing} SYNC_TRIGGER_TOKEN"
+          [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ] && missing="${missing} VERCEL_AUTOMATION_BYPASS_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repository secret(s)/variable(s):${missing}"
+            exit 1
+          fi
+
+      - name: Confirm the Production deployment is actually reachable before touching anything
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          http_code=$(curl -sS --max-time 30 -o /tmp/prod-home.html -w '%{http_code}' \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/")
+          echo "Production homepage HTTP status: ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Production base URL did not return 2xx (got ${http_code}) -- stopping before any database read/write."
+            exit 1
+          fi
+
+      - name: Install dependencies (pg only needed, but npm ci matches repo convention)
+        run: npm ci
+
+      - name: Write read-only DB snapshot script
+        run: |
+          cat > snapshot.cjs << 'SCRIPT'
+          const { Client } = require('pg');
+
+          async function main(client) {
+            await client.connect();
+            await client.query('BEGIN');
+            await client.query('SET LOCAL default_transaction_read_only = on');
+
+            const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
+            console.log(`\n========== ${label} ==========`);
+
+            for (const sourceId of ['src-billetto', 'src-hangaren', 'src-culture-box', 'src-poolen']) {
+              const src = await client.query(
+                `SELECT id, last_successful_sync, last_attempted_sync, last_error, events_found, events_updated
+                 FROM sources WHERE id = $1`,
+                [sourceId],
+              );
+              console.log(`\n-- sources row (${sourceId}) --`);
+              console.log(JSON.stringify(src.rows));
+
+              const fp = await client.query(
+                `SELECT
+                   (SELECT count(*)::int FROM discovery_queue WHERE source_id = $1) AS dq_count,
+                   (SELECT md5(coalesce(string_agg(id::text, ',' ORDER BY id), '')) FROM discovery_queue WHERE source_id = $1) AS dq_md5,
+                   (SELECT count(*)::int FROM events WHERE canonical_source_id = $1) AS ev_count,
+                   (SELECT md5(coalesce(string_agg(id::text, ',' ORDER BY id), '')) FROM events WHERE canonical_source_id = $1) AS ev_md5,
+                   (SELECT count(*)::int FROM source_event_links WHERE source_id = $1) AS links_count,
+                   (SELECT md5(coalesce(string_agg(event_id::text, ',' ORDER BY event_id), '')) FROM source_event_links WHERE source_id = $1) AS links_md5`,
+                [sourceId],
+              );
+              console.log(`\n-- regression fingerprint (${sourceId}) --`);
+              console.log(JSON.stringify(fp.rows));
+            }
+
+            // The Infected Mushroom overlap -- did Billetto correctly attach
+            // rather than duplicate?
+            const overlap = await client.query(
+              `SELECT id, title, canonical_source_id FROM events WHERE id = 'e-14bc847e'`,
+            );
+            console.log(`\n-- Infected Mushroom canonical event --`);
+            console.log(JSON.stringify(overlap.rows));
+
+            const overlapLinks = await client.query(
+              `SELECT event_id, source_id, source_url, role FROM source_event_links WHERE event_id = 'e-14bc847e' ORDER BY source_id`,
+            );
+            console.log(`\n-- source_event_links for Infected Mushroom --`);
+            console.log(JSON.stringify(overlapLinks.rows));
+
+            const dupeCheck = await client.query(
+              `SELECT count(*)::int AS n FROM events WHERE title ILIKE '%Infected Mushroom%'`,
+            );
+            console.log(`\n-- count of events titled like Infected Mushroom (global, duplicate check) --`);
+            console.log(JSON.stringify(dupeCheck.rows));
+
+            // Hardcore-punk false-positive regression check.
+            const hardcorePunk = await client.query(
+              `SELECT id, probable_title, status, predicted_genre, genre_confidence, overall_confidence
+               FROM discovery_queue WHERE source_id = 'src-billetto' AND source_url LIKE '%1982601%'`,
+            );
+            console.log(`\n-- hardcore-punk moshpit event (Billetto id 1982601) --`);
+            console.log(JSON.stringify(hardcorePunk.rows));
+
+            // Sync lock check -- must be empty (released) or expired.
+            const locks = await client.query(
+              `SELECT source_id, lock_token, locked_at, expires_at, (expires_at < now()) AS expired
+               FROM sync_locks WHERE source_id = 'src-billetto'`,
+            );
+            console.log(`\n-- sync_locks for src-billetto --`);
+            console.log(JSON.stringify(locks.rows));
+
+            await client.query('COMMIT');
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          main(client)
+            .catch((err) => {
+              console.error('SNAPSHOT FAILED:', err.message);
+              process.exitCode = 1;
+            })
+            .finally(() => client.end());
+          SCRIPT
+
+      - name: "PHASE 1 — BEFORE snapshot"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: BEFORE (pre-sync)
+        run: node snapshot.cjs
+
+      - name: "PHASE 2 — trigger Billetto sync #1 against Production"
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/billetto")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Sync 1 HTTP status: ${http_code}"
+          echo "Sync 1 response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Billetto Production sync #1 failed with HTTP ${http_code} -- see response body above."
+            exit 1
+          fi
+
+      - name: "PHASE 3 — AFTER first sync snapshot"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER SYNC 1
+        run: node snapshot.cjs
+
+      - name: "PHASE 4 — trigger Billetto sync #2 against Production (idempotency check)"
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/billetto")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Sync 2 HTTP status: ${http_code}"
+          echo "Sync 2 response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Billetto Production sync #2 failed with HTTP ${http_code} -- see response body above."
+            exit 1
+          fi
+
+      - name: "PHASE 5 — AFTER second sync snapshot (idempotency evidence)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_LABEL: AFTER SYNC 2 idempotency check
+        run: node snapshot.cjs
+
+      - name: Remove local scratch script
+        if: always()
+        run: rm -f snapshot.cjs
