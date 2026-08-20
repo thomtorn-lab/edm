@@ -1,0 +1,143 @@
+name: Diagnose Billetto API (read-only)
+
+# One-off, manual diagnostic (Billetto Electronic CPH ingestion, Phase 1):
+# the agent sandbox this investigation is running in cannot reach
+# billetto.dk at all (confirmed: CONNECT tunnel failed / 403 on every
+# attempt), so this workflow answers the diagnosis questions from a
+# network-unrestricted environment instead — same pattern as
+# verify-discogs-reachability.yml.
+#
+# READ ONLY. Every request is a plain GET against Billetto's public events
+# endpoint (GET https://billetto.dk/api/v3/public/events). No writes to
+# Billetto, no database access, nothing destructive. Only ever logs event
+# data (which is public by definition — that's the whole point of the
+# "public events" endpoint) and HTTP status codes. NEVER logs the
+# Api-Keypair header value or either secret.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets are present
+        env:
+          BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
+          BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+        run: |
+          set -u
+          missing=0
+          if [ -z "${BILLETTO_ACCESS_KEY_ID}" ]; then
+            echo "::error::Repository secret BILLETTO_ACCESS_KEY_ID is not set (Settings > Secrets and variables > Actions > Secrets)."
+            missing=1
+          fi
+          if [ -z "${BILLETTO_ACCESS_KEY_SECRET}" ]; then
+            echo "::error::Repository secret BILLETTO_ACCESS_KEY_SECRET is not set (Settings > Secrets and variables > Actions > Secrets)."
+            missing=1
+          fi
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+          echo "Both BILLETTO_ACCESS_KEY_ID and BILLETTO_ACCESS_KEY_SECRET are set."
+
+      - name: Fetch base sample (page 1, unfiltered)
+        env:
+          BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
+          BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+        run: |
+          set -u
+          http_code=$(curl -sS --max-time 20 \
+            -o page1.json -w '%{http_code}' \
+            -H "Api-Keypair: ${BILLETTO_ACCESS_KEY_ID}:${BILLETTO_ACCESS_KEY_SECRET}" \
+            "https://billetto.dk/api/v3/public/events?limit=100")
+          echo "page1 HTTP status: ${http_code}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Billetto API returned HTTP ${http_code} on an unfiltered request. Response body (safe to print — no secret in it):"
+            cat page1.json
+            exit 1
+          fi
+          echo "--- top-level keys ---"
+          jq 'keys' page1.json
+          echo "--- event count this page ---"
+          jq '.data | length' page1.json
+          echo "--- keys of first event ---"
+          jq '.data[0] | keys' page1.json
+          echo "--- first 3 events, full ---"
+          jq '.data[0:3]' page1.json
+          echo "--- distinct venue/city-ish fields seen across this page (best-effort probe, adjust jq paths after seeing real schema above) ---"
+          jq '[.data[] | {venue: (.venue.name // .venue_name // null), city: (.venue.city // .venue.address.city // .city // null), country: (.venue.country // .venue.address.country // .country // null)}] | unique' page1.json || true
+          echo "--- meta/pagination block if present ---"
+          jq '.meta // .pagination // "no meta/pagination key"' page1.json
+
+      - name: Fetch page 2 via last event ID as `after` cursor
+        env:
+          BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
+          BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+        run: |
+          set -u
+          last_id=$(jq -r '.data[-1].id // empty' page1.json)
+          if [ -z "${last_id}" ]; then
+            echo "Could not determine last event id from page 1 (empty page or unexpected shape) — skipping page 2."
+            exit 0
+          fi
+          echo "Using after=${last_id}"
+          http_code=$(curl -sS --max-time 20 \
+            -o page2.json -w '%{http_code}' \
+            -H "Api-Keypair: ${BILLETTO_ACCESS_KEY_ID}:${BILLETTO_ACCESS_KEY_SECRET}" \
+            "https://billetto.dk/api/v3/public/events?limit=100&after=${last_id}")
+          echo "page2 HTTP status: ${http_code}"
+          cat page2.json | jq '.data | length' || true
+
+      - name: Search for known overlap events (Arcanum Collective: POSSESSED / Infected Mushroom)
+        env:
+          BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
+          BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+        run: |
+          set -u
+          for q in "Arcanum" "POSSESSED" "Infected Mushroom"; do
+            echo "=== query: ${q} ==="
+            http_code=$(curl -sS --max-time 20 -G \
+              -o "search-$(echo "$q" | tr -c 'A-Za-z0-9' '_').json" -w '%{http_code}' \
+              -H "Api-Keypair: ${BILLETTO_ACCESS_KEY_ID}:${BILLETTO_ACCESS_KEY_SECRET}" \
+              --data-urlencode "q=${q}" \
+              --data-urlencode "limit=10" \
+              "https://billetto.dk/api/v3/public/events"
+            )
+            echo "HTTP status: ${http_code}"
+            f="search-$(echo "$q" | tr -c 'A-Za-z0-9' '_').json"
+            jq '.data | length' "$f" 2>/dev/null || cat "$f"
+            jq '.data[]? | {id, title, start: (.start_date // .start_at // .starts_at // .start), venue: (.venue.name // .venue_name // null)}' "$f" 2>/dev/null || true
+          done
+
+      - name: Try candidate location filter params
+        env:
+          BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
+          BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+        run: |
+          set -u
+          for pair in "q=Copenhagen" "location=Copenhagen" "city=Copenhagen" "address=Copenhagen" "q=K%C3%B8benhavn"; do
+            key="${pair%%=*}"
+            echo "=== candidate param: ${pair} ==="
+            http_code=$(curl -sS --max-time 20 \
+              -o "loc-${key}.json" -w '%{http_code}' \
+              -H "Api-Keypair: ${BILLETTO_ACCESS_KEY_ID}:${BILLETTO_ACCESS_KEY_SECRET}" \
+              "https://billetto.dk/api/v3/public/events?limit=25&${pair}")
+            echo "HTTP status: ${http_code}"
+            jq '.data | length' "loc-${key}.json" 2>/dev/null || cat "loc-${key}.json"
+          done
+
+      - name: Upload raw responses as artifact (public event data only — no secrets)
+        uses: actions/upload-artifact@v4
+        with:
+          name: billetto-diagnosis-raw
+          path: |
+            page1.json
+            page2.json
+            search-*.json
+            loc-*.json
+          retention-days: 7
+          if-no-files-found: warn
