@@ -45,7 +45,7 @@ on:
         type: boolean
         default: true
       preview_base_url:
-        description: "Vercel Preview base URL for this branch, no trailing slash (required when run_live_sync is true)"
+        description: "Vercel Preview base URL for this branch, no trailing slash. Optional — when omitted and run_live_sync is true, falls back to the repository variable SYNC_BASE_URL (the same standing deployment sync-hangaren.yml and friends already target)."
         required: false
       sync_endpoint:
         description: 'Path segment for POST /api/sync/<this>, e.g. "hangaren". Defaults to source_id with its "src-" prefix stripped.'
@@ -124,10 +124,25 @@ jobs:
             echo "::error::run_live_sync is true but confirm did not match. Re-run and enter exactly: VALIDATE-SOURCE"
             exit 1
           fi
-          if [ -z "${{ inputs.preview_base_url }}" ]; then
-            echo "::error::preview_base_url is required when run_live_sync is true."
+
+      - name: Resolve target base URL
+        id: target
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+        run: |
+          set -u
+          url="${{ inputs.preview_base_url }}"
+          if [ -z "$url" ]; then
+            url="${SYNC_BASE_URL}"
+            echo "No preview_base_url given — falling back to the repository variable SYNC_BASE_URL (same standing deployment sync-hangaren.yml targets)."
+          fi
+          if [ -z "$url" ]; then
+            echo "::error::Neither preview_base_url was given nor is the repository variable SYNC_BASE_URL set — nothing to validate against."
             exit 1
           fi
+          url="${url%/}"
+          echo "base_url=${url}" >> "$GITHUB_OUTPUT"
+          echo "Resolved target base URL: ${url}"
 
       - name: Checkout requested ref
         uses: actions/checkout@v4
@@ -156,17 +171,17 @@ jobs:
             exit 1
           fi
 
-      - name: Confirm the Preview deployment is actually reachable before touching anything
+      - name: Confirm the target deployment is actually reachable before touching anything
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           set -u
           http_code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
             -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-            "${{ inputs.preview_base_url }}/")
-          echo "Preview homepage HTTP status: ${http_code}"
+            "${{ steps.target.outputs.base_url }}/")
+          echo "Target homepage HTTP status: ${http_code}"
           if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
-            echo "::error::Preview base URL ${{ inputs.preview_base_url }} did not return 2xx (got ${http_code}) — stopping before any database read/write."
+            echo "::error::Target base URL ${{ steps.target.outputs.base_url }} did not return 2xx (got ${http_code}) — stopping before any database read/write."
             exit 1
           fi
 
@@ -205,7 +220,7 @@ jobs:
               -X POST \
               -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
               -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${{ inputs.preview_base_url }}/api/sync/${{ steps.endpoint.outputs.path }}")
+              "${{ steps.target.outputs.base_url }}/api/sync/${{ steps.endpoint.outputs.path }}")
             http_code=$(echo "$response" | tail -n1)
             body=$(echo "$response" | sed '$d')
             echo "HTTP status: ${http_code}"
