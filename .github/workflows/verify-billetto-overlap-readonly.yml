@@ -36,6 +36,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: claude/billetto-electronic-cph-pn5ggy
+
+      - name: Record the exact commit this run is verifying
+        run: git rev-parse HEAD
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
