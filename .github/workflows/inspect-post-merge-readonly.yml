@@ -1,0 +1,145 @@
+name: Post-Merge Dedup Verification (Read-Only)
+
+# One-off, manual, strictly read-only verification of the dedup evidence
+# model merge (commit range 8d81e16..b9293fe on this branch) against real
+# Production data and the live deployment. Mirrors
+# inspect-dedup-signals-readonly.yml / verify-db-readonly.yml's exact safe
+# pattern: one dedicated pg connection, BEGIN, SET LOCAL
+# default_transaction_read_only = on, only SELECT statements, always
+# ROLLBACK, connection explicitly closed. No migration, no seed script, no
+# application sync is ever run by this workflow. The only non-DB action is
+# a plain GET against the public homepage to confirm the deployment is live.
+#
+# DATABASE_URL is read only into this step's environment — never written to
+# a file, never echoed, never logged.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record the exact commit this run is verifying
+        run: git rev-parse HEAD
+
+      - name: Check live Production site responds 200
+        run: |
+          http_code=$(curl -sS --max-time 30 -o /tmp/home.html -w '%{http_code}' "https://edm-eta.vercel.app/")
+          echo "Homepage HTTP status: ${http_code}"
+          echo "http_code=${http_code}" >> "$GITHUB_OUTPUT"
+        id: homepage
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run read-only post-merge verification
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > ./.inspect-post-merge-readonly.mjs <<'EOF'
+          import pg from "pg";
+
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          function section(title) {
+            console.log(`\n=== ${title} ===`);
+          }
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '20s'");
+
+            section("sources health (Hangaren, Culture Box, Poolen)");
+            const src = await client.query(
+              `SELECT id, source_name, active, auto_publish, last_successful_sync, events_found, events_updated, last_error
+               FROM sources WHERE id = ANY($1::text[]) ORDER BY id`,
+              [["src-hangaren", "src-culture-box", "src-poolen"]],
+            );
+            console.log(JSON.stringify(src.rows, null, 2));
+
+            section("ALL events: full duplicate-relevant field set");
+            const ev = await client.query(
+              `SELECT id, title, artists, venue_id, start_datetime, end_datetime,
+                      official_event_url, ticket_url, facebook_url, resident_advisor_url, other_source_urls,
+                      canonical_source_id, published, confidence, manual_override, overridden_fields, created_at
+               FROM events ORDER BY start_datetime`,
+            );
+            console.log(`Total events: ${ev.rowCount}`);
+            console.log(JSON.stringify(ev.rows, null, 2));
+
+            section("ALL discovery_queue rows: full duplicate-relevant field set");
+            const dq = await client.query(
+              `SELECT id, probable_title, detected_lineup, probable_venue_name, probable_start,
+                      source_id, source_name, source_url, suspected_duplicate_of_event_id,
+                      status, overall_confidence, missing_fields, created_at
+               FROM discovery_queue ORDER BY created_at`,
+            );
+            console.log(`Total discovery_queue rows: ${dq.rowCount}`);
+            console.log(JSON.stringify(dq.rows, null, 2));
+
+            section("events grouped by canonical_source_id (global)");
+            const byCanonicalSource = await client.query(
+              `SELECT canonical_source_id, count(*)::int AS n FROM events GROUP BY canonical_source_id ORDER BY canonical_source_id NULLS FIRST`,
+            );
+            console.log(JSON.stringify(byCanonicalSource.rows, null, 2));
+
+            section("discovery_queue grouped by source_id + status (global)");
+            const dqByStatus = await client.query(
+              `SELECT source_id, status, count(*)::int AS n FROM discovery_queue GROUP BY source_id, status ORDER BY source_id NULLS FIRST, status`,
+            );
+            console.log(JSON.stringify(dqByStatus.rows, null, 2));
+
+            section("Ca7riel y Paco Amoroso publish state (Poolen)");
+            const ca7riel = await client.query(
+              `SELECT id, title, published, canonical_source_id FROM events WHERE title ILIKE '%ca7riel%'`,
+            );
+            console.log(JSON.stringify(ca7riel.rows, null, 2));
+
+            section("Recency scan: any row touched in the last 3 days (proves no write happened outside real syncs)");
+            const RECENCY_COLUMN = { events: "updated_at", discovery_queue: "created_at", sources: "last_attempted_sync" };
+            for (const table of ["events", "discovery_queue", "sources"]) {
+              const col = RECENCY_COLUMN[table];
+              const recent = await client.query(
+                `SELECT id, ${col} FROM ${table} WHERE ${col} > now() - interval '3 days' ORDER BY ${col} DESC LIMIT 30`,
+              );
+              console.log(`${table}: ${recent.rowCount} row(s) touched in the last 3 days`);
+              for (const r of recent.rows) console.log(" ", r);
+            }
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only).");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("VERIFICATION SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.inspect-post-merge-readonly.mjs
+          rm -f ./.inspect-post-merge-readonly.mjs
