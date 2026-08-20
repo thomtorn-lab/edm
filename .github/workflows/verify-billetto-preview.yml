@@ -112,6 +112,14 @@ jobs:
             const label = process.env.SNAPSHOT_LABEL || 'SNAPSHOT';
             console.log(`\n========== ${label} ==========`);
 
+            // Billetto (source under test) gets full detail. The other
+            // three existing sources only need a compact regression
+            // fingerprint -- full row dumps for them blew past this
+            // workflow's retrievable log size and pushed the earlier
+            // phases (BEFORE / AFTER SYNC#1) out of the log window
+            // entirely. A count + an md5 checksum over ordered ids is
+            // just as conclusive for "did anything change" as a full
+            // dump, at a tiny fraction of the size.
             for (const sourceId of ['src-billetto', 'src-hangaren', 'src-culture-box', 'src-poolen']) {
               const src = await client.query(
                 `SELECT id, last_successful_sync, last_attempted_sync, last_error, events_found, events_updated
@@ -120,6 +128,22 @@ jobs:
               );
               console.log(`\n-- sources row (${sourceId}) --`);
               console.log(JSON.stringify(src.rows, null, 2));
+
+              if (sourceId !== 'src-billetto') {
+                const fp = await client.query(
+                  `SELECT
+                     (SELECT count(*)::int FROM discovery_queue WHERE source_id = $1) AS dq_count,
+                     (SELECT md5(coalesce(string_agg(id::text, ',' ORDER BY id), '')) FROM discovery_queue WHERE source_id = $1) AS dq_md5,
+                     (SELECT count(*)::int FROM events WHERE canonical_source_id = $1) AS ev_count,
+                     (SELECT md5(coalesce(string_agg(id::text, ',' ORDER BY id), '')) FROM events WHERE canonical_source_id = $1) AS ev_md5,
+                     (SELECT count(*)::int FROM source_event_links WHERE source_id = $1) AS links_count,
+                     (SELECT md5(coalesce(string_agg(event_id::text, ',' ORDER BY event_id), '')) FROM source_event_links WHERE source_id = $1) AS links_md5`,
+                  [sourceId],
+                );
+                console.log(`\n-- regression fingerprint (${sourceId}) --`);
+                console.log(JSON.stringify(fp.rows, null, 2));
+                continue;
+              }
 
               const dq = await client.query(
                 `SELECT id, probable_title, status, predicted_genre, genre_confidence, overall_confidence,
@@ -130,14 +154,12 @@ jobs:
               console.log(`\n-- discovery_queue (source_id=${sourceId}): ${dq.rows.length} rows --`);
               console.log(JSON.stringify(dq.rows, null, 2));
 
-              if (sourceId === 'src-billetto') {
-                const dqByConfidence = await client.query(
-                  `SELECT overall_confidence, count(*)::int AS n FROM discovery_queue WHERE source_id = $1 GROUP BY overall_confidence ORDER BY overall_confidence`,
-                  [sourceId],
-                );
-                console.log(`\n-- discovery_queue for src-billetto grouped by overall_confidence (medium ~= review_queue, low ~= hold) --`);
-                console.log(JSON.stringify(dqByConfidence.rows, null, 2));
-              }
+              const dqByConfidence = await client.query(
+                `SELECT overall_confidence, count(*)::int AS n FROM discovery_queue WHERE source_id = $1 GROUP BY overall_confidence ORDER BY overall_confidence`,
+                [sourceId],
+              );
+              console.log(`\n-- discovery_queue for src-billetto grouped by overall_confidence (medium ~= review_queue, low ~= hold) --`);
+              console.log(JSON.stringify(dqByConfidence.rows, null, 2));
 
               const ev = await client.query(
                 `SELECT id, title, venue_id, start_datetime, primary_genre, subgenres, genre_confidence,
