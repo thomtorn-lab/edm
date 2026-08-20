@@ -28,7 +28,12 @@ name: Sync Billetto
 #      environment variables on the deployment itself (Vercel project
 #      settings) — the adapter reads them directly via process.env, not
 #      via this workflow. This workflow only triggers the sync; it never
-#      touches the Billetto credentials itself.
+#      touches the Billetto credentials itself. Confirmed by validation
+#      (2026-08-20): adding/changing a Vercel project environment variable
+#      does NOT retroactively apply to an already-existing deployment — a
+#      fresh deployment (new commit push, or a manual redeploy from the
+#      Vercel dashboard) is required afterward for a running Preview/
+#      Production URL to actually pick up the new value.
 # All of SYNC_BASE_URL/SYNC_TRIGGER_TOKEN/VERCEL_AUTOMATION_BYPASS_SECRET
 # are already configured for Hangaren/Culture Box/Poolen — this reuses the
 # same repository variable/secrets, nothing new to set up there.
