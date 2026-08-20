@@ -349,14 +349,22 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   const bodyText = await res.text();
   console.log(`body length: ${bodyText.length} chars`);
   const saveBodyPath = typeof args["save-body"] === "string" ? args["save-body"] : null;
+  const printFull = args["print-full-body"] === true;
   if (saveBodyPath) {
     const { writeFileSync, mkdirSync } = await import("node:fs");
     const { dirname } = await import("node:path");
     mkdirSync(dirname(saveBodyPath), { recursive: true });
     writeFileSync(saveBodyPath, bodyText, "utf-8");
     console.log(`Full body saved to ${saveBodyPath} (not printed here — see uploaded artifact).`);
+  } else if (printFull) {
+    // Printed to the job log (not saved as an artifact) — for callers whose
+    // network path can reach the GitHub Actions API/log endpoint but not
+    // arbitrary blob storage hosts the artifact download redirects to.
+    console.log("-- FULL body (--print-full-body) --");
+    console.log(bodyText);
+    console.log("-- end of body --");
   } else {
-    console.log("-- body preview (first 4000 chars; pass --save-body=<path> for the full body as an artifact) --");
+    console.log("-- body preview (first 4000 chars; pass --save-body=<path> for an artifact, or --print-full-body to print the full body to this log) --");
     console.log(bodyText.slice(0, 4000));
   }
 

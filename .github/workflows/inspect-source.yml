@@ -49,6 +49,11 @@ on:
       save_body_path:
         description: "Reachability mode only: path (under a runner-local scratch dir, e.g. /tmp/fixture.html) to save the full response body to, uploaded as a downloadable artifact — for capturing a real page fixture (see SOURCE_ONBOARDING.md's IMPLEMENT step). Omit for a bounded 4000-char body preview printed to the log instead."
         required: false
+      print_full_body:
+        description: "Reachability mode only, ignored if save_body_path is set: print the FULL response body to this job's log instead of a 4000-char preview. Use when the artifact download isn't reachable from where you're driving this workflow."
+        required: false
+        type: boolean
+        default: false
       with_credentials:
         description: "Also test with real credentials, where wired (currently src-billetto only)"
         required: false
@@ -127,6 +132,7 @@ jobs:
           [ -n "${{ inputs.source_id }}" ] && args+=(--source="${{ inputs.source_id }}")
           [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
           [ -n "${{ inputs.save_body_path }}" ] && args+=(--save-body="${{ inputs.save_body_path }}")
+          [ "${{ inputs.print_full_body }}" = "true" ] && args+=(--print-full-body)
           [ "${{ inputs.with_credentials }}" = "true" ] && args+=(--with-credentials)
           [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
           [ -n "${{ inputs.dedup_title }}" ] && args+=(--title="${{ inputs.dedup_title }}")
