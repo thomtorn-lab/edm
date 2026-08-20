@@ -331,10 +331,19 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   if (!endpoint) throw new Error("reachability requires --endpoint=<https url>");
   if (!/^https:\/\//i.test(endpoint)) throw new Error("reachability only accepts https:// endpoints.");
 
-  section(`Reachability: ${endpoint}`);
+  const method = typeof args.method === "string" ? args.method.toUpperCase() : "GET";
+  const body = typeof args.body === "string" ? args.body : undefined;
+  if (method !== "GET" && method !== "POST") throw new Error('reachability --method must be "GET" or "POST".');
+
+  section(`Reachability: ${method} ${endpoint}`);
   const res = await fetch(endpoint, {
+    method,
     signal: AbortSignal.timeout(15_000),
-    headers: { "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)" },
+    headers: {
+      "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)",
+      ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    ...(method === "POST" ? { body } : {}),
   });
   console.log(`HTTP status: ${res.status}`);
   console.log(`content-type: ${res.headers.get("content-type") ?? "(none)"}`);

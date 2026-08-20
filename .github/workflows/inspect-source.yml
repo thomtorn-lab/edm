@@ -54,6 +54,12 @@ on:
         required: false
         type: boolean
         default: false
+      method:
+        description: "Reachability mode only: HTTP method, GET (default) or POST."
+        required: false
+      body:
+        description: "Reachability mode only: request body for --method=POST, sent as application/x-www-form-urlencoded (e.g. action=fetch_concerts&genres=Elektronisk)."
+        required: false
       with_credentials:
         description: "Also test with real credentials, where wired (currently src-billetto only)"
         required: false
@@ -133,6 +139,8 @@ jobs:
           [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
           [ -n "${{ inputs.save_body_path }}" ] && args+=(--save-body="${{ inputs.save_body_path }}")
           [ "${{ inputs.print_full_body }}" = "true" ] && args+=(--print-full-body)
+          [ -n "${{ inputs.method }}" ] && args+=(--method="${{ inputs.method }}")
+          [ -n "${{ inputs.body }}" ] && args+=(--body="${{ inputs.body }}")
           [ "${{ inputs.with_credentials }}" = "true" ] && args+=(--with-credentials)
           [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
           [ -n "${{ inputs.dedup_title }}" ] && args+=(--title="${{ inputs.dedup_title }}")
