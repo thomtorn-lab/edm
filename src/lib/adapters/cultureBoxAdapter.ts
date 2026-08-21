@@ -189,7 +189,33 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
           : room.artists.length > 0
             ? `${room.roomName}: ${room.artists.join(", ")}`
             : room.roomName;
-      const title = roomBlocks.map(roomTitle).join(" · ");
+      // Both rooms routinely run the SAME night-wide showcase under one name
+      // (real evidence: "Black Box: HYGGELIT SHOWCASE · Red Box: HYGGELIT
+      // SHOWCASE") — printing the room-prefixed identity twice is redundant
+      // noise for one night that's already a single canonical event. When
+      // every room's own identity (its showcase title, or its lineup when it
+      // named none) is the SAME event after conservative case/whitespace/
+      // punctuation normalization, the public title collapses to just that
+      // shared identity; genuinely different room identities keep the
+      // existing "Room: X · Room: Y" format. Only ever compares/collapses
+      // the TITLE — the room-separated lineup breakdown in `description`
+      // below is built independently and always keeps every room distinct.
+      const roomIdentity = (room: RoomBlock): string | null =>
+        room.showcaseTitle ?? (room.artists.length > 0 ? room.artists.join(", ") : null);
+      const normalizeIdentity = (text: string): string =>
+        text
+          .normalize("NFKD")
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      const identities = roomBlocks.map(roomIdentity);
+      const sharedIdentity =
+        roomBlocks.length > 1 && identities.every((id): id is string => id !== null) &&
+        new Set(identities.map(normalizeIdentity)).size === 1
+          ? identities[0]!
+          : null;
+      const title = sharedIdentity ?? roomBlocks.map(roomTitle).join(" · ");
       const artists = roomBlocks.flatMap((room) => room.artists);
       const description = roomBlocks
         .map((room) => `${room.roomName}\n${room.artists.length > 0 ? room.artists.join(", ") : "Lineup TBA"}`)

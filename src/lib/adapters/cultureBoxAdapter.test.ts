@@ -34,7 +34,12 @@ describe("parseCultureBoxEventsHtml — real fixture", () => {
   it("consolidates a night with a named showcase title in both rooms into one event with a combined title, merged artists and room-separated lineup description (21 Aug)", () => {
     const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/fri-21-august-2026/");
     expect(e).toBeDefined();
-    expect(e!.title).toBe("Black Box: HYGGELIT SHOWCASE · Red Box: HYGGELIT SHOWCASE");
+    // Data Quality & Trust follow-up (Round 6): both rooms name the SAME
+    // showcase ("HYGGELIT SHOWCASE" in both) — the redundant
+    // "Black Box: HYGGELIT SHOWCASE · Red Box: HYGGELIT SHOWCASE" collapses
+    // to the shared title alone. The room-separated lineup breakdown below
+    // stays fully intact regardless.
+    expect(e!.title).toBe("HYGGELIT SHOWCASE");
     expect(e!.artists).toEqual(["SOPHIE VAN HAYDEN", "RELINQUO", "SEVERIN", "NO CELEBRITY", "ROZGU", "HERMANN BRAVO"]);
     expect(e!.description).toBe(
       "Black Box\nSOPHIE VAN HAYDEN, RELINQUO, SEVERIN, NO CELEBRITY\n\nRed Box\nROZGU, HERMANN BRAVO",
@@ -161,6 +166,68 @@ describe("parseCultureBoxEventsHtml — Culture Box-specific room consolidation"
     expect(events).toHaveLength(1);
     expect(events[0].genreHint).toBe("techno");
     expect(events[0].genreConfidenceHint).toBe("high");
+  });
+
+  it("collapses the title to just the shared identity when both rooms name the SAME showcase, even with different case/whitespace/punctuation (Data Quality & Trust follow-up, Round 6) — the room-separated lineup stays intact regardless", () => {
+    const html = `
+      <article class="post-block indented inverted">
+        <h2 class="post-block__title structural__content__title">FRI 1 JANUARY 2027</h2>
+        <a href="https://culture-box.com/event/fri-1-january-2027/" class="post-block__image"></a>
+        <div class="post-block__content text-formatting">
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Black Box</h3>
+            <p><strong>Hyggelit Showcase</strong><br />
+            <a href="https://soundcloud.com/a" target="_blank">ARTIST A</a></p>
+          </div>
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Red Box</h3>
+            <p><strong>hyggelit   showcase!!</strong><br />
+            <a href="https://soundcloud.com/b" target="_blank">ARTIST B</a></p>
+          </div>
+        </div>
+        <div class="post-block__footer">
+          <div class="post-block__footer__aside">
+            <ul><li class="text-formatting">Entrance&nbsp;<strong>150 DKK</strong></li><li class="text-formatting">10PM – 8AM</li></ul>
+          </div>
+        </div>
+      </article>`;
+    const events = parseCultureBoxEventsHtml(html);
+    expect(events).toHaveLength(1);
+    // Preserves the FIRST room's original casing/punctuation rather than
+    // inventing a canonical form — conservative normalization only decides
+    // equality, never rewrites the stored value.
+    expect(events[0].title).toBe("Hyggelit Showcase");
+    expect(events[0].artists).toEqual(["ARTIST A", "ARTIST B"]);
+    expect(events[0].description).toBe("Black Box\nARTIST A\n\nRed Box\nARTIST B");
+  });
+
+  it("preserves the existing 'Room: X · Room: Y' title format when the two rooms' identities are genuinely different", () => {
+    const html = `
+      <article class="post-block indented inverted">
+        <h2 class="post-block__title structural__content__title">FRI 1 JANUARY 2027</h2>
+        <a href="https://culture-box.com/event/fri-1-january-2027/" class="post-block__image"></a>
+        <div class="post-block__content text-formatting">
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Black Box</h3>
+            <p><strong>HYGGELIT SHOWCASE</strong><br />
+            <a href="https://soundcloud.com/a" target="_blank">ARTIST A</a></p>
+          </div>
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Red Box</h3>
+            <p><strong>SOMETHING ELSE ENTIRELY</strong><br />
+            <a href="https://soundcloud.com/b" target="_blank">ARTIST B</a></p>
+          </div>
+        </div>
+        <div class="post-block__footer">
+          <div class="post-block__footer__aside">
+            <ul><li class="text-formatting">Entrance&nbsp;<strong>150 DKK</strong></li><li class="text-formatting">10PM – 8AM</li></ul>
+          </div>
+        </div>
+      </article>`;
+    const events = parseCultureBoxEventsHtml(html);
+    expect(events).toHaveLength(1);
+    expect(events[0].title).toBe("Black Box: HYGGELIT SHOWCASE · Red Box: SOMETHING ELSE ENTIRELY");
+    expect(events[0].description).toBe("Black Box\nARTIST A\n\nRed Box\nARTIST B");
   });
 
   it("a room with no lineup gets a 'Lineup TBA' placeholder in the description rather than a blank room", () => {
