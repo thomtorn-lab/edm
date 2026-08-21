@@ -68,7 +68,7 @@ export const GENRES: GenreDef[] = [
   { slug: "trance", label: "Trance", shortLabel: "Trance", group: "trance" },
   { slug: "psytrance", label: "Psytrance", shortLabel: "Psytrance", group: "trance" },
 
-  { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "D&B", group: "bass" },
+  { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "Drum & Bass", group: "bass" },
   { slug: "dubstep", label: "Dubstep", shortLabel: "Dubstep", group: "bass" },
   { slug: "garage", label: "Garage", shortLabel: "Garage", group: "bass" },
 
@@ -124,13 +124,13 @@ export const MAIN_GENRES: MainGenreDef[] = [
   { slug: "trance", label: "Trance" },
   { slug: "psytrance", label: "Psytrance" },
   { slug: "drum-and-bass", label: "Drum & Bass" },
-  { slug: "garage-bass", label: "Garage / Bass" },
+  { slug: "garage-bass", label: "UK Garage / Bass Music" },
   { slug: "breaks", label: "Breaks" },
   { slug: "hardstyle-hardcore", label: "Hardstyle / Hardcore" },
   { slug: "disco", label: "Disco" },
   { slug: "electro", label: "Electro" },
   { slug: "ambient-experimental", label: "Ambient / Experimental" },
-  { slug: "electronic-other", label: "Electronic / Other" },
+  { slug: "electronic-other", label: "Other" },
 ];
 
 /** Every classification-level GenreSlug rolls up into exactly one MainGenreSlug. */

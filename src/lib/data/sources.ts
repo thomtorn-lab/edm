@@ -35,7 +35,7 @@ export const SOURCES: Source[] = [
     eventsFound: 0,
     eventsUpdated: 0,
     integrationNote:
-      "Real working adapter: fetches the unrestricted /events/ HTML page and parses its per-night/per-room structure. The venue rarely states a genre explicitly in its own show titles, so most nights land in the review queue (medium-confidence deterministic/Discogs lineup evidence) rather than auto-publishing — the quality gate never auto-publishes below high genre confidence, matching Hangaren's behavior. Recurring updates to already-known events apply automatically, respecting manual overrides. Not yet run against production — health fields will populate on the first real sync.",
+      "Real working adapter: fetches the unrestricted /events/ HTML page and parses its per-night structure. Culture Box runs two rooms (Black Box / Red Box) simultaneously per night sharing one venue/admission/ticket context — consolidated (partner-ready polish pass, source-specific) into ONE canonical event per night, with room-separated lineup content in `description` (\"Black Box\\n<artists>\\n\\nRed Box\\n<artists>\") rather than one event per room. The venue rarely states a genre explicitly in its own show titles, so most nights land in the review queue (medium-confidence deterministic/Discogs lineup evidence) rather than auto-publishing — the quality gate never auto-publishes below high genre confidence, matching Hangaren's behavior. Recurring updates to already-known events apply automatically, respecting manual overrides. Not yet run against production — health fields will populate on the first real sync.",
   },
   {
     id: "src-hangaren",

@@ -80,6 +80,17 @@ describe("parseHangarenEventsHtml", () => {
     expect(possessed!.residentAdvisorUrl).toBeNull();
   });
 
+  it("strips embedded raw SoundCloud URLs out of lineup entries, keeping the real artist names (Arcanum Collective: POSSESSED)", () => {
+    const possessed = events.find((e) => e.title.includes("POSSESSED"));
+    expect(possessed).toBeDefined();
+    expect(possessed!.artists).toEqual(
+      expect.arrayContaining(["Kromagon", "Oxyflux", "Shenanigan", "Freya Rose", "Mental Projection", "Krypto"]),
+    );
+    for (const artist of possessed!.artists) {
+      expect(artist).not.toMatch(/https?:\/\//);
+    }
+  });
+
   it("never throws on the whole batch even though individual events vary wildly in structure", () => {
     for (const e of events) {
       expect(e.title.length).toBeGreaterThan(0);

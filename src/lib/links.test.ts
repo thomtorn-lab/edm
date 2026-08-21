@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getExternalLinks } from "./links";
+import { getExternalLinks, hasTicketDestination, isFreeAdmission, showFreeCta } from "./links";
 import type { EventRecord } from "./types";
 
 function event(overrides: Partial<EventRecord> = {}): EventRecord {
@@ -77,5 +77,26 @@ describe("getExternalLinks — ticket CTA label", () => {
     const matches = links.filter((l) => l.href === "https://ra.co/events/2461521");
     expect(matches).toHaveLength(1);
     expect(matches[0].label).toBe("Tickets");
+  });
+});
+
+describe("FREE admission CTA", () => {
+  it("requires positive free-admission evidence (priceFrom === 0) — missing price data alone is never FREE", () => {
+    expect(isFreeAdmission(event({ priceFrom: null }))).toBe(false);
+    expect(isFreeAdmission(event({ priceFrom: 0 }))).toBe(true);
+    expect(isFreeAdmission(event({ priceFrom: 100 }))).toBe(false);
+  });
+
+  it("hasTicketDestination is true for either a ticketUrl or a Resident Advisor link", () => {
+    expect(hasTicketDestination(event())).toBe(false);
+    expect(hasTicketDestination(event({ ticketUrl: "https://billetto.dk/e/x" }))).toBe(true);
+    expect(hasTicketDestination(event({ residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(true);
+  });
+
+  it("shows FREE only when there is no ticket destination AND free-admission evidence exists", () => {
+    expect(showFreeCta(event({ priceFrom: 0 }))).toBe(true);
+    expect(showFreeCta(event({ priceFrom: null }))).toBe(false); // missing ticket URL alone must never imply FREE
+    expect(showFreeCta(event({ priceFrom: 0, ticketUrl: "https://billetto.dk/e/x" }))).toBe(false); // an actual ticket link still wins
+    expect(showFreeCta(event({ priceFrom: 0, residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(false);
   });
 });

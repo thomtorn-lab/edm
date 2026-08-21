@@ -20,8 +20,8 @@ export default async function HomePage() {
           Electronic music in Copenhagen
         </h1>
         <p className="mt-1.5 max-w-xl text-sm text-text-secondary">
-          Techno, house, trance, drum &amp; bass and more — every credible electronic
-          event in Copenhagen, one continuously updated list.
+          Techno, house, trance, drum &amp; bass and more — a continuously updated,
+          curated guide to electronic music in Copenhagen.
         </p>
       </div>
       <EventExplorer events={events} />

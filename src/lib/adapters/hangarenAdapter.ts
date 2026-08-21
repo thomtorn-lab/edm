@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, stripBareUrls } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
 /**
@@ -52,7 +52,10 @@ function extractLineup(lines: string[]): { artists: string[]; lineupStartIdx: nu
     const line = lines[i];
     if (/^https?:\/\//i.test(line)) continue;
     if (/^[-–—‍]+$/.test(line)) continue;
-    const cleaned = line.replace(/\s*[-–—:]\s*$/, "").trim();
+    // A lineup line sometimes carries the artist's own SoundCloud/Instagram
+    // link inline (e.g. "Kromagon: https://soundcloud.com/aragon -") — the
+    // raw URL itself must never surface as part of the stored artist name.
+    const cleaned = stripBareUrls(line.replace(/\s*[-–—:]\s*$/, "").trim());
     if (cleaned) artists.push(cleaned);
   }
   return { artists, lineupStartIdx: startIdx };

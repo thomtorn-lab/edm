@@ -55,3 +55,18 @@ export function extractLowestDkkAmount(text: string): number | null {
   if (amounts.length === 0) return null;
   return Math.min(...amounts);
 }
+
+/**
+ * Strips obvious standalone URLs out of free text without destroying
+ * legitimate surrounding text — a conservative guard against a raw URL
+ * (e.g. a SoundCloud link an artist listed next to their own name) leaking
+ * through as if it were display text, in an artist/lineup entry or similar.
+ * Only the URL substring itself is removed; real words around it are kept.
+ */
+export function stripBareUrls(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/^[\s:;,–—-]+|[\s:;,–—-]+$/g, "")
+    .trim();
+}

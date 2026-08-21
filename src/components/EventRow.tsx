@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { EventWithVenue } from "@/lib/queries";
 import { formatRowDateLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
-import { getExternalLinks } from "@/lib/links";
+import { getExternalLinks, showFreeCta } from "@/lib/links";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 
@@ -11,6 +11,7 @@ const SITE_URL = "https://electroniccph.com";
 export default function EventRow({ event }: { event: EventWithVenue }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
+  const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);
   const lineup = event.artists.length > 0 ? `: ${event.artists.join(" / ")}` : "";
   const calendarInput = {
@@ -61,8 +62,9 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 sm:gap-y-1">
-          {links.length > 0 && (
+          {(links.length > 0 || isFree) && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium uppercase tracking-wide">
+              {isFree && <span className="text-accent-strong">Free</span>}
               {links.map((link) => (
                 <a
                   key={link.label}

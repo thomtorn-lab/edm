@@ -12,7 +12,6 @@ import {
   CULTURE_BOX_SOURCE_ID,
 } from "./cultureBoxAdapter";
 import { runIngestionPipeline, type ExistingEventForDedup } from "./pipeline";
-import { findBestDuplicateMatch } from "../dedup";
 import { VENUES } from "../data/venues";
 
 /**
@@ -28,15 +27,18 @@ const FIXTURE_HTML = readFileSync(FIXTURE_PATH, "utf-8");
 describe("parseCultureBoxEventsHtml — real fixture", () => {
   const events = parseCultureBoxEventsHtml(FIXTURE_HTML);
 
-  it("parses both rooms for every one of the 15 nights on the page", () => {
-    expect(events).toHaveLength(30);
+  it("consolidates both rooms into ONE canonical event for every one of the 15 nights on the page", () => {
+    expect(events).toHaveLength(15);
   });
 
-  it("extracts a normal event with a named showcase title (Black Box, 21 Aug)", () => {
-    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/fri-21-august-2026/#black-box");
+  it("consolidates a night with a named showcase title in both rooms into one event with a combined title, merged artists and room-separated lineup description (21 Aug)", () => {
+    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/fri-21-august-2026/");
     expect(e).toBeDefined();
-    expect(e!.title).toBe("Black Box: HYGGELIT SHOWCASE");
-    expect(e!.artists).toEqual(["SOPHIE VAN HAYDEN", "RELINQUO", "SEVERIN", "NO CELEBRITY"]);
+    expect(e!.title).toBe("Black Box: HYGGELIT SHOWCASE · Red Box: HYGGELIT SHOWCASE");
+    expect(e!.artists).toEqual(["SOPHIE VAN HAYDEN", "RELINQUO", "SEVERIN", "NO CELEBRITY", "ROZGU", "HERMANN BRAVO"]);
+    expect(e!.description).toBe(
+      "Black Box\nSOPHIE VAN HAYDEN, RELINQUO, SEVERIN, NO CELEBRITY\n\nRed Box\nROZGU, HERMANN BRAVO",
+    );
     expect(e!.startDatetime).toBe("2026-08-21T20:00:00.000Z"); // 10PM CEST
     expect(e!.endDatetime).toBe("2026-08-22T06:00:00.000Z"); // 8AM CEST next day
     expect(e!.venueName).toBe("Culture Box");
@@ -46,46 +48,33 @@ describe("parseCultureBoxEventsHtml — real fixture", () => {
     expect(e!.imageUrl).toMatch(/^https:\/\/culture-box\.com\/wp-content\/uploads\//);
     expect(e!.ticketUrl).toBeNull();
     expect(e!.residentAdvisorUrl).toBeNull();
-    expect(e!.description).toBeNull(); // no free-text description exists on this page — never invented
   });
 
-  it("gives each room on the same night its own distinct, stable event identity from one shared page URL", () => {
-    const blackBox = events.find((ev) => ev.officialEventUrl?.endsWith("fri-21-august-2026/#black-box"));
-    const redBox = events.find((ev) => ev.officialEventUrl?.endsWith("fri-21-august-2026/#red-box"));
-    expect(blackBox).toBeDefined();
-    expect(redBox).toBeDefined();
-    expect(blackBox!.officialEventUrl).not.toBe(redBox!.officialEventUrl);
-    expect(redBox!.title).toBe("Red Box: HYGGELIT SHOWCASE");
-    expect(redBox!.artists).toEqual(["ROZGU", "HERMANN BRAVO"]);
-    // Both rooms share the same night's door hours and canonical night URL base.
-    expect(blackBox!.startDatetime).toBe(redBox!.startDatetime);
-  });
-
-  it("falls back to the room name + lineup as the title when the venue named no showcase (22 Aug)", () => {
-    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/sat-22-august-2026/#black-box");
+  it("falls back to room name + lineup as each room's title segment when the venue named no showcase (22 Aug)", () => {
+    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/sat-22-august-2026/");
     expect(e).toBeDefined();
-    expect(e!.title).toBe("Black Box: TIMO MAAS, RYAN DANK, BALTZA");
-    expect(e!.artists).toEqual(["TIMO MAAS", "RYAN DANK", "BALTZA"]);
-    // No showcase text means no genre evidence to credit — left for the
-    // pipeline's own fallback/enrichment, never guessed here.
+    expect(e!.title).toBe("Black Box: TIMO MAAS, RYAN DANK, BALTZA · Red Box: KARINA LIN, ASLI");
+    expect(e!.artists).toEqual(["TIMO MAAS", "RYAN DANK", "BALTZA", "KARINA LIN", "ASLI"]);
+    // No showcase text in either room means no genre evidence to credit —
+    // left for the pipeline's own fallback/enrichment, never guessed here.
     expect(e!.genreHint).toBeNull();
     expect(e!.genreConfidenceHint).toBeNull();
   });
 
-  it("joins a multi-line showcase title and searches only that venue text for genre evidence, not artist names", () => {
-    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/sat-19-september-2026/#black-box");
+  it("joins a multi-line showcase title and searches only that venue text for genre evidence, not artist names (19 Sept)", () => {
+    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/sat-19-september-2026/");
     expect(e).toBeDefined();
-    expect(e!.title).toBe("Black Box: WHAT HAPPENS 4 DECADES OF TIM ANDRESEN");
-    expect(e!.artists).toEqual(["TIM ANDRESEN", "FEDERICO MONACHESI", "NILU", "GERSSEIN", "EUSHERR"]);
+    expect(e!.title).toBe("Black Box: WHAT HAPPENS 4 DECADES OF TIM ANDRESEN · Red Box: WHAT HAPPENS");
+    expect(e!.artists).toEqual(["TIM ANDRESEN", "FEDERICO MONACHESI", "NILU", "GERSSEIN", "EUSHERR", "REXIE LEX", "LARSH", "SHANSEN", "THOR CALIN"]);
     expect(e!.priceFrom).toBe(40); // "40 DKK (early bird presale tickets) - 150 DKK" -> lowest
     expect(e!.startDatetime).toBe("2026-09-19T18:00:00.000Z"); // 8PM CEST (this night's doors are earlier)
   });
 
   it("treats every SoundCloud-linked name in a room's paragraph as lineup, even a promoter/curator credit with no <strong> tag (3 Oct)", () => {
-    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/sat-3-october-2026/#black-box");
+    const e = events.find((ev) => ev.officialEventUrl === "https://culture-box.com/event/sat-3-october-2026/");
     expect(e).toBeDefined();
-    expect(e!.artists).toEqual(["Shaktu", "Meoko", "COSMINA", "JOSEFINA TAPIA", "ANA KARLA"]);
-    expect(e!.genreHint).toBeNull(); // no showcase title present, so no description-tier evidence
+    expect(e!.artists).toEqual(["Shaktu", "Meoko", "COSMINA", "JOSEFINA TAPIA", "ANA KARLA", "Shaktu", "Meoko", "YOON", "CHRISTINA EVANGELISTA"]);
+    expect(e!.genreHint).toBeNull(); // no showcase title present in either room, so no description-tier evidence
   });
 
   it("never throws on the whole batch and every event carries the required identity fields", () => {
@@ -94,9 +83,10 @@ describe("parseCultureBoxEventsHtml — real fixture", () => {
       expect(e.sourceId).toBe(CULTURE_BOX_SOURCE_ID);
       expect(e.venueName).toBe("Culture Box");
       expect(e.sourceUrl).toBe(CULTURE_BOX_EVENTS_URL);
-      expect(e.officialEventUrl).toMatch(/^https:\/\/culture-box\.com\/event\/.+#.+/);
+      expect(e.officialEventUrl).toMatch(/^https:\/\/culture-box\.com\/event\/[^#]+\/$/); // one canonical URL per night, no room fragment
       expect(e.startDatetime).not.toBeNull();
       expect(e.endDatetime).not.toBeNull();
+      expect(e.description).toMatch(/\n\n/); // always at least the room-separated lineup breakdown
     }
   });
 
@@ -110,6 +100,92 @@ describe("parseCultureBoxEventsHtml — real fixture", () => {
     // crediting the venue's general reputation as electronic.
     const withGenreHint = events.filter((e) => e.genreHint !== null);
     expect(withGenreHint.length).toBeLessThan(events.length / 2);
+  });
+});
+
+describe("parseCultureBoxEventsHtml — Culture Box-specific room consolidation", () => {
+  it("consolidates only when BOTH rooms' own showcase titles name the SAME genre — disagreement leaves the night unresolved rather than picking one room's genre", () => {
+    const html = `
+      <article class="post-block indented inverted">
+        <h2 class="post-block__title structural__content__title">FRI 1 JANUARY 2027</h2>
+        <a href="https://culture-box.com/event/fri-1-january-2027/" class="post-block__image"></a>
+        <div class="post-block__content text-formatting">
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Black Box</h3>
+            <p><strong>TECHNO SPECIAL</strong><br />
+            <a href="https://soundcloud.com/a" target="_blank">ARTIST A</a></p>
+          </div>
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Red Box</h3>
+            <p><strong>HOUSE SPECIAL</strong><br />
+            <a href="https://soundcloud.com/b" target="_blank">ARTIST B</a></p>
+          </div>
+        </div>
+        <div class="post-block__footer">
+          <div class="post-block__footer__aside">
+            <ul><li class="text-formatting">Entrance&nbsp;<strong>150 DKK</strong></li><li class="text-formatting">10PM – 8AM</li></ul>
+          </div>
+        </div>
+      </article>`;
+    const events = parseCultureBoxEventsHtml(html);
+    expect(events).toHaveLength(1);
+    expect(events[0].title).toBe("Black Box: TECHNO SPECIAL · Red Box: HOUSE SPECIAL");
+    expect(events[0].artists).toEqual(["ARTIST A", "ARTIST B"]);
+    expect(events[0].genreHint).toBeNull(); // rooms disagree — never guessed toward either
+  });
+
+  it("credits the consolidated night's genre when both rooms' showcase titles agree", () => {
+    const html = `
+      <article class="post-block indented inverted">
+        <h2 class="post-block__title structural__content__title">FRI 1 JANUARY 2027</h2>
+        <a href="https://culture-box.com/event/fri-1-january-2027/" class="post-block__image"></a>
+        <div class="post-block__content text-formatting">
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Black Box</h3>
+            <p><strong>TECHNO NIGHT</strong><br />
+            <a href="https://soundcloud.com/a" target="_blank">ARTIST A</a></p>
+          </div>
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Red Box</h3>
+            <p><strong>ALL TECHNO ALL NIGHT</strong><br />
+            <a href="https://soundcloud.com/b" target="_blank">ARTIST B</a></p>
+          </div>
+        </div>
+        <div class="post-block__footer">
+          <div class="post-block__footer__aside">
+            <ul><li class="text-formatting">Entrance&nbsp;<strong>150 DKK</strong></li><li class="text-formatting">10PM – 8AM</li></ul>
+          </div>
+        </div>
+      </article>`;
+    const events = parseCultureBoxEventsHtml(html);
+    expect(events).toHaveLength(1);
+    expect(events[0].genreHint).toBe("techno");
+    expect(events[0].genreConfidenceHint).toBe("high");
+  });
+
+  it("a room with no lineup gets a 'Lineup TBA' placeholder in the description rather than a blank room", () => {
+    const html = `
+      <article class="post-block indented inverted">
+        <h2 class="post-block__title structural__content__title">FRI 1 JANUARY 2027</h2>
+        <a href="https://culture-box.com/event/fri-1-january-2027/" class="post-block__image"></a>
+        <div class="post-block__content text-formatting">
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Black Box</h3>
+            <p><strong>TBA NIGHT</strong></p>
+          </div>
+          <div class="post-block__content__block">
+            <h3 class="is-capitalized">Red Box</h3>
+            <p><a href="https://soundcloud.com/b" target="_blank">ARTIST B</a></p>
+          </div>
+        </div>
+        <div class="post-block__footer">
+          <div class="post-block__footer__aside">
+            <ul><li class="text-formatting">Entrance&nbsp;<strong>150 DKK</strong></li><li class="text-formatting">10PM – 8AM</li></ul>
+          </div>
+        </div>
+      </article>`;
+    const events = parseCultureBoxEventsHtml(html);
+    expect(events[0].description).toBe("Black Box\nLineup TBA\n\nRed Box\nARTIST B");
   });
 });
 
@@ -205,7 +281,7 @@ describe("createCultureBoxAdapter", () => {
     const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
     expect(calledUrls[0]).toBe(CULTURE_BOX_EVENTS_URL);
-    expect(candidates).toHaveLength(30);
+    expect(candidates).toHaveLength(15);
   });
 
   it("retries once on a 5xx before giving up on the listing page specifically", async () => {
@@ -220,7 +296,7 @@ describe("createCultureBoxAdapter", () => {
     const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
     expect(listingCalls).toBe(2);
-    expect(candidates).toHaveLength(30);
+    expect(candidates).toHaveLength(15);
   });
 
   it("does not retry a 4xx — it won't fix itself", async () => {
@@ -270,81 +346,61 @@ describe("pipeline integration — real Culture Box candidates through runIngest
     expect(result.resolvedVenueId).toBe("v-culture-box");
   });
 
-  it("sibling rooms from the SAME sync batch are never dedup-checked against each other — runSourceSyncLocked only compares a candidate against events that existed before this run started", () => {
-    // src/db/sync.ts fetches `existingEvents` once, before iterating
-    // candidates, and never appends a just-created event back into that
-    // list mid-loop — so within one sync run, Black Box and Red Box (both
-    // freshly parsed candidates) are structurally incapable of matching
-    // each other, regardless of title/lineup similarity. This test
-    // documents that guarantee at the level this repo's tests operate at
-    // (pipeline/dedup, no DB): passing an EMPTY existingEvents list, the
-    // way a brand-new night's first sync actually would.
-    const blackBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#black-box"))!;
-    const redBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#red-box"))!;
-    const match = findBestDuplicateMatch(
-      { title: redBox.title, artists: redBox.artists, venueId: "v-culture-box", startDatetime: redBox.startDatetime! },
-      [] as ExistingEventForDedup[],
-    );
-    expect(match).toBeNull();
-    expect(blackBox.officialEventUrl).not.toBe(redBox.officialEventUrl); // distinct identity either way
+  // NOTE on removed tests: prior to Culture Box room consolidation, this
+  // suite carried three tests protecting against sibling-room dedup
+  // ambiguity (two per-room candidates from the SAME sync batch/night
+  // wrongly matching each other, or a shared RA/Facebook link wrongly
+  // conflating them without the #black-box/#red-box room-anchor veto). That
+  // entire class of risk is now structurally impossible: the adapter emits
+  // exactly ONE candidate per night, so there is no sibling room candidate
+  // left to conflict with. dedup.ts's `roomIdentityConflict` logic itself is
+  // untouched (still real, generic infrastructure) — it simply never
+  // triggers for Culture Box going forward. The remaining, genuinely new
+  // regression risk this change introduces — a freshly consolidated
+  // candidate meeting a database that still holds a PRE-consolidation
+  // Black Box/Red Box pair from before this deploy — is covered below.
+
+  it("transition safety: a newly consolidated night correctly lands in review (not a 3rd duplicate, not a blind auto-merge) against two pre-existing per-room events from before consolidation", () => {
+    // Simulates the one-time transition moment right after this change
+    // deploys: Production already holds Black Box and Red Box as two
+    // separate canonical events (synced under the old per-room adapter
+    // shape) for a night the adapter now reports as ONE merged candidate.
+    // genreHint is overridden to a resolved, high-confidence genre here so
+    // the assertion below exercises the DEDUP downgrade specifically (a real
+    // night's own listing-only genreHint is usually still null at this
+    // stage — see "honestly leaves most nights..." above — which would
+    // otherwise make the quality gate hold regardless of dedup, masking
+    // exactly the behavior this test protects).
+    const consolidated = {
+      ...events.find((e) => e.officialEventUrl === "https://culture-box.com/event/fri-21-august-2026/")!,
+      genreHint: "techno" as const,
+      genreConfidenceHint: "high" as const,
+    };
+    const existingBlackBox: ExistingEventForDedup = {
+      id: "e-existing-black-box",
+      title: "Black Box: HYGGELIT SHOWCASE",
+      artists: ["SOPHIE VAN HAYDEN", "RELINQUO", "SEVERIN", "NO CELEBRITY"],
+      venueId: "v-culture-box",
+      startDatetime: consolidated.startDatetime!,
+    };
+    const existingRedBox: ExistingEventForDedup = {
+      id: "e-existing-red-box",
+      title: "Red Box: HYGGELIT SHOWCASE",
+      artists: ["ROZGU", "HERMANN BRAVO"],
+      venueId: "v-culture-box",
+      startDatetime: consolidated.startDatetime!,
+    };
+    const result = runIngestionPipeline(consolidated, { venues: VENUES, existingEvents: [existingBlackBox, existingRedBox] });
+    // The merged candidate's artist list is a strict superset of each
+    // existing per-room event's lineup (full overlap coefficient), so this
+    // is never treated as "no match" — but it's also never blindly
+    // auto-merged into either pre-existing row without a human deciding
+    // which one (or that both should now be replaced by this one).
+    expect(result.decision).toBe("review_queue");
+    expect(result.duplicateOfEventId).not.toBeNull();
   });
 
-  it("Black Box vs Red Box sharing an RA/Facebook link never auto-merges — the officialEventUrl room anchor is the deciding evidence", () => {
-    // The venue publishes ONE Resident Advisor / Facebook link and one set
-    // of door hours per NIGHT, shared across every room — real Production
-    // data confirmed both rooms on a given night can carry an IDENTICAL
-    // residentAdvisorUrl. A naive "shared RA URL = same event" rule would
-    // wrongly auto-merge these two genuinely distinct shows. The room
-    // anchor on officialEventUrl (#black-box vs #red-box) is what actually
-    // distinguishes them, and it must override the shared RA URL.
-    const blackBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#black-box"))!;
-    const redBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#red-box"))!;
-    const sharedRaUrl = "https://ra.co/events/9999999";
-    const existing: ExistingEventForDedup[] = [
-      {
-        id: "e-existing-black-box",
-        title: blackBox.title,
-        artists: blackBox.artists,
-        venueId: "v-culture-box",
-        startDatetime: blackBox.startDatetime!,
-        officialEventUrl: blackBox.officialEventUrl,
-        residentAdvisorUrl: sharedRaUrl,
-      },
-    ];
-    const match = findBestDuplicateMatch(
-      {
-        title: redBox.title,
-        artists: redBox.artists,
-        venueId: "v-culture-box",
-        startDatetime: redBox.startDatetime!,
-        officialEventUrl: redBox.officialEventUrl,
-        residentAdvisorUrl: sharedRaUrl,
-      },
-      existing,
-    );
-    expect(match).toBeNull(); // room-identity conflict vetoes the match outright — never even "review"
-  });
-
-  it("if a room's own provenance link were ever missing, a shared showcase title now correctly routes to review, never a silent high-confidence auto-merge", () => {
-    // Degraded case: no officialEventUrl at all, so the room-anchor veto
-    // above can't apply and the only remaining signal is the venue-authored
-    // showcase title ("HYGGELIT SHOWCASE") with a completely disjoint
-    // lineup (artistOverlap 0). Without a confirmed strong lineup match,
-    // that alone must land in review, never auto-merge.
-    const blackBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#black-box"))!;
-    const redBox = events.find((e) => e.officialEventUrl?.endsWith("fri-21-august-2026/#red-box"))!;
-    const existing: ExistingEventForDedup[] = [
-      { id: "e-existing-black-box", title: blackBox.title, artists: blackBox.artists, venueId: "v-culture-box", startDatetime: blackBox.startDatetime! },
-    ];
-    const match = findBestDuplicateMatch(
-      { title: redBox.title, artists: redBox.artists, venueId: "v-culture-box", startDatetime: redBox.startDatetime! },
-      existing,
-    );
-    expect(match?.assessment.confidence).toBe("medium");
-    expect(match?.assessment.artistOverlap).toBe(0); // confirms this is title-similarity-driven, not a real lineup match
-  });
-
-  it("re-parsing the same page twice yields identical officialEventUrls per room — a re-sync recognizes the same event rather than re-queuing it", () => {
+  it("re-parsing the same page twice yields identical officialEventUrls per night — a re-sync recognizes the same event rather than re-queuing it", () => {
     const first = parseCultureBoxEventsHtml(FIXTURE_HTML);
     const second = parseCultureBoxEventsHtml(FIXTURE_HTML);
     expect(first.map((e) => e.officialEventUrl)).toEqual(second.map((e) => e.officialEventUrl));
@@ -365,10 +421,29 @@ function loadDetailFixture(slug: string): string {
   return readFileSync(path.join(__dirname, "__fixtures__", `culture-box-detail-${slug}.html`), "utf-8");
 }
 
-function loadListingRoom(slug: string, room: "black-box" | "red-box") {
-  const events = parseCultureBoxEventsHtml(FIXTURE_HTML);
-  return events.find((e) => e.officialEventUrl === `https://culture-box.com/event/${slug}/#${room}`);
-}
+/**
+ * Real per-room artist lists from the committed listing fixture, for tests
+ * below that exercise `attributeGenreToRoom` (the pure cross-room-exclusion
+ * function, unchanged by the room-consolidation work) directly against each
+ * room's own lineup. Since the adapter no longer emits a separate candidate
+ * per room, these are the two rooms' real artists read directly off the
+ * consolidated event's own title/description (see the "real fixture" tests
+ * above), not fabricated.
+ */
+const REAL_ROOM_ARTISTS: Record<string, { blackBox: string[]; redBox: string[] }> = {
+  "fri-28-august": {
+    blackBox: ["TAXMAN", "DWONJI", "BOBBY 6 KILLA", "HDN", "DJ BREAKFAST", "MAXI MO", "L.A.D.J"],
+    redBox: ["FIA2THEFLOOR", "AMITTET", "TINKI", "DELFF"],
+  },
+  "fri-21-august-2026": {
+    blackBox: ["SOPHIE VAN HAYDEN", "RELINQUO", "SEVERIN", "NO CELEBRITY"],
+    redBox: ["ROZGU", "HERMANN BRAVO"],
+  },
+  "sat-19-september-2026": {
+    blackBox: ["TIM ANDRESEN", "FEDERICO MONACHESI", "NILU", "GERSSEIN", "EUSHERR"],
+    redBox: ["REXIE LEX", "LARSH", "SHANSEN", "THOR CALIN"],
+  },
+};
 
 describe("extractDescriptionParagraphs — real fixtures", () => {
   it("extracts the real free-text description paragraphs from a detail page (fri-21-august-2026)", () => {
@@ -395,31 +470,39 @@ describe("extractResidentAdvisorUrl — real fixtures", () => {
 
 describe("attributeGenreToRoom — room-attribution guard", () => {
   it("real: fri-28-august credits BOTH rooms cleanly with DIFFERENT genres from the same shared description — each room's own paragraph names only that room's artists", () => {
-    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
-    const redBox = loadListingRoom("fri-28-august", "red-box")!;
+    const { blackBox, redBox } = REAL_ROOM_ARTISTS["fri-28-august"];
     const paragraphs = extractDescriptionParagraphs(loadDetailFixture("fri-28-august"));
 
-    expect(attributeGenreToRoom(paragraphs, blackBox.artists, redBox.artists)).toBe("drum-and-bass");
-    expect(attributeGenreToRoom(paragraphs, redBox.artists, blackBox.artists)).toBe("drum-and-bass");
+    expect(attributeGenreToRoom(paragraphs, blackBox, redBox)).toBe("drum-and-bass");
+    expect(attributeGenreToRoom(paragraphs, redBox, blackBox)).toBe("drum-and-bass");
   });
 
-  it("real: fri-21-august-2026's genre-bearing sentence names artists from BOTH rooms in one breath ('...Rozgu...and Hermann Bravo...are in Red Box and rounding a truly stellar lineup of peaktime techno and tech house') — stays unresolved for both, never guessed toward either", () => {
-    const blackBox = loadListingRoom("fri-21-august-2026", "black-box")!;
-    const redBox = loadListingRoom("fri-21-august-2026", "red-box")!;
+  it("real: fri-21-august-2026's genre-bearing sentence names artists from BOTH rooms in one breath ('...Rozgu...and Hermann Bravo...are in Red Box and rounding a truly stellar lineup of peaktime techno and tech house') — stays unresolved when each room is checked in isolation against the other", () => {
+    const { blackBox, redBox } = REAL_ROOM_ARTISTS["fri-21-august-2026"];
     const paragraphs = extractDescriptionParagraphs(loadDetailFixture("fri-21-august-2026"));
 
-    expect(attributeGenreToRoom(paragraphs, blackBox.artists, redBox.artists)).toBeNull();
-    expect(attributeGenreToRoom(paragraphs, redBox.artists, blackBox.artists)).toBeNull();
+    expect(attributeGenreToRoom(paragraphs, blackBox, redBox)).toBeNull();
+    expect(attributeGenreToRoom(paragraphs, redBox, blackBox)).toBeNull();
+  });
+
+  it("real: fri-21-august-2026's shared genre-bearing sentence DOES resolve once the night is consolidated (empty 'other rooms' list) — a real, intended benefit of consolidation, not a regression", () => {
+    // With Culture Box now one canonical event per night, there is no other
+    // room's artists to exclude against — attributeGenreToRoom(paragraphs,
+    // allArtists, []) correctly credits genre evidence that mentions the
+    // night's own (now merged) lineup, rather than staying artificially
+    // unresolved to protect a room boundary that no longer exists.
+    const { blackBox, redBox } = REAL_ROOM_ARTISTS["fri-21-august-2026"];
+    const paragraphs = extractDescriptionParagraphs(loadDetailFixture("fri-21-august-2026"));
+    expect(attributeGenreToRoom(paragraphs, [...blackBox, ...redBox], [])).toBe("techno");
   });
 
   it("real: sat-19-september-2026 has real description paragraphs but none contain a mapped genre keyword — unresolved, not guessed", () => {
-    const blackBox = loadListingRoom("sat-19-september-2026", "black-box")!;
-    const redBox = loadListingRoom("sat-19-september-2026", "red-box")!;
+    const { blackBox, redBox } = REAL_ROOM_ARTISTS["sat-19-september-2026"];
     const paragraphs = extractDescriptionParagraphs(loadDetailFixture("sat-19-september-2026"));
 
     expect(paragraphs.length).toBeGreaterThan(0); // real prose exists...
-    expect(attributeGenreToRoom(paragraphs, blackBox.artists, redBox.artists)).toBeNull(); // ...just no genre evidence in it
-    expect(attributeGenreToRoom(paragraphs, redBox.artists, blackBox.artists)).toBeNull();
+    expect(attributeGenreToRoom(paragraphs, blackBox, redBox)).toBeNull(); // ...just no genre evidence in it
+    expect(attributeGenreToRoom(paragraphs, redBox, blackBox)).toBeNull();
   });
 
   it("no paragraphs at all -> unresolved", () => {
@@ -454,7 +537,11 @@ describe("enrichCandidatesWithDetailPages — orchestration", () => {
     };
   }
 
-  it("fetches one night's detail page exactly ONCE and reuses it for both room candidates", async () => {
+  function loadConsolidatedNight(slug: string, url: string) {
+    return parseCultureBoxEventsHtml(FIXTURE_HTML).find((e) => e.officialEventUrl === url)!;
+  }
+
+  it("fetches one night's detail page exactly ONCE for its one consolidated candidate", async () => {
     const nightUrl = "https://culture-box.com/event/fri-28-august/";
     let fetchCount = 0;
     const fetchImpl = async (url: string | URL) => {
@@ -465,28 +552,26 @@ describe("enrichCandidatesWithDetailPages — orchestration", () => {
       return new Response("", { status: 404 });
     };
 
-    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
-    const redBox = loadListingRoom("fri-28-august", "red-box")!;
-    const enriched = await enrichCandidatesWithDetailPages([blackBox, redBox], fetchImpl as unknown as typeof fetch, 0, 0);
+    const night = loadConsolidatedNight("fri-28-august", nightUrl);
+    const enriched = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
 
-    expect(fetchCount).toBe(1); // one detail fetch for the night, not one per room
-    expect(enriched).toHaveLength(2);
-    expect(enriched.find((e) => e.officialEventUrl === blackBox.officialEventUrl)?.genreHint).toBe("drum-and-bass");
-    expect(enriched.find((e) => e.officialEventUrl === redBox.officialEventUrl)?.genreHint).toBe("drum-and-bass");
+    expect(fetchCount).toBe(1);
+    expect(enriched).toHaveLength(1);
+    expect(enriched[0].genreHint).toBe("drum-and-bass");
+    expect(enriched[0].genreConfidenceHint).toBe("high");
   });
 
-  it("populates residentAdvisorUrl and description on both rooms from the shared detail page", async () => {
-    const fetchImpl = fetchImplFor({
-      "https://culture-box.com/event/fri-28-august/": loadDetailFixture("fri-28-august"),
-    });
-    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
-    const redBox = loadListingRoom("fri-28-august", "red-box")!;
-    const enriched = await enrichCandidatesWithDetailPages([blackBox, redBox], fetchImpl as unknown as typeof fetch, 0, 0);
+  it("populates residentAdvisorUrl on the consolidated event and prepends the detail page's real prose ahead of the room-lineup breakdown", async () => {
+    const nightUrl = "https://culture-box.com/event/fri-28-august/";
+    const fetchImpl = fetchImplFor({ [nightUrl]: loadDetailFixture("fri-28-august") });
+    const night = loadConsolidatedNight("fri-28-august", nightUrl);
+    const roomLineupText = night.description; // the listing-stage room-separated breakdown, before enrichment
+    const enriched = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
 
-    for (const e of enriched) {
-      expect(e.residentAdvisorUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
-      expect(e.description).toBeTruthy();
-    }
+    expect(enriched[0].residentAdvisorUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+    expect(enriched[0].description).toBeTruthy();
+    expect(enriched[0].description).toContain(roomLineupText); // room breakdown preserved, not overwritten
+    expect(enriched[0].description!.indexOf(roomLineupText!)).toBeGreaterThan(0); // real prose comes first
   });
 
   it("a single night's detail-page fetch failure degrades only that night — other nights are still enriched, and no candidate anywhere is dropped", async () => {
@@ -494,40 +579,34 @@ describe("enrichCandidatesWithDetailPages — orchestration", () => {
       // fri-28-august deliberately NOT mocked -> 404, simulating a fetch failure for that one night
       "https://culture-box.com/event/sat-22-august-2026/": loadDetailFixture("sat-22-august-2026"),
     });
-    const brokenBB = loadListingRoom("fri-28-august", "black-box")!;
-    const brokenRB = loadListingRoom("fri-28-august", "red-box")!;
-    const healthyBB = loadListingRoom("sat-22-august-2026", "black-box")!;
+    const broken = loadConsolidatedNight("fri-28-august", "https://culture-box.com/event/fri-28-august/");
+    const healthy = loadConsolidatedNight("sat-22-august-2026", "https://culture-box.com/event/sat-22-august-2026/");
 
-    const enriched = await enrichCandidatesWithDetailPages(
-      [brokenBB, brokenRB, healthyBB],
-      fetchImpl as unknown as typeof fetch,
-      0,
-      0,
-    );
+    const enriched = await enrichCandidatesWithDetailPages([broken, healthy], fetchImpl as unknown as typeof fetch, 0, 0);
 
-    expect(enriched).toHaveLength(3); // nothing dropped
-    const brokenResult = enriched.find((e) => e.officialEventUrl === brokenBB.officialEventUrl)!;
-    expect(brokenResult.genreHint).toBe(brokenBB.genreHint); // exactly the listing-page fallback, untouched
+    expect(enriched).toHaveLength(2); // nothing dropped
+    const brokenResult = enriched.find((e) => e.officialEventUrl === broken.officialEventUrl)!;
+    expect(brokenResult.genreHint).toBe(broken.genreHint); // exactly the listing-page fallback, untouched
     expect(brokenResult.residentAdvisorUrl).toBeNull();
-    expect(brokenResult.description).toBeNull();
+    expect(brokenResult.description).toBe(broken.description); // untouched listing-stage room breakdown
 
-    const healthyResult = enriched.find((e) => e.officialEventUrl === healthyBB.officialEventUrl)!;
+    const healthyResult = enriched.find((e) => e.officialEventUrl === healthy.officialEventUrl)!;
     expect(healthyResult.genreHint).toBe("techno"); // the healthy night still gets enriched normally
   });
 
   it("never overrides a genre already resolved from the listing page's own showcase title", async () => {
-    const fetchImpl = fetchImplFor({
-      "https://culture-box.com/event/fri-28-august/": loadDetailFixture("fri-28-august"),
-    });
-    const blackBox = loadListingRoom("fri-28-august", "black-box")!;
+    const nightUrl = "https://culture-box.com/event/fri-28-august/";
+    const fetchImpl = fetchImplFor({ [nightUrl]: loadDetailFixture("fri-28-august") });
+    const night = loadConsolidatedNight("fri-28-august", nightUrl);
     // Simulate a listing page that already resolved a (different) genre from its own showcase title.
-    const alreadyResolved = { ...blackBox, genreHint: "house" as const, genreConfidenceHint: "high" as const };
+    const alreadyResolved = { ...night, genreHint: "house" as const, genreConfidenceHint: "high" as const };
     const enriched = await enrichCandidatesWithDetailPages([alreadyResolved], fetchImpl as unknown as typeof fetch, 0, 0);
     expect(enriched[0].genreHint).toBe("house"); // untouched, even though the description says drum-and-bass
   });
 
   it("candidates with no officialEventUrl are left untouched rather than crashing the grouping step", async () => {
-    const candidate = { ...loadListingRoom("fri-28-august", "black-box")!, officialEventUrl: null };
+    const night = loadConsolidatedNight("fri-28-august", "https://culture-box.com/event/fri-28-august/");
+    const candidate = { ...night, officialEventUrl: null };
     const enriched = await enrichCandidatesWithDetailPages([candidate], (async () => new Response("", { status: 404 })) as unknown as typeof fetch, 0, 0);
     expect(enriched).toEqual([candidate]);
   });
@@ -553,14 +632,14 @@ describe("createCultureBoxAdapter — full two-stage integration against all rea
     const adapter = createCultureBoxAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
 
-    expect(candidates).toHaveLength(30); // nothing dropped, nothing invented
+    expect(candidates).toHaveLength(15); // one consolidated event per night, nothing dropped
 
     const highConfidence = candidates.filter((c) => c.genreConfidenceHint === "high");
-    // 12 of 30 in this 15-night committed fixture set. The pre-implementation
-    // validation matrix (built against all 16 live nights, 32 candidates,
-    // including a Oct-24 night added to the site after this fixture was
-    // captured) found 13 — one more, entirely accounted for by that extra
-    // night's own single confident Black Box result.
+    // 12 of these 15 consolidated nights resolve to a single agreed genre
+    // (either from a showcase title both rooms agree on, or the detail
+    // page's own prose crediting the night's now-merged lineup — see
+    // "attributeGenreToRoom" above for why consolidation can resolve a case
+    // that used to stay unresolved, e.g. fri-21-august-2026).
     expect(highConfidence.length).toBe(12);
     for (const c of highConfidence) {
       expect(runIngestionPipeline(c, { venues: VENUES, existingEvents: [] }).decision).toBe("auto_publish");
