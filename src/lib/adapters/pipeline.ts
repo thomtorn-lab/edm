@@ -5,7 +5,12 @@ import { resolveVenue, dedupeArtistList } from "../normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
 import { findBestMovedEventMatch } from "../movedEventDetection";
 import { evaluateQualityGate, genreConfidenceForEvidence, type PublishDecision } from "../classification";
-import { assessRelevance, hasExplicitElectronicAssertion, hasNonElectronicGenreSignal } from "../relevance";
+import {
+  assessRelevance,
+  hasExplicitElectronicAssertion,
+  hasExplicitNonElectronicIdentityAssertion,
+  hasNonElectronicGenreSignal,
+} from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
 import type { RawCandidateEvent } from "./types";
 
@@ -74,6 +79,7 @@ function computeDecision(
       hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
       hasTrustedElectronicTicketing,
       hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, normalizedArtists),
+      hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
     });
     if (relevance === "weak") decision = "review_queue";
     else if (relevance === "none") decision = "hold";

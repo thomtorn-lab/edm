@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assessPublishedEventReclassification,
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
   decideSyncLeaseAcquisition,
@@ -465,5 +466,24 @@ describe("decideSyncLeaseAcquisition", () => {
   it("grants exactly at the expiry instant (matches the real SQL's <= boundary)", () => {
     const expiringNow = { lockToken: "expiring-right-now", expiresAt: now };
     expect(decideSyncLeaseAcquisition(expiringNow, now)).toBe(true);
+  });
+});
+
+describe("assessPublishedEventReclassification (follow-up review — existing-published-event safety, question 6)", () => {
+  it("flags a currently-published event whose fresh classification is now 'hold' (a known false positive that would otherwise stay live forever — sync never re-runs the gate against an already-linked event)", () => {
+    expect(assessPublishedEventReclassification(true, "hold")).toBe("flag_for_review");
+  });
+
+  it("takes no action for a currently-published event whose fresh classification is 'review_queue' — genuinely ambiguous/thin evidence is not grounds to touch something already live (do not broadly unpublish/flag uncertain events)", () => {
+    expect(assessPublishedEventReclassification(true, "review_queue")).toBe("no_action");
+  });
+
+  it("takes no action for a currently-published event whose fresh classification is still 'auto_publish'", () => {
+    expect(assessPublishedEventReclassification(true, "auto_publish")).toBe("no_action");
+  });
+
+  it("takes no action for an event that isn't published in the first place, regardless of the fresh decision — nothing to protect", () => {
+    expect(assessPublishedEventReclassification(false, "hold")).toBe("no_action");
+    expect(assessPublishedEventReclassification(false, "review_queue")).toBe("no_action");
   });
 });

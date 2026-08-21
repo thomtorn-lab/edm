@@ -305,3 +305,44 @@ export interface SyncLeaseRow {
 export function decideSyncLeaseAcquisition(existing: SyncLeaseRow | null, now: Date): boolean {
   return existing === null || existing.expiresAt.getTime() <= now.getTime();
 }
+
+export type PublishedEventReclassificationAction = "flag_for_review" | "no_action";
+
+/**
+ * Existing-published-event safety (follow-up review, data-quality
+ * Workstream A — question 6). Today, `src/db/sync.ts::runSourceSyncLocked`
+ * NEVER re-runs auto_publish/review_queue/hold against an already-linked
+ * event on a later sync — the `match` branch only refreshes metadata
+ * (title/description/artists/venue/urls/genre/dates via buildSyncPatch)
+ * and never touches `published`. A false positive that was auto-published
+ * under an earlier, looser ruleset (or a genuinely wrong one-off
+ * classification) therefore stays live indefinitely, however the evidence
+ * pipeline improves later — there is currently no mechanism that would
+ * ever catch it again.
+ *
+ * This is the minimal general rule to close that gap without overreaching:
+ * flag ONLY when an event is CURRENTLY published AND this sync's fresh
+ * classification is "hold" — the strongest, most confident negative
+ * outcome (real, dominant contradicting evidence with nothing to offset
+ * it), never "review_queue" (a genuinely ambiguous/thin-evidence case is
+ * not grounds to touch something already live) and never for an event
+ * that isn't published in the first place (nothing to protect). It
+ * deliberately never sets `published` itself — an automatic unpublish on a
+ * classifier's say-so is exactly the "broadly unpublish uncertain events"
+ * outcome ruled out — it only decides WHETHER to surface the event for a
+ * human to look at.
+ *
+ * NOT YET WIRED IN: persisting/surfacing "flag_for_review" needs either a
+ * new events column (a Production schema migration) or a repurposing of
+ * discoveryQueue's existing suspectedDuplicateOfEventId (a change to what
+ * that field means, with matching admin-UI changes) — both are product
+ * decisions, not routine fixes, so this stops at the decision function
+ * plus regression tests until that's explicitly approved.
+ */
+export function assessPublishedEventReclassification(
+  currentlyPublished: boolean,
+  freshDecision: PublishDecision,
+): PublishedEventReclassificationAction {
+  if (currentlyPublished && freshDecision === "hold") return "flag_for_review";
+  return "no_action";
+}

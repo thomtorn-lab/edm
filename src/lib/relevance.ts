@@ -72,6 +72,32 @@ const COMPARISON_CUE_RE =
   /\b(?:the way|like|similar to|compared to|reminiscent of|influenced by|inspired by|shaped by|roots?\s+in|cues?\s+from|nods?\s+to|redefined|channels?)\b[^.;!?]{0,40}$/i;
 
 /**
+ * A negative-signal match preceded (anywhere in the same sentence) by one of
+ * these HISTORICAL PERFORMANCE CREDIT phrases is not trusted either — it
+ * describes a stage the artist has previously played, not the current
+ * event's own musical identity (follow-up review, data-quality Workstream A
+ * — real production evidence: tonser's own Pumpehuset bio, itself full of
+ * genuine electronic self-description ("elektronisk produktion", "EDM"),
+ * closes with "For nylig kunne han også opleves på scenen i Pumpehuset til
+ * det udsolgte ... hiphop-event KØL" — a credit that he once played a
+ * DIFFERENT, separately-named hip-hop night, not a statement that tonser or
+ * THIS show is hip-hop). Same principle as COMPARISON_CUE_RE, generalized
+ * to "past stage credit" phrasing rather than "influence/lineage" phrasing —
+ * deliberately a fixed, generic phrase pattern, not a per-artist exception.
+ */
+const HISTORICAL_CREDIT_CUE_RE =
+  /\b(?:has (?:played|performed|opened|toured)|played (?:at|with)|performed (?:at|with)|opened for|supported|toured with|previously played|known for playing|kunne(?:\s+\w+){0,2}\s+opleves|har\s+(?:tidligere\s+)?spillet|har\s+(?:tidligere\s+)?optrådt|optrådte|spillede\s+(?:på|til)|tidligere\s+(?:spillet|optrådt))\b/i;
+
+/**
+ * A negative-signal match followed by an "-event"/"-festival"/etc. suffix
+ * and then a capitalized name is naming a DIFFERENT, specific event/festival
+ * (e.g. "hiphop-event KØL") rather than describing the current show — a
+ * structural complement to HISTORICAL_CREDIT_CUE_RE for the case where the
+ * credit phrasing itself falls outside a fixed-size backward window.
+ */
+const NAMED_OTHER_EVENT_RE = /^[\s-]?(?:event|festival|koncert|show|tour|klub|club)\b\s+[A-ZÆØÅ]/;
+
+/**
  * Strips a known artist's own name out of `text` (case-insensitive, whole
  * substring match) before negative-signal scanning — see this module's
  * header comment for why (an artist literally named e.g. "Bingo Fuel" must
@@ -114,6 +140,14 @@ function isLikelyProperNounMidSentence(precedingText: string, matchedWord: strin
   return true;
 }
 
+/** Nearest preceding sentence boundary (or start of text) before `index`. */
+function precedingSentenceStart(text: string, index: number): number {
+  for (let i = index - 1; i >= 0; i--) {
+    if (".!?:\n".includes(text.charAt(i))) return i + 1;
+  }
+  return 0;
+}
+
 /**
  * True when the given text (title + description/bio) is centered on a
  * recognized non-electronic genre — a strong negative signal against
@@ -129,11 +163,49 @@ export function hasNonElectronicGenreSignal(text: string, knownArtists: string[]
     while ((match = global.exec(masked))) {
       const precedingWindow = masked.slice(Math.max(0, match.index - 40), match.index);
       if (COMPARISON_CUE_RE.test(precedingWindow)) continue;
+      const sentenceStart = precedingSentenceStart(masked, match.index);
+      if (HISTORICAL_CREDIT_CUE_RE.test(masked.slice(sentenceStart, match.index))) continue;
       if (isLikelyProperNounMidSentence(masked.slice(0, match.index), match[0])) continue;
-      return true; // a genuine, non-comparison, non-proper-noun, non-artist-name match
+      const matchEnd = match.index + match[0].length;
+      if (NAMED_OTHER_EVENT_RE.test(masked.slice(matchEnd, matchEnd + 30))) continue;
+      return true; // a genuine, non-suppressed match
     }
   }
   return false;
+}
+
+/**
+ * A genre root directly compounded with "scene"/"genre" (with or without a
+ * space/hyphen — Danish freely compounds without one: "rapscene",
+ * "metalscenen") is an explicit first-party claim that the artist/event
+ * belongs to THAT scene/genre, not just an isolated word that happens to
+ * overlap one. Real production evidence: MASTER BOOT RECORD + Fulci's own
+ * intro opens "To af metalscenens mest unikke navne"; Dizzee Rascal's own
+ * bio opens "har Dizzee Rascal været en central skikkelse på den britiske
+ * rapscene". Deliberately includes a bare "metal"/"rock"/"jazz"/... root
+ * here even where the base NON_ELECTRONIC_GENRE_SIGNALS list requires a
+ * qualifying prefix (e.g. "death metal") — an explicit "the metal scene"
+ * self-identification is unambiguous regardless of subgenre.
+ */
+const EXPLICIT_NON_ELECTRONIC_IDENTITY_RE =
+  /\b(?:grime|hip[\s-]?hop|rap|(?:death|black|thrash|doom|sludge|heavy)?[\s-]?metal|metalcore|punk|rock|jazz|folk|reggae|ska|chiptune)[\s-]?(?:scene|genre)\w*/i;
+
+/**
+ * True when the event's own text makes an explicit "X scene/genre" identity
+ * claim about a non-electronic genre (see EXPLICIT_NON_ELECTRONIC_IDENTITY_RE)
+ * — STRONGER evidence than a bare token match, because the copy is naming
+ * its own scene/genre rather than merely using a word that happens to
+ * overlap one (follow-up review, data-quality Workstream A — MASTER BOOT
+ * RECORD + Fulci's own intro literally opens "To af metalscenens mest
+ * unikke navne", yet a single incidental "techno" mention buried in a third
+ * support act's blend description was enough to soften the event to REVIEW
+ * instead of HOLD under the plain token-occurrence check). Deliberately a
+ * fixed, generalizable "<genre-word> + scene/genre" compound pattern, not a
+ * per-artist/per-event exception.
+ */
+export function hasExplicitNonElectronicIdentityAssertion(text: string, knownArtists: string[] = []): boolean {
+  const masked = maskKnownArtistNames(text, knownArtists);
+  return EXPLICIT_NON_ELECTRONIC_IDENTITY_RE.test(masked);
 }
 
 /** The generic electronic-music fallback every adapter uses when it has only
@@ -172,6 +244,12 @@ export interface RelevanceEvidenceInput {
   hasTrustedElectronicTicketing: boolean;
   /** Contextual non-electronic genre signal (see hasNonElectronicGenreSignal). */
   hasNonElectronicGenreSignal: boolean;
+  /** The non-electronic signal is an explicit first-party scene/genre
+   *  identity claim, not just an isolated word (see
+   *  hasExplicitNonElectronicIdentityAssertion) — stronger than a bare
+   *  token match, enough on its own to outweigh a single weak positive
+   *  signal. Ignored when hasNonElectronicGenreSignal is false. */
+  hasExplicitNonElectronicIdentityAssertion: boolean;
 }
 
 /**
@@ -185,11 +263,19 @@ export interface RelevanceEvidenceInput {
  *   contradicting non-electronic signal.
  * - "weak" (review): either only the generic category floor (no strong
  *   signal at all, no contradiction), OR a real contradiction alongside at
- *   least one strong signal (a genuine ambiguous crossover — e.g. STVW
- *   pres. Punk Rave's own copy: "en hybrid mellem en punkrock-koncert og en
- *   intens ravefest").
- * - "none" (hold): a contradiction with no strong signal to offset it, or
- *   no evidence of any kind.
+ *   least TWO strong signals (a genuine ambiguous crossover, both sides
+ *   with real corroboration — e.g. STVW pres. Punk Rave's own copy names
+ *   "EDM og trance" AND "pop-punk, emo og rock" in the same breath: "en
+ *   hybrid mellem en punkrock-koncert og en intens ravefest").
+ * - "none" (hold): a contradiction with no strong signal to offset it; a
+ *   contradiction that is an explicit non-electronic SCENE/GENRE identity
+ *   claim offset by only one weak/incidental strong signal (the event's own
+ *   copy names its own scene as something else — e.g. MASTER BOOT RECORD +
+ *   Fulci's own intro: "To af metalscenens mest unikke navne", with the
+ *   event's only "electronic" signal being one stray "techno" mention
+ *   buried in a third support act's blend description — a single incidental
+ *   match must not outweigh the event's own stated identity); or no
+ *   evidence of any kind.
  */
 export function assessRelevance(input: RelevanceEvidenceInput): RelevanceLevel {
   const hasSpecificGenre = input.genre != null && input.genre !== GENERIC_ELECTRONIC_GENRE;
@@ -199,7 +285,9 @@ export function assessRelevance(input: RelevanceEvidenceInput): RelevanceLevel {
     (input.hasTrustedElectronicTicketing ? 1 : 0);
 
   if (input.hasNonElectronicGenreSignal) {
-    return strongSignalCount > 0 ? "weak" : "none";
+    if (strongSignalCount === 0) return "none";
+    if (input.hasExplicitNonElectronicIdentityAssertion && strongSignalCount === 1) return "none";
+    return "weak";
   }
   if (strongSignalCount > 0) return "strong";
   if (input.genre != null) return "weak"; // generic category floor alone
