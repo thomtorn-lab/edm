@@ -1,0 +1,80 @@
+name: TEMP - tonser Duplicate Cleanup
+
+# One-time, deliberately temporary workflow (Electronic CPH data-quality
+# follow-up review — "tonser duplicate cleanup"). Mirrors this repo's own
+# established pattern for a one-time Production action (see git history:
+# temp-culture-box-room-consolidation.yml, added, run once, then removed).
+# Runs src/db/tonserCleanup.ts, which unpublishes only the stale
+# 2026-09-19 tonser row (Pumpehuset rescheduled it to 2027-02-20), after
+# re-confirming Production state matches what this cleanup was validated
+# against. Will be removed once this run is confirmed.
+#
+# Safety:
+#   - workflow_dispatch only.
+#   - mode=plan performs no writes at all (no write statement is even
+#     reachable in that code path) — always run this first.
+#   - mode=apply additionally requires typing the exact confirmation
+#     string, matching this repo's existing confirm-gate convention (see
+#     validate-source.yml / temp-culture-box-room-consolidation.yml), and
+#     re-verifies every fact this cleanup depends on immediately before
+#     writing, aborting with no write if Production state has changed.
+#   - DATABASE_URL is read only into the step environment via .env.local,
+#     removed at the end of the run — never echoed or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "plan (read-only) or apply (writes, requires confirm)"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+      confirm:
+        description: 'For mode=apply only: must be exactly "CLEANUP-TONSER-STALE-ROW"'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run cleanup
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          node --env-file=.env.local --import tsx src/db/tonserCleanup.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
