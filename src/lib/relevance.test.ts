@@ -23,6 +23,24 @@ describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
     expect(hasNonElectronicGenreSignal("Doors open at 8pm, drinks and vibes.")).toBe(false);
   });
 
+  it("does not false-positive on a genuinely electronic artist's own bio describing musical influences/lineage (real production evidence: Hangaren)", () => {
+    expect(
+      hasNonElectronicGenreSignal(
+        "Danilo Plessow (MCDE), Harrison heat, tamara A DJ's DJ, technically crafty, instinctually curious and armed with an expansive knowledge shaped by jazz, soul and disco roots.",
+      ),
+    ).toBe(false);
+    expect(
+      hasNonElectronicGenreSignal(
+        "Mika Heggemann is pioneering Nu Trance, taking cues from breakbeat and rap culture the way Nu Metal once redefined rock.",
+      ),
+    ).toBe(false);
+    expect(
+      hasNonElectronicGenreSignal(
+        "never leave's lyd flyder et sted mellem techno, trance og UK garage. Søren Gades vokal spænder over kraftfuld sang, blid croon og rap.",
+      ),
+    ).toBe(false);
+  });
+
   it("flags comedy/bingo/quiz programming that a generalist venue might otherwise tag broadly", () => {
     expect(hasNonElectronicGenreSignal("Friday night bingo with prizes.")).toBe(true);
     expect(hasNonElectronicGenreSignal("A stand-up comedy showcase.")).toBe(true);

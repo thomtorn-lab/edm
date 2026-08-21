@@ -26,15 +26,24 @@
  *    remains strong evidence and is unaffected.
  */
 
+// Deliberately excludes bare "rock", "jazz" and bare "rap" — real production
+// evidence (Electronic CPH data-quality audit) showed these generate false
+// positives on genuinely electronic events, whose own bios routinely
+// describe an artist's INFLUENCES or make a genre-comparison in passing
+// ("shaped by jazz, soul and disco roots"; "taking cues from rap culture the
+// way Nu Metal once redefined rock") without the event itself being that
+// genre. "rapper" (a job title, not a loose genre-adjacent word) and
+// "hip-hop" are specific enough to keep. Similarly "metal" only matches
+// clearly metal-identifying prefixes (death/black/thrash/doom) or the bare
+// word/"metalcore" — "nu"/"speed"/"power" were dropped after "Nu Metal"
+// (used only as a comparison, "the way Nu Metal once redefined rock")
+// collided with a real Nu Trance event.
 const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
   /\bgrime\b/i,
-  /\b(hip[\s-]?hop|rap(?:per|ping)?)\b/i,
-  /\b(?:death|black|thrash|doom|nu[\s-]?|speed|power)[\s-]?metal\b/i,
-  /\bmetal(?:core)?\b/i,
+  /\b(hip[\s-]?hop|rapper)\b/i,
+  /\b(?:death|black|thrash|doom|sludge|heavy)[\s-]?metal\b/i,
+  /\bmetalcore\b/i,
   /\bpunk\b/i,
-  /\b(?:indie|alt(?:ernative)?)[\s-]?rock\b/i,
-  /\brock\b/i,
-  /\bjazz\b/i,
   /\bfolk\b/i,
   /\breggae\b/i,
   /\bska\b/i,

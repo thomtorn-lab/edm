@@ -73,4 +73,11 @@ describe("URL noise stripping in artist/lineup fields (data-quality Workstream D
     const result = dedupeArtistList(["Kromagon soundcloud.com/aragon", "Other Artist soundcloud.com/other"]);
     expect(result).toHaveLength(2);
   });
+
+  it("strips a zero-width joiner left between two adjacent SoundCloud links, not just the links themselves (real production evidence: Hangaren's 'Arcanum Collective: POSSESSED' lineup)", () => {
+    const result = dedupeArtistList([
+      "Lulla-Li & Nihility: https://soundcloud.com/tenna-li-andersen‍   ‍https://soundcloud.com/nihility_forest",
+    ]);
+    expect(result).toEqual(["Lulla-Li & Nihility"]);
+  });
 });

@@ -39,6 +39,13 @@ export function resolveVenue(rawName: string, venues: Venue[]): Venue | undefine
  */
 function stripUrlNoise(text: string): string {
   return text
+    // Invisible Unicode formatting characters (zero-width space/joiner/non-
+    // joiner, BOM) — real source markup routinely places one of these
+    // between two adjacent links with no visible separator (observed live:
+    // Hangaren's "Arcanum Collective: POSSESSED" lineup joins two artists'
+    // SoundCloud links with a bare zero-width joiner); stripped unconditionally
+    // since none of them are ever legitimate, visible artist-name content.
+    .replace(/[​-‏⁠﻿]/g, "")
     .replace(/https?:\/\/\S+/gi, "")
     .replace(/\b(?:www\.)?[a-z0-9-]+\.(?:com|dk|net|org|io|co|uk|fm|ly)\/\S*/gi, "")
     .replace(/[ \t]{2,}/g, " ")
