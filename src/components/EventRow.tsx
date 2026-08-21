@@ -24,8 +24,8 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
   };
 
   return (
-    <li className="group border-b border-border last:border-b-0">
-      <div className="flex flex-col gap-2.5 py-4 transition-colors sm:flex-row sm:items-center sm:gap-5 sm:py-3.5 sm:group-hover:bg-surface-1/60">
+    <li className="border-b border-border last:border-b-0">
+      <div className="flex flex-col gap-2.5 py-4 sm:flex-row sm:items-center sm:gap-5 sm:py-3.5">
         <div className="flex shrink-0 items-baseline gap-2 sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateLabel(event.startDatetime)}

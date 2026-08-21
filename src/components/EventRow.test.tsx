@@ -129,3 +129,16 @@ describe("EventRow — clickability affordance (Round 8, refined Round 9: color-
     expect(venueLink.className).not.toContain("underline");
   });
 });
+
+describe("EventRow — no whole-row hover affordance (Round 10)", () => {
+  afterEach(cleanup);
+
+  it("does not change the row background on hover — the row itself is not clickable", () => {
+    const { container } = render(<EventRow event={makeEvent()} />);
+    const li = container.querySelector("li");
+    expect(li?.className).not.toContain("group");
+    const row = li?.firstElementChild as HTMLElement;
+    expect(row.className).not.toContain("group-hover");
+    expect(row.className).not.toContain("bg-surface-1");
+  });
+});
