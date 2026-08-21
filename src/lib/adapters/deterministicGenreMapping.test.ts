@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
 
 describe("deterministicGenreFromText", () => {
   it("maps the standalone word 'psy' to psytrance", () => {
@@ -59,5 +59,37 @@ describe("deterministicGenreFromText", () => {
         " Paco Amoroso's new album blends trap, rock and experimental pop influences.";
       expect(deterministicGenreFromText(longUnrelatedText)).toBeNull();
     });
+  });
+});
+
+describe("refineGenreFromText (genre precision, Workstream B)", () => {
+  it("distinguishes Trance vs Psytrance: refines a generic 'trance' category to psytrance when the event's own text says so (Infected Mushroom-type evidence)", () => {
+    expect(refineGenreFromText("trance", "Infected Mushroom brings their legendary psytrance sound to Copenhagen.")).toBe(
+      "psytrance",
+    );
+    expect(refineGenreFromText("trance", "A night of psy vibes and visuals.")).toBe("psytrance");
+  });
+
+  it("leaves a genuine trance event as trance when the text has no psytrance-specific evidence", () => {
+    expect(refineGenreFromText("trance", "A night of uplifting trance anthems.")).toBe("trance");
+  });
+
+  it("refines a generic 'techno' category to a specific sibling when the text names one (e.g. industrial techno -> industrial)", () => {
+    expect(refineGenreFromText("techno", "An industrial techno showcase.")).toBe("industrial");
+    expect(refineGenreFromText("techno", "Melodic techno all night long.")).toBe("melodic-techno");
+  });
+
+  it("refines a generic 'house' category to a specific sibling when the text names one", () => {
+    expect(refineGenreFromText("house", "Progressive house from local selectors.")).toBe("progressive-house");
+    expect(refineGenreFromText("house", "Deep house grooves until sunrise.")).toBe("deep-house");
+  });
+
+  it("never crosses into an unrelated genre family", () => {
+    expect(refineGenreFromText("house", "A night of psytrance.")).toBe("house");
+  });
+
+  it("is a no-op for a genre with no declared refinement siblings", () => {
+    expect(refineGenreFromText("disco", "Industrial techno night.")).toBe("disco");
+    expect(refineGenreFromText("psytrance", "A generic trance description.")).toBe("psytrance");
   });
 });

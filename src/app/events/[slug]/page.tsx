@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { crossesMidnight } from "@/lib/datetime";
-import { displayGenres, getGenre } from "@/lib/taxonomy";
+import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
@@ -40,7 +40,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const event = await getEventBySlugWithVenue(slug);
   if (!event) notFound();
 
-  const genres = event.subgenres.map(getGenre);
+  const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event);
   const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);

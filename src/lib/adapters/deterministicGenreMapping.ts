@@ -45,3 +45,46 @@ export function deterministicGenreFromText(text: string): GenreSlug | null {
   }
   return null;
 }
+
+/**
+ * Refines an already-resolved genre to a more specific sibling within the
+ * SAME family when the event's own first-party text corroborates it (genre
+ * precision, Workstream B: "distinguish Trance vs Psytrance where evidence
+ * supports it"). An official categorical source (a ticketing platform's
+ * subcategory, a venue's broad genre tag) is real evidence of the genre
+ * FAMILY, but a specific keyword in the venue/promoter's own text about THIS
+ * exact event is stronger, more precise evidence — e.g. a platform tagging
+ * an event generically "trance" while its own description says "psytrance"
+ * should surface as Psytrance, not the broader Trance. Deliberately narrow
+ * and never artist-specific: only ever moves within one declared family, to
+ * one of a fixed set of siblings, driven purely by genre-keyword text
+ * evidence — never crosses into an unrelated genre and never fires when the
+ * genre is already maximally specific (no entry below).
+ */
+const GENRE_REFINEMENTS: Partial<Record<GenreSlug, [RegExp, GenreSlug][]>> = {
+  trance: [
+    [/\bpsytrance\b/i, "psytrance"],
+    [/\bpsy\b/i, "psytrance"],
+  ],
+  techno: [
+    [/\bhard\s?techno\b/i, "hard-techno"],
+    [/\bindustrial\b/i, "industrial"],
+    [/\bmelodic\s?techno\b/i, "melodic-techno"],
+    [/\bminimal\s?techno\b/i, "minimal-techno"],
+  ],
+  house: [
+    [/\bdeep\s?house\b/i, "deep-house"],
+    [/\btech\s?house\b/i, "tech-house"],
+    [/\bprogressive\s?house\b/i, "progressive-house"],
+    [/\bafro\s?house\b/i, "afro-house"],
+  ],
+};
+
+export function refineGenreFromText(genre: GenreSlug, text: string): GenreSlug {
+  const refinements = GENRE_REFINEMENTS[genre];
+  if (!refinements) return genre;
+  for (const [pattern, refined] of refinements) {
+    if (pattern.test(text)) return refined;
+  }
+  return genre;
+}

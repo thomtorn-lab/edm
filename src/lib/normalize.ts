@@ -25,12 +25,34 @@ export function resolveVenue(rawName: string, venues: Venue[]): Venue | undefine
 }
 
 /**
+ * Strips URL noise out of a raw artist/lineup entry (Electronic CPH
+ * data-quality work package, Workstream D): a source's own markup routinely
+ * carries an artist's SoundCloud/Instagram/Spotify link appended right next
+ * to their name (e.g. "Kromagon: soundcloud.com/aragon -", or the same with
+ * an explicit "https://" scheme) — that raw URL must never leak into the
+ * stored artist name. Matches both schemed URLs and bare "domain.tld/path"
+ * tokens (a bare link commonly loses its "https://" prefix when lifted from
+ * an anchor's visible text rather than its href), but only ever removes an
+ * actual URL-shaped substring — never touches an artist's real punctuation,
+ * initials or aliases (e.g. "R.O.O.T." has no trailing path, so it never
+ * matches). Only the URL substring is removed; real surrounding text is kept.
+ */
+function stripUrlNoise(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\b(?:www\.)?[a-z0-9-]+\.(?:com|dk|net|org|io|co|uk|fm|ly)\/\S*/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/^[\s:;,|–—-]+|[\s:;,|–—-]+$/g, "")
+    .trim();
+}
+
+/**
  * Strips trailing parenthetical qualifiers (e.g. "(DK)") and normalizes
  * case/whitespace so "DJ NAME", "Dj Name" and "DJ NAME (DK)" resolve to the
  * same performer, without merging genuinely different artists.
  */
 export function normalizeArtistName(name: string): string {
-  return name
+  return stripUrlNoise(name)
     .normalize("NFKD")
     .replace(/\s*\([^)]*\)\s*$/, "")
     .toLowerCase()
@@ -42,11 +64,21 @@ export function artistNamesMatch(a: string, b: string): boolean {
   return normalizeArtistName(a) === normalizeArtistName(b);
 }
 
+/**
+ * Cleans and deduplicates a raw artist/lineup list — the single funnel every
+ * adapter's `artists` array passes through (src/lib/adapters/pipeline.ts),
+ * so URL-noise stripping (see stripUrlNoise) applies uniformly regardless of
+ * source. A name that turns out to be nothing but a URL (no real display
+ * text) is dropped entirely rather than stored as an empty string.
+ */
 export function dedupeArtistList(names: string[]): string[] {
   const seen = new Map<string, string>();
   for (const name of names) {
-    const key = normalizeArtistName(name);
-    if (!seen.has(key)) seen.set(key, name.trim());
+    const cleaned = stripUrlNoise(name);
+    if (!cleaned) continue;
+    const key = normalizeArtistName(cleaned);
+    if (!key) continue;
+    if (!seen.has(key)) seen.set(key, cleaned);
   }
   return Array.from(seen.values());
 }

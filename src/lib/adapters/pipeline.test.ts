@@ -75,6 +75,162 @@ describe("runIngestionPipeline", () => {
   });
 });
 
+describe("source-aware relevance evidence (data-quality Workstream A — a generalist venue's broad category tag is never conclusive on its own)", () => {
+  it("does not auto-publish a non-electronic headliner just because the venue's own broad 'electronic-other' category says so (Dizzee Rascal-type regression case)", () => {
+    // Mirrors what a generalist venue adapter (e.g. Pumpehuset) supplies when
+    // its only evidence is a broad, venue-wide "Elektronisk" filter tag: the
+    // generic electronic-other floor at official-source-metadata/high
+    // confidence, with no specific subgenre match — and the venue's own bio
+    // text is centered on a different genre (grime/rap).
+    const result = runIngestionPipeline(
+      raw({
+        title: "Dizzee Rascal",
+        description: "Dizzee Rascal is a pioneering grime and hip hop MC, headlining a huge live show.",
+        artists: ["Dizzee Rascal"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("does not auto-publish a metal show just because an isolated electronic-sounding keyword appears in otherwise non-electronic copy (MASTER BOOT RECORD + Fulci-type regression case)", () => {
+    // "industrial" is genuinely matched (a specific, non-generic subgenre) at
+    // official-description/high tier — exactly what a source's own support-
+    // band-bio text evidence would credit — but the same official text is
+    // centered on metal: an isolated word in otherwise non-electronic artist
+    // copy must never carry an auto-publish on its own, no matter how "high"
+    // the claimed confidence.
+    const result = runIngestionPipeline(
+      raw({
+        title: "MASTER BOOT RECORD + Fulci",
+        description:
+          "MASTER BOOT RECORD blends chiptune and industrial metal soundscapes. Fulci is an Italian death metal band.",
+        artists: ["MASTER BOOT RECORD", "Fulci"],
+        genreHint: "industrial",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("industrial"); // evidence is real, just not sufficient alone
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("still auto-publishes a genuine electronic event even from a generalist-venue-style source, when a specific subgenre is corroborated in the venue's own official text (official-description/high tier, like Pumpehuset/Hangaren's own bio-text credit)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Amelie Lens",
+        description: "An unmissable night of hard techno from one of the scene's leading names.",
+        artists: ["Amelie Lens"],
+        genreHint: "hard-techno",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("hard-techno");
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("does not downgrade a genuinely industrial-techno event just because 'industrial' was matched (Intercell-type case: industrial alone, no metal/punk/etc. signal, is not a negative signal)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Intercell",
+        description: "A night of driving industrial techno.",
+        artists: ["Intercell"],
+        genreHint: "industrial",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("industrial");
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("caps a bare, uncorroborated generic electronic tag at review_queue even with no negative genre signal present at all", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Friday Club Night",
+        description: "Doors at 11pm, resident DJs all night.",
+        artists: [],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).not.toBe("auto_publish");
+  });
+});
+
+describe("moved/rescheduled first-party events (data-quality Workstream C)", () => {
+  const existingSameSource: ExistingEventForDedup = {
+    id: "e-tonser-old",
+    title: "tonser",
+    artists: ["tonser"],
+    venueId: "v-pumpehuset",
+    startDatetime: "2026-09-19T21:00:00+02:00",
+    sourceId: "src-pumpehuset",
+    officialEventUrl: "https://pumpehuset.dk/koncerter/tonser-2026/",
+    ticketUrl: "https://www.ticketmaster.dk/event/tonser-billetter/123456",
+    residentAdvisorUrl: null,
+  };
+
+  it("attaches a same-source candidate at a new date/URL to the existing published event when it shares a ticket URL (tonser-type regression case) — never leaves a stale canonical alongside its replacement", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "tonser",
+        artists: ["tonser"],
+        venueName: "Pumpehuset",
+        startDatetime: "2027-02-20T21:00:00+01:00",
+        officialEventUrl: "https://pumpehuset.dk/koncerter/tonser-2027-flyttet/",
+        ticketUrl: "https://www.ticketmaster.dk/event/tonser-billetter/123456",
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [existingSameSource] },
+    );
+    expect(result.duplicateOfEventId).toBe("e-tonser-old");
+    expect(result.duplicateConfidence).toBe("high");
+  });
+
+  it("never merges/hides solely because artist/title happens to match — no shared URL, no reschedule wording", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "tonser",
+        artists: ["tonser"],
+        venueName: "Pumpehuset",
+        startDatetime: "2027-02-20T21:00:00+01:00",
+        officialEventUrl: "https://pumpehuset.dk/koncerter/tonser-2027-new-show/",
+        ticketUrl: "https://www.ticketmaster.dk/event/tonser-new-billetter/999999",
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [existingSameSource] },
+    );
+    expect(result.duplicateOfEventId).toBeNull();
+  });
+
+  it("never checks a moved-event match across a different source", () => {
+    const differentSourceExisting: ExistingEventForDedup = { ...existingSameSource, sourceId: "src-hangaren" };
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "tonser",
+        artists: ["tonser"],
+        venueName: "Pumpehuset",
+        startDatetime: "2027-02-20T21:00:00+01:00",
+        ticketUrl: "https://www.ticketmaster.dk/event/tonser-billetter/123456",
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [differentSourceExisting] },
+    );
+    expect(result.duplicateOfEventId).toBeNull();
+  });
+});
+
 describe("applyEnrichedGenre", () => {
   function unresolvedResult() {
     return runIngestionPipeline(
@@ -99,8 +255,10 @@ describe("applyEnrichedGenre", () => {
   });
 
   it("never overrides genre evidence the deterministic classifier already found", () => {
-    const resolved = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] }); // genreHint: techno/high
-    expect(resolved.genre).toBe("techno");
+    // genreHint: techno/high, refined to melodic-techno by the genre-precision
+    // text refinement (the fixture's own description says "melodic techno").
+    const resolved = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] });
+    expect(resolved.genre).toBe("melodic-techno");
     const result = applyEnrichedGenre(resolved, "house", "medium");
     expect(result).toBe(resolved); // untouched — same object, not just same values
   });

@@ -10,6 +10,7 @@ import {
   recordSourceLink,
   resolveDiscoveryItemAsPublished,
   touchSourceSyncStats,
+  updateSourceLinkUrl,
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
@@ -234,7 +235,28 @@ async function runSourceSyncLocked(
           await applySourceSyncPatch(match.eventId, sourceId, patch);
         }
         if (raw.officialEventUrl) {
-          await recordSourceLink(match.eventId, sourceId, raw.officialEventUrl, "official");
+          // A high-confidence-duplicate/moved-event match (findSyncMatch's
+          // "high-confidence-duplicate" kind — including the moved-event
+          // check in src/lib/adapters/pipeline.ts, Workstream C) can attach
+          // an event whose STORED official link is a different URL than the
+          // one this candidate carries (e.g. a first-party source
+          // republished a moved show under a new URL). recordSourceLink is
+          // insert-only (onConflictDoNothing on the (event, source, role)
+          // key), so it would silently leave the stale URL in place once a
+          // row already exists — the next sync would then fail to find this
+          // event via linkedByUrl and redo the same match every cycle
+          // instead of converging. Update the existing row's URL in place
+          // when one already exists for this (event, source, role); only
+          // insert when this source has genuinely never linked this event
+          // before.
+          const existingOfficialLink = links.find((l) => l.eventId === match.eventId && l.role === "official");
+          if (existingOfficialLink) {
+            if (existingOfficialLink.sourceUrl !== raw.officialEventUrl) {
+              await updateSourceLinkUrl(match.eventId, sourceId, "official", raw.officialEventUrl);
+            }
+          } else {
+            await recordSourceLink(match.eventId, sourceId, raw.officialEventUrl, "official");
+          }
         }
         // A pending discovery_queue row for this exact candidate can outlive
         // the sync that first created its matching event — e.g. it was

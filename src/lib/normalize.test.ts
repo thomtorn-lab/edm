@@ -41,3 +41,36 @@ describe("artist normalization", () => {
     expect(result).toHaveLength(2);
   });
 });
+
+describe("URL noise stripping in artist/lineup fields (data-quality Workstream D)", () => {
+  it("strips a bare (protocol-less) SoundCloud URL appended to an artist name (Arcanum Collective: POSSESSED-type evidence)", () => {
+    expect(normalizeArtistName("Kromagon soundcloud.com/aragon")).toBe(normalizeArtistName("Kromagon"));
+    const result = dedupeArtistList(["Kromagon soundcloud.com/aragon-dj"]);
+    expect(result).toEqual(["Kromagon"]);
+  });
+
+  it("strips a schemed SoundCloud URL appended to an artist name", () => {
+    const result = dedupeArtistList(["Kromagon: https://soundcloud.com/aragon -"]);
+    expect(result).toEqual(["Kromagon"]);
+  });
+
+  it("strips a bare www-prefixed URL", () => {
+    const result = dedupeArtistList(["DJ Nightshade www.instagram.com/djnightshade"]);
+    expect(result).toEqual(["DJ Nightshade"]);
+  });
+
+  it("drops an entry that is nothing but a URL, rather than storing an empty artist name", () => {
+    const result = dedupeArtistList(["Real Artist", "soundcloud.com/someone", "https://facebook.com/somepage"]);
+    expect(result).toEqual(["Real Artist"]);
+  });
+
+  it("never strips legitimate artist punctuation, initials or aliases", () => {
+    expect(normalizeArtistName("R.O.O.T.")).toBe("r.o.o.t.");
+    expect(dedupeArtistList(["R.O.O.T.", "MRK.", "I. Hate. Models."])).toEqual(["R.O.O.T.", "MRK.", "I. Hate. Models."]);
+  });
+
+  it("keeps distinct artists distinct even after URL stripping", () => {
+    const result = dedupeArtistList(["Kromagon soundcloud.com/aragon", "Other Artist soundcloud.com/other"]);
+    expect(result).toHaveLength(2);
+  });
+});
