@@ -69,50 +69,31 @@ async function renderPage(event: EventWithVenue) {
   render(element);
 }
 
-describe("Event detail page — FREE badge and Links section (frontend polish, Round 7)", () => {
+describe("Event detail page — FREE badge removed (frontend polish, Round 9)", () => {
   afterEach(cleanup);
 
-  it("places FREE to the right of OFFICIAL EVENT — never before it", async () => {
-    await renderPage(
-      makeEvent({
-        priceFrom: 0,
-        ticketUrl: null,
-        residentAdvisorUrl: null,
-        officialEventUrl: "https://venue.example.com/event",
-      }),
-    );
-    const officialEvent = screen.getByText(/Official event/i);
-    const free = screen.getByText("Free");
-    expect(officialEvent.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("keeps the Links heading for real links only — FREE is not one of its items", async () => {
-    await renderPage(
-      makeEvent({
-        priceFrom: 0,
-        ticketUrl: null,
-        residentAdvisorUrl: null,
-        officialEventUrl: "https://venue.example.com/event",
-      }),
-    );
-    const linksHeading = screen.getByText("Links");
-    const free = screen.getByText("Free");
-    expect(free.tagName).toBe("SPAN"); // never rendered as a link (<a>)
-    // The heading's own container (its link-list wrapper) never contains FREE.
-    expect(linksHeading.parentElement?.contains(free)).toBe(false);
-  });
-
-  it("shows no empty Links heading for a free event with no actual links", async () => {
+  it("never renders a FREE badge, even for a free event with no other links", async () => {
     await renderPage(makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: null }));
+    expect(screen.queryByText("Free")).toBeNull();
     expect(screen.queryByText("Links")).toBeNull();
-    expect(screen.getByText("Free")).toBeTruthy();
   });
 
-  it("renders FREE in white with comparable weight to OFFICIAL EVENT, not a dim secondary note", async () => {
-    await renderPage(makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null }));
-    const free = screen.getByText("Free");
-    expect(free.className).toContain("text-text-primary");
-    expect(free.className).toContain("font-semibold");
+  it("never renders a FREE badge for a free event that also has an official event link", async () => {
+    await renderPage(
+      makeEvent({
+        priceFrom: 0,
+        ticketUrl: null,
+        residentAdvisorUrl: null,
+        officialEventUrl: "https://venue.example.com/event",
+      }),
+    );
+    expect(screen.queryByText("Free")).toBeNull();
+    expect(screen.getByText(/Official event/i)).toBeTruthy();
+  });
+
+  it("shows no empty Links heading when the event has no external links", async () => {
+    await renderPage(makeEvent({ ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: null }));
+    expect(screen.queryByText("Links")).toBeNull();
   });
 
   it("shows no '+1' overnight annotation next to the end time", async () => {
