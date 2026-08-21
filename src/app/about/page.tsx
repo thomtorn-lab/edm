@@ -16,32 +16,44 @@ export default function AboutPage() {
 
       <div className="mt-6 space-y-5 text-sm leading-relaxed text-text-secondary">
         <p>
-          Electronic CPH is a fast, curated index of electronic music events in Copenhagen —
+          Electronic CPH is a fast, curated index of electronic music events and concerts in Copenhagen —
           techno, house, trance, drum &amp; bass, garage, disco and everything adjacent. Nothing else.
         </p>
         <p>
-          It exists so that on a Friday afternoon you can see what&rsquo;s worth going to tonight or this weekend
-          in a few seconds, without wading through a general events marketplace. Every event links straight
-          through to its official page, tickets, or Resident Advisor listing — the goal is to help you find
-          the night out, not to keep you inside this site.
+          It exists so that on a Friday afternoon you can see what&rsquo;s on tonight or this weekend in a few
+          seconds, without wading through a general events marketplace. Every event links directly to the
+          official event page, tickets or another relevant source — the goal is to help you find the event,
+          not to keep you inside this site.
         </p>
         <p>
-          Inclusion is deliberately narrow: an event is listed only when electronic music is central to its
-          programming, verified against official or first-party sources. A DJ playing background music at a
-          bar, or a generic &ldquo;party&rdquo; night, doesn&rsquo;t qualify.
+          Inclusion is deliberately narrow: electronic music must be central to the event itself. Dedicated
+          electronic clubs qualify, as do concerts, promoter nights, warehouse events and other standalone
+          events built around electronic artists or music. A DJ providing music as part of a regular bar or
+          nightclub night does not.
+        </p>
+        <p>
+          We use venue, promoter, ticketing and other trusted event sources to keep the calendar as complete
+          and accurate as possible, but dates, lineups, venues and event statuses can change.
         </p>
       </div>
 
       <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
         Spotted something wrong?
       </h2>
-      <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-        Dates, lineups and statuses change. If an event on this site is wrong or outdated, the fastest fix is
-        usually the venue or promoter&rsquo;s own page — linked from every event. Missing something entirely?{" "}
-        <Link href="/suggest-event" className="underline hover:text-text-secondary">Suggest an event</Link>. Anything
-        else, <Link href="/contact" className="underline hover:text-text-secondary">get in touch</Link>. This site
-        aims to be a fast, honest index, not the source of truth.
-      </p>
+      <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
+        <p>
+          Found incorrect or outdated information?{" "}
+          <Link href="/contact" className="underline hover:text-text-secondary">Get in touch</Link>.
+        </p>
+        <p>
+          Missing an event?{" "}
+          <Link href="/suggest-event" className="underline hover:text-text-secondary">Suggest an event</Link>.
+        </p>
+        <p>
+          Electronic CPH aims to provide the most useful overview possible, but it is not the official source
+          for any event. Always check the linked event or ticket page for the latest information.
+        </p>
+      </div>
 
       <p className="mt-10 text-xs text-text-tertiary">
         <Link href="/" className="underline hover:text-text-secondary">Back to the calendar</Link>

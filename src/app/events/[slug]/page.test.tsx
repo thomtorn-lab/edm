@@ -124,3 +124,24 @@ describe("Event detail page — FREE badge and Links section (frontend polish, R
     expect(screen.getByText(/22:00/).closest("dd")?.textContent).toContain("06:00");
   });
 });
+
+describe("Event detail page — clickability affordance (Round 8)", () => {
+  afterEach(cleanup);
+
+  it("gives the venue link a hover and keyboard-focus underline/color shift", async () => {
+    await renderPage(makeEvent());
+    const venueLink = screen.getByRole("link", { name: "Test Venue" });
+    expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
+    expect(venueLink.className).toContain("hover:underline");
+    expect(venueLink.className).toContain("hover:text-accent-strong");
+    expect(venueLink.className).toContain("focus-visible:underline");
+    expect(venueLink.className).toContain("focus-visible:text-accent-strong");
+  });
+
+  it("does not turn the event title into a link to itself", async () => {
+    await renderPage(makeEvent());
+    const heading = screen.getByRole("heading", { level: 1, name: "Test Event" });
+    expect(heading.tagName).toBe("H1");
+    expect(heading.querySelector("a")).toBeNull();
+  });
+});

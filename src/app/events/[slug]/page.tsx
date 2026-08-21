@@ -101,7 +101,12 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Venue</dt>
           <dd className="mt-1 text-sm text-text-primary">
-            <Link href={`/venues/${event.venue.slug}`} className="hover:text-accent-strong">{event.venue.name}</Link>
+            <Link
+              href={`/venues/${event.venue.slug}`}
+              className="underline-offset-4 hover:text-accent-strong hover:underline focus-visible:text-accent-strong focus-visible:underline"
+            >
+              {event.venue.name}
+            </Link>
             <br />
             <span className="text-text-secondary">{event.venue.address}</span>
           </dd>

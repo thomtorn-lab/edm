@@ -107,3 +107,25 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     expect(free.className).not.toContain("text-accent-strong");
   });
 });
+
+describe("EventRow — clickability affordance (Round 8)", () => {
+  afterEach(cleanup);
+
+  it("gives the event title link a hover and keyboard-focus underline/color shift", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.getAttribute("href")).toBe("/events/test-event");
+    expect(titleLink.className).toContain("hover:underline");
+    expect(titleLink.className).toContain("hover:text-accent-strong");
+    expect(titleLink.className).toContain("focus-visible:underline");
+    expect(titleLink.className).toContain("focus-visible:text-accent-strong");
+  });
+
+  it("gives the venue name link a hover and keyboard-focus underline/color shift, linking to the venue page", () => {
+    render(<EventRow event={makeEvent()} />);
+    const venueLink = screen.getByRole("link", { name: "Test Venue" });
+    expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
+    expect(venueLink.className).toContain("hover:underline");
+    expect(venueLink.className).toContain("focus-visible:underline");
+  });
+});
