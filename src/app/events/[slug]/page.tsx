@@ -102,7 +102,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <dd className="mt-1 text-sm text-text-primary">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="hover:text-accent-strong focus-visible:text-accent-strong"
+              className="hover:text-accent focus-visible:text-accent"
             >
               {event.venue.name}
             </Link>

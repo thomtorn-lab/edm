@@ -228,3 +228,17 @@ describe("EventExplorer month nav — active highlight", () => {
     expect(sepLink.className).toContain("sm:no-underline");
   });
 });
+
+describe("EventExplorer month heading — reference purple token (Round 11)", () => {
+  it("the large month number (e.g. the purple '08' in '08 / AUGUST') uses exactly the text-accent token", () => {
+    render(<EventExplorer events={[AUG_EVENT]} />);
+    vi.runOnlyPendingTimers();
+    const monthNumber = screen.getByText("08 /");
+    const classes = monthNumber.className.split(/\s+/);
+    // This is the reference token EventRow's title/venue hover states must
+    // reuse exactly (see EventRow.test.tsx) — not text-accent-strong or any
+    // other shade. If this token ever changes, EventRow must change with it.
+    expect(classes).toContain("text-accent");
+    expect(classes).not.toContain("text-accent-strong");
+  });
+});

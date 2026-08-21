@@ -112,10 +112,20 @@ describe("Event detail page — clickability affordance (Round 8, refined Round 
   it("gives the venue link a hover and keyboard-focus accent-color shift, no underline", async () => {
     await renderPage(makeEvent());
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
+    const classes = venueLink.className.split(/\s+/);
     expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
-    expect(venueLink.className).toContain("hover:text-accent-strong");
-    expect(venueLink.className).toContain("focus-visible:text-accent-strong");
+    // Must match the exact month-number purple token (text-accent), the same
+    // one EventRow's title/venue links use — not text-accent-strong or any
+    // other shade (Round 11).
+    expect(classes).toContain("hover:text-accent");
+    expect(classes).toContain("focus-visible:text-accent");
+    expect(classes).not.toContain("hover:text-accent-strong");
+    expect(classes).not.toContain("focus-visible:text-accent-strong");
     expect(venueLink.className).not.toContain("underline");
+    // The visible venue name text is a direct child of the hover-colored
+    // link, not nested in a separately-colored span.
+    expect(venueLink.children.length).toBe(0);
+    expect(venueLink.textContent).toBe("Test Venue");
   });
 
   it("does not turn the event title into a link to itself", async () => {

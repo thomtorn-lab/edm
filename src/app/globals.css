@@ -75,10 +75,6 @@ body::before {
   color: var(--text-primary);
 }
 
-a {
-  color: inherit;
-}
-
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
