@@ -37,6 +37,18 @@ const WITCHZ_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "pu
  * too.
  */
 const BYHAVEN_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "pumpehuset-detail-byhaven-love-rave.html"), "utf-8");
+/**
+ * `pumpehuset-detail-afro-sundown-fest.html` is a real, unmodified recording
+ * of https://pumpehuset.dk/koncerter/byhaven-afro-sundown-fest/ (fetched via
+ * inspect-source.yml's reachability mode, 2026-08-21 — Data Quality & Trust
+ * follow-up review) — its own body text states its lineup as "DJ lineup:"
+ * followed by a single comma-separated line ("Bullet, Panda, Sule, Xzyl,
+ * Ynxg Irie, Jayce + MC Mazi"), a shape the original one-name-per-line
+ * "Line-Up:" extractor didn't recognize at all, so this adapter previously
+ * only ever extracted the generic title-derived placeholder "Afro Sundown
+ * Fest" as the sole "artist".
+ */
+const AFRO_SUNDOWN_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "pumpehuset-detail-afro-sundown-fest.html"), "utf-8");
 
 describe("parseDanishDate", () => {
   it("parses a real listing date", () => {
@@ -170,6 +182,9 @@ describe("createPumpehusetAdapter", () => {
       if (urlStr === "https://pumpehuset.dk/koncerter/byhaven-love-rave-16/") {
         return new Response(BYHAVEN_DETAIL_HTML, { status: 200 });
       }
+      if (urlStr === "https://pumpehuset.dk/koncerter/byhaven-afro-sundown-fest/") {
+        return new Response(AFRO_SUNDOWN_DETAIL_HTML, { status: 200 });
+      }
       // Every other event's detail page: no recorded fixture, so degrade
       // gracefully to startDatetime: null for it, same as a real 404 would.
       return new Response("<html></html>", { status: 404 });
@@ -208,5 +223,17 @@ describe("createPumpehusetAdapter", () => {
     expect(byhaven!.genreHint).toBe("house");
     expect(byhaven!.genreConfidenceHint).toBe("high");
     expect(byhaven!.artists).toEqual(["Leeni & Danilo Kupfernagel", "Lush", "NILU"]);
+
+    // Afro Sundown Fest data-quality gap fix (Round 5): the fetch_concerts
+    // JSON carries no support_bands data (support_bands: false), so the
+    // only "artist" this adapter previously extracted was the generic
+    // title-derived placeholder "Afro Sundown Fest". The real detail page's
+    // own body states its lineup as "DJ lineup:" followed by one
+    // comma-separated line — a shape the original extractor didn't
+    // recognize (a "DJ "-prefixed marker, and every name on one line rather
+    // than one per line) — now correctly parsed into the real per-artist
+    // lineup, keeping the combined act "Jayce + MC Mazi" as one entry.
+    const afroSundown = results.find((e) => e.officialEventUrl === "https://pumpehuset.dk/koncerter/byhaven-afro-sundown-fest/");
+    expect(afroSundown!.artists).toEqual(["Bullet", "Panda", "Sule", "Xzyl", "Ynxg Irie", "Jayce + MC Mazi"]);
   });
 });

@@ -193,7 +193,19 @@ function extractBodyDescriptionLines(detailHtml: string): string[] {
   return htmlToText(block).split("\n").filter(Boolean);
 }
 
-const LINEUP_START = /^Line[- ]?Up:?$/i;
+// Optional "DJ " prefix (real evidence: Byhaven's Afro Sundown Fest page
+// uses "DJ lineup:" rather than a bare "Line-Up:") ahead of the same
+// Line-Up marker every other Pumpehuset lineup list already uses.
+const LINEUP_START = /^(?:DJ\s+)?Line[- ]?Up:?$/i;
+
+/** Splits a single-line, comma-separated lineup into names, keeping a combined
+ *  act like "Jayce + MC Mazi" as one entry since it contains no comma itself. */
+function splitCommaSeparatedLineup(line: string): string[] {
+  return line
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 /**
  * Best-effort lineup extraction from the body description text, when the
@@ -203,10 +215,25 @@ const LINEUP_START = /^Line[- ]?Up:?$/i;
  * only artists this adapter previously extracted were the promoter/event
  * name itself). Only ever ADDS real evidence — never invents names, and
  * returns an empty array (never guessed) when no such marker is present.
+ *
+ * Supports two real shapes the venue's own copy uses: one name per line
+ * (the original Byhaven Love.Rave evidence above), and a single line
+ * listing every name comma-separated (real evidence: Byhaven's Afro Sundown
+ * Fest — "DJ lineup:\nBullet, Panda, Sule, Xzyl, Ynxg Irie, Jayce + MC
+ * Mazi"). The line immediately after the marker decides which shape this
+ * is: if it contains a comma, the whole lineup is that one line, split on
+ * commas only (never on "+", so a combined act stays one entry); otherwise
+ * it falls back to the original one-name-per-line collection.
  */
 function extractLineupFromBodyLines(lines: string[]): string[] {
   const startIdx = lines.findIndex((l) => LINEUP_START.test(l));
   if (startIdx === -1) return [];
+
+  const firstLine = lines[startIdx + 1];
+  if (firstLine?.includes(",")) {
+    return splitCommaSeparatedLineup(firstLine);
+  }
+
   const names: string[] = [];
   for (let i = startIdx + 1; i < lines.length; i++) {
     const line = lines[i];

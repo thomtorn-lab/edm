@@ -37,8 +37,31 @@ export function resolveVenue(rawName: string, venues: Venue[]): Venue | undefine
  * initials or aliases (e.g. "R.O.O.T." has no trailing path, so it never
  * matches). Only the URL substring is removed; real surrounding text is kept.
  */
+/**
+ * Collapses a "<label>: - <duplicate of the end of label>" residue shape
+ * left behind when a URL sat between two mentions of the same label text
+ * (real evidence: Hangaren's "Fagins Reject – Wild Things Records: <a
+ * href=soundcloud.com/...>soundcloud.com/...</a> - Wild things Records" —
+ * the source repeats the label on both sides of the artist's own link).
+ * Only fires when the text after the dangling "-" is, case-insensitively, a
+ * trailing duplicate of the text before the colon — a genuinely distinct
+ * alias or affiliation after a real "-" (never a duplicate) is left
+ * untouched, so this never eats legitimate punctuation.
+ */
+function collapseDuplicatedLabelResidue(text: string): string {
+  const match = text.match(/^(.*?):\s*-\s*(.+)$/);
+  if (!match) return text;
+  const [, before, after] = match;
+  const beforeNorm = before.toLowerCase().replace(/\s+/g, " ").trim();
+  const afterNorm = after.toLowerCase().replace(/\s+/g, " ").trim();
+  if (afterNorm.length > 0 && beforeNorm.endsWith(afterNorm)) {
+    return before.trim();
+  }
+  return text;
+}
+
 function stripUrlNoise(text: string): string {
-  return text
+  const withoutUrls = text
     // Invisible Unicode formatting characters (zero-width space/joiner/non-
     // joiner, BOM) — real source markup routinely places one of these
     // between two adjacent links with no visible separator (observed live:
@@ -49,6 +72,9 @@ function stripUrlNoise(text: string): string {
     .replace(/https?:\/\/\S+/gi, "")
     .replace(/\b(?:www\.)?[a-z0-9-]+\.(?:com|dk|net|org|io|co|uk|fm|ly)\/\S*/gi, "")
     .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  return collapseDuplicatedLabelResidue(withoutUrls)
     .replace(/^[\s:;,|–—-]+|[\s:;,|–—-]+$/g, "")
     .trim();
 }

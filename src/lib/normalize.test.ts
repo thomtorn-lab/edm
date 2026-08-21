@@ -80,4 +80,21 @@ describe("URL noise stripping in artist/lineup fields (data-quality Workstream D
     ]);
     expect(result).toEqual(["Lulla-Li & Nihility"]);
   });
+
+  it("collapses duplicated label text left dangling on both sides of a removed URL (real Production evidence: Hangaren's 'Arcanum Collective: POSSESSED' — 'Fagins Reject – Wild Things Records: <soundcloud link> - Wild things Records', case differing between the two mentions)", () => {
+    const result = dedupeArtistList([
+      'Fagins Reject – Wild Things Records: https://soundcloud.com/fagins_reject - Wild things Records',
+    ]);
+    expect(result).toEqual(["Fagins Reject – Wild Things Records"]);
+  });
+
+  it("still cleanly strips a bare dangling hyphen with no duplicated text after it (Hangaren's 'Kromagon: <soundcloud link> -')", () => {
+    const result = dedupeArtistList(["Kromagon: https://soundcloud.com/aragon -"]);
+    expect(result).toEqual(["Kromagon"]);
+  });
+
+  it("never collapses a real, distinct affiliation or alias following a genuine '-' — only an exact (case-insensitive) trailing duplicate of the preceding label is dropped", () => {
+    const result = dedupeArtistList(["DJ Example: https://soundcloud.com/example - Guest Alias"]);
+    expect(result).toEqual(["DJ Example: - Guest Alias"]);
+  });
 });

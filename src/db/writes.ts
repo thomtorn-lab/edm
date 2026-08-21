@@ -90,6 +90,42 @@ export async function applySyncHoldUnpublish(eventId: string, sourceId: string, 
 }
 
 /**
+ * Reverses an unintended manualOverride side effect: clears manualOverride
+ * and removes the given field names from overriddenFields, touching nothing
+ * else on the row. For correcting a write that went through
+ * applyAdminEventEdit/setEventPublished (which always sets manualOverride)
+ * when the actual intent was a sync/system-driven correction, not a
+ * deliberate editorial decision — e.g. a one-off lifecycle cleanup script
+ * that reused setEventPublished for convenience and thereby mis-flagged a
+ * stale row as admin-protected. Never touches any other event, never
+ * touches provenance (source_event_links).
+ */
+export async function clearManualOverride(eventId: string, fieldsToUnprotect: string[]) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  const overriddenFields = existing.overriddenFields.filter((f) => !fieldsToUnprotect.includes(f));
+
+  await db
+    .update(events)
+    .set({
+      manualOverride: false,
+      overriddenFields,
+      updatedAt: new Date(),
+      lastChanged: new Date(),
+    })
+    .where(eq(events.id, eventId));
+
+  await writeChangeLog(
+    eventId,
+    "admin",
+    "update",
+    ["manualOverride", "overriddenFields"],
+    "Corrected unintended manualOverride side effect from a prior write",
+  );
+}
+
+/**
  * Applies an automated sync's proposed patch, but only to fields the admin
  * hasn't manually corrected — the enforcement point for manual-override
  * protection during real ingestion (task 5/6).
