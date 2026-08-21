@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
-import { discoveryQueue, eventChangeLog, events, sourceEventLinks } from "./schema";
+import { discoveryQueue, eventChangeLog, events, sourceEventLinks, venues } from "./schema";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { assessDuplicate } from "../lib/dedup";
 import type { ConfidenceLevel } from "../lib/types";
@@ -181,6 +181,19 @@ export async function updateSourceLinkUrl(
     .update(sourceEventLinks)
     .set({ sourceUrl: newSourceUrl })
     .where(and(eq(sourceEventLinks.eventId, eventId), eq(sourceEventLinks.sourceId, sourceId), eq(sourceEventLinks.role, role)));
+}
+
+/**
+ * Corrects a venue's address in place. Venues are seeded once from
+ * src/lib/data/venues.ts at bootstrap and never re-synced from that fixture
+ * automatically, so a code-level address correction there does not by
+ * itself reach an already-seeded Production/Preview database — this is the
+ * one-time write that actually does.
+ */
+export async function updateVenueAddress(venueId: string, newAddress: string) {
+  const [existing] = await db.select().from(venues).where(eq(venues.id, venueId)).limit(1);
+  if (!existing) throw new Error(`Venue ${venueId} not found`);
+  await db.update(venues).set({ address: newAddress, updatedAt: new Date() }).where(eq(venues.id, venueId));
 }
 
 // ---- Discovery queue actions ----

@@ -40,6 +40,7 @@ on:
           - dedup-simulate
           - reachability
           - snapshot
+          - venues
       source_id:
         description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability with no source scoping; must match src-[a-z0-9-]+)'
         required: false

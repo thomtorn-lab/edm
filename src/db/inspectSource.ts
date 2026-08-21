@@ -458,6 +458,16 @@ async function modeSnapshot(client: Client, args: Record<string, string | boolea
   console.log(`-- global manual-override event count: ${overridden.rows[0].n} (must never move because of a sync) --`);
 }
 
+/** Read-only venue registry dump — id, name, address (and alias/city/postal) — optionally filtered to one venue id. */
+async function modeVenues(client: Client, args: Record<string, string | boolean>) {
+  const venueId = typeof args.venue === "string" ? args.venue : null;
+  section(venueId ? `Venue: ${venueId}` : "All venues");
+  const rows = venueId
+    ? (await client.query("SELECT id, slug, name, aliases, address, city, postal_code, updated_at FROM venues WHERE id = $1", [venueId])).rows
+    : (await client.query("SELECT id, slug, name, aliases, address, city, postal_code, updated_at FROM venues ORDER BY name")).rows;
+  console.log(JSON.stringify(rows, null, 2));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
@@ -474,6 +484,7 @@ async function main() {
     "lock-status": modeLockStatus,
     "dedup-simulate": modeDedupSimulate,
     snapshot: modeSnapshot,
+    venues: modeVenues,
   };
 
   if (mode === "reachability") {
