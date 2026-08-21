@@ -108,24 +108,24 @@ describe("EventRow — genre display and ticket/free CTA", () => {
   });
 });
 
-describe("EventRow — clickability affordance (Round 8)", () => {
+describe("EventRow — clickability affordance (Round 8, refined Round 9: color-only, no underline)", () => {
   afterEach(cleanup);
 
-  it("gives the event title link a hover and keyboard-focus underline/color shift", () => {
+  it("gives the event title link a hover and keyboard-focus accent-color shift, no underline", () => {
     render(<EventRow event={makeEvent()} />);
     const titleLink = screen.getByRole("link", { name: /Test Event/ });
     expect(titleLink.getAttribute("href")).toBe("/events/test-event");
-    expect(titleLink.className).toContain("hover:underline");
     expect(titleLink.className).toContain("hover:text-accent-strong");
-    expect(titleLink.className).toContain("focus-visible:underline");
     expect(titleLink.className).toContain("focus-visible:text-accent-strong");
+    expect(titleLink.className).not.toContain("underline");
   });
 
-  it("gives the venue name link a hover and keyboard-focus underline/color shift, linking to the venue page", () => {
+  it("gives the venue name link a hover and keyboard-focus accent-color shift, no underline, linking to the venue page", () => {
     render(<EventRow event={makeEvent()} />);
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
     expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
-    expect(venueLink.className).toContain("hover:underline");
-    expect(venueLink.className).toContain("focus-visible:underline");
+    expect(venueLink.className).toContain("hover:text-accent-strong");
+    expect(venueLink.className).toContain("focus-visible:text-accent-strong");
+    expect(venueLink.className).not.toContain("underline");
   });
 });

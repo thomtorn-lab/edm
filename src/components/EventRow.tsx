@@ -38,7 +38,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
         <div className="min-w-0 flex-1">
           <Link
             href={`/events/${event.slug}`}
-            className="block text-[15px] font-semibold leading-snug text-text-primary underline-offset-4 hover:text-accent-strong hover:underline focus-visible:text-accent-strong focus-visible:underline sm:truncate"
+            className="block text-[15px] font-semibold leading-snug text-text-primary hover:text-accent-strong focus-visible:text-accent-strong sm:truncate"
           >
             {event.title}
             <span className="font-normal text-text-secondary">{lineup}</span>
@@ -46,7 +46,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="text-text-secondary underline-offset-2 hover:text-text-primary hover:underline focus-visible:text-text-primary focus-visible:underline"
+              className="text-text-secondary hover:text-accent-strong focus-visible:text-accent-strong"
             >
               {event.venue.name}
             </Link>

@@ -106,17 +106,16 @@ describe("Event detail page — FREE badge removed (frontend polish, Round 9)", 
   });
 });
 
-describe("Event detail page — clickability affordance (Round 8)", () => {
+describe("Event detail page — clickability affordance (Round 8, refined Round 9: color-only, no underline)", () => {
   afterEach(cleanup);
 
-  it("gives the venue link a hover and keyboard-focus underline/color shift", async () => {
+  it("gives the venue link a hover and keyboard-focus accent-color shift, no underline", async () => {
     await renderPage(makeEvent());
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
     expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
-    expect(venueLink.className).toContain("hover:underline");
     expect(venueLink.className).toContain("hover:text-accent-strong");
-    expect(venueLink.className).toContain("focus-visible:underline");
     expect(venueLink.className).toContain("focus-visible:text-accent-strong");
+    expect(venueLink.className).not.toContain("underline");
   });
 
   it("does not turn the event title into a link to itself", async () => {
