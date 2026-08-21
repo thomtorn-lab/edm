@@ -183,7 +183,7 @@ export const SOURCES: Source[] = [
     // HTML) is fetched to resolve a real door/show start time.
     adapter: "pumpehuset-html",
     trustLevel: "medium",
-    autoPublish: false, // conservative first-merge default; revisit after a real sync proves genre-confidence/dedup behavior in production
+    autoPublish: true, // validated via a real live sync (validate-source.yml): 26/26 candidates auto-published at high genre confidence, 0 review cases, 0 dedup false positives, 26/26 venue resolution, idempotent on re-sync, zero regressions on every other source
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
