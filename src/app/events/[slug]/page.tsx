@@ -5,7 +5,7 @@ import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { crossesMidnight } from "@/lib/datetime";
 import { displayGenres, getGenre } from "@/lib/taxonomy";
-import { getExternalLinks } from "@/lib/links";
+import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
@@ -42,6 +42,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
   const genres = event.subgenres.map(getGenre);
   const links = getExternalLinks(event);
+  const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);
   const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
   const jsonLd = buildEventJsonLd(event, canonicalUrl);
@@ -122,14 +123,19 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
       {event.description && (
         <div className="mt-6">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
-          <p className="mt-2 text-sm leading-relaxed text-text-secondary">{event.description}</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
         </div>
       )}
 
-      {links.length > 0 && (
+      {(links.length > 0 || isFree) && (
         <div className="mt-8">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Links</h2>
           <div className="mt-2 flex flex-wrap gap-3">
+            {isFree && (
+              <span className="rounded border border-accent bg-accent/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-accent-strong">
+                Free
+              </span>
+            )}
             {links.map((link) => (
               <a
                 key={link.label}

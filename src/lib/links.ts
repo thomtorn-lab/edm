@@ -33,3 +33,29 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
 
   return typeof max === "number" ? links.slice(0, max) : links;
 }
+
+/**
+ * True only when the event has a real ticket-purchase destination
+ * (ticketUrl, or a Resident Advisor link standing in for one) — the same
+ * two fields that produce the "Tickets" label above.
+ */
+export function hasTicketDestination(event: Pick<EventRecord, "ticketUrl" | "residentAdvisorUrl">): boolean {
+  return Boolean(event.ticketUrl || event.residentAdvisorUrl);
+}
+
+/**
+ * Free-admission evidence must be positive and explicit, never inferred from
+ * a merely-absent ticket link. `priceFrom === 0` is only ever set by an
+ * adapter when the source's own text states free admission (e.g.
+ * pumpehusetAdapter's "fri entré" match) — a missing/unknown price is always
+ * stored as `null`, never defaulted to 0 — so this is real evidence, not a
+ * guess.
+ */
+export function isFreeAdmission(event: Pick<EventRecord, "priceFrom">): boolean {
+  return event.priceFrom === 0;
+}
+
+/** Whether the FREE CTA should be shown in place of a Tickets link. */
+export function showFreeCta(event: Pick<EventRecord, "ticketUrl" | "residentAdvisorUrl" | "priceFrom">): boolean {
+  return !hasTicketDestination(event) && isFreeAdmission(event);
+}

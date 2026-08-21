@@ -28,7 +28,7 @@ export const VENUES: Venue[] = [
     slug: "hangaren",
     name: "Hangaren",
     aliases: ["Hangaren Refshaleøen", "The Hangar CPH"],
-    address: "Refshalevej 325, 1432 København K",
+    address: "Refshalevej 185, 1432 København K",
     city: "Copenhagen",
     postalCode: "1432",
     websiteUrl: "https://www.hangaren.dk/events",

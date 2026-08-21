@@ -151,7 +151,11 @@ function VenueEntry({
       </Link>
       <p className="mt-1 text-sm text-text-secondary">{venue.address}</p>
       <p className="mt-2 text-sm leading-relaxed text-text-secondary">{venue.description}</p>
-      {upcomingCount !== null && (
+      {/* A zero count is omitted rather than shown: it can just as easily mean
+          Electronic CPH hasn't yet integrated or completed coverage for this
+          venue as it can mean the venue genuinely has nothing upcoming, and
+          only a positive count is evidence either way. */}
+      {upcomingCount !== null && upcomingCount > 0 && (
         <p className="mt-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
           {upcomingCount} upcoming event{upcomingCount === 1 ? "" : "s"}
         </p>

@@ -30,13 +30,18 @@ import type { GenreSlug } from "../taxonomy";
  *     p > a...a                    -> lineup, as SoundCloud-linked artist names
  *   .post-block__footer__aside li  -> entrance fee, door hours, Facebook event link
  *
- * Two rooms run simultaneously on the same night with independent lineups —
- * genuinely two different events sharing one venue/date, not duplicates of
- * each other (src/lib/dedup.ts already keeps same-venue-same-night events
- * with disjoint lineups separate). Since the site gives both rooms the same
- * canonical URL, a `#<room-slug>` fragment is appended to keep their
- * provenance (sourceEventLinks) distinct — the real page, just disambiguated
- * for a room-less identity model, never a fabricated URL.
+ * Two rooms run simultaneously on the same night, each with its own
+ * showcase/lineup — but they are the SAME club night: one shared venue, one
+ * shared admission/door-hours/ticket context, one canonical page. Product
+ * decision (partner-ready polish pass, Culture Box-specific — not a general
+ * Event -> Rooms architecture change): they are represented as ONE canonical
+ * event, with the per-room breakdown kept as room-separated lineup content in
+ * `description` ("Black Box\n<artists>\n\nRed Box\n<artists>") and combined
+ * into the title/artists fields. This is safe specifically because every
+ * signal that would distinguish two genuinely separate events (venue, night,
+ * door hours, ticket/RA link) is identical between rooms on this page — a
+ * night with only one room block behaves exactly as before (a single-element
+ * "combination").
  */
 
 export const CULTURE_BOX_SOURCE_ID = "src-culture-box";
@@ -94,13 +99,6 @@ function parseDoorHours(text: string): DoorHours | null {
     endHour: to24(match[4], match[6]),
     endMinute: match[5] ? Number(match[5]) : 0,
   };
-}
-
-function slugifyRoomName(room: string): string {
-  return room
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 interface RoomBlock {
@@ -180,43 +178,57 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
       }
 
       const roomBlocks = parseRoomBlocks(article);
-      for (const room of roomBlocks) {
-        const title = room.showcaseTitle
+      if (roomBlocks.length === 0) continue; // no usable room content — nothing to publish for this night
+
+      // ONE canonical event per night (see header comment): title and
+      // artists combine every room's own content, in room order; the
+      // room-separated lineup breakdown lives in `description` below.
+      const roomTitle = (room: RoomBlock) =>
+        room.showcaseTitle
           ? `${room.roomName}: ${room.showcaseTitle}`
           : room.artists.length > 0
             ? `${room.roomName}: ${room.artists.join(", ")}`
             : room.roomName;
+      const title = roomBlocks.map(roomTitle).join(" · ");
+      const artists = roomBlocks.flatMap((room) => room.artists);
+      const description = roomBlocks
+        .map((room) => `${room.roomName}\n${room.artists.length > 0 ? room.artists.join(", ") : "Lineup TBA"}`)
+        .join("\n\n");
 
-        // Genre evidence: a keyword match against the venue's OWN text about
-        // THIS specific room's show (the showcase/theme title it chose to
-        // print) is "official-description" tier (classification.ts's
-        // evidence hierarchy — high confidence), mirroring hangarenAdapter's
-        // bio-text rule. A bare artist name carries no such credit, and
-        // there being no showcase title at all (common here) correctly
-        // leaves genre unresolved for the pipeline's own deterministic
-        // fallback / Discogs lineup enrichment to attempt, rather than
-        // guessed from "this venue is electronic".
-        const genreHint = room.showcaseTitle ? deterministicGenreFromText(room.showcaseTitle) : null;
+      // Genre evidence: a keyword match against the venue's OWN text about a
+      // specific room's show (the showcase/theme title it chose to print) is
+      // "official-description" tier (classification.ts's evidence
+      // hierarchy — high confidence), mirroring hangarenAdapter's bio-text
+      // rule. Credited to the whole (now consolidated) night only when every
+      // room that named a genre agrees on the SAME one — rooms naming
+      // different genres, or naming none at all, correctly leave genre
+      // unresolved for the pipeline's own deterministic fallback / Discogs
+      // lineup enrichment to attempt, rather than guessed from either room
+      // alone or from "this venue is electronic".
+      const roomGenreHints = roomBlocks
+        .map((room) => (room.showcaseTitle ? deterministicGenreFromText(room.showcaseTitle) : null))
+        .filter((g): g is GenreSlug => g !== null);
+      const distinctRoomGenres = new Set(roomGenreHints);
+      const genreHint = distinctRoomGenres.size === 1 ? [...distinctRoomGenres][0] : null;
 
-        results.push({
-          sourceId: CULTURE_BOX_SOURCE_ID,
-          sourceUrl,
-          title,
-          description: null, // no free-text description exists on this page — never invented
-          artists: room.artists,
-          startDatetime,
-          endDatetime,
-          venueName: CULTURE_BOX_VENUE_NAME,
-          officialEventUrl: `${baseUrl}#${slugifyRoomName(room.roomName)}`,
-          ticketUrl: null, // no ticket/RA/Billetto link present on this page
-          facebookUrl,
-          residentAdvisorUrl: null,
-          imageUrl,
-          priceFrom,
-          genreHint,
-          genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
-        });
-      }
+      results.push({
+        sourceId: CULTURE_BOX_SOURCE_ID,
+        sourceUrl,
+        title,
+        description,
+        artists,
+        startDatetime,
+        endDatetime,
+        venueName: CULTURE_BOX_VENUE_NAME,
+        officialEventUrl: baseUrl,
+        ticketUrl: null, // no ticket/RA/Billetto link present on this page
+        facebookUrl,
+        residentAdvisorUrl: null,
+        imageUrl,
+        priceFrom,
+        genreHint,
+        genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
+      });
     } catch {
       // A single malformed record must never take down the whole sync.
       continue;
@@ -360,7 +372,14 @@ export async function enrichCandidatesWithDetailPages(
       const otherRoomsArtists = nightCandidates.filter((c) => c !== candidate).flatMap((c) => c.artists);
       const next: RawCandidateEvent = { ...candidate };
       if (residentAdvisorUrl) next.residentAdvisorUrl = residentAdvisorUrl;
-      if (description) next.description = description;
+      // The detail page's real free-text description is genuinely new
+      // evidence (the night's own write-up), but it must not erase the
+      // room-separated lineup breakdown already built from the listing page
+      // — the two are combined, prose first, so the "About" section reads
+      // naturally before the per-room lineup.
+      if (description) {
+        next.description = candidate.description ? `${description}\n\n${candidate.description}` : description;
+      }
 
       if (!next.genreHint) {
         const genre = attributeGenreToRoom(paragraphs, candidate.artists, otherRoomsArtists);
