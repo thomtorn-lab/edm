@@ -1,0 +1,65 @@
+name: TEMP - Verify Production Deployment
+
+# One-time, deliberately temporary workflow (Electronic CPH data-quality
+# follow-up review — "verify Production deployment" after merging to
+# default). Read-only: GET requests only, no writes anywhere. Confirms the
+# live deployment responds, that the events index renders, and that the
+# approved 13-genre taxonomy still displays (a rough page-content check
+# for at least one main-genre label). Will be removed once this run is
+# confirmed.
+#
+# Reuses the same SYNC_BASE_URL / VERCEL_AUTOMATION_BYPASS_SECRET already
+# configured for the sync-*.yml workflows — no new secrets/variables.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check homepage + genre taxonomy
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set."
+            exit 1
+          fi
+
+          echo "Checking: ${SYNC_BASE_URL}/"
+          http_code=$(curl -sS --max-time 30 -o /tmp/home.html -w '%{http_code}' \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/")
+          echo "Homepage HTTP status: ${http_code}"
+          bytes=$(wc -c < /tmp/home.html)
+          echo "Homepage response size: ${bytes} bytes"
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Homepage returned HTTP ${http_code}."
+            exit 1
+          fi
+
+          echo ""
+          echo "-- genre-taxonomy label presence (approved 13 main genres) --"
+          for genre in "Techno" "Hard Techno" "House" "Trance" "Psytrance" "Drum" "Garage" "Breaks" "Hardstyle" "Disco" "Electro" "Ambient"; do
+            if grep -qi "${genre}" /tmp/home.html; then
+              echo "  found: ${genre}"
+            else
+              echo "  NOT FOUND: ${genre}"
+            fi
+          done
+
+          echo ""
+          echo "-- obvious-error-page check --"
+          if grep -qi "application error\|internal server error\|500\b.*error\|this page could not be found" /tmp/home.html; then
+            echo "::error::Homepage body contains an obvious error-page marker."
+            exit 1
+          else
+            echo "No obvious error-page markers found."
+          fi
