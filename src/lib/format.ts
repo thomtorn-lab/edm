@@ -1,4 +1,4 @@
-import { crossesMidnight, getCopenhagenParts, type NightlifeEvent } from "./datetime";
+import { getCopenhagenParts, type NightlifeEvent } from "./datetime";
 
 const WEEKDAY_ABBR = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -26,12 +26,17 @@ export function formatTimeLabel(datetime: string): string {
   return `${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
-/** e.g. "23:59" or "23:59–06:00" (with +1 if the end lands on the next calendar day). */
+/**
+ * e.g. "23:59" or "23:59–06:00". Never annotates an overnight end time (e.g.
+ * "+1") — the event's own date label already identifies the starting date,
+ * and Copenhagen nightlife-goers read an end time before the start as
+ * "the following morning" without needing it spelled out.
+ */
 export function formatTimeRangeLabel(event: NightlifeEvent): string {
   const start = formatTimeLabel(event.startDatetime);
   if (!event.endDatetime) return start;
   const end = formatTimeLabel(event.endDatetime);
-  return crossesMidnight(event) ? `${start}–${end} +1` : `${start}–${end}`;
+  return `${start}–${end}`;
 }
 
 export function formatMonthAbbr(month: number): string {

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
-import { crossesMidnight } from "@/lib/datetime";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
@@ -95,7 +94,6 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
               <>
                 {" – "}
                 {formatTimeLabel(event.endDatetime)}
-                {crossesMidnight(event) && <span className="text-text-tertiary"> (+1)</span>}
               </>
             )}
           </dd>
@@ -128,31 +126,43 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
       )}
 
       {(links.length > 0 || isFree) && (
-        <div className="mt-8">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Links</h2>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {isFree && (
-              <span className="rounded border border-accent bg-accent/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-accent-strong">
-                Free
-              </span>
-            )}
-            {links.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={
-                  "rounded border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors " +
-                  (link.primary
-                    ? "border-accent bg-accent/10 text-accent-strong hover:bg-accent/20"
-                    : "border-border-strong text-text-secondary hover:border-accent-dim hover:text-text-primary")
-                }
-              >
-                {link.label} ↗
-              </a>
-            ))}
-          </div>
+        <div className="mt-8 flex flex-wrap items-start gap-x-8 gap-y-4">
+          {links.length > 0 && (
+            <div>
+              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Links</h2>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {links.map((link) => (
+                  <a
+                    key={link.label}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={
+                      "rounded border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors " +
+                      (link.primary
+                        ? "border-accent bg-accent/10 text-accent-strong hover:bg-accent/20"
+                        : "border-border-strong text-text-secondary hover:border-accent-dim hover:text-text-primary")
+                    }
+                  >
+                    {link.label} ↗
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* FREE is an admission/status badge, not a link — kept out of the
+              Links heading's scope (and always rendered after it, so it sits
+              to the right of Official Event) even though it shares this row. */}
+          {isFree && (
+            <span
+              className={
+                "rounded border border-border-strong bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-primary" +
+                (links.length > 0 ? " sm:mt-[1.375rem]" : "")
+              }
+            >
+              Free
+            </span>
+          )}
         </div>
       )}
 

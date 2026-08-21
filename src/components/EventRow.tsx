@@ -64,7 +64,6 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
         <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 sm:gap-y-1">
           {(links.length > 0 || isFree) && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium uppercase tracking-wide">
-              {isFree && <span className="text-accent-strong">Free</span>}
               {links.map((link) => (
                 <a
                   key={link.label}
@@ -80,6 +79,10 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
                   {link.label} ↗
                 </a>
               ))}
+              {/* FREE is an admission/status badge, not a link — rendered
+                  after the links so it always sits to the right of Official
+                  Event, in white to carry comparable visual weight. */}
+              {isFree && <span className="font-semibold text-text-primary">Free</span>}
             </div>
           )}
           <AddToCalendar event={calendarInput} filename={`${event.slug}.ics`} />

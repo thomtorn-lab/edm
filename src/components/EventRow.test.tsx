@@ -81,4 +81,29 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     expect(screen.getByText(/Tickets/)).toBeTruthy();
     expect(screen.queryByText("Free")).toBeNull();
   });
+
+  it("places FREE to the right of OFFICIAL EVENT — never before it (frontend polish, Round 7)", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          priceFrom: 0,
+          ticketUrl: null,
+          residentAdvisorUrl: null,
+          officialEventUrl: "https://venue.example.com/event",
+        })}
+      />,
+    );
+    const officialEvent = screen.getByText(/Official event/i);
+    const free = screen.getByText("Free");
+    // DOCUMENT_POSITION_FOLLOWING (4) means `free` comes after `officialEvent`.
+    expect(officialEvent.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("renders FREE in white with comparable weight to OFFICIAL EVENT, not a dim secondary note", () => {
+    render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null })} />);
+    const free = screen.getByText("Free");
+    expect(free.className).toContain("text-text-primary");
+    expect(free.className).toContain("font-semibold");
+    expect(free.className).not.toContain("text-accent-strong");
+  });
 });
