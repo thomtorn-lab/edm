@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  assessPublishedEventReclassification,
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
+  decidePublishedEventSyncAction,
   decideSyncLeaseAcquisition,
   findPendingRowToResolve,
   findSyncMatch,
@@ -469,21 +469,62 @@ describe("decideSyncLeaseAcquisition", () => {
   });
 });
 
-describe("assessPublishedEventReclassification (follow-up review — existing-published-event safety, question 6)", () => {
-  it("flags a currently-published event whose fresh classification is now 'hold' (a known false positive that would otherwise stay live forever — sync never re-runs the gate against an already-linked event)", () => {
-    expect(assessPublishedEventReclassification(true, "hold")).toBe("flag_for_review");
+describe("decidePublishedEventSyncAction (data-quality Workstream A follow-up — existing published events that now resolve to HOLD)", () => {
+  it("published + AUTO -> remains published (no_change)", () => {
+    expect(
+      decidePublishedEventSyncAction({ published: true, manualOverride: false }, { decision: "auto_publish", holdReason: null }),
+    ).toBe("no_change");
   });
 
-  it("takes no action for a currently-published event whose fresh classification is 'review_queue' — genuinely ambiguous/thin evidence is not grounds to touch something already live (do not broadly unpublish/flag uncertain events)", () => {
-    expect(assessPublishedEventReclassification(true, "review_queue")).toBe("no_action");
+  it("published + REVIEW -> remains published (no_change) — ambiguity alone must never automatically remove an already-live event", () => {
+    expect(
+      decidePublishedEventSyncAction({ published: true, manualOverride: false }, { decision: "review_queue", holdReason: null }),
+    ).toBe("no_change");
   });
 
-  it("takes no action for a currently-published event whose fresh classification is still 'auto_publish'", () => {
-    expect(assessPublishedEventReclassification(true, "auto_publish")).toBe("no_action");
+  it("published + HOLD (negative_relevance) -> unpublished — the one HOLD reason that represents genuine, complete-data evidence the event fails inclusion", () => {
+    expect(
+      decidePublishedEventSyncAction(
+        { published: true, manualOverride: false },
+        { decision: "hold", holdReason: "negative_relevance" },
+      ),
+    ).toBe("unpublish");
   });
 
-  it("takes no action for an event that isn't published in the first place, regardless of the fresh decision — nothing to protect", () => {
-    expect(assessPublishedEventReclassification(false, "hold")).toBe("no_action");
-    expect(assessPublishedEventReclassification(false, "review_queue")).toBe("no_action");
+  it("published + HOLD + manualOverride -> remains published — manual override always wins over an automated sync", () => {
+    expect(
+      decidePublishedEventSyncAction(
+        { published: true, manualOverride: true },
+        { decision: "hold", holdReason: "negative_relevance" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("already-unpublished + HOLD -> unchanged (idempotent no-op, nothing to protect)", () => {
+    expect(
+      decidePublishedEventSyncAction(
+        { published: false, manualOverride: false },
+        { decision: "hold", holdReason: "negative_relevance" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("source failure / incomplete candidate -> no unpublish (HOLD via 'incomplete_data', e.g. a per-event detail-page fetch that failed just this cycle, must never be read as evidence the event fails inclusion)", () => {
+    expect(
+      decidePublishedEventSyncAction({ published: true, manualOverride: false }, { decision: "hold", holdReason: "incomplete_data" }),
+    ).toBe("no_change");
+  });
+
+  it("HOLD via 'low_confidence' also never unpublishes — a confidence gap is not a relevance judgment", () => {
+    expect(
+      decidePublishedEventSyncAction({ published: true, manualOverride: false }, { decision: "hold", holdReason: "low_confidence" }),
+    ).toBe("no_change");
+  });
+
+  it("is idempotent: running the same fresh 'hold'/negative_relevance decision against an already-unpublished event (e.g. a second sync after the first one already unpublished it) never re-triggers anything new", () => {
+    const current = { published: false, manualOverride: false };
+    const fresh = { decision: "hold" as const, holdReason: "negative_relevance" as const };
+    expect(decidePublishedEventSyncAction(current, fresh)).toBe("no_change");
+    expect(decidePublishedEventSyncAction(current, fresh)).toBe("no_change");
   });
 });

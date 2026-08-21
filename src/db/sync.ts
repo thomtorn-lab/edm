@@ -5,6 +5,7 @@ import { discoveryQueue, sourceEventLinks, syncLocks } from "./schema";
 import {
   applyDiscoveryClassificationUpdate,
   applySourceSyncPatch,
+  applySyncHoldUnpublish,
   createEvent,
   insertDiscoveryItem,
   recordSourceLink,
@@ -14,10 +15,12 @@ import {
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
+import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
+  decidePublishedEventSyncAction,
   findPendingRowToResolve,
   findSyncMatch,
   summarizeWriteErrors,
@@ -43,6 +46,10 @@ export interface SyncSummary {
   created: number;
   updated: number;
   queuedForReview: number;
+  /** Already-published events automatically unpublished this run because
+   *  their fresh classification is now "hold" on genuine, complete-data
+   *  negative-relevance evidence — see decidePublishedEventSyncAction. */
+  unpublished: number;
   errors: string[];
 }
 
@@ -114,7 +121,7 @@ export async function runSourceSync(
   const lockToken = await acquireSyncLock(sourceId);
   if (!lockToken) {
     console.error(`[sync] skipped: another sync for "${sourceId}" is already running`);
-    return { sourceId, outcome: "skipped_concurrent", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, errors: [] };
+    return { sourceId, outcome: "skipped_concurrent", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, unpublished: 0, errors: [] };
   }
   try {
     return await runSourceSyncLocked(sourceId, sourceDisplayName, adapter);
@@ -135,7 +142,7 @@ async function runSourceSyncLocked(
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[sync] "${sourceId}" fetch failed: ${message}`);
     await touchSourceSyncStats(sourceId, { success: false, error: message });
-    return { sourceId, outcome: "failed", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, errors: [message] };
+    return { sourceId, outcome: "failed", candidatesFound: 0, created: 0, updated: 0, queuedForReview: 0, unpublished: 0, errors: [message] };
   }
 
   if (candidates.length === 0) {
@@ -148,6 +155,7 @@ async function runSourceSyncLocked(
       created: 0,
       updated: 0,
       queuedForReview: 0,
+      unpublished: 0,
       errors: [ZERO_EVENTS_MESSAGE],
     };
   }
@@ -177,24 +185,41 @@ async function runSourceSyncLocked(
   let created = 0;
   let updated = 0;
   let queuedForReview = 0;
+  let unpublished = 0;
   const errors: string[] = [];
 
   for (const raw of candidates) {
     try {
       let result = runIngestionPipeline(raw, { venues, existingEvents: existingForDedup });
 
-      // Genre enrichment (Discogs, MVP): only runs when the deterministic
-      // classifier left genre unresolved, and only ever adds medium
-      // confidence at most — it can move a candidate from hold into the
-      // review queue with a suggested genre, never straight to
-      // auto_publish. A Discogs failure/timeout/rate-limit here is
-      // swallowed by enrichEventGenre's own per-artist try/catch and simply
-      // leaves `result` exactly as the deterministic classifier produced it
-      // — today's existing unresolved/review behavior, unchanged.
-      if (result.genre === null) {
+      // Genre enrichment (Discogs; follow-up review — weak-evidence
+      // enrichment). Runs when EITHER: (a) the deterministic classifier
+      // left genre fully unresolved, or (b) genre only resolved to the
+      // generic category floor (electronic-other) and this run's
+      // event-specific relevance is "weak" — a broad venue/platform tag
+      // with no corroboration. Never runs when relevance is already
+      // "strong"/"none" or genre is already a specific subgenre — nothing
+      // for Discogs to usefully corroborate there. See
+      // pipeline.ts::applyEnrichedGenre for exactly how each case is
+      // applied (conservatively — Discogs can only strengthen a weak
+      // verdict toward auto-publish, never weaken one, and a failed/
+      // not-found/ambiguous lookup contributes nothing rather than being
+      // used against the event — see genreEnrichment.ts). A Discogs
+      // failure/timeout/rate-limit here is swallowed by enrichEventGenre's
+      // own per-artist try/catch and simply leaves `result` exactly as the
+      // deterministic classifier produced it.
+      const relevanceText = `${raw.title} ${raw.description ?? ""}`;
+      const needsEnrichment = result.genre === null || (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak");
+      if (needsEnrichment) {
         const enrichment = await enrichEventGenre(raw.artists);
         if (enrichment.genre && enrichment.genreConfidence) {
-          result = applyEnrichedGenre(result, enrichment.genre, enrichment.genreConfidence);
+          result = applyEnrichedGenre(
+            result,
+            enrichment.genre,
+            enrichment.genreConfidence,
+            relevanceText,
+            raw.residentAdvisorUrl != null,
+          );
         }
       }
 
@@ -234,6 +259,29 @@ async function runSourceSyncLocked(
         if (Object.keys(patch).length > 0) {
           await applySourceSyncPatch(match.eventId, sourceId, patch);
         }
+
+        // Existing-published-event safety (data-quality Workstream A
+        // follow-up — existing published events that now resolve to HOLD):
+        // this run's fresh classification is the only thing computed from
+        // this exact sync's actual fetch of this source, for this exact
+        // candidate, after parsing/classification completed successfully
+        // (a fetch failure or zero-events anomaly already returned above,
+        // before this loop) — so decidePublishedEventSyncAction's
+        // preconditions ("fresh candidate from its registered source",
+        // "after successful classification") hold structurally here.
+        const syncAction = decidePublishedEventSyncAction(
+          { published: existing.published, manualOverride: existing.manualOverride },
+          { decision: result.decision, holdReason: result.holdReason },
+        );
+        if (syncAction === "unpublish") {
+          await applySyncHoldUnpublish(
+            match.eventId,
+            sourceId,
+            "Automated sync: fresh classification is HOLD on negative-relevance evidence (data-quality Workstream A — existing-published-event safety net). Row preserved, not deleted; provenance untouched.",
+          );
+          unpublished++;
+        }
+
         if (raw.officialEventUrl) {
           // A high-confidence-duplicate/moved-event match (findSyncMatch's
           // "high-confidence-duplicate" kind — including the moved-event
@@ -380,9 +428,9 @@ async function runSourceSyncLocked(
       eventsUpdated: updated,
       error: writeSummary.lastErrorMessage,
     });
-    return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, errors };
+    return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
   }
 
   await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated });
-  return { sourceId, outcome: "ok", candidatesFound: candidates.length, created, updated, queuedForReview, errors };
+  return { sourceId, outcome: "ok", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
 }

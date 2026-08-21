@@ -250,6 +250,14 @@ export interface RelevanceEvidenceInput {
    *  token match, enough on its own to outweigh a single weak positive
    *  signal. Ignored when hasNonElectronicGenreSignal is false. */
   hasExplicitNonElectronicIdentityAssertion: boolean;
+  /** An independent third-party source (today: Discogs artist/release data
+   *  — see pipeline.ts::applyEnrichedGenre) corroborates that the lineup is
+   *  genuinely electronic, WITHOUT itself naming a specific enough subgenre
+   *  to already count via `genre` (follow-up review, weak-evidence
+   *  enrichment). Conservative by construction at the call site: only ever
+   *  set true on a conservative, unanimous-agreement, never-guessed lookup
+   *  — see genreEnrichment.ts's header comment. */
+  hasCorroboratingArtistGenreEvidence: boolean;
 }
 
 /**
@@ -282,7 +290,8 @@ export function assessRelevance(input: RelevanceEvidenceInput): RelevanceLevel {
   const strongSignalCount =
     (hasSpecificGenre ? 1 : 0) +
     (input.hasExplicitElectronicAssertion ? 1 : 0) +
-    (input.hasTrustedElectronicTicketing ? 1 : 0);
+    (input.hasTrustedElectronicTicketing ? 1 : 0) +
+    (input.hasCorroboratingArtistGenreEvidence ? 1 : 0);
 
   if (input.hasNonElectronicGenreSignal) {
     if (strongSignalCount === 0) return "none";

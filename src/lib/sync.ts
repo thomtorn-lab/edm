@@ -4,6 +4,7 @@ import type { GenreSlug } from "./taxonomy";
 import { getCopenhagenParts } from "./datetime";
 import type { DuplicateConfidence } from "./dedup";
 import type { PublishDecision } from "./classification";
+import type { HoldReason } from "./adapters/pipeline";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -306,43 +307,53 @@ export function decideSyncLeaseAcquisition(existing: SyncLeaseRow | null, now: D
   return existing === null || existing.expiresAt.getTime() <= now.getTime();
 }
 
-export type PublishedEventReclassificationAction = "flag_for_review" | "no_action";
+export type PublishedEventSyncAction = "no_change" | "unpublish";
 
 /**
- * Existing-published-event safety (follow-up review, data-quality
- * Workstream A — question 6). Today, `src/db/sync.ts::runSourceSyncLocked`
- * NEVER re-runs auto_publish/review_queue/hold against an already-linked
- * event on a later sync — the `match` branch only refreshes metadata
- * (title/description/artists/venue/urls/genre/dates via buildSyncPatch)
- * and never touches `published`. A false positive that was auto-published
- * under an earlier, looser ruleset (or a genuinely wrong one-off
- * classification) therefore stays live indefinitely, however the evidence
- * pipeline improves later — there is currently no mechanism that would
- * ever catch it again.
+ * Existing-published-event safety (data-quality Workstream A follow-up —
+ * "existing published events that now resolve to HOLD"). Before this,
+ * `src/db/sync.ts::runSourceSyncLocked` never re-ran auto_publish/
+ * review_queue/hold against an already-linked event on a later sync — the
+ * `match` branch only refreshed metadata (title/description/artists/venue/
+ * urls/genre/dates via buildSyncPatch) and never touched `published`. A
+ * false positive that was auto-published under an earlier, looser ruleset
+ * (or a genuinely wrong one-off classification) therefore stayed live
+ * indefinitely, however the evidence pipeline improved later — nothing
+ * would ever catch it again.
  *
- * This is the minimal general rule to close that gap without overreaching:
- * flag ONLY when an event is CURRENTLY published AND this sync's fresh
- * classification is "hold" — the strongest, most confident negative
- * outcome (real, dominant contradicting evidence with nothing to offset
- * it), never "review_queue" (a genuinely ambiguous/thin-evidence case is
- * not grounds to touch something already live) and never for an event
- * that isn't published in the first place (nothing to protect). It
- * deliberately never sets `published` itself — an automatic unpublish on a
- * classifier's say-so is exactly the "broadly unpublish uncertain events"
- * outcome ruled out — it only decides WHETHER to surface the event for a
- * human to look at.
+ * The rule (uses only the existing `published`/`manualOverride` columns —
+ * no new schema or admin-UI system):
+ * - AUTO or REVIEW -> no_change. Ambiguity alone (REVIEW) must never
+ *   automatically remove an already-live event.
+ * - HOLD -> unpublish, but ONLY when `fresh.holdReason ===
+ *   "negative_relevance"` — the one HOLD reason that represents genuine,
+ *   complete-data evidence that the event fails inclusion (see
+ *   pipeline.ts::HoldReason). "incomplete_data" (missing/failed source
+ *   data this cycle, e.g. a per-event detail-page fetch that failed just
+ *   this once) and "low_confidence" never trigger this — a data gap must
+ *   never be read as proof of a false positive.
+ * - manualOverride always wins: an admin's own decision about this event
+ *   is never silently reversed by an automated sync.
+ * - Already-unpublished stays unpublished either way (idempotent no-op —
+ *   nothing to protect, and running this again never re-triggers a write).
  *
- * NOT YET WIRED IN: persisting/surfacing "flag_for_review" needs either a
- * new events column (a Production schema migration) or a repurposing of
- * discoveryQueue's existing suspectedDuplicateOfEventId (a change to what
- * that field means, with matching admin-UI changes) — both are product
- * decisions, not routine fixes, so this stops at the decision function
- * plus regression tests until that's explicitly approved.
+ * Callers are responsible for the "only a fresh candidate from its own
+ * registered source" and "only after successful parsing/classification"
+ * preconditions structurally: this is only ever invoked from inside a
+ * source's own per-candidate sync loop (`src/db/sync.ts`), which already
+ * returns before this point on a fetch failure or a zero-events anomaly,
+ * and only for candidates this source's own adapter actually returned this
+ * run — never called out of band, never for a different source's data.
+ * Never deletes the row, never touches provenance (source_event_links),
+ * never touches any other record — see writes.ts::applySyncHoldUnpublish,
+ * the one write this decision authorizes.
  */
-export function assessPublishedEventReclassification(
-  currentlyPublished: boolean,
-  freshDecision: PublishDecision,
-): PublishedEventReclassificationAction {
-  if (currentlyPublished && freshDecision === "hold") return "flag_for_review";
-  return "no_action";
+export function decidePublishedEventSyncAction(
+  current: { published: boolean; manualOverride: boolean },
+  fresh: { decision: PublishDecision; holdReason: HoldReason },
+): PublishedEventSyncAction {
+  if (!current.published) return "no_change";
+  if (current.manualOverride) return "no_change";
+  if (fresh.decision === "hold" && fresh.holdReason === "negative_relevance") return "unpublish";
+  return "no_change";
 }

@@ -252,6 +252,7 @@ describe("runSourceSync (lease acquire/release wrapping the actual sync)", () =>
       created: 0,
       updated: 0,
       queuedForReview: 0,
+      unpublished: 0,
       errors: [],
     });
   });

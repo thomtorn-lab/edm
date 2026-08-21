@@ -103,6 +103,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("strong");
   });
@@ -115,6 +116,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("weak");
   });
@@ -127,6 +129,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: true,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("none");
   });
@@ -139,6 +142,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: true,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("weak");
   });
@@ -151,6 +155,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: true,
         hasExplicitNonElectronicIdentityAssertion: true,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("none");
   });
@@ -163,6 +168,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: true,
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("strong");
   });
@@ -175,6 +181,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("strong");
   });
@@ -187,8 +194,35 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasTrustedElectronicTicketing: false,
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
       }),
     ).toBe("none");
+  });
+
+  it("is 'strong' from independent Discogs artist-genre corroboration alone, even with only the generic category floor genre (follow-up review — weak-evidence enrichment)", () => {
+    expect(
+      assessRelevance({
+        genre: "electronic-other",
+        hasExplicitElectronicAssertion: false,
+        hasTrustedElectronicTicketing: false,
+        hasNonElectronicGenreSignal: false,
+        hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: true,
+      }),
+    ).toBe("strong");
+  });
+
+  it("stays 'weak' when Discogs corroboration is absent — absence of Discogs data must never itself become negative evidence, it just leaves the category floor as-is", () => {
+    expect(
+      assessRelevance({
+        genre: "electronic-other",
+        hasExplicitElectronicAssertion: false,
+        hasTrustedElectronicTicketing: false,
+        hasNonElectronicGenreSignal: false,
+        hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
+      }),
+    ).toBe("weak");
   });
 });
 

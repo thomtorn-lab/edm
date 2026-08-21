@@ -293,7 +293,7 @@ describe("applyEnrichedGenre", () => {
     const held = unresolvedResult();
     expect(held.decision).toBe("hold");
 
-    const enriched = applyEnrichedGenre(held, "house", "medium");
+    const enriched = applyEnrichedGenre(held, "house", "medium", "", false);
     expect(enriched.genre).toBe("house");
     expect(enriched.genreConfidence).toBe("medium");
     expect(enriched.decision).toBe("review_queue");
@@ -301,7 +301,7 @@ describe("applyEnrichedGenre", () => {
 
   it("throws rather than silently accept 'high' confidence from an enrichment source", () => {
     const held = unresolvedResult();
-    expect(() => applyEnrichedGenre(held, "house", "high")).toThrow();
+    expect(() => applyEnrichedGenre(held, "house", "high", "", false)).toThrow();
   });
 
   it("never overrides genre evidence the deterministic classifier already found", () => {
@@ -309,14 +309,96 @@ describe("applyEnrichedGenre", () => {
     // text refinement (the fixture's own description says "melodic techno").
     const resolved = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] });
     expect(resolved.genre).toBe("melodic-techno");
-    const result = applyEnrichedGenre(resolved, "house", "medium");
+    const result = applyEnrichedGenre(resolved, "house", "medium", "", false);
     expect(result).toBe(resolved); // untouched — same object, not just same values
   });
 
   it("still holds if enrichment resolves nothing new (a low-confidence caller should never call this, but stay safe if it did)", () => {
     const held = unresolvedResult();
-    const enriched = applyEnrichedGenre(held, "house", "low");
+    const enriched = applyEnrichedGenre(held, "house", "low", "", false);
     // low confidence still doesn't clear the gate — same as the deterministic path would.
     expect(enriched.decision).toBe("hold");
+  });
+});
+
+describe("applyEnrichedGenre — CASE B: weak-evidence corroboration (follow-up review, weak-evidence enrichment)", () => {
+  function weakFloorResult() {
+    // A broad-category-only event: genre resolves to the generic floor at
+    // high confidence (mirrors Pumpehuset's own "Elektronisk" filter), but
+    // no event-specific text corroborates relevance — same shape as the
+    // real Byhaven free-entry review cases.
+    return runIngestionPipeline(
+      raw({
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+        title: "Byhaven: Some Free Night",
+        description: "Free entry. DJ sets all night.",
+        artists: ["DJ One", "DJ Two"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+  }
+
+  it("is a genuine setup precondition: category floor genre, 'weak' relevance, review_queue", () => {
+    const weak = weakFloorResult();
+    expect(weak.genre).toBe("electronic-other");
+    expect(weak.relevance).toBe("weak");
+    expect(weak.decision).toBe("review_queue");
+  });
+
+  it("upgrades weak to strong (auto_publish) when Discogs resolves a SPECIFIC subgenre — becomes the event's own genre, same as a first-party keyword match", () => {
+    const weak = weakFloorResult();
+    const enriched = applyEnrichedGenre(weak, "house", "medium", "Free entry. DJ sets all night.", false);
+    expect(enriched.genre).toBe("house");
+    expect(enriched.genreConfidence).toBe("high"); // stays tied to the event's own already-high-confidence floor, not Discogs's own (capped) confidence
+    expect(enriched.relevance).toBe("strong");
+    expect(enriched.decision).toBe("auto_publish");
+  });
+
+  it("upgrades weak to strong when Discogs only confirms generic 'electronic' (no specific style) — genre stays electronic-other, but the independent corroboration itself is the strong signal", () => {
+    const weak = weakFloorResult();
+    const enriched = applyEnrichedGenre(weak, "electronic-other", "medium", "Free entry. DJ sets all night.", false);
+    expect(enriched.genre).toBe("electronic-other");
+    expect(enriched.genreConfidence).toBe("high"); // unchanged — Discogs added a relevance signal, not new genre precision
+    expect(enriched.relevance).toBe("strong");
+    expect(enriched.decision).toBe("auto_publish");
+  });
+
+  it("leaves a weak verdict exactly as weak when enrichment resolves nothing (never called at all when the Discogs lookup itself failed/found nothing — absence of Discogs data must never become negative evidence)", () => {
+    const weak = weakFloorResult();
+    // Mirrors the real call site: enrichEventGenre returning no genre means
+    // sync.ts never calls applyEnrichedGenre at all — the record is simply
+    // untouched, still "weak"/review_queue.
+    expect(weak.relevance).toBe("weak");
+    expect(weak.decision).toBe("review_queue");
+  });
+
+  it("never turns weak into 'none'/hold — enrichment can only strengthen, never weaken", () => {
+    const weak = weakFloorResult();
+    const enriched = applyEnrichedGenre(weak, "house", "medium", "Free entry. DJ sets all night.", false);
+    expect(enriched.decision).not.toBe("hold");
+  });
+
+  it("does not touch an event whose relevance is already strong (nothing to corroborate)", () => {
+    const strong = runIngestionPipeline(
+      raw({
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+        title: "WITCHZ",
+        description: "sin dragende, elektroniske lyd",
+        artists: ["WITCHZ"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(strong.decision).toBe("auto_publish");
+    const result = applyEnrichedGenre(strong, "house", "medium", "sin dragende, elektroniske lyd", false);
+    expect(result).toBe(strong); // untouched — same object
+  });
+
+  it("does not touch an already-genuinely-specific genre (nothing to corroborate)", () => {
+    const specific = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] }); // melodic-techno, per the fixture
+    expect(specific.genre).toBe("melodic-techno");
+    const result = applyEnrichedGenre(specific, "house", "medium", "", false);
+    expect(result).toBe(specific); // untouched — same object
   });
 });

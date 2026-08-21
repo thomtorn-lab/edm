@@ -69,6 +69,27 @@ export async function setEventPublished(eventId: string, published: boolean) {
 }
 
 /**
+ * Automated-sync unpublish for an event whose fresh classification is now
+ * "hold" on genuine, complete-data negative-relevance evidence (data-quality
+ * Workstream A follow-up — existing published events that now resolve to
+ * HOLD; see src/lib/sync.ts::decidePublishedEventSyncAction for the decision
+ * this authorizes). Deliberately NOT setEventPublished/applyAdminEventEdit:
+ * this is a SYNC-driven action, not an admin edit —
+ * it must never set manualOverride (that would silently block every future
+ * field-level sync patch for this event, via applySourceSyncPatch's own
+ * override-stripping) and must never be misattributed as "admin" in the
+ * audit trail. Only ever touches `published` on this one row: never deletes
+ * it, never touches source_event_links or any other record.
+ */
+export async function applySyncHoldUnpublish(eventId: string, sourceId: string, reason: string) {
+  await db
+    .update(events)
+    .set({ published: false, updatedAt: new Date(), lastChanged: new Date(), lastSourceCheck: new Date() })
+    .where(eq(events.id, eventId));
+  await writeChangeLog(eventId, sourceId, "auto_unpublish", ["published"], reason);
+}
+
+/**
  * Applies an automated sync's proposed patch, but only to fields the admin
  * hasn't manually corrected — the enforcement point for manual-override
  * protection during real ingestion (task 5/6).

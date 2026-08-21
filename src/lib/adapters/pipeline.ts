@@ -10,6 +10,8 @@ import {
   hasExplicitElectronicAssertion,
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
+  GENERIC_ELECTRONIC_GENRE,
+  type RelevanceLevel,
 } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
 import type { RawCandidateEvent } from "./types";
@@ -31,58 +33,93 @@ export interface PipelineOptions {
   existingEvents: ExistingEventForDedup[];
 }
 
+/**
+ * WHY a "hold" was reached (data-quality Workstream A follow-up —
+ * existing-published-event safety). Only "negative_relevance" represents a
+ * genuine evidence-based rejection (full data, high genre confidence, but
+ * the event's own text/corroboration says this isn't really electronic) —
+ * "incomplete_data" and "low_confidence" mean the pipeline simply didn't
+ * have enough to go on this run (e.g. a per-event detail-page fetch failed
+ * this cycle), which must never be treated as proof the event fails
+ * inclusion. null when the decision isn't "hold" at all.
+ */
+export type HoldReason = "incomplete_data" | "low_confidence" | "negative_relevance" | null;
+
 export interface PipelineResult {
   decision: PublishDecision;
+  holdReason: HoldReason;
   missingFields: string[];
   resolvedVenueId: string | null;
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
+  /** The multi-signal relevance verdict (see relevance.ts::assessRelevance)
+   *  computed against whatever evidence was available this run — exposed so
+   *  callers (sync.ts's weak-evidence enrichment trigger, the
+   *  existing-published-event safety net) can act on it without
+   *  reconstructing it from `decision` alone. */
+  relevance: RelevanceLevel;
   duplicateOfEventId: string | null;
   duplicateConfidence: "high" | "medium" | "low" | "none";
 }
 
 /** The CONFIDENCE / PUBLISH-REVIEW GATE step, factored out so it can be re-run
- *  by applyEnrichedGenre below without duplicating the duplicate-downgrade rule. */
+ *  by applyEnrichedGenre below without duplicating the duplicate-downgrade rule.
+ *  Takes an already-computed `relevance` verdict rather than recomputing it,
+ *  so callers that only have a genre/confidence change to apply (no new
+ *  relevance-text evidence) can pass the relevance they already have. */
 function computeDecision(
   missingFields: string[],
   resolvedVenueId: string | null,
   genre: GenreSlug | null,
   genreConfidence: ConfidenceLevel,
   duplicateConfidence: "high" | "medium" | "low" | "none",
-  relevanceText: string,
-  normalizedArtists: string[],
-  hasTrustedElectronicTicketing: boolean,
-): PublishDecision {
+  relevance: RelevanceLevel,
+): { decision: PublishDecision; holdReason: HoldReason } {
+  const meetsMinimumFields =
+    missingFields.every((f) => f !== "title") &&
+    missingFields.every((f) => f !== "date") &&
+    resolvedVenueId != null &&
+    missingFields.every((f) => f !== "source url");
+  const hasCredibleElectronicRelevance = genre != null;
+
   let decision = evaluateQualityGate({
     hasTitle: missingFields.every((f) => f !== "title"),
     hasDate: missingFields.every((f) => f !== "date"),
     hasVenue: resolvedVenueId != null,
     hasSourceUrl: missingFields.every((f) => f !== "source url"),
-    hasCredibleElectronicRelevance: genre != null,
+    hasCredibleElectronicRelevance,
     genreConfidence,
   });
+  let holdReason: HoldReason = null;
 
-  // Source-aware relevance evidence (data-quality Workstream A): a broad
-  // venue/platform category tag or a generic mention is real evidence the
-  // SOURCE considers the night electronic, but it is never on its own
-  // conclusive evidence that electronic music is CENTRAL to THIS event.
-  // Scores independent signals (specific genre, an explicit first-party
-  // "this artist's sound is electronic" assertion, trusted RA/ticket
-  // corroboration) rather than a single blunt genre-floor cap — see
-  // relevance.ts's header comment for the full design and the real evidence
-  // (Pumpehuset event pages) it was tuned against. Applied only when the
-  // gate would otherwise auto-publish.
-  if (decision === "auto_publish") {
-    const relevance = assessRelevance({
-      genre,
-      hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
-      hasTrustedElectronicTicketing,
-      hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, normalizedArtists),
-      hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
-    });
-    if (relevance === "weak") decision = "review_queue";
-    else if (relevance === "none") decision = "hold";
+  if (!meetsMinimumFields || !hasCredibleElectronicRelevance) {
+    // The gate returned "hold" purely because required fields or any genre
+    // at all are missing this run — a data/parser gap, never itself
+    // evidence that the event fails inclusion.
+    holdReason = "incomplete_data";
+  } else if (decision === "auto_publish") {
+    // Source-aware relevance evidence (data-quality Workstream A): a broad
+    // venue/platform category tag or a generic mention is real evidence the
+    // SOURCE considers the night electronic, but it is never on its own
+    // conclusive evidence that electronic music is CENTRAL to THIS event.
+    // Scores independent signals (specific genre, an explicit first-party
+    // "this artist's sound is electronic" assertion, trusted RA/ticket
+    // corroboration, independent artist-genre corroboration) rather than a
+    // single blunt genre-floor cap — see relevance.ts's header comment for
+    // the full design. Applied only when the gate would otherwise
+    // auto-publish (full data, high genre confidence already established).
+    if (relevance === "weak") {
+      decision = "review_queue";
+    } else if (relevance === "none") {
+      decision = "hold";
+      holdReason = "negative_relevance";
+    }
+  } else if (decision === "hold") {
+    // meetsMinimumFields && hasCredibleElectronicRelevance both true, so
+    // this is genreConfidence being neither "high" nor "medium" — a
+    // confidence gap, not a relevance judgment.
+    holdReason = "low_confidence";
   }
 
   // A likely duplicate always needs a human merge decision before publishing,
@@ -93,7 +130,7 @@ function computeDecision(
   } else if (duplicateAction === "review_queue" && decision === "auto_publish") {
     decision = "review_queue";
   }
-  return decision;
+  return { decision, holdReason };
 }
 
 export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOptions): PipelineResult {
@@ -186,24 +223,32 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
 
   // CONFIDENCE / PUBLISH-REVIEW GATE
   const hasTrustedElectronicTicketing = raw.residentAdvisorUrl != null;
-  const decision = computeDecision(
+  const relevance = assessRelevance({
+    genre,
+    hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
+    hasTrustedElectronicTicketing,
+    hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, normalizedArtists),
+    hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
+    hasCorroboratingArtistGenreEvidence: false, // no enrichment has run yet at this stage — see applyEnrichedGenre
+  });
+  const { decision, holdReason } = computeDecision(
     missingFields,
     resolvedVenue?.id ?? null,
     genre,
     genreConfidence,
     duplicateConfidence,
-    relevanceText,
-    normalizedArtists,
-    hasTrustedElectronicTicketing,
+    relevance,
   );
 
   return {
     decision,
+    holdReason,
     missingFields,
     resolvedVenueId: resolvedVenue?.id ?? null,
     normalizedArtists,
     genre,
     genreConfidence,
+    relevance,
     duplicateOfEventId,
     duplicateConfidence,
   };
@@ -211,29 +256,101 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
 
 /**
  * Applies genre enrichment evidence (e.g. Discogs — src/db/enrichment.ts) to
- * a PipelineResult whose deterministic classification left genre
- * unresolved, and recomputes the decision the same way the main pipeline
- * would have. Never overrides evidence the deterministic classifier already
- * found — enrichment only fills a genuine gap, it never second-guesses an
- * existing answer. Callers are responsible for never passing "high"
- * genreConfidence here (enrichment evidence is always at most medium, per
- * policy); this is enforced as an assertion, not silently downgraded, so a
- * violation is loud rather than silently miscategorized.
+ * a PipelineResult, in one of two conservative modes (follow-up review —
+ * weak-evidence enrichment). Callers are responsible for never passing
+ * "high" genreConfidence here (enrichment evidence is always at most
+ * medium, per policy); this is enforced as an assertion, not silently
+ * downgraded, so a violation is loud rather than silently miscategorized.
+ *
+ * CASE A — genre was fully unresolved (`result.genre === null`): enrichment
+ * supplies the only genre evidence available. Unchanged from before this
+ * follow-up review: genreConfidence is capped below "high", so the quality
+ * gate can never return "auto_publish" here — at most "review_queue" — so
+ * the relevance check inside computeDecision is structurally unreachable;
+ * "none" is passed as a placeholder relevance value, never consulted.
+ *
+ * CASE B — genre already resolved to the generic category floor
+ * (electronic-other) and this run's relevance verdict was "weak" (a broad
+ * venue/platform tag with no event-specific corroboration): Discogs
+ * enrichment is used to CORROBORATE relevance rather than replace anything.
+ * enrichEventGenre (src/lib/enrichment/genreEnrichment.ts) is already
+ * conservative by construction — requires unanimous per-artist agreement,
+ * withholds a genre on an ambiguous/conflicting lineup, and a failed/
+ * not-found lookup contributes nothing rather than counting against the
+ * event — so this call site only needs to decide HOW to apply a genuine
+ * result:
+ *   - a SPECIFIC subgenre (e.g. "house") becomes the event's own genre,
+ *     confidence unchanged from the event's own already-established floor
+ *     (Discogs is corroborating relevance, not being asked to establish
+ *     genre confidence on its own the way CASE A needs it to) — the exact
+ *     same evidence shape as a first-party specific-genre keyword match, so
+ *     it naturally counts as a strong signal on recompute.
+ *   - a generic-but-CONFIRMED-electronic result (Discogs' own "Electronic"
+ *     genre tag matched, but no specific style) leaves `genre` as
+ *     electronic-other and instead sets
+ *     hasCorroboratingArtistGenreEvidence, an independent strong signal in
+ *     its own right — a second, different source confirming the lineup is
+ *     genuinely electronic, distinct from the venue's own broad tag.
+ * Either way, this can only ever strengthen a weak verdict toward "strong"
+ * (auto-publish) or leave it exactly as weak (review) — it can never turn a
+ * weak verdict into "none"/hold, and a candidate already carrying a real
+ * negative signal is unaffected (see assessRelevance).
+ *
+ * Any other combination (a genre already resolved at high confidence with
+ * adequate relevance, or genre resolved to a specific subgenre already) is
+ * returned unchanged — enrichment never second-guesses an existing answer.
  */
 export function applyEnrichedGenre(
   result: PipelineResult,
   genre: GenreSlug,
   genreConfidence: ConfidenceLevel,
+  relevanceText: string,
+  hasTrustedElectronicTicketing: boolean,
 ): PipelineResult {
-  if (result.genre != null) return result;
   if (genreConfidence === "high") {
     throw new Error("applyEnrichedGenre: enrichment evidence must never be 'high' confidence.");
   }
-  // Enrichment evidence is capped below "high" (enforced above), so the
-  // quality gate can never return "auto_publish" here — the relevance-based
-  // downgrades in computeDecision only ever act on an "auto_publish"
-  // decision, so no relevance text/artists/ticketing evidence is needed at
-  // this call site.
-  const decision = computeDecision(result.missingFields, result.resolvedVenueId, genre, genreConfidence, result.duplicateConfidence, "", [], false);
-  return { ...result, genre, genreConfidence, decision };
+
+  if (result.genre === null) {
+    const { decision, holdReason } = computeDecision(
+      result.missingFields,
+      result.resolvedVenueId,
+      genre,
+      genreConfidence,
+      result.duplicateConfidence,
+      "none",
+    );
+    return { ...result, genre, genreConfidence, decision, holdReason };
+  }
+
+  if (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak") {
+    const isSpecificSubgenre = genre !== GENERIC_ELECTRONIC_GENRE;
+    const finalGenre = isSpecificSubgenre ? genre : result.genre;
+    // Confidence stays tied to the event's own already-established floor
+    // (the venue's own high-confidence category tag) in EITHER sub-case —
+    // Discogs corroborates RELEVANCE here, it is never asked to carry
+    // genre-confidence on its own the way it is in CASE A (there, Discogs
+    // is the ONLY evidence for genre at all, hence capped at medium; here,
+    // the high-confidence floor already exists independently of Discogs).
+    const finalGenreConfidence = result.genreConfidence;
+    const relevance = assessRelevance({
+      genre: finalGenre,
+      hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
+      hasTrustedElectronicTicketing,
+      hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists),
+      hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
+      hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
+    });
+    const { decision, holdReason } = computeDecision(
+      result.missingFields,
+      result.resolvedVenueId,
+      finalGenre,
+      finalGenreConfidence,
+      result.duplicateConfidence,
+      relevance,
+    );
+    return { ...result, genre: finalGenre, genreConfidence: finalGenreConfidence, decision, holdReason, relevance };
+  }
+
+  return result;
 }
