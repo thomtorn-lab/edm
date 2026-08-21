@@ -163,6 +163,26 @@ export async function recordSourceLink(
     .onConflictDoNothing();
 }
 
+/**
+ * Updates the sourceUrl on an EXISTING source_event_links row in place —
+ * unlike recordSourceLink (insert-only, onConflictDoNothing), for the rare
+ * case where a source's own URL shape for an already-linked event legitimately
+ * changes (e.g. Culture Box's one-time room-consolidation transition, which
+ * moves an event's canonical link from a per-room #fragment URL to the new
+ * per-night base URL so future syncs keep matching it via this table).
+ */
+export async function updateSourceLinkUrl(
+  eventId: string,
+  sourceId: string,
+  role: "official" | "ticket" | "facebook" | "resident-advisor" | "other",
+  newSourceUrl: string,
+) {
+  await db
+    .update(sourceEventLinks)
+    .set({ sourceUrl: newSourceUrl })
+    .where(and(eq(sourceEventLinks.eventId, eventId), eq(sourceEventLinks.sourceId, sourceId), eq(sourceEventLinks.role, role)));
+}
+
 // ---- Discovery queue actions ----
 
 export async function publishDiscoveryItem(queueId: string, resolvedVenueId: string) {
