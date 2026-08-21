@@ -331,14 +331,51 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   if (!endpoint) throw new Error("reachability requires --endpoint=<https url>");
   if (!/^https:\/\//i.test(endpoint)) throw new Error("reachability only accepts https:// endpoints.");
 
-  section(`Reachability: ${endpoint}`);
+  const method = typeof args.method === "string" ? args.method.toUpperCase() : "GET";
+  const body = typeof args.body === "string" ? args.body : undefined;
+  if (method !== "GET" && method !== "POST") throw new Error('reachability --method must be "GET" or "POST".');
+
+  section(`Reachability: ${method} ${endpoint}`);
   const res = await fetch(endpoint, {
+    method,
     signal: AbortSignal.timeout(15_000),
-    headers: { "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)" },
+    headers: {
+      "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)",
+      ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    ...(method === "POST" ? { body } : {}),
   });
   console.log(`HTTP status: ${res.status}`);
   console.log(`content-type: ${res.headers.get("content-type") ?? "(none)"}`);
   console.log(`content-length: ${res.headers.get("content-length") ?? "(unknown)"}`);
+
+  // Body preview + optional full-body save, so DIAGNOSE/IMPLEMENT (per
+  // SOURCE_ONBOARDING.md) can confirm robots.txt permission and capture a
+  // real, unmodified fixture from a GitHub-hosted runner (agent sandboxes
+  // in this project cannot reach external hosts at all) without a fresh
+  // one-off diagnostic workflow per source. Never used for anything but a
+  // plain GET against a public https:// URL — no credentials, no DB.
+  const bodyText = await res.text();
+  console.log(`body length: ${bodyText.length} chars`);
+  const saveBodyPath = typeof args["save-body"] === "string" ? args["save-body"] : null;
+  const printFull = args["print-full-body"] === true;
+  if (saveBodyPath) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    mkdirSync(dirname(saveBodyPath), { recursive: true });
+    writeFileSync(saveBodyPath, bodyText, "utf-8");
+    console.log(`Full body saved to ${saveBodyPath} (not printed here — see uploaded artifact).`);
+  } else if (printFull) {
+    // Printed to the job log (not saved as an artifact) — for callers whose
+    // network path can reach the GitHub Actions API/log endpoint but not
+    // arbitrary blob storage hosts the artifact download redirects to.
+    console.log("-- FULL body (--print-full-body) --");
+    console.log(bodyText);
+    console.log("-- end of body --");
+  } else {
+    console.log("-- body preview (first 4000 chars; pass --save-body=<path> for an artifact, or --print-full-body to print the full body to this log) --");
+    console.log(bodyText.slice(0, 4000));
+  }
 
   if (args["with-credentials"] && typeof args.source === "string" && args.source === "src-billetto") {
     const accessKeyId = process.env.BILLETTO_ACCESS_KEY_ID;

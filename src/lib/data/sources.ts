@@ -171,11 +171,20 @@ export const SOURCES: Source[] = [
     sourceName: "Pumpehuset",
     sourceType: "official-venue",
     baseUrl: "https://pumpehuset.dk/",
-    roles: ["discovery"],
-    adapter: null,
+    roles: ["discovery", "ingestion"],
+    // Real working adapter (src/lib/adapters/pumpehusetAdapter.ts), two-stage
+    // like Poolen: the programme page's Vue app calls
+    // POST /wp-admin/admin-ajax.php (action=fetch_concerts), which this
+    // adapter calls directly, genre-filtered server-side to "Elektronisk" —
+    // the exact call the site's own frontend makes, not a scrape of the
+    // client-rendered shell. robots.txt places no restriction on it. That
+    // response carries no time, only a date, so every candidate's own
+    // detail page (pumpehuset.dk/koncerter/<slug>/, real server-rendered
+    // HTML) is fetched to resolve a real door/show start time.
+    adapter: "pumpehuset-html",
     trustLevel: "medium",
-    autoPublish: false,
-    syncFrequency: "manual coverage check",
+    autoPublish: true, // validated via a real live sync (validate-source.yml): 26/26 candidates auto-published at high genre confidence, 0 review cases, 0 dedup false positives, 26/26 venue resolution, idempotent on re-sync, zero regressions on every other source
+    syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
     lastAttemptedSync: null,
@@ -183,7 +192,7 @@ export const SOURCES: Source[] = [
     eventsFound: 0,
     eventsUpdated: 0,
     integrationNote:
-      "Multi-genre venue (~300+ events/year) with a genre-filterable programme page (pumpehuset.dk/en/program/, filterable to \"Electronic\") — electronic is a real but minority strand of its booking, not its core identity, so coverage gain per unit of scraping/maintenance effort is lower than Poolen or Klub Werkstatt. Ticketing is split across Billetto/Ticketmaster/Livenation but the venue's own site appears to carry real per-event pages. Rendering technology and robots.txt unconfirmed from this session.",
+      "Multi-genre venue (~300+ events/year); electronic is a real but minority strand of its booking, not its core identity, so coverage gain per unit of maintenance effort is lower than Poolen or Klub Werkstatt — onboarded anyway per explicit request. The venue's own \"genre\" field (\"Elektronisk\") is official-source-metadata evidence (classification.ts's highest tier) and unambiguous (literally \"Electronic\", unlike Billetto's \"hardcore\" subcategory which turned out to mean hardcore punk) — every candidate this adapter returns is genre-filtered server-side by that exact field, so genre confidence is high by construction, not inferred. Ticketing is split across Ticketmaster/RA/Billetto/Tickster/others; the venue's own detail pages carry the real ticket link. Real, unmodified fixtures (listing JSON + two detail pages, one ticketed and one free-entry Byhaven pop-up) captured via inspect-source.yml's reachability mode 2026-08-20 — see pumpehusetAdapter.test.ts. Not yet run against production — health fields will populate on the first real sync.",
   },
   {
     id: "src-bolsjefabrikken",

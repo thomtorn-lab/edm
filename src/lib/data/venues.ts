@@ -132,6 +132,18 @@ export const VENUES: Venue[] = [
       "2,500-capacity warehouse venue on Refshaleøen spanning concerts, club nights and its own outdoor extension, Outside.",
   },
   {
+    id: "v-pumpehuset",
+    slug: "pumpehuset",
+    name: "Pumpehuset",
+    aliases: ["Pumpehuset Copenhagen", "The Pumpehuset"],
+    address: "Studiestræde 52, 1554 København V",
+    city: "Copenhagen",
+    postalCode: "1554",
+    websiteUrl: "https://pumpehuset.dk/",
+    description:
+      "A former 19th-century pump station near City Hall that doubles as a concert hall and, on weekends, a late-night club — its programming crosses genres but regularly makes room for electronic nights.",
+  },
+  {
     id: "v-solvang",
     slug: "solvang-hallen",
     name: "Solvang Hallen",
