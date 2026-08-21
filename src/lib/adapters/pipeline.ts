@@ -5,7 +5,7 @@ import { resolveVenue, dedupeArtistList } from "../normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
 import { findBestMovedEventMatch } from "../movedEventDetection";
 import { evaluateQualityGate, genreConfidenceForEvidence, type PublishDecision } from "../classification";
-import { hasNonElectronicGenreSignal, GENERIC_ELECTRONIC_GENRE } from "../relevance";
+import { assessRelevance, hasExplicitElectronicAssertion, hasNonElectronicGenreSignal } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
 import type { RawCandidateEvent } from "./types";
 
@@ -46,6 +46,8 @@ function computeDecision(
   genreConfidence: ConfidenceLevel,
   duplicateConfidence: "high" | "medium" | "low" | "none",
   relevanceText: string,
+  normalizedArtists: string[],
+  hasTrustedElectronicTicketing: boolean,
 ): PublishDecision {
   let decision = evaluateQualityGate({
     hasTitle: missingFields.every((f) => f !== "title"),
@@ -59,26 +61,22 @@ function computeDecision(
   // Source-aware relevance evidence (data-quality Workstream A): a broad
   // venue/platform category tag or a generic mention is real evidence the
   // SOURCE considers the night electronic, but it is never on its own
-  // conclusive evidence that electronic music is CENTRAL to THIS event —
-  // that must never auto-publish, no matter how "high" the claimed genre
-  // confidence is (the exact gap that let Pumpehuset's blanket "Elektronisk"
-  // tag alone auto-publish Dizzee Rascal/grime and MASTER BOOT RECORD+Fulci/
-  // metal). Two conservative, source-agnostic downgrades, applied only when
-  // the gate would otherwise auto-publish:
+  // conclusive evidence that electronic music is CENTRAL to THIS event.
+  // Scores independent signals (specific genre, an explicit first-party
+  // "this artist's sound is electronic" assertion, trusted RA/ticket
+  // corroboration) rather than a single blunt genre-floor cap — see
+  // relevance.ts's header comment for the full design and the real evidence
+  // (Pumpehuset event pages) it was tuned against. Applied only when the
+  // gate would otherwise auto-publish.
   if (decision === "auto_publish") {
-    if (genre === GENERIC_ELECTRONIC_GENRE) {
-      // The generic "electronic-other" floor exists precisely because no
-      // specific subgenre evidence was found — by construction, that is
-      // broad/generic evidence, never strong enough alone to auto-publish.
-      decision = "review_queue";
-    } else if (genre && hasNonElectronicGenreSignal(relevanceText)) {
-      // A specific electronic keyword WAS matched, but the same official
-      // text also centers on a recognized non-electronic genre (e.g.
-      // "industrial" matched inside "industrial metal") — an isolated
-      // electronic-sounding word in otherwise non-electronic copy must
-      // never carry a high-confidence auto-publish on its own.
-      decision = "review_queue";
-    }
+    const relevance = assessRelevance({
+      genre,
+      hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
+      hasTrustedElectronicTicketing,
+      hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, normalizedArtists),
+    });
+    if (relevance === "weak") decision = "review_queue";
+    else if (relevance === "none") decision = "hold";
   }
 
   // A likely duplicate always needs a human merge decision before publishing,
@@ -181,7 +179,17 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   }
 
   // CONFIDENCE / PUBLISH-REVIEW GATE
-  const decision = computeDecision(missingFields, resolvedVenue?.id ?? null, genre, genreConfidence, duplicateConfidence, relevanceText);
+  const hasTrustedElectronicTicketing = raw.residentAdvisorUrl != null;
+  const decision = computeDecision(
+    missingFields,
+    resolvedVenue?.id ?? null,
+    genre,
+    genreConfidence,
+    duplicateConfidence,
+    relevanceText,
+    normalizedArtists,
+    hasTrustedElectronicTicketing,
+  );
 
   return {
     decision,
@@ -218,7 +226,8 @@ export function applyEnrichedGenre(
   // Enrichment evidence is capped below "high" (enforced above), so the
   // quality gate can never return "auto_publish" here — the relevance-based
   // downgrades in computeDecision only ever act on an "auto_publish"
-  // decision, so no relevance text is needed at this call site.
-  const decision = computeDecision(result.missingFields, result.resolvedVenueId, genre, genreConfidence, result.duplicateConfidence, "");
+  // decision, so no relevance text/artists/ticketing evidence is needed at
+  // this call site.
+  const decision = computeDecision(result.missingFields, result.resolvedVenueId, genre, genreConfidence, result.duplicateConfidence, "", [], false);
   return { ...result, genre, genreConfidence, decision };
 }

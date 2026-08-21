@@ -28,7 +28,12 @@ export function decodeHtmlEntities(text: string): string {
 export function htmlToText(html: string): string {
   const withoutStyleScript = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
   const withBreaks = withoutStyleScript
-    .replace(/<br\s*\/?>/gi, "\n")
+    // Matches a bare <br>/<br/> as well as an attributed variant like
+    // <br class="html-br" /> (real evidence: a Pumpehuset lineup list used
+    // exactly this to separate names — without this, "Leeni & Danilo
+    // Kupfernagel", "Lush" and "NILU" would silently concatenate into one
+    // run-on string with no separator at all).
+    .replace(/<br\b[^>]*>/gi, "\n")
     .replace(/<\/(p|div|li|h[1-6])>/gi, "\n");
   const stripped = withBreaks.replace(/<[^>]+>/g, "");
   const decoded = decodeHtmlEntities(stripped);

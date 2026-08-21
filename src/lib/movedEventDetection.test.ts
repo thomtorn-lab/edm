@@ -81,6 +81,21 @@ describe("assessMovedEvent (data-quality Workstream C — moved/rescheduled firs
     const result = assessMovedEvent(candidate, EXISTING);
     expect(result.confidence).toBe("none");
   });
+
+  it("recognizes real Danish first-party reschedule wording (real tonser production evidence: 'er flyttet til den 20. februar 2027')", () => {
+    const candidate: MovedEventCandidate = {
+      title: "tonser",
+      artists: ["tonser"],
+      venueId: "v-pumpehuset",
+      startDatetime: "2027-02-20T20:00:00+01:00",
+      description:
+        "NB! Koncerten har tidligere været annonceret til den 19. september 2026, men er flyttet til den 20. februar 2027. Købte billetter gælder til den nye dato.",
+      officialEventUrl: "https://pumpehuset.dk/koncerter/tonser-2/",
+      ticketUrl: "https://www.ticketmaster.dk/event/tonser-new-billetter/999999",
+    };
+    const result = assessMovedEvent(candidate, EXISTING);
+    expect(result.confidence).toBe("medium");
+  });
 });
 
 describe("findBestMovedEventMatch", () => {
@@ -114,5 +129,39 @@ describe("findBestMovedEventMatch", () => {
     };
     const withIds = [{ ...EXISTING, id: "e-tonser" }];
     expect(findBestMovedEventMatch(candidate, withIds)).toBeNull();
+  });
+
+  it("recurring-series guard: caps 'high' to 'medium' when 2+ other existing events already share this title, instead of auto-attaching (never merges separate recurring editions solely on identity match, even with a coincidentally shared generic ticket URL)", () => {
+    const recurring = {
+      title: "Monthly Rave",
+      artists: ["Resident Selectors"],
+      venueId: "v-pumpehuset",
+      ticketUrl: "https://secure.tickster.com/generic-monthly-rave-landing-page",
+    };
+    const edition1 = { ...recurring, startDatetime: "2026-01-15T21:00:00+01:00", id: "e-jan" };
+    const edition2 = { ...recurring, startDatetime: "2026-02-15T21:00:00+01:00", id: "e-feb" };
+    const candidate: MovedEventCandidate = {
+      title: "Monthly Rave",
+      artists: ["Resident Selectors"],
+      venueId: "v-pumpehuset",
+      startDatetime: "2026-03-15T21:00:00+01:00",
+      ticketUrl: "https://secure.tickster.com/generic-monthly-rave-landing-page",
+    };
+    const best = findBestMovedEventMatch(candidate, [edition1, edition2]);
+    expect(best).not.toBeNull();
+    expect(best?.assessment.confidence).toBe("medium");
+  });
+
+  it("a genuine one-off reschedule (exactly one prior instance) still gets 'high' — the recurring-series guard only kicks in at 2+", () => {
+    const withIds = [{ ...EXISTING, id: "e-tonser" }];
+    const candidate: MovedEventCandidate = {
+      title: "tonser",
+      artists: ["tonser"],
+      venueId: "v-pumpehuset",
+      startDatetime: "2027-02-20T21:00:00+01:00",
+      ticketUrl: "https://www.ticketmaster.dk/event/tonser-billetter/123456",
+    };
+    const best = findBestMovedEventMatch(candidate, withIds);
+    expect(best?.assessment.confidence).toBe("high");
   });
 });

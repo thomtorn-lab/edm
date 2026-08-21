@@ -121,7 +121,27 @@ export function assessMovedEvent(candidate: MovedEventCandidate, existing: Exist
   return { confidence: "none", reasons: ["strong title/lineup match alone is not sufficient evidence of a moved event"] };
 }
 
-/** Finds the strongest moved-event match for `candidate` among `existing` (same-source events only), if any. */
+function normalizeTitleForRecurrence(title: string): string {
+  return title.normalize("NFKD").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Finds the strongest moved-event match for `candidate` among `existing`
+ * (same-source events only), if any.
+ *
+ * Recurring-series guard: a shared ticket/official URL is compelling
+ * evidence of a genuine one-off reschedule (the tonser case: one show,
+ * moved once), but a recurring night/series (a promoter reusing one
+ * generic pre-sale landing page across separate monthly/quarterly
+ * editions) could coincidentally exhibit the exact same signal — same
+ * title, same shared URL, different date — without any of them actually
+ * being a reschedule of another. When 2+ OTHER existing events from this
+ * source already share this candidate's title (a real recurring-series
+ * signature an established one-off reschedule would never have — a show
+ * that has moved once has exactly one prior instance, not several), "high"
+ * is capped to "medium": still surfaced for admin review, never silently
+ * auto-attached/overwriting a separate legitimate recurring instance.
+ */
 export function findBestMovedEventMatch<T extends ExistingSameSourceEvent>(
   candidate: MovedEventCandidate,
   existing: T[],
@@ -132,6 +152,24 @@ export function findBestMovedEventMatch<T extends ExistingSameSourceEvent>(
     if (assessment.confidence === "none") continue;
     if (!best || rank(assessment.confidence) > rank(best.assessment.confidence)) {
       best = { match: item, assessment };
+    }
+  }
+  if (!best) return null;
+
+  if (best.assessment.confidence === "high") {
+    const titleKey = normalizeTitleForRecurrence(candidate.title);
+    const sameTitleCount = existing.filter((e) => normalizeTitleForRecurrence(e.title) === titleKey).length;
+    if (sameTitleCount >= 2) {
+      return {
+        match: best.match,
+        assessment: {
+          confidence: "medium",
+          reasons: [
+            ...best.assessment.reasons,
+            "recurring-series guard: 2+ other existing events from this source already share this title — a genuine one-off reschedule would have exactly one prior instance, not several, so this is capped below auto-attach and left for admin review",
+          ],
+        },
+      };
     }
   }
   return best;

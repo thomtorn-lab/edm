@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { stripBareUrls } from "./htmlExtraction";
+import { htmlToText, stripBareUrls } from "./htmlExtraction";
+
+describe("htmlToText", () => {
+  it("treats an attributed <br> the same as a bare one (real Pumpehuset lineup evidence)", () => {
+    const html = 'Leeni &amp; Danilo Kupfernagel<br class="html-br" />Lush<br class="html-br" />NILU';
+    expect(htmlToText(html)).toBe("Leeni & Danilo Kupfernagel\nLush\nNILU");
+  });
+
+  it("still treats a bare <br> / <br/> as a line break", () => {
+    expect(htmlToText("A<br>B<br/>C")).toBe("A\nB\nC");
+  });
+});
 
 describe("stripBareUrls", () => {
   it("removes a standalone URL entirely", () => {

@@ -154,6 +154,70 @@ function extractPresenterLine(detailHtml: string): string | null {
   return match ? decodeHtmlEntities(match[1]).trim().replace(/\s+/g, " ") : null;
 }
 
+/** The intro paragraph's full opening tag, immediately preceding the fuller description div. */
+const BODY_INTRO_MARKER = '<p class="text__content text__content--large">';
+
+/**
+ * Extracts the event's own written description from its detail page — a
+ * real editorial write-up (Pumpehuset data-quality gap fix, 2026-08-21):
+ * every event page carries an intro paragraph (`text__content--large`)
+ * immediately followed by a fuller body block (`text__content`), BEFORE the
+ * `single-event-info` date/price card this adapter already scopes off of.
+ * This is genuine, event-specific first-party text — e.g. WITCHZ's own page
+ * says "sin dragende, elektroniske lyd" (his captivating electronic sound)
+ * and "alternativ pop, mørk electronica og industriel phonk" — but was
+ * previously never read at all; only the small presenter line
+ * ("PUMPEHUSET og X Præsenterer") was captured, which carries no genre
+ * information. The body block's inner markup varies a lot per event
+ * (observed live: some are pasted raw Facebook-post embed markup, deeply
+ * nested divs with no clean structure) so this deliberately does NOT try to
+ * parse that markup — it takes the whole raw slice between the intro
+ * paragraph and `single-event-info` and lets htmlToText strip every tag
+ * uniformly, regardless of nesting. A free/promo page whose intro paragraph
+ * is empty (no bio at all) correctly yields an empty string, never invented
+ * text.
+ */
+function extractBodyDescriptionLines(detailHtml: string): string[] {
+  const cardIdx = detailHtml.indexOf("single-event-info");
+  if (cardIdx === -1) return [];
+  const introIdx = detailHtml.lastIndexOf(BODY_INTRO_MARKER, cardIdx);
+  if (introIdx === -1 || introIdx > cardIdx) return [];
+  // `single-event-info` is a class name inside that card's own opening
+  // <div ...> tag, not the tag's start — slicing straight to cardIdx would
+  // cut mid-tag, leaving a dangling, unclosed "<div class=..." fragment
+  // that htmlToText can't recognize as a tag (no closing ">") and so
+  // wouldn't strip. Cut at the start of that div's own opening tag instead.
+  const cardTagStart = detailHtml.lastIndexOf("<div", cardIdx);
+  const end = cardTagStart > introIdx ? cardTagStart : cardIdx;
+  const block = detailHtml.slice(introIdx, end);
+  return htmlToText(block).split("\n").filter(Boolean);
+}
+
+const LINEUP_START = /^Line[- ]?Up:?$/i;
+
+/**
+ * Best-effort lineup extraction from the body description text, when the
+ * venue's own copy states one explicitly (e.g. "Line-Up: Leeni & Danilo
+ * Kupfernagel / Lush / NILU" — real evidence found on a Byhaven pop-up page
+ * whose fetch_concerts JSON carried no support_bands data at all, so the
+ * only artists this adapter previously extracted were the promoter/event
+ * name itself). Only ever ADDS real evidence — never invents names, and
+ * returns an empty array (never guessed) when no such marker is present.
+ */
+function extractLineupFromBodyLines(lines: string[]): string[] {
+  const startIdx = lines.findIndex((l) => LINEUP_START.test(l));
+  if (startIdx === -1) return [];
+  const names: string[] = [];
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    // A lineup list is a short run of names — a long sentence (a new prose
+    // paragraph resuming after the list) signals the list has ended.
+    if (line.split(" ").length > 6) break;
+    names.push(line);
+  }
+  return names;
+}
+
 /** Support-band names + free-text bios, when present — real per-band evidence from the venue's own JSON, not a title guess. */
 function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): { artists: string[]; description: string | null } {
   const artists = bands.map((b) => b.band_name.trim()).filter(Boolean);
@@ -161,6 +225,10 @@ function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): { artis
     .map((b) => htmlToText(b.band_description ?? "").replace(/\n/g, " ").trim())
     .filter(Boolean);
   return { artists, description: bios.length > 0 ? bios.join("\n\n") : null };
+}
+
+function sameArtists(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /** Falls back to parsing the title itself when no support_bands list is given (common for a single-headliner show). */
@@ -184,15 +252,21 @@ function parsePriceFrom(priceText: string): number | null {
  * directly (unambiguous: "Elektronisk" is literally "Electronic" in
  * Danish, unlike e.g. Billetto's "hardcore" subcategory which turned out to
  * mean hardcore punk). When the venue's own text (title / support-band
- * bios) additionally names a specific subgenre, that sharper slug is used
- * instead at the same high confidence — a keyword match against the
- * venue's own text about THIS show, matching hangarenAdapter/
- * cultureBoxAdapter's "official-description" precedent — but the generic
- * "electronic-other" + official-source-metadata credit is always the
- * floor, never absent, since the source field itself guarantees it.
+ * bios / the event page's own written description) additionally names a
+ * specific subgenre, that sharper slug is used instead at the same high
+ * confidence — a keyword match against the venue's own text about THIS
+ * show, matching hangarenAdapter/cultureBoxAdapter's "official-description"
+ * precedent — but the generic "electronic-other" + official-source-metadata
+ * credit is always the floor, never absent, since the source field itself
+ * guarantees it. Takes arbitrary text pieces so it can be called twice: once
+ * at listing-parse time (title + support-band bios only) and, when that
+ * still lands on the generic floor, again at enrichment time once the
+ * detail page's own richer body text is available (see enrichWithShowTimes)
+ * — never overwrites an already-specific genre, only ever sharpens the
+ * generic floor when stronger evidence becomes available.
  */
-function resolveGenre(concert: PumpehusetConcert, artistBios: string | null) {
-  const textEvidence = [concert.title, artistBios ?? ""].join(" ");
+function resolveGenre(title: string, ...textPieces: (string | null)[]) {
+  const textEvidence = [title, ...textPieces.filter((t): t is string => Boolean(t))].join(" ");
   const specific = deterministicGenreFromText(textEvidence);
   if (specific) {
     return { genreHint: specific, genreConfidenceHint: genreConfidenceForEvidence("official-description") };
@@ -232,7 +306,7 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
       const { artists: bandArtists, description } = artistsAndDescriptionFromBands(bands);
       const artists = bandArtists.length > 0 ? bandArtists : artistsFromTitle(title);
 
-      const { genreHint, genreConfidenceHint } = resolveGenre(concert, description);
+      const { genreHint, genreConfidenceHint } = resolveGenre(title, description);
 
       const isFree = /fri\s*entr/i.test(concert.ticket_status ?? "");
       const priceFrom = isFree ? 0 : parsePriceFrom(concert.price ?? "");
@@ -360,7 +434,37 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
           next = { ...candidate, startDatetime: copenhagenWallClockToUtc(resolved.dateKey, resolved.hour, resolved.minute).toISOString() };
         }
         const presenter = extractPresenterLine(detailHtml);
-        if (presenter && !next.description) next = { ...next, description: presenter };
+        const bodyLines = extractBodyDescriptionLines(detailHtml);
+        const bodyDescription = bodyLines.length > 0 ? bodyLines.join(" ").replace(/\s+/g, " ").trim() : null;
+
+        // Combine the richer written description (see extractBodyDescriptionLines'
+        // doc comment for why this previously-unread text matters) with any
+        // support-band bios already present; fall back to the bare presenter
+        // line only when neither exists at all — never replaces real prose
+        // with the presenter line.
+        const combinedDescription = [next.description, bodyDescription].filter(Boolean).join("\n\n") || presenter || next.description;
+        if (combinedDescription !== next.description) next = { ...next, description: combinedDescription };
+
+        // The body text's own "Line-Up:" list (when present) is only trusted
+        // when the listing JSON's support_bands data supplied nothing better
+        // than the generic title-derived fallback — real support_bands
+        // artists are never overridden.
+        if (bodyLines.length > 0 && sameArtists(next.artists, artistsFromTitle(next.title))) {
+          const bodyLineup = extractLineupFromBodyLines(bodyLines);
+          if (bodyLineup.length > 0) next = { ...next, artists: bodyLineup };
+        }
+
+        // Re-attempt genre resolution now that the fuller detail-page text is
+        // available — the listing-time pass only ever saw the title and
+        // support-band bios. Never downgrades an already-specific genre
+        // (resolveGenre itself never does), only ever sharpens the generic
+        // "electronic-other" floor when real evidence becomes available.
+        if (next.genreHint === "electronic-other") {
+          const refined = resolveGenre(next.title, next.description);
+          if (refined.genreHint !== "electronic-other") {
+            next = { ...next, genreHint: refined.genreHint, genreConfidenceHint: refined.genreConfidenceHint };
+          }
+        }
       } catch (err) {
         console.error(
           `[pumpehuset-adapter] detail page fetch failed for ${candidate.officialEventUrl}, keeping startDatetime unresolved for this candidate: ${err instanceof Error ? err.message : String(err)}`,

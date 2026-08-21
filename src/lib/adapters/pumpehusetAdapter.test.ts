@@ -189,5 +189,24 @@ describe("createPumpehusetAdapter", () => {
       (e) => e.officialEventUrl !== "https://pumpehuset.dk/koncerter/witchz/" && e.officialEventUrl !== "https://pumpehuset.dk/koncerter/byhaven-love-rave-16/",
     );
     expect(other!.startDatetime).toBeNull(); // detail page unavailable — never guessed
+
+    // Pumpehuset information-gap fix (data-quality follow-up review): the
+    // detail page's own written description was previously never read at
+    // all — only a bare presenter line. WITCHZ's real page explicitly says
+    // his own sound is electronic ("elektroniske lyd" / "mørk electronica"),
+    // which is real, extractable event-specific evidence this adapter was
+    // silently discarding.
+    expect(witchz!.description).toContain("elektroniske lyd");
+    expect(witchz!.genreHint).toBe("electronic-other"); // no NAMED specific subgenre — the assertion signal (relevance.ts) is what carries it, not genre precision
+    expect(witchz!.genreConfidenceHint).toBe("high");
+
+    // Byhaven Love.Rave's fetch_concerts JSON carried no support_bands data
+    // at all, so this adapter previously extracted only the promoter/event
+    // name itself as the "artist". The real detail page's own body text
+    // both names the genre ("house-leverandørerne") and states a real
+    // "Line-Up:" list this adapter now also extracts.
+    expect(byhaven!.genreHint).toBe("house");
+    expect(byhaven!.genreConfidenceHint).toBe("high");
+    expect(byhaven!.artists).toEqual(["Leeni & Danilo Kupfernagel", "Lush", "NILU"]);
   });
 });

@@ -160,6 +160,56 @@ describe("source-aware relevance evidence (data-quality Workstream A — a gener
     );
     expect(result.decision).not.toBe("auto_publish");
   });
+
+  it("auto-publishes a genuine electronic event on a generic category floor when the venue's own text explicitly asserts the artist/event's sound is electronic, even without a named specific subgenre (WITCHZ-type case, real Pumpehuset evidence)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "WITCHZ",
+        description:
+          "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer, luftige vokaler og sin dragende, elektroniske lyd. En lyd der bevæger sig mellem alternativ pop, mørk electronica og industriel phonk.",
+        artists: ["WITCHZ"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("electronic-other");
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("auto-publishes on a generic category floor when the source's own ticket link corroborates via Resident Advisor, a trusted electronic-music-specific aggregator (Cassius/MPH-type case)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Cassius CLUB 360°",
+        description: "Special guest announced later.",
+        artists: ["Cassius"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+        residentAdvisorUrl: "https://ra.co/events/2489286",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("assesses a real UK Garage/bassline act from its own official text, not artist-name hardcoding (Silva Bumpa-type case)", () => {
+    // genreHint/genreConfidenceHint set the way the real adapter's own
+    // resolveGenre() would: a specific keyword genuinely matched in the
+    // venue's own official text is official-description/high tier, not the
+    // pipeline's own medium-confidence deterministic-mapping fallback.
+    const result = runIngestionPipeline(
+      raw({
+        title: "Silva Bumpa",
+        description: "Klar til at indtage Danmark med sin energiske blanding af UK Garage, bassline og speed garage.",
+        artists: ["Silva Bumpa"],
+        genreHint: "garage",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("garage");
+    expect(result.decision).toBe("auto_publish");
+  });
 });
 
 describe("moved/rescheduled first-party events (data-quality Workstream C)", () => {

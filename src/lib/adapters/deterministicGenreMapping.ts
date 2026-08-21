@@ -38,10 +38,27 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\belectronica?\b[\s\S]{0,60}\bexperimental\b|\bexperimental\b[\s\S]{0,60}\belectronica?\b/i, "ambient-experimental"],
 ];
 
+/**
+ * Quoted spans ("Dirtee Disco", "The Magick", 'I Only Smoke When I Drink')
+ * are almost always a song/album/single title in this kind of promotional
+ * copy, never a genre description — real evidence found live: Pumpehuset's
+ * own Dizzee Rascal write-up lists his hit "Dirtee Disco" by name, whose
+ * title coincidentally contains the word "Disco", which must never be
+ * credited as real genre evidence for what is a grime/rap show. Genre
+ * descriptions in this kind of copy are essentially always unquoted prose
+ * ("a night of techno", "elektronisk musik") — stripping quoted spans
+ * before matching is safe and removes this whole class of false positive
+ * without needing a title/song blacklist.
+ */
+function stripQuotedSpans(text: string): string {
+  return text.replace(/"[^"]*"|“[^”]*”/g, " ");
+}
+
 /** Returns the first matching genre from title + description text, or null if nothing matches. */
 export function deterministicGenreFromText(text: string): GenreSlug | null {
+  const unquoted = stripQuotedSpans(text);
   for (const [pattern, genre] of KEYWORD_MAP) {
-    if (pattern.test(text)) return genre;
+    if (pattern.test(unquoted)) return genre;
   }
   return null;
 }
