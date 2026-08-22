@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import type { FestivalRecord } from "@/lib/types";
 import { getGenre, type GenreSlug } from "@/lib/taxonomy";
 
@@ -82,9 +81,18 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
       <ul className="mt-6">
         {filtered.map((festival) => (
           <li key={festival.id} className="border-b border-border py-5">
-            <Link href={`/festivals/${festival.slug}`} className="text-lg font-semibold text-text-primary hover:text-accent-strong">
-              {festival.name}
-            </Link>
+            {festival.officialUrl ? (
+              <a
+                href={festival.officialUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-lg font-semibold text-text-primary hover:text-accent-strong"
+              >
+                {festival.name} ↗
+              </a>
+            ) : (
+              <span className="text-lg font-semibold text-text-primary">{festival.name}</span>
+            )}
             <p className="mt-1 text-xs font-medium uppercase tracking-wide text-text-tertiary">
               {festival.location}, {festival.country} · {festival.currentDates ?? festival.typicalMonth}
             </p>

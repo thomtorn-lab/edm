@@ -157,3 +157,16 @@ describe("Event detail page — three-level text hierarchy (Round 18: new second
     expect(tickets.className).toContain("text-text-secondary-strong");
   });
 });
+
+describe("Event detail page — eyebrow + neutral H1 preserved (Round 19)", () => {
+  afterEach(cleanup);
+
+  it("keeps the purple EVENT eyebrow above a neutral/white H1 (detail pages keep this pattern)", async () => {
+    await renderPage(makeEvent());
+    const eyebrow = screen.getByText("Event");
+    expect(eyebrow.className).toContain("text-accent");
+    const heading = screen.getByRole("heading", { level: 1, name: "Test Event" });
+    expect(heading.className).toContain("text-text-primary");
+    expect(heading.className).not.toContain("text-accent");
+  });
+});

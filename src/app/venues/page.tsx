@@ -30,7 +30,7 @@ export default async function VenuesPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
-      <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
+      <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-tight text-accent sm:text-4xl">
         Venues
       </h1>
       <p className="mt-2 max-w-xl text-sm text-text-secondary">
@@ -60,9 +60,10 @@ function VenueEntry({ venue, upcomingCount }: { venue: Venue; upcomingCount: num
     <>
       <Link
         href={`/venues/${venue.slug}`}
-        className="cursor-pointer text-lg font-semibold text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110"
+        className="inline-flex cursor-pointer items-baseline gap-1.5 text-lg font-semibold text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110"
       >
         {venue.name}
+        <span aria-hidden="true" className="text-sm text-text-tertiary">→</span>
       </Link>
       <p className="mt-1 text-sm text-text-secondary">{venue.address}</p>
       <p className="mt-2 text-sm leading-relaxed text-text-secondary">

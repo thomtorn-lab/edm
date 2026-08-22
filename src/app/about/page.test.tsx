@@ -33,3 +33,21 @@ describe("About page (Round 8)", () => {
     ).toBeTruthy();
   });
 });
+
+describe("About page — top-level heading hierarchy (Round 19)", () => {
+  afterEach(cleanup);
+
+  it("renders the H1 in the accent purple with no eyebrow line above it", () => {
+    render(<AboutPage />);
+    const heading = screen.getByRole("heading", { level: 1, name: "About" });
+    expect(heading.className).toContain("text-accent");
+    expect(heading.className).not.toContain("text-text-primary");
+    expect(screen.queryByText(/^ABOUT$/i, { selector: "p" })).toBeNull();
+  });
+
+  it("does not turn the body copy purple", () => {
+    render(<AboutPage />);
+    const body = screen.getByText(/Electronic CPH is a fast, curated index/);
+    expect(body.className).not.toContain("text-accent");
+  });
+});
