@@ -1,0 +1,28 @@
+name: Smoke Test Month Heading (one-time)
+
+# One-time, read-only Production smoke test after the month-heading
+# refinement merge (numeric prefix removed, month name carries
+# text-accent). GET requests only — no writes, no secrets. Delete this
+# workflow once it has run and been reviewed.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Homepage month headings
+        run: |
+          set -u
+          code=$(curl -sSL -o /tmp/home.html -w '%{http_code}' https://electroniccph.com/)
+          echo "Homepage HTTP status: $code"
+          echo "--- old numeric-prefix pattern (should be absent) ---"
+          grep -oE '[0-9]{2} */ *[A-Z]{3,9}' /tmp/home.html || echo "absent (expected)"
+          echo "--- h2 month heading snippets ---"
+          grep -oE '<h2[^>]*>.{0,200}' /tmp/home.html | head -10 || echo "NOT FOUND: h2 headings"
+          echo "--- month nav still present ---"
+          grep -o 'aria-label="Jump to month"' /tmp/home.html || echo "NOT FOUND: month nav (may be JS-hydrated only)"
