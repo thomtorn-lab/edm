@@ -460,13 +460,14 @@ async function modeSnapshot(client: Client, args: Record<string, string | boolea
   console.log(`-- global manual-override event count: ${overridden.rows[0].n} (must never move because of a sync) --`);
 }
 
-/** Read-only venue registry dump — id, name, address (and alias/city/postal) — optionally filtered to one venue id. */
+/** Read-only venue registry dump — id, name, address, content fields (and alias/city/postal) — optionally filtered to one venue id. */
 async function modeVenues(client: Client, args: Record<string, string | boolean>) {
   const venueId = typeof args.venue === "string" ? args.venue : null;
+  const cols = "id, slug, name, aliases, address, city, postal_code, website_url, description, short_description, venue_profile, updated_at";
   section(venueId ? `Venue: ${venueId}` : "All venues");
   const rows = venueId
-    ? (await client.query("SELECT id, slug, name, aliases, address, city, postal_code, updated_at FROM venues WHERE id = $1", [venueId])).rows
-    : (await client.query("SELECT id, slug, name, aliases, address, city, postal_code, updated_at FROM venues ORDER BY name")).rows;
+    ? (await client.query(`SELECT ${cols} FROM venues WHERE id = $1`, [venueId])).rows
+    : (await client.query(`SELECT ${cols} FROM venues ORDER BY name`)).rows;
   console.log(JSON.stringify(rows, null, 2));
 }
 
