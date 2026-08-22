@@ -1,0 +1,59 @@
+name: Smoke Test Filters Eyebrows (one-time)
+
+# One-time, read-only Production smoke test after the Filters
+# active-state + purple page eyebrows merge. GET requests only — no
+# writes, no secrets. Delete this workflow once it has run and been
+# reviewed.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: About page eyebrow
+        run: |
+          set -u
+          code=$(curl -sSL -o /tmp/about.html -w '%{http_code}' https://electroniccph.com/about)
+          echo "About HTTP status: $code"
+          grep -oE '<p[^>]*text-accent[^>]*>[^<]*</p>' /tmp/about.html | head -3 || echo "NOT FOUND: accent eyebrow on About"
+          grep -oE '<h1[^>]*>[^<]*' /tmp/about.html || true
+
+      - name: Festivals page eyebrow
+        run: |
+          set -u
+          code=$(curl -sSL -o /tmp/festivals.html -w '%{http_code}' https://electroniccph.com/festivals)
+          echo "Festivals HTTP status: $code"
+          grep -oE '<p[^>]*text-accent[^>]*>[^<]*</p>' /tmp/festivals.html | head -3 || echo "NOT FOUND: accent eyebrow on Festivals"
+          grep -oE '<h1[^>]*>[^<]*' /tmp/festivals.html || true
+
+      - name: Homepage general sanity + discover a real event slug
+        run: |
+          set -u
+          code=$(curl -sSL -o /tmp/home.html -w '%{http_code}' https://electroniccph.com/)
+          echo "Homepage HTTP status: $code"
+          grep -o '<title>[^<]*</title>' /tmp/home.html || true
+          slug=$(grep -oE 'href="/events/[a-z0-9-]+"' /tmp/home.html | head -1 | sed -E 's#href="/events/(.*)"#\1#')
+          echo "Discovered event slug: ${slug:-none found}"
+          echo "slug=$slug" >> "$GITHUB_ENV"
+
+      - name: Event detail eyebrow (real live event)
+        if: env.slug != ''
+        run: |
+          set -u
+          code=$(curl -sSL -o /tmp/event.html -w '%{http_code}' "https://electroniccph.com/events/${slug}")
+          echo "Event detail HTTP status: $code"
+          grep -oE '<p[^>]*text-accent[^>]*>[^<]*</p>' /tmp/event.html | head -3 || echo "NOT FOUND: accent eyebrow on event detail"
+          grep -oE '<h1[^>]*>[^<]*' /tmp/event.html || true
+
+      - name: Venue detail eyebrow (Hangaren)
+        run: |
+          set -u
+          code=$(curl -sSL -o /tmp/venue.html -w '%{http_code}' https://electroniccph.com/venues/hangaren)
+          echo "Venue detail HTTP status: $code"
+          grep -oE '<p[^>]*text-accent[^>]*>[^<]*</p>' /tmp/venue.html | head -3 || echo "NOT FOUND: accent eyebrow on venue detail"
+          grep -oE '<h1[^>]*>[^<]*' /tmp/venue.html || true
