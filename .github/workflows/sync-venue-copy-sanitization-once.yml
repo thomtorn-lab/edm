@@ -79,4 +79,14 @@ jobs:
             echo "FAIL: expected 200 after following the redirect, got $FOLLOWED_CODE"
             exit 1
           fi
+          # The first hop above is just apex->www domain canonicalization, whose
+          # Location header still contains "/festivals/tomorrowland" as a
+          # substring — that alone doesn't prove our app-level redirect() fired.
+          # Confirm the URL actually landed on is the bare /festivals page.
+          FINAL_URL=$(curl -sSL -o /dev/null -w "%{url_effective}" "https://electroniccph.com/festivals/tomorrowland")
+          echo "final landed URL=$FINAL_URL"
+          case "$FINAL_URL" in
+            */festivals) echo "OK: final landed URL is exactly /festivals" ;;
+            *) echo "FAIL: final landed URL is not /festivals: $FINAL_URL"; exit 1 ;;
+          esac
           echo "OK: old festival-detail URL redirects to /festivals with a real 200 there, no broken link"
