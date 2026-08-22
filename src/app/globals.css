@@ -76,19 +76,38 @@ body::before {
   outline-offset: 2px;
 }
 
-/* Genre/Venue selects and the search field already use purple on their own
-   border/text to communicate state (selected filter, or intentionally none
-   for search) — Chromium treats <select> and <input type="search"> as
-   focus-visible even on a plain mouse click (unlike <button>), so the
-   sitewide purple focus-visible ring above would otherwise stack a second
-   purple layer outside an already-purple active border, or put a purple
-   ring around search on a simple click. These selectors have higher
-   specificity than the plain :focus-visible above, so this wins regardless
-   of source order; only the ring's color changes, keyboard/click focus
-   stays clearly visible. */
+/* Genre/Venue selects and the search field: Chromium treats <select> and
+   <input type="search"> as focus-visible even on a plain mouse click
+   (unlike <button>), so the sitewide focus-visible OUTLINE above would
+   otherwise draw a second boundary outside the control's own border on
+   essentially every interaction. For these three controls specifically,
+   suppress that outer ring entirely and communicate focus through the
+   control's own border instead, so there is only ever one visual boundary.
+   These rules are unlayered like the block above, so they beat the
+   Tailwind border-color utilities in @layer utilities (border-accent /
+   border-border-strong) regardless of specificity — see
+   globalsCssCascade.test.ts for why that's load-bearing here, not
+   incidental. */
 .accent-select:focus-visible,
 .search-field:focus-visible {
-  outline-color: var(--text-secondary);
+  outline: none;
+}
+
+/* No active purple to lean on (an unselected Genre/Venue, or search, which
+   is never purple) — focus still needs its own signal, so strengthen the
+   existing border to a more visible neutral. Same 1px border, no outer
+   ring, no layout shift. */
+.accent-select:focus-visible:not(.border-accent),
+.search-field:focus-visible {
+  border-color: var(--text-secondary);
+}
+
+/* Active Genre/Venue: keep the same purple language as the active
+   quick-filter pills — just a touch brighter on focus so keyboard users can
+   still tell it's the focused control — still one boundary, still purple,
+   no second ring. */
+.accent-select.border-accent:focus-visible {
+  border-color: var(--accent-strong);
 }
 
 .font-display {

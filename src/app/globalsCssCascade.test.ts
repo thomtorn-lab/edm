@@ -41,24 +41,39 @@ describe("globals.css — no unlayered universal border-color reset (Round 15 ca
   });
 });
 
-describe("globals.css — neutral focus-visible ring on accent-select/search-field (Round 16 fix)", () => {
-  it("keeps a higher-specificity override so Genre/Venue and Search never show the purple focus-visible ring", () => {
-    // Root cause of the "extra outer purple ring" report: Chromium marks
+describe("globals.css — no outer focus ring on accent-select/search-field, internal focus treatment instead (Round 17 fix)", () => {
+  it("suppresses the outline entirely for Genre/Venue and Search and replaces it with a border-color change on the control itself", () => {
+    // Root cause of the "extra outer ring" report (both the original purple
+    // version and the follow-up neutral-ring version): Chromium marks
     // <select> and <input type="search"> as :focus-visible even on a plain
-    // mouse click (unlike <button>), so the sitewide purple
+    // mouse click (unlike <button>), so the sitewide
     // `:focus-visible { outline: 2px solid var(--focus-ring); }` rule above
-    // stacked a second purple ring outside the Genre/Venue active-state
-    // purple border, and put a purple ring around Search on a simple click.
-    // This override must keep a HIGHER-specificity selector (a class
-    // combined with :focus-visible, e.g. `.accent-select:focus-visible`)
-    // than the bare `:focus-visible` rule so it wins regardless of source
-    // order, and it must only touch `outline-color` — never remove the
-    // outline outright, or keyboard focus becomes invisible.
+    // always draws a SECOND boundary outside these controls' own border on
+    // basically every interaction — recoloring that ring (the earlier fix)
+    // still left a visible second ring, just not purple. The only way to
+    // get back to a single boundary is to not render an outer ring at all
+    // for these three controls and signal focus via the control's own
+    // border instead. These rules are unlayered so they beat the Tailwind
+    // border-color utilities (border-accent / border-border-strong) in
+    // @layer utilities regardless of specificity — see the border-color
+    // reset test above for why that's the established, intentional pattern
+    // here, not a bug to avoid.
     const css = readGlobalsCss();
-    const overrideRule = /\.accent-select:focus-visible,\s*\n\s*\.search-field:focus-visible\s*\{\s*\n\s*outline-color\s*:\s*var\(--text-secondary\);/;
-    expect(overrideRule.test(css)).toBe(true);
-    // Guard against ever "fixing" this by nuking the outline entirely.
-    expect(/\.accent-select:focus-visible[^}]*outline\s*:\s*none/.test(css)).toBe(false);
-    expect(/\.search-field:focus-visible[^}]*outline\s*:\s*none/.test(css)).toBe(false);
+    expect(/\.accent-select:focus-visible,\s*\n\s*\.search-field:focus-visible\s*\{\s*\n\s*outline\s*:\s*none;/.test(css)).toBe(true);
+    // Inactive Genre/Venue and Search have no purple to fall back on —
+    // focus must still show a visible internal border-color change.
+    expect(/\.accent-select:focus-visible:not\(\.border-accent\),\s*\n\s*\.search-field:focus-visible\s*\{\s*\n\s*border-color\s*:\s*var\(--text-secondary\);/.test(css)).toBe(true);
+    // Active Genre/Venue keeps the purple language, just a brighter shade,
+    // so keyboard focus stays locatable without a second boundary.
+    expect(/\.accent-select\.border-accent:focus-visible\s*\{\s*\n\s*border-color\s*:\s*var\(--accent-strong\);/.test(css)).toBe(true);
+    // Guard against this drifting back to an outer-ring approach for these
+    // three controls specifically.
+    expect(/\.accent-select:focus-visible[^}]*outline-color/.test(css)).toBe(false);
+    expect(/\.search-field:focus-visible[^}]*outline-color/.test(css)).toBe(false);
+  });
+
+  it("leaves the sitewide :focus-visible outline rule untouched for every other element", () => {
+    const css = readGlobalsCss();
+    expect(/:focus-visible\s*\{\s*\n\s*outline\s*:\s*2px solid var\(--focus-ring\);\s*\n\s*outline-offset\s*:\s*2px;\s*\n\}/.test(css)).toBe(true);
   });
 });
