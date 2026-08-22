@@ -1,0 +1,69 @@
+name: Sync Venue Copy Sanitization (one-time)
+
+# One-time, narrow content sync: updates description/shortDescription/
+# venueProfile on exactly 10 venue rows (the ones the release-gate audit
+# flagged for factual-risk copy) to match the sanitized content in
+# src/lib/data/venues.ts. Does not touch sources, does not touch any
+# other venue row, does not re-run migrations or the full production
+# seed. Deliberately workflow_dispatch-only with an explicit confirm
+# string, matching prepare-production-db.yml's safety pattern. Delete
+# this workflow (and src/db/syncVenueCopySanitization.ts) once the sync
+# has run and been verified.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type SYNC-VENUE-COPY to confirm you want to update these 10 venues'\'' content fields against the DATABASE_URL secret.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-venue-copy-sanitization-once
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "SYNC-VENUE-COPY" ]; then
+            echo "::error::Confirmation input did not match. Re-run this workflow and enter exactly: SYNC-VENUE-COPY"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the sync script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Sync sanitized venue copy (10 rows only)
+        run: node --env-file=.env.local --import tsx src/db/syncVenueCopySanitization.ts
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
