@@ -43,12 +43,12 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
             className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110 sm:line-clamp-2"
           >
             {event.title}
-            <span className="font-normal text-text-secondary">{lineup}</span>
+            <span className="font-normal text-text-secondary-strong">{lineup}</span>
           </Link>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="text-text-secondary underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+              className="text-text-secondary-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
             >
               {event.venue.name}
             </Link>
@@ -75,7 +75,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-text-secondary transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
+                  className="text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
                 >
                   {link.label} ↗
                 </a>

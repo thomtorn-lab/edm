@@ -8,6 +8,13 @@
   --border: rgba(240, 236, 248, 0.09);
   --border-strong: rgba(240, 236, 248, 0.16);
   --text-primary: #f3ede4;
+  /* Sits strictly between --text-primary and --text-secondary: reserved for
+     supplementary event info (lineup, venue name, action links like
+     OFFICIAL EVENT/TICKETS) that needs to read as clearly secondary to the
+     title but clearly brighter than metadata like genre/time, which were
+     otherwise landing too close together visually. Same cool-grey family
+     as --text-secondary/--text-tertiary, just brighter — never purple. */
+  --text-secondary-strong: #cec8dc;
   --text-secondary: #a49ead;
   --text-tertiary: #847f90;
   --accent: #ab9be0;
@@ -31,6 +38,7 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text-primary: var(--text-primary);
+  --color-text-secondary-strong: var(--text-secondary-strong);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
   --color-accent: var(--accent);

@@ -140,7 +140,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
                 href={link.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
+                className="rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
               >
                 {link.label} ↗
               </a>

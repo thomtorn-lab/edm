@@ -140,3 +140,20 @@ describe("Event detail page — clickability affordance (Round 13: brighten + un
     expect(heading.querySelector("a")).toBeNull();
   });
 });
+
+describe("Event detail page — three-level text hierarchy (Round 18: new secondary-strong grey)", () => {
+  afterEach(cleanup);
+
+  it("puts OFFICIAL EVENT / TICKETS links on the same new secondary-strong grey used on the homepage", async () => {
+    await renderPage(
+      makeEvent({
+        officialEventUrl: "https://venue.example.com/event",
+        ticketUrl: "https://billetto.dk/e/x",
+      }),
+    );
+    const officialEvent = screen.getByText(/Official event/i);
+    const tickets = screen.getByText(/Tickets/i);
+    expect(officialEvent.className).toContain("text-text-secondary-strong");
+    expect(tickets.className).toContain("text-text-secondary-strong");
+  });
+});

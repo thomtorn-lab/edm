@@ -232,3 +232,51 @@ describe("EventRow — desktop title gets up to two lines, CTAs top-align with i
     expect(classes).not.toContain("sm:items-center");
   });
 });
+
+describe("EventRow — three-level text hierarchy (Round 18: new secondary-strong grey)", () => {
+  afterEach(cleanup);
+
+  it("puts the supplementary lineup on the new secondary-strong grey, not the old muted secondary", () => {
+    render(<EventRow event={makeEvent({ title: "Byhaven: Anything Everything", artists: ["Clara Andreis", "Jesper Olsen"] })} />);
+    const lineup = screen.getByText(/Clara Andreis \/ Jesper Olsen/);
+    expect(lineup.className).toContain("text-text-secondary-strong");
+    expect(lineup.className.split(/\s+/)).not.toContain("text-text-secondary");
+  });
+
+  it("puts the venue link on the new secondary-strong grey, brighter than metadata", () => {
+    render(<EventRow event={makeEvent()} />);
+    const venueLink = screen.getByRole("link", { name: "Test Venue" });
+    const classes = venueLink.className.split(/\s+/);
+    expect(classes).toContain("text-text-secondary-strong");
+    expect(classes).not.toContain("text-text-secondary");
+  });
+
+  it("keeps genre and time on the unchanged, more-muted metadata grey (text-text-tertiary)", () => {
+    render(<EventRow event={makeEvent()} />);
+    const genre = screen.getByText("Drum & Bass");
+    expect(genre.className).toContain("text-text-tertiary");
+    expect(genre.className).not.toContain("text-text-secondary-strong");
+  });
+
+  it("puts OFFICIAL EVENT / TICKETS links on the new secondary-strong grey", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          officialEventUrl: "https://venue.example.com/event",
+          ticketUrl: "https://billetto.dk/e/x",
+        })}
+      />,
+    );
+    const officialEvent = screen.getByText(/Official event/i);
+    const tickets = screen.getByText(/Tickets/i);
+    expect(officialEvent.className).toContain("text-text-secondary-strong");
+    expect(tickets.className).toContain("text-text-secondary-strong");
+  });
+
+  it("keeps FREE on primary off-white, untouched by the new secondary-strong level", () => {
+    render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null })} />);
+    const free = screen.getByText("Free");
+    expect(free.className).toContain("text-text-primary");
+    expect(free.className).not.toContain("text-text-secondary-strong");
+  });
+});
