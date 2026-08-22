@@ -280,3 +280,79 @@ describe("EventRow — three-level text hierarchy (Round 18: new secondary-stron
     expect(free.className).not.toContain("text-text-secondary-strong");
   });
 });
+
+describe("EventRow — public/internal status separation (event-status audit, DATE/TIME CHANGED are internal-only)", () => {
+  afterEach(cleanup);
+
+  it("shows no status text for a normal event", () => {
+    render(<EventRow event={makeEvent()} />);
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.queryByText(/Sold out/i)).toBeNull();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("dateChanged alone renders no public status", () => {
+    render(<EventRow event={makeEvent({ dateChanged: true })} />);
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.queryByText(/Sold out/i)).toBeNull();
+  });
+
+  it("timeChanged alone renders no public status", () => {
+    render(<EventRow event={makeEvent({ timeChanged: true })} />);
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.queryByText(/Sold out/i)).toBeNull();
+  });
+
+  it("dateChanged + timeChanged together still render no public status", () => {
+    render(<EventRow event={makeEvent({ dateChanged: true, timeChanged: true })} />);
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("cancelled still renders CANCELLED", () => {
+    render(<EventRow event={makeEvent({ cancelled: true })} />);
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+  });
+
+  it("soldOut still renders SOLD OUT", () => {
+    render(<EventRow event={makeEvent({ soldOut: true })} />);
+    expect(screen.getByText("Sold out")).toBeTruthy();
+  });
+
+  it("cancelled + internal dateChanged shows only CANCELLED, not a second status", () => {
+    render(<EventRow event={makeEvent({ cancelled: true, dateChanged: true, timeChanged: true })} />);
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("soldOut + internal dateChanged shows only SOLD OUT, not a second status", () => {
+    render(<EventRow event={makeEvent({ soldOut: true, dateChanged: true, timeChanged: true })} />);
+    expect(screen.getByText("Sold out")).toBeTruthy();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("FREE is unaffected by internal dateChanged/timeChanged noise", () => {
+    render(
+      <EventRow
+        event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, dateChanged: true, timeChanged: true })}
+      />,
+    );
+    expect(screen.getByText("Free")).toBeTruthy();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+  });
+
+  it("CANCELLED uses the existing status-bad red tone, SOLD OUT uses a neutral secondary tone (not amber, not purple)", () => {
+    render(<EventRow event={makeEvent({ cancelled: true, soldOut: true })} />);
+    const cancelled = screen.getByText("Cancelled");
+    const soldOut = screen.getByText("Sold out");
+    expect(cancelled.className).toContain("text-status-bad");
+    expect(soldOut.className).not.toContain("text-status-bad");
+    expect(soldOut.className).not.toContain("text-status-warn");
+    expect(soldOut.className).not.toContain("text-accent");
+  });
+});

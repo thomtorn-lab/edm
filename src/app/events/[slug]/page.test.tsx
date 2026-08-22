@@ -170,3 +170,45 @@ describe("Event detail page — eyebrow + neutral H1 preserved (Round 19)", () =
     expect(heading.className).not.toContain("text-accent");
   });
 });
+
+describe("Event detail page — public/internal status separation (event-status audit, DATE/TIME CHANGED are internal-only)", () => {
+  afterEach(cleanup);
+
+  it("shows no status text for a normal event", async () => {
+    await renderPage(makeEvent());
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.queryByText(/Sold out/i)).toBeNull();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("dateChanged + timeChanged together render no public status", async () => {
+    await renderPage(makeEvent({ dateChanged: true, timeChanged: true }));
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("cancelled still renders CANCELLED", async () => {
+    await renderPage(makeEvent({ cancelled: true }));
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+  });
+
+  it("soldOut still renders SOLD OUT", async () => {
+    await renderPage(makeEvent({ soldOut: true }));
+    expect(screen.getByText("Sold out")).toBeTruthy();
+  });
+
+  it("cancelled + internal dateChanged shows only CANCELLED", async () => {
+    await renderPage(makeEvent({ cancelled: true, dateChanged: true, timeChanged: true }));
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+
+  it("soldOut + internal dateChanged shows only SOLD OUT", async () => {
+    await renderPage(makeEvent({ soldOut: true, dateChanged: true, timeChanged: true }));
+    expect(screen.getByText("Sold out")).toBeTruthy();
+    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  });
+});
