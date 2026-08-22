@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type SYNC-VENUE-COPY to confirm you want to update these 10 venues'\'' content fields against the DATABASE_URL secret.'
+        description: "Type SYNC-VENUE-COPY to confirm you want to update these 10 venues' content fields against the DATABASE_URL secret."
         required: true
 
 permissions:
