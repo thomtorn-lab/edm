@@ -31,13 +31,19 @@ jobs:
 
       - name: Locate and fetch the compiled CSS bundle
         run: |
-          CSS_PATH=$(grep -oE '/_next/static/css/[a-zA-Z0-9_.-]+\.css' home.html | head -1)
+          echo "--- all stylesheet link tags ---"
+          grep -oE '<link[^>]*rel="stylesheet"[^>]*>' home.html || true
+          CSS_PATH=$(grep -oE 'href="[^"]*\.css[^"]*"' home.html | head -1 | sed -E 's/href="([^"]*)"/\1/')
           echo "CSS_PATH=$CSS_PATH"
           if [ -z "$CSS_PATH" ]; then
             echo "FAIL: could not find a compiled CSS link in the homepage HTML"
             exit 1
           fi
-          curl -sSL -o bundle.css "https://electroniccph.com${CSS_PATH}"
+          case "$CSS_PATH" in
+            http*) URL="$CSS_PATH" ;;
+            *) URL="https://electroniccph.com${CSS_PATH}" ;;
+          esac
+          curl -sSL -o bundle.css "$URL"
           wc -c bundle.css
 
       - name: Confirm the neutral focus-visible override rule shipped in CSS
