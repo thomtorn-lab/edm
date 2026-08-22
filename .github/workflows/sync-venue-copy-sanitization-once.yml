@@ -42,8 +42,16 @@ jobs:
           set -u
           code=$(curl -sSL -o /tmp/venues.html -w '%{http_code}' https://electroniccph.com/venues)
           echo "Venues HTTP status: $code"
-          echo "--- venue names (link text) ---"
-          grep -oE '<a href="/venues/[a-z0-9-]+"[^>]*>[^<]*</a>' /tmp/venues.html || echo "NOT FOUND"
+          echo "--- venue names present (checking all 21 approved) ---"
+          for name in "Culture Box" "Hangaren" "Den Anden Side" "MODULE" "Jolene" "Baggen" "Klub Werkstatt" "Basement" "Pumpehuset" "Poolen" "RUST" "H15" "Bolsjefabrikken" "Odds and Ends" "Mayhem" "TAP1" "UnderWerket" "VEGA" "ALICE" "Hotel Cecil" "Halvandet"; do
+            if grep -q ">$name<" /tmp/venues.html; then
+              echo "OK: $name"
+            else
+              echo "MISSING: $name"
+            fi
+          done
+          echo "--- total /venues/ links on page ---"
+          grep -oE 'href="/venues/[a-z0-9-]+"' /tmp/venues.html | sort -u | wc -l
           echo "--- Bodega Danza check ---"
           grep -io 'Bodega Danza' /tmp/venues.html || echo "absent (expected)"
           echo "--- Sigurd CPH check ---"
