@@ -38,8 +38,11 @@ const pillClasses = (active: boolean) =>
     ? "border-accent bg-accent/15 text-accent-strong"
     : "border-border-strong text-text-secondary hover:border-accent-dim hover:text-text-primary");
 
-const selectClasses =
-  "rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:text-text-primary";
+const selectClasses = (active: boolean) =>
+  "rounded-full border bg-surface-1 px-3 py-1.5 text-xs font-semibold transition-colors " +
+  (active
+    ? "border-accent text-accent-strong"
+    : "border-border-strong text-text-secondary hover:text-text-primary");
 
 function FilterIcon() {
   return (
@@ -232,7 +235,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
       id={id}
       value={genre}
       onChange={(e) => setGenre(e.target.value as MainGenreSlug | "all")}
-      className={selectClasses}
+      className={selectClasses(genre !== "all")}
     >
       <option value="all">All genres</option>
       {MAIN_GENRES.map((g) => (
@@ -246,7 +249,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
       id={id}
       value={venueId}
       onChange={(e) => setVenueId(e.target.value)}
-      className={selectClasses}
+      className={selectClasses(venueId !== "all")}
     >
       <option value="all">All venues</option>
       {venueOptions.map(([optionId, name]) => (
@@ -274,7 +277,13 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                 type="button"
                 onClick={() => setMobileFiltersOpen(true)}
                 aria-haspopup="dialog"
-                className="inline-flex min-h-[2.25rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border-strong px-3.5 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary"
+                aria-pressed={activeDrawerFilterCount > 0}
+                className={
+                  "inline-flex min-h-[2.25rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors " +
+                  (activeDrawerFilterCount > 0
+                    ? "border-accent bg-accent/15 text-accent-strong"
+                    : "border-border-strong text-text-secondary hover:text-text-primary")
+                }
               >
                 <FilterIcon />
                 {activeDrawerFilterCount > 0 ? `Filters · ${activeDrawerFilterCount}` : "Filters"}

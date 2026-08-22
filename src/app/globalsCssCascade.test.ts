@@ -21,3 +21,22 @@ describe("globals.css — no unlayered anchor color reset (Round 11 cascade fix)
     expect(bareAnchorRule.test(css)).toBe(false);
   });
 });
+
+describe("globals.css — no unlayered universal border-color reset (Round 15 cascade fix)", () => {
+  it("does not redeclare `* { border-color: ... }` outside a Tailwind @layer", () => {
+    // The exact same class of bug as the anchor-color fix above, found via a
+    // real headless-browser check while building the Filters active-state
+    // accent border: an unlayered `* { border-color: var(--border); }` rule
+    // wins over every border-color utility (living in @layer utilities)
+    // regardless of specificity, silently forcing every border-accent /
+    // border-border-strong / etc. on every element in the app to render as
+    // the plain --border token instead. Confirmed this broke even the
+    // already-shipped active-pill border (EventExplorer.tsx's pillClasses).
+    // Every border-side utility in this codebase already pairs with an
+    // explicit border-color utility, so no element relies on this rule for
+    // an implicit default — it must never come back.
+    const css = readGlobalsCss();
+    const bareUniversalBorderRule = /(^|\n)\s*\*\s*\{[^}]*border-color\s*:/;
+    expect(bareUniversalBorderRule.test(css)).toBe(false);
+  });
+});

@@ -247,3 +247,96 @@ describe("EventExplorer month heading — reference purple token (Round 14: no n
     expect(classes).not.toContain("text-accent-strong");
   });
 });
+
+describe("EventExplorer — Filters button active state (Round 15)", () => {
+  afterEach(cleanup);
+
+  const OTHER_VENUE = { ...VENUE, id: "v-other", slug: "other-venue", name: "Other Venue" };
+  const EVENT_A = makeEvent("2026-08-10T20:00:00.000Z");
+  const EVENT_B = { ...makeEvent("2026-08-12T20:00:00.000Z"), venueId: OTHER_VENUE.id, venue: OTHER_VENUE };
+
+  function selectSecondOption(select: HTMLSelectElement) {
+    const value = (select.querySelectorAll("option")[1] as HTMLOptionElement).value;
+    fireEvent.change(select, { target: { value } });
+  }
+
+  function filtersButton() {
+    return screen.getByRole("button", { name: /^Filters/ });
+  }
+
+  it("stays neutral (not purple) with no active Genre/Venue filter", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const btn = filtersButton();
+    expect(btn.textContent).toBe("Filters");
+    expect(btn.className).toContain("border-border-strong");
+    expect(btn.className).not.toContain("border-accent");
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("turns purple (reusing the existing accent token) with only Genre active, and the Genre select itself picks up the same accent", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    selectSecondOption(genreSelect);
+    const btn = filtersButton();
+    expect(btn.textContent).toBe("Filters · 1");
+    expect(btn.className).toContain("border-accent");
+    expect(btn.className).toContain("bg-accent/15");
+    expect(btn.className).toContain("text-accent-strong");
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
+    // Desktop has no single wrapping "Filters" control — the Genre/Venue
+    // selects themselves are the desktop equivalent, so each carries the
+    // same active-state accent individually when it has a real selection.
+    expect(genreSelect.className).toContain("border-accent");
+    expect(genreSelect.className).toContain("text-accent-strong");
+    const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
+    expect(venueSelect.className).not.toContain("border-accent");
+  });
+
+  it("turns purple with only Venue active, and the Venue select itself picks up the same accent", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
+    selectSecondOption(venueSelect);
+    const btn = filtersButton();
+    expect(btn.textContent).toBe("Filters · 1");
+    expect(btn.className).toContain("border-accent");
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
+    expect(venueSelect.className).toContain("border-accent");
+    expect(venueSelect.className).toContain("text-accent-strong");
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    expect(genreSelect.className).not.toContain("border-accent");
+  });
+
+  it("stays purple with both Genre and Venue active, reflecting the count, and both selects carry the accent", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
+    selectSecondOption(genreSelect);
+    selectSecondOption(venueSelect);
+    const btn = filtersButton();
+    expect(btn.textContent).toBe("Filters · 2");
+    expect(btn.className).toContain("border-accent");
+    expect(genreSelect.className).toContain("border-accent");
+    expect(venueSelect.className).toContain("border-accent");
+  });
+
+  it("returns to neutral once Genre and Venue are cleared back to 'all', including the selects themselves", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
+    selectSecondOption(genreSelect);
+    selectSecondOption(venueSelect);
+    fireEvent.change(genreSelect, { target: { value: "all" } });
+    fireEvent.change(venueSelect, { target: { value: "all" } });
+    const btn = filtersButton();
+    expect(btn.textContent).toBe("Filters");
+    expect(btn.className).not.toContain("border-accent");
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+    expect(genreSelect.className).not.toContain("border-accent");
+    expect(venueSelect.className).not.toContain("border-accent");
+  });
+});
