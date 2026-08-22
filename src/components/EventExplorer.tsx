@@ -491,8 +491,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
           groups.map((group) => (
             <section key={group.monthKey} id={`month-${group.monthKey}`} className="scroll-mt-40 py-6 sm:py-8">
               <h2 className="font-display mb-3 flex items-baseline gap-2 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
-                <span className="text-accent">{String(group.month).padStart(2, "0")} /</span>
-                {formatMonthFull(group.month)}
+                <span className="text-accent">{formatMonthFull(group.month)}</span>
                 <span className="text-base font-semibold tracking-normal text-text-tertiary">{group.year}</span>
               </h2>
               <ul>

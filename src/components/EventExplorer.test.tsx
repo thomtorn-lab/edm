@@ -233,12 +233,14 @@ describe("EventExplorer month nav — active highlight", () => {
   });
 });
 
-describe("EventExplorer month heading — reference purple token (Round 11)", () => {
-  it("the large month number (e.g. the purple '08' in '08 / AUGUST') uses exactly the text-accent token", () => {
+describe("EventExplorer month heading — reference purple token (Round 14: no numeric prefix)", () => {
+  it("the month name itself (e.g. 'AUGUST') uses exactly the text-accent token, with no numeric prefix", () => {
     render(<EventExplorer events={[AUG_EVENT]} />);
     vi.runOnlyPendingTimers();
-    const monthNumber = screen.getByText("08 /");
-    const classes = monthNumber.className.split(/\s+/);
+    expect(screen.queryByText(/^08 \/?$/)).toBeNull();
+    expect(screen.queryByText(/08 \/ AUGUST/)).toBeNull();
+    const monthName = screen.getByText("AUGUST");
+    const classes = monthName.className.split(/\s+/);
     // The purple accent token, reserved for brand/selected-state/active-nav
     // use (Round 13) — not for ordinary text-link hover states elsewhere.
     expect(classes).toContain("text-accent");
