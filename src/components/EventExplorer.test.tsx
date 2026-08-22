@@ -340,3 +340,44 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
     expect(venueSelect.className).not.toContain("border-accent");
   });
 });
+
+describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", () => {
+  afterEach(cleanup);
+
+  const OTHER_VENUE = { ...VENUE, id: "v-other", slug: "other-venue", name: "Other Venue" };
+  const EVENT_A = makeEvent("2026-08-10T20:00:00.000Z");
+  const EVENT_B = { ...makeEvent("2026-08-12T20:00:00.000Z"), venueId: OTHER_VENUE.id, venue: OTHER_VENUE };
+
+  // Chromium marks <select> and <input type="search"> as :focus-visible even
+  // on a plain mouse click (unlike <button>), so the sitewide purple
+  // `:focus-visible` outline in globals.css needs a scoped, higher-specificity
+  // override for these controls — see the .accent-select/.search-field hooks
+  // asserted below, and globalsCssCascade.test.ts for the CSS-side guard.
+
+  it("Genre and Venue selects carry the accent-select hook that neutralizes the sitewide purple focus-visible ring", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
+    expect(genreSelect.className).toContain("accent-select");
+    expect(venueSelect.className).toContain("accent-select");
+  });
+
+  it("both desktop and mobile search inputs carry the search-field hook and no longer turn purple on focus", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const searchInputs = screen.getAllByLabelText("Search events, artists or venues") as HTMLInputElement[];
+    expect(searchInputs.length).toBeGreaterThanOrEqual(2);
+    for (const input of searchInputs) {
+      expect(input.className).toContain("search-field");
+      expect(input.className).not.toContain("focus:border-accent");
+    }
+  });
+
+  it("the desktop search input uses a neutral focus border instead of the purple accent", () => {
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    vi.runOnlyPendingTimers();
+    const desktopSearch = screen.getByPlaceholderText("Search events, artists, venues");
+    expect(desktopSearch.className).toContain("focus:border-text-secondary");
+  });
+});

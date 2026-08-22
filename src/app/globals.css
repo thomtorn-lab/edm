@@ -76,6 +76,21 @@ body::before {
   outline-offset: 2px;
 }
 
+/* Genre/Venue selects and the search field already use purple on their own
+   border/text to communicate state (selected filter, or intentionally none
+   for search) — Chromium treats <select> and <input type="search"> as
+   focus-visible even on a plain mouse click (unlike <button>), so the
+   sitewide purple focus-visible ring above would otherwise stack a second
+   purple layer outside an already-purple active border, or put a purple
+   ring around search on a simple click. These selectors have higher
+   specificity than the plain :focus-visible above, so this wins regardless
+   of source order; only the ring's color changes, keyboard/click focus
+   stays clearly visible. */
+.accent-select:focus-visible,
+.search-field:focus-visible {
+  outline-color: var(--text-secondary);
+}
+
 .font-display {
   font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
 }

@@ -38,8 +38,13 @@ const pillClasses = (active: boolean) =>
     ? "border-accent bg-accent/15 text-accent-strong"
     : "border-border-strong text-text-secondary hover:border-accent-dim hover:text-text-primary");
 
+// "accent-select" and "search-field" are hooks for the scoped :focus-visible
+// overrides in globals.css — the active-state purple here already lives on
+// the control's own border/text (matching pillClasses), so the sitewide
+// focus-visible ring must not ALSO render purple on top of it (that reads as
+// a separate outer ring rather than one accent treatment). See globals.css.
 const selectClasses = (active: boolean) =>
-  "rounded-full border bg-surface-1 px-3 py-1.5 text-xs font-semibold transition-colors " +
+  "accent-select rounded-full border bg-surface-1 px-3 py-1.5 text-xs font-semibold transition-colors " +
   (active
     ? "border-accent text-accent-strong"
     : "border-border-strong text-text-secondary hover:text-text-primary");
@@ -271,7 +276,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search events"
                 aria-label="Search events, artists or venues"
-                className="min-w-0 flex-1 rounded-full border border-border-strong bg-surface-1 px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent"
+                className="search-field min-w-0 flex-1 rounded-full border border-border-strong bg-surface-1 px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-text-secondary"
               />
               <button
                 type="button"
@@ -348,7 +353,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search events, artists, venues"
                 aria-label="Search events, artists or venues"
-                className="w-full rounded-full border border-border-strong bg-surface-1 px-3.5 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent"
+                className="search-field w-full rounded-full border border-border-strong bg-surface-1 px-3.5 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:border-text-secondary"
               />
             </div>
 

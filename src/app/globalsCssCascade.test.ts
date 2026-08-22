@@ -40,3 +40,25 @@ describe("globals.css — no unlayered universal border-color reset (Round 15 ca
     expect(bareUniversalBorderRule.test(css)).toBe(false);
   });
 });
+
+describe("globals.css — neutral focus-visible ring on accent-select/search-field (Round 16 fix)", () => {
+  it("keeps a higher-specificity override so Genre/Venue and Search never show the purple focus-visible ring", () => {
+    // Root cause of the "extra outer purple ring" report: Chromium marks
+    // <select> and <input type="search"> as :focus-visible even on a plain
+    // mouse click (unlike <button>), so the sitewide purple
+    // `:focus-visible { outline: 2px solid var(--focus-ring); }` rule above
+    // stacked a second purple ring outside the Genre/Venue active-state
+    // purple border, and put a purple ring around Search on a simple click.
+    // This override must keep a HIGHER-specificity selector (a class
+    // combined with :focus-visible, e.g. `.accent-select:focus-visible`)
+    // than the bare `:focus-visible` rule so it wins regardless of source
+    // order, and it must only touch `outline-color` — never remove the
+    // outline outright, or keyboard focus becomes invisible.
+    const css = readGlobalsCss();
+    const overrideRule = /\.accent-select:focus-visible,\s*\n\s*\.search-field:focus-visible\s*\{\s*\n\s*outline-color\s*:\s*var\(--text-secondary\);/;
+    expect(overrideRule.test(css)).toBe(true);
+    // Guard against ever "fixing" this by nuking the outline entirely.
+    expect(/\.accent-select:focus-visible[^}]*outline\s*:\s*none/.test(css)).toBe(false);
+    expect(/\.search-field:focus-visible[^}]*outline\s*:\s*none/.test(css)).toBe(false);
+  });
+});
