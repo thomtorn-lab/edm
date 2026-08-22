@@ -20,7 +20,7 @@ jobs:
       - name: Homepage
         run: |
           set -u
-          code=$(curl -sS -o /tmp/home.html -w '%{http_code}' https://electroniccph.com/)
+          code=$(curl -sSL -o /tmp/home.html -w '%{http_code}' https://electroniccph.com/)
           echo "Homepage HTTP status: $code"
           echo "--- title ---"
           grep -o '<title>[^<]*</title>' /tmp/home.html || true
@@ -40,7 +40,7 @@ jobs:
       - name: Venues overview
         run: |
           set -u
-          code=$(curl -sS -o /tmp/venues.html -w '%{http_code}' https://electroniccph.com/venues)
+          code=$(curl -sSL -o /tmp/venues.html -w '%{http_code}' https://electroniccph.com/venues)
           echo "Venues HTTP status: $code"
           echo "--- venue names (link text) ---"
           grep -oE '<a href="/venues/[a-z0-9-]+"[^>]*>[^<]*</a>' /tmp/venues.html || echo "NOT FOUND"
@@ -54,7 +54,7 @@ jobs:
       - name: Individual venue page (Hangaren)
         run: |
           set -u
-          code=$(curl -sS -o /tmp/hangaren.html -w '%{http_code}' https://electroniccph.com/venues/hangaren)
+          code=$(curl -sSL -o /tmp/hangaren.html -w '%{http_code}' https://electroniccph.com/venues/hangaren)
           echo "Hangaren HTTP status: $code"
           echo "--- h1 ---"
           grep -oE '<h1[^>]*>[^<]*' /tmp/hangaren.html || true
@@ -64,7 +64,7 @@ jobs:
       - name: Individual venue page (VEGA)
         run: |
           set -u
-          code=$(curl -sS -o /tmp/vega.html -w '%{http_code}' https://electroniccph.com/venues/vega-ideal-bar)
+          code=$(curl -sSL -o /tmp/vega.html -w '%{http_code}' https://electroniccph.com/venues/vega-ideal-bar)
           echo "VEGA HTTP status: $code"
           grep -oE '<h1[^>]*>[^<]*' /tmp/vega.html || true
           grep -o 'one of Vesterbro' /tmp/vega.html || echo "'one of Vesterbro...' absent (expected — sanitized)"
@@ -73,7 +73,7 @@ jobs:
       - name: About page
         run: |
           set -u
-          code=$(curl -sS -o /tmp/about.html -w '%{http_code}' https://electroniccph.com/about)
+          code=$(curl -sSL -o /tmp/about.html -w '%{http_code}' https://electroniccph.com/about)
           echo "About HTTP status: $code"
           grep -o 'the goal is to help you find the event, not to keep you inside this site' /tmp/about.html || echo "NOT FOUND: core About line"
           grep -o 'Suggest an event' /tmp/about.html || echo "NOT FOUND: Suggest an event link"
