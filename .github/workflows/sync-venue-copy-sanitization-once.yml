@@ -1,0 +1,98 @@
+name: Sync venue copy sanitization (once)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch /venues overview HTML
+        run: |
+          curl -sSL -D venues-headers.txt -H "Cache-Control: no-cache" -H "Pragma: no-cache" -o venues.html "https://electroniccph.com/venues?_cb=$(date +%s)"
+          wc -c venues.html
+          echo "--- response headers ---"
+          cat venues-headers.txt
+
+      - name: Confirm Pumpehuset and Culture Box are present, Byhaven/Black Box/Red Box are not
+        run: |
+          for name in "Pumpehuset" "Culture Box"; do
+            if grep -q "$name" venues.html; then
+              echo "OK: $name present on /venues"
+            else
+              echo "FAIL: $name missing from /venues"
+              exit 1
+            fi
+          done
+          for name in "Byhaven" "Black Box" "Red Box"; do
+            if grep -qi "$name" venues.html; then
+              echo "FAIL: '$name' unexpectedly appears on /venues (should only ever be Pumpehuset/Culture Box)"
+              exit 1
+            else
+              echo "OK: '$name' does not appear on /venues"
+            fi
+          done
+
+      - name: Confirm /venues links to /venues/pumpehuset and /venues/culture-box only (no sub-venue routes)
+        run: |
+          if grep -q 'href="/venues/pumpehuset"' venues.html; then
+            echo "OK: links to /venues/pumpehuset"
+          else
+            echo "FAIL: no link to /venues/pumpehuset"
+            exit 1
+          fi
+          if grep -q 'href="/venues/culture-box"' venues.html; then
+            echo "OK: links to /venues/culture-box"
+          else
+            echo "FAIL: no link to /venues/culture-box"
+            exit 1
+          fi
+          for slug in byhaven black-box red-box; do
+            if grep -q "href=\"/venues/$slug\"" venues.html; then
+              echo "FAIL: unexpected link to /venues/$slug"
+              exit 1
+            else
+              echo "OK: no link to /venues/$slug"
+            fi
+          done
+
+      - name: Fetch Pumpehuset detail page and confirm the new Byhaven copy shipped
+        run: |
+          curl -sSL -D pumpehuset-headers.txt -H "Cache-Control: no-cache" -H "Pragma: no-cache" -o pumpehuset.html "https://electroniccph.com/venues/pumpehuset?_cb=$(date +%s)"
+          wc -c pumpehuset.html
+          if grep -q "Pumpehuset's own area for free-entry pop-up parties" pumpehuset.html; then
+            echo "OK: new Byhaven relationship copy is live on the Pumpehuset detail page"
+          else
+            echo "FAIL: new Byhaven copy not found on Pumpehuset detail page"
+            exit 1
+          fi
+          if grep -qi "black box" pumpehuset.html || grep -qi "red box" pumpehuset.html; then
+            echo "FAIL: Pumpehuset detail page unexpectedly mentions Black Box/Red Box"
+            exit 1
+          fi
+
+      - name: Fetch Culture Box detail page and confirm Black Box/Red Box explanation still present
+        run: |
+          curl -sSL -D culturebox-headers.txt -H "Cache-Control: no-cache" -H "Pragma: no-cache" -o culturebox.html "https://electroniccph.com/venues/culture-box?_cb=$(date +%s)"
+          wc -c culturebox.html
+          if grep -qi "black box" culturebox.html && grep -qi "red box" culturebox.html; then
+            echo "OK: Culture Box detail page explains Black Box and Red Box"
+          else
+            echo "FAIL: Culture Box detail page missing Black Box/Red Box explanation"
+            exit 1
+          fi
+          if grep -qi "byhaven" culturebox.html; then
+            echo "FAIL: Culture Box detail page unexpectedly mentions Byhaven"
+            exit 1
+          fi
+
+      - name: Confirm /venues/byhaven, /venues/black-box, /venues/red-box are not live standalone pages
+        run: |
+          for slug in byhaven black-box red-box; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "https://electroniccph.com/venues/$slug?_cb=$(date +%s)")
+            echo "$slug -> HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "FAIL: /venues/$slug unexpectedly resolves as a live page"
+              exit 1
+            fi
+          done
