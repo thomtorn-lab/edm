@@ -34,7 +34,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Long-running club near Kongens Have, dedicated to techno and house with international and Danish DJs and a strict sound-first, no-photo booking policy.",
     venueProfile:
-      "Culture Box has run as a dedicated electronic music club in central Copenhagen since 2005, a short walk from Kongens Have. The venue's programme is built entirely around techno and house, split across two adjoining rooms — Black Box, the main dancefloor, and Red Box, its adjacent room — that let a single night run two connected lineups at once. Bookings mix touring international DJs with resident and local Danish talent, and the club maintains a strict no-photography policy on the dancefloor to keep the focus on the music rather than the crowd. Culture Box is widely regarded as one of Copenhagen's foundational electronic clubs and a reference point for the city's techno and house scene.",
+      "Culture Box has run as a dedicated electronic music club in central Copenhagen since 2005, a short walk from Kongens Have. The venue's programme is built entirely around techno and house, split across two adjoining rooms — Black Box, the main dancefloor, and Red Box, its adjacent room — that let a single night run two connected lineups at once. Bookings mix touring international DJs with resident and local Danish talent, and the club maintains a strict no-photography policy on the dancefloor to keep the focus on the music rather than the crowd. Its programming has remained genre-focused throughout, without diversifying beyond techno and house.",
   },
   {
     id: "v-hangaren",
@@ -82,7 +82,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Basement nightclub near Copenhagen City Hall built specifically for house, techno and industrial sound, running underground club nights with a strict no-photo policy.",
     venueProfile:
-      "MODULE is a basement nightclub in central Copenhagen, a short walk from City Hall Square, built specifically around house, techno and industrial electronic music. The venue occupies a three-part basement layout — a small kiosk area, a lounge, and the main room — fitted with a Funktion-One sound system and a full LED lighting rig. Like several of the city's dedicated techno rooms, MODULE enforces a no-photography policy on the dancefloor to keep focus on the music. Programming runs Thursday to Saturday nights and mixes touring international DJs with local bookings, positioning MODULE among the newer additions to Copenhagen's underground club circuit since opening in the basement previously used by Ved Siden Af.",
+      "MODULE is a basement nightclub in central Copenhagen, a short walk from City Hall Square, built specifically around house, techno and industrial electronic music. The venue occupies a three-part basement layout — a small kiosk area, a lounge, and the main room. Like several of the city's dedicated techno rooms, MODULE enforces a no-photography policy on the dancefloor to keep focus on the music. Programming mixes touring international DJs with local bookings, positioning MODULE among the newer additions to Copenhagen's underground club circuit.",
   },
   {
     id: "v-jolene",
@@ -114,7 +114,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Bar, club and gallery in the Meatpacking District, running house, techno and disco nights across its basement dancefloor in a low-lit, industrial room.",
     venueProfile:
-      "Baggen combines a bar, club and gallery space in Copenhagen's Meatpacking District (Kødbyen), with its electronic programming concentrated in a basement dancefloor reached via a narrow staircase from the street-level bar. The room's low-lit, industrial character — exposed surfaces, minimal styling — suits its regular house, techno and disco bookings, alongside occasional gallery and art programming upstairs that broadens the venue beyond a single-purpose club. Baggen operates mainly Wednesday to Saturday, drawing a mixed local crowd typical of Kødbyen's nightlife cluster. Alongside Jolene and Basement, it's one of several rooms in the district that keep electronic music a consistent part of the area's late-night programme rather than an occasional booking.",
+      "Baggen combines a bar, club and gallery space in Copenhagen's Meatpacking District (Kødbyen), with its electronic programming concentrated in a basement dancefloor reached via a narrow staircase from the street-level bar. The room's low-lit, industrial character — exposed surfaces, minimal styling — suits its regular house, techno and disco bookings, alongside occasional gallery and art programming upstairs that broadens the venue beyond a single-purpose club. Alongside Jolene and Basement, it's one of several rooms in the district that keep electronic music a consistent part of the area's late-night programme rather than an occasional booking.",
   },
   {
     id: "v-klub-werkstatt",
@@ -158,11 +158,11 @@ export const VENUES: Venue[] = [
     postalCode: "1432",
     websiteUrl: "https://poolen.dk/",
     description:
-      "2,500-capacity warehouse venue on Refshaleøen spanning concerts, club nights and its own outdoor extension, Outside.",
+      "Large-scale warehouse venue on Refshaleøen spanning concerts, club nights and its own outdoor extension, Outside.",
     shortDescription:
-      "2,500-capacity warehouse venue on Refshaleøen from the team behind Pumpehuset, spanning concerts and club nights plus its own outdoor extension, Outside.",
+      "Large-scale warehouse venue on Refshaleøen from the team behind Pumpehuset, spanning concerts and club nights plus its own outdoor extension, Outside.",
     venueProfile:
-      "Poolen is a large-format warehouse venue on Refshaleøen, built inside a former B&W industrial hall by the team behind Pumpehuset. With a stated capacity around 2,500, it's one of the biggest rooms in the city's electronic and concert circuit, built with a serious sound and lighting rig to match. Programming spans full concerts and touring live acts alongside club nights and promoter takeovers, with electronic bookings forming an increasingly large part of its calendar. Poolen also runs Outside, an adjoining outdoor extension used for open-air parties and festival-style events during warmer months. Alongside Hangaren and Klub Werkstatt, Poolen anchors Refshaleøen as one of Copenhagen's main large-scale electronic and warehouse-event destinations.",
+      "Poolen is a large-format warehouse venue on Refshaleøen, built inside a former B&W industrial hall by the team behind Pumpehuset. It is one of the larger rooms in the city's electronic and concert circuit, built with a substantial sound and lighting rig to match. Programming spans full concerts and touring live acts alongside club nights and promoter takeovers, with electronic bookings forming an increasingly large part of its calendar. Poolen also runs Outside, an adjoining outdoor extension used for open-air parties and festival-style events during warmer months. Alongside Hangaren and Klub Werkstatt, Poolen anchors Refshaleøen as one of Copenhagen's main large-scale electronic and warehouse-event destinations.",
   },
   {
     id: "v-pumpehuset",
@@ -210,7 +210,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Restored 1950s freight-hall venue in the Meatpacking District combining a bar and restaurant with club nights, concerts and cultural events.",
     venueProfile:
-      "H15 occupies a restored 1953 freight hall in Copenhagen's Meatpacking District, converted into a roughly 1,000-square-metre multi-use space combining a bar, restaurant and event venue. Its programming deliberately mixes formats — club nights sit alongside concerts, art exhibitions and film screenings — rather than running as a dedicated electronic club, which gives H15 a broader cultural identity than most of the district's other rooms. Electronic and club-oriented nights make up part of that wider calendar, taking advantage of the hall's industrial-scale interior and flexible layout. As one of the newer additions to Kødbyen's converted-warehouse cluster, H15 adds a more genre-mixed alternative to the area's dedicated techno and house rooms.",
+      "H15 occupies a restored 1950s freight hall in Copenhagen's Meatpacking District, converted into a multi-use space combining a bar, restaurant and event venue. Its programming deliberately mixes formats — club nights sit alongside concerts, art exhibitions and film screenings — rather than running as a dedicated electronic club, which gives H15 a broader cultural identity than most of the district's other rooms. Electronic and club-oriented nights make up part of that wider calendar, taking advantage of the hall's industrial-scale interior and flexible layout. As one of the newer additions to Kødbyen's converted-warehouse cluster, H15 adds a more genre-mixed alternative to the area's dedicated techno and house rooms.",
   },
   {
     id: "v-bolsjefabrikken",
@@ -226,7 +226,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Self-run, non-commercial culture house in a former candy factory in Østerbro, hosting underground concerts and electronic parties alongside workshops and community events.",
     venueProfile:
-      "Bolsjefabrikken is a self-run, non-commercial culture house in Østerbro, housed in a former candy factory and operated as a collectively run free space rather than a conventional business. Its programme covers underground concerts, electronic parties, workshops and community events, reflecting its roots as a volunteer-organised space rather than a promoter-driven club. Electronic nights sit alongside a wider mix of cultural and political programming, and pricing and access are generally kept low and community-oriented in line with the venue's non-commercial ethos. Bolsjefabrikken draws much of its audience from the surrounding area, including students from the nearby technical university, and represents one of Copenhagen's more explicitly DIY, artist-run spaces that still regularly hosts electronic music.",
+      "Bolsjefabrikken is a self-run, non-commercial culture house in Østerbro, housed in a former candy factory and operated as a collectively run free space rather than a conventional business. Its programme covers underground concerts, electronic parties, workshops and community events, reflecting its roots as a volunteer-organised space rather than a promoter-driven club. Electronic nights sit alongside a wider mix of cultural and political programming, and pricing and access are generally kept low and community-oriented in line with the venue's non-commercial ethos. Bolsjefabrikken represents one of Copenhagen's more explicitly DIY, artist-run spaces that still regularly hosts electronic music.",
   },
   {
     id: "v-odds-and-ends",
@@ -274,7 +274,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Large former distillery hall on Amager, originally linked to Carlsberg, hosting big-room electronic line-ups and touring DJs alongside concerts and festival events.",
     venueProfile:
-      "TAP1 is a large event hall on Amager, built inside a former distillery building originally associated with the Carlsberg brewery before the venue relocated from its original Carlsberg-district site. The hall's industrial scale and open floor plan make it suited to big-room formats, and its programming spans electronic club-style line-ups and touring international DJs alongside concerts, conferences, exhibitions and trade fairs — a broader commercial-venue remit than a dedicated nightclub. Electronic promoters use TAP1 for larger-capacity events that outgrow the city's smaller club rooms, taking advantage of its size and flexible layout rather than a fixed sound or lighting identity tied to one genre. TAP1 functions as one of Copenhagen's go-to large-format venues when an electronic event needs more room than a standard club can offer.",
+      "TAP1 is a large event hall on Amager, built inside a former distillery building originally associated with the Carlsberg brewery. The hall's industrial scale and open floor plan make it suited to big-room formats, and its programming spans electronic club-style line-ups and touring international DJs alongside concerts, conferences, exhibitions and trade fairs — a broader commercial-venue remit than a dedicated nightclub. Electronic promoters use TAP1 for larger-capacity events that outgrow the city's smaller club rooms, taking advantage of its size and flexible layout rather than a fixed sound or lighting identity tied to one genre. TAP1 functions as one of Copenhagen's go-to large-format venues when an electronic event needs more room than a standard club can offer.",
   },
   {
     id: "v-underwerket",
@@ -290,7 +290,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Volunteer-run, youth-oriented DIY venue in Valby offering rehearsal and event space for young organisers, including electronic and techno nights alongside concerts.",
     venueProfile:
-      "UnderWerket is a volunteer-run venue in Valby aimed primarily at young people aged 15 to 30, offering rooms, sound equipment and organisational support for self-run events rather than operating as a commercial club. Alongside concerts and youth-organised gatherings, the space regularly hosts electronic and techno nights, including noise and experimental programming from independent local promoters. Its basement setting and community-support model give it a different character from Copenhagen's commercial club venues — events are typically organised by the young promoters themselves rather than booked in by the venue. UnderWerket's role in the city's electronic scene is smaller-scale and more grassroots than the larger clubs, functioning as an entry point for new, often very young organisers putting on their first electronic events.",
+      "UnderWerket is a volunteer-run venue in Valby aimed at young organisers, offering rooms, sound equipment and organisational support for self-run events rather than operating as a commercial club. Alongside concerts and youth-organised gatherings, the space regularly hosts electronic and techno nights, including noise and experimental programming from independent local promoters. Its basement setting and community-support model give it a different character from Copenhagen's commercial club venues — events are typically organised by the young promoters themselves rather than booked in by the venue. UnderWerket's role in the city's electronic scene is smaller-scale and more grassroots than the larger clubs, functioning as an entry point for new organisers putting on their first electronic events.",
   },
   {
     id: "v-vega-ideal-bar",
@@ -306,7 +306,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Basement club room inside VEGA's landmark concert hall building, running house, disco and electro club nights beneath the main concert halls upstairs.",
     venueProfile:
-      "VEGA is one of Copenhagen's best-known concert venues, and its basement club room — Ideal Bar — is the building's dedicated space for electronic and club-oriented nights, running beneath VEGA's main concert halls. While VEGA's main stages host touring bands and larger concerts across genres, Ideal Bar operates as a late-night club room in its own right, with a programme built around house, disco and electro. The room's identity is distinct from the concert halls above it — smaller, more intimate and club-focused rather than seated- or standing-concert oriented. As part of the wider VEGA building, one of Vesterbro's architectural and cultural landmarks, Ideal Bar gives the venue a consistent electronic-club presence alongside its primary identity as a concert hall.",
+      "VEGA is one of Copenhagen's best-known concert venues, and its basement club room — Ideal Bar — is the building's dedicated space for electronic and club-oriented nights, running beneath VEGA's main concert halls. While VEGA's main stages host touring bands and larger concerts across genres, Ideal Bar operates as a late-night club room in its own right, with a programme built around house, disco and electro. The room's identity is distinct from the concert halls above it — smaller, more intimate and club-focused rather than seated- or standing-concert oriented. As part of the wider VEGA building, Ideal Bar gives the venue a consistent electronic-club presence alongside its primary identity as a concert hall.",
   },
   {
     id: "v-alice",
@@ -338,7 +338,7 @@ export const VENUES: Venue[] = [
     shortDescription:
       "Central Copenhagen concert venue that also runs Cecil AM, a Friday/Saturday club night with a curated line-up of local and international electronic DJs.",
     venueProfile:
-      "Hotel Cecil is a concert venue in central Copenhagen, occupying a space previously used by Jazzhouse before Cecil took over the building. Alongside its regular programme of local and touring live bands, the venue runs Cecil AM, a recurring Friday and Saturday night club that turns the space over to a curated line-up of local and international electronic DJs once the concert programme wraps up. Cecil AM is not a separate venue but the same room and address operating under a different name for its late-night club identity. The building includes a main room and an upstairs bar, giving it a moderate scale suited to club-length sets rather than large-format warehouse events. Hotel Cecil's dual identity — concert hall by early evening, electronic club night as Cecil AM later on — makes it one of central Copenhagen's more flexible venues for electronic programming.",
+      "Hotel Cecil is a concert venue in central Copenhagen. Alongside its regular programme of local and touring live bands, the venue runs Cecil AM, a recurring Friday and Saturday night club that turns the space over to a curated line-up of local and international electronic DJs once the concert programme wraps up. Cecil AM is not a separate venue but the same room and address operating under a different name for its late-night club identity. The building includes a main room and an upstairs bar, giving it a moderate scale suited to club-length sets rather than large-format warehouse events. Hotel Cecil's dual identity — concert hall by early evening, electronic club night as Cecil AM later on — makes it one of central Copenhagen's more flexible venues for electronic programming.",
   },
   {
     id: "v-halvandet",
