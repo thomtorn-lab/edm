@@ -169,3 +169,58 @@ describe("EventRow — no whole-row hover affordance (Round 10)", () => {
     expect(row.className).not.toContain("bg-surface-1");
   });
 });
+
+describe("EventRow — redundant artist preview suppression (Round 12)", () => {
+  afterEach(cleanup);
+
+  it("suppresses the grey artist preview when a per-room lineup title already names every artist", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Black Box: TIMO MAAS, RYAN DANK, BALTZA · Red Box: KARINA LIN, ASLI",
+          artists: ["TIMO MAAS", "RYAN DANK", "BALTZA", "KARINA LIN", "ASLI"],
+        })}
+      />,
+    );
+    expect(screen.queryByText(/TIMO MAAS \/ RYAN DANK/)).toBeNull();
+    expect(screen.getByText(/Black Box: TIMO MAAS/)).toBeTruthy();
+  });
+
+  it("keeps the grey artist preview when the title is a distinct showcase name", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "HYGGELIT SHOWCASE",
+          artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"],
+        })}
+      />,
+    );
+    expect(screen.getByText(/SOPHIE VAN HAYDEN \/ NAIVA \/ ONSBERG/)).toBeTruthy();
+  });
+
+  it("renders no lineup text at all when the event has no artists", () => {
+    render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
+    const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
+    expect(titleLink.textContent).toBe("HYGGELIT SHOWCASE");
+  });
+});
+
+describe("EventRow — desktop title gets up to two lines, CTAs top-align with it (Round 12)", () => {
+  afterEach(cleanup);
+
+  it("allows the title link up to two lines on desktop instead of single-line truncation", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    const classes = titleLink.className.split(/\s+/);
+    expect(classes).toContain("sm:line-clamp-2");
+    expect(classes).not.toContain("sm:truncate");
+  });
+
+  it("top-aligns the row's columns (date, title/meta, CTAs) on desktop instead of vertically centering them", () => {
+    const { container } = render(<EventRow event={makeEvent()} />);
+    const row = container.querySelector("li > div") as HTMLElement;
+    const classes = row.className.split(/\s+/);
+    expect(classes).toContain("sm:items-start");
+    expect(classes).not.toContain("sm:items-center");
+  });
+});

@@ -3,6 +3,7 @@ import type { EventWithVenue } from "@/lib/queries";
 import { formatRowDateLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
+import { shouldShowArtistPreview } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 
@@ -13,7 +14,8 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
   const links = getExternalLinks(event, 2);
   const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);
-  const lineup = event.artists.length > 0 ? `: ${event.artists.join(" / ")}` : "";
+  const showArtistPreview = shouldShowArtistPreview(event.title, event.artists);
+  const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
   const calendarInput = {
     title: event.title,
     description: event.description,
@@ -25,7 +27,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
 
   return (
     <li className="border-b border-border last:border-b-0">
-      <div className="flex flex-col gap-2.5 py-4 sm:flex-row sm:items-center sm:gap-5 sm:py-3.5">
+      <div className="flex flex-col gap-2.5 py-4 sm:flex-row sm:items-start sm:gap-5 sm:py-3.5">
         <div className="flex shrink-0 items-baseline gap-2 sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateLabel(event.startDatetime)}
@@ -38,7 +40,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
         <div className="min-w-0 flex-1">
           <Link
             href={`/events/${event.slug}`}
-            className="block text-[15px] font-semibold leading-snug text-text-primary hover:text-accent focus-visible:text-accent sm:truncate"
+            className="block text-[15px] font-semibold leading-snug text-text-primary hover:text-accent focus-visible:text-accent sm:line-clamp-2"
           >
             {event.title}
             <span className="font-normal text-text-secondary">{lineup}</span>
