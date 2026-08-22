@@ -9,8 +9,10 @@ jobs:
     steps:
       - name: Fetch homepage HTML
         run: |
-          curl -sSL -o home.html "https://electroniccph.com/"
+          curl -sSL -D headers.txt -H "Cache-Control: no-cache" -H "Pragma: no-cache" -o home.html "https://electroniccph.com/?_cb=$(date +%s)"
           wc -c home.html
+          echo "--- response headers ---"
+          cat headers.txt
 
       - name: Confirm the new secondary-strong hierarchy class shipped on the event list
         run: |
