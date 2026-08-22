@@ -9,7 +9,7 @@ jobs:
     steps:
       - name: Fetch homepage HTML
         run: |
-          curl -sS -o home.html "https://electroniccph.com/"
+          curl -sSL -o home.html "https://electroniccph.com/"
           echo "--- bytes fetched ---"
           wc -c home.html
 
@@ -37,7 +37,7 @@ jobs:
             echo "FAIL: could not find a compiled CSS link in the homepage HTML"
             exit 1
           fi
-          curl -sS -o bundle.css "https://electroniccph.com${CSS_PATH}"
+          curl -sSL -o bundle.css "https://electroniccph.com${CSS_PATH}"
           wc -c bundle.css
 
       - name: Confirm the neutral focus-visible override rule shipped in CSS
