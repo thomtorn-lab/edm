@@ -40,7 +40,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
         <div className="min-w-0 flex-1">
           <Link
             href={`/events/${event.slug}`}
-            className="block text-[15px] font-semibold leading-snug text-text-primary hover:text-accent focus-visible:text-accent sm:line-clamp-2"
+            className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110 sm:line-clamp-2"
           >
             {event.title}
             <span className="font-normal text-text-secondary">{lineup}</span>
@@ -48,7 +48,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="text-text-secondary hover:text-accent focus-visible:text-accent"
+              className="text-text-secondary underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
             >
               {event.venue.name}
             </Link>
@@ -75,11 +75,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={
-                    link.primary
-                      ? "text-accent-strong hover:text-accent"
-                      : "text-text-secondary hover:text-text-primary"
-                  }
+                  className="text-text-secondary transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
                 >
                   {link.label} ↗
                 </a>

@@ -102,7 +102,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <dd className="mt-1 text-sm text-text-primary">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="hover:text-accent focus-visible:text-accent"
+              className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
             >
               {event.venue.name}
             </Link>
@@ -139,12 +139,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
                 href={link.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={
-                  "rounded border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors " +
-                  (link.primary
-                    ? "border-accent bg-accent/10 text-accent-strong hover:bg-accent/20"
-                    : "border-border-strong text-text-secondary hover:border-accent-dim hover:text-text-primary")
-                }
+                className="rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
               >
                 {link.label} ↗
               </a>

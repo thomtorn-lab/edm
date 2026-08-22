@@ -79,6 +79,8 @@ const VENUE = {
   postalCode: "1000",
   websiteUrl: null,
   description: "",
+  shortDescription: null,
+  venueProfile: null,
 };
 
 let eventCounter = 0;
@@ -214,18 +216,20 @@ describe("EventExplorer month nav — active highlight", () => {
     expect(screen.getByRole("link", { name: "Sep" }).className).not.toContain("text-accent");
   });
 
-  it("leaves desktop's active-month styling untouched", () => {
+  it("applies the accent/underline active-month treatment on desktop too, not just mobile", () => {
     render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
     vi.runOnlyPendingTimers();
 
     fireEvent.click(screen.getByRole("link", { name: "Sep" }));
 
-    // Desktop neutralizes the accent/underline treatment via its own sm:
-    // overrides regardless of active state — this fix must not have removed
-    // that override in the course of wiring up the click handler.
+    // The active month must be clearly distinguishable from inactive months
+    // at every breakpoint — desktop must not neutralize the accent/underline
+    // treatment the way it used to.
     const sepLink = screen.getByRole("link", { name: "Sep" });
-    expect(sepLink.className).toContain("sm:text-text-tertiary");
-    expect(sepLink.className).toContain("sm:no-underline");
+    expect(sepLink.className).toContain("text-accent");
+    expect(sepLink.className).toContain("underline");
+    expect(sepLink.className).not.toContain("sm:text-text-tertiary");
+    expect(sepLink.className).not.toContain("sm:no-underline");
   });
 });
 
@@ -235,9 +239,8 @@ describe("EventExplorer month heading — reference purple token (Round 11)", ()
     vi.runOnlyPendingTimers();
     const monthNumber = screen.getByText("08 /");
     const classes = monthNumber.className.split(/\s+/);
-    // This is the reference token EventRow's title/venue hover states must
-    // reuse exactly (see EventRow.test.tsx) — not text-accent-strong or any
-    // other shade. If this token ever changes, EventRow must change with it.
+    // The purple accent token, reserved for brand/selected-state/active-nav
+    // use (Round 13) — not for ordinary text-link hover states elsewhere.
     expect(classes).toContain("text-accent");
     expect(classes).not.toContain("text-accent-strong");
   });

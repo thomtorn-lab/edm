@@ -30,6 +30,8 @@ export function venueRowToRecord(row: VenueRow): Venue {
     postalCode: row.postalCode,
     websiteUrl: row.websiteUrl,
     description: row.description,
+    shortDescription: row.shortDescription,
+    venueProfile: row.venueProfile,
   };
 }
 

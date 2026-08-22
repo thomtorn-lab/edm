@@ -14,6 +14,8 @@ const VENUE = {
   postalCode: "1000",
   websiteUrl: null,
   description: "",
+  shortDescription: null,
+  venueProfile: null,
 };
 
 function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
@@ -106,22 +108,25 @@ describe("Event detail page — FREE badge removed (frontend polish, Round 9)", 
   });
 });
 
-describe("Event detail page — clickability affordance (Round 8, refined Round 9: color-only, no underline)", () => {
+describe("Event detail page — clickability affordance (Round 13: brighten + underline, non-purple)", () => {
   afterEach(cleanup);
 
-  it("gives the venue link a hover and keyboard-focus accent-color shift, no underline", async () => {
+  it("gives the venue link a brighten + subtle underline on hover/focus, no purple color change", async () => {
     await renderPage(makeEvent());
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
     const classes = venueLink.className.split(/\s+/);
     expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
-    // Must match the exact month-number purple token (text-accent), the same
-    // one EventRow's title/venue links use — not text-accent-strong or any
-    // other shade (Round 11).
-    expect(classes).toContain("hover:text-accent");
-    expect(classes).toContain("focus-visible:text-accent");
+    // Matches EventRow's venue-link treatment: brighten toward text-primary
+    // plus a decoration-color-driven underline reveal, never the purple
+    // accent token (Round 13 supersedes the old purple-hover behaviour).
+    expect(classes).toContain("hover:text-text-primary");
+    expect(classes).toContain("focus-visible:text-text-primary");
+    expect(classes).toContain("hover:decoration-current");
+    expect(classes).toContain("focus-visible:decoration-current");
+    expect(classes).not.toContain("hover:text-accent");
+    expect(classes).not.toContain("focus-visible:text-accent");
     expect(classes).not.toContain("hover:text-accent-strong");
     expect(classes).not.toContain("focus-visible:text-accent-strong");
-    expect(venueLink.className).not.toContain("underline");
     // The visible venue name text is a direct child of the hover-colored
     // link, not nested in a separately-colored span.
     expect(venueLink.children.length).toBe(0);

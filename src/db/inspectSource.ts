@@ -117,6 +117,8 @@ function rowToVenue(r: Record<string, unknown>): Venue {
     postalCode: r.postal_code as string,
     websiteUrl: r.website_url as string | null,
     description: r.description as string,
+    shortDescription: (r.short_description as string | null) ?? null,
+    venueProfile: (r.venue_profile as string | null) ?? null,
   };
 }
 

@@ -15,6 +15,8 @@ const VENUE = {
   postalCode: "1000",
   websiteUrl: null,
   description: "",
+  shortDescription: null,
+  venueProfile: null,
 };
 
 function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
@@ -108,31 +110,37 @@ describe("EventRow — genre display and ticket/free CTA", () => {
   });
 });
 
-describe("EventRow — clickability affordance (Round 8, refined Round 9: color-only, no underline)", () => {
+describe("EventRow — clickability affordance (Round 13: brighten-only title, non-purple)", () => {
   afterEach(cleanup);
 
-  it("gives the event title link a hover and keyboard-focus accent-color shift, no underline", () => {
+  it("gives the event title link a slight brighten on hover/focus, no purple color change, no underline, and a pointer cursor", () => {
     render(<EventRow event={makeEvent()} />);
     const titleLink = screen.getByRole("link", { name: /Test Event/ });
     const classes = titleLink.className.split(/\s+/);
     expect(titleLink.getAttribute("href")).toBe("/events/test-event");
-    expect(classes).toContain("hover:text-accent");
-    expect(classes).toContain("focus-visible:text-accent");
+    expect(classes).toContain("hover:brightness-110");
+    expect(classes).toContain("focus-visible:brightness-110");
+    expect(classes).toContain("cursor-pointer");
+    expect(classes).not.toContain("hover:text-accent");
+    expect(classes).not.toContain("focus-visible:text-accent");
     expect(classes).not.toContain("hover:text-accent-strong");
     expect(classes).not.toContain("focus-visible:text-accent-strong");
     expect(titleLink.className).not.toContain("underline");
   });
 
-  it("gives the venue name link a hover and keyboard-focus accent-color shift, no underline, linking to the venue page", () => {
+  it("gives the venue name link a brighten + subtle underline on hover/focus, no purple color change, linking to the venue page", () => {
     render(<EventRow event={makeEvent()} />);
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
     const classes = venueLink.className.split(/\s+/);
     expect(venueLink.getAttribute("href")).toBe("/venues/test-venue");
-    expect(classes).toContain("hover:text-accent");
-    expect(classes).toContain("focus-visible:text-accent");
+    expect(classes).toContain("hover:text-text-primary");
+    expect(classes).toContain("focus-visible:text-text-primary");
+    expect(classes).toContain("hover:decoration-current");
+    expect(classes).toContain("focus-visible:decoration-current");
+    expect(classes).not.toContain("hover:text-accent");
+    expect(classes).not.toContain("focus-visible:text-accent");
     expect(classes).not.toContain("hover:text-accent-strong");
     expect(classes).not.toContain("focus-visible:text-accent-strong");
-    expect(venueLink.className).not.toContain("underline");
   });
 });
 

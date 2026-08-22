@@ -376,7 +376,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                     className={
                       "shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors " +
                       (isActive
-                        ? "text-accent underline decoration-accent underline-offset-4 sm:text-text-tertiary sm:no-underline sm:hover:text-text-primary"
+                        ? "text-accent underline decoration-accent underline-offset-4"
                         : "text-text-tertiary hover:text-text-primary")
                     }
                   >

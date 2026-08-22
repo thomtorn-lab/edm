@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: PageProps<"/venues/[slug]">):
   if (!venue) return {};
   return {
     title: venue.name,
-    description: `${venue.name}, ${venue.address} — upcoming electronic music events. ${venue.description}`,
+    description: `${venue.name}, ${venue.address} — upcoming electronic music events. ${venue.shortDescription ?? venue.description}`,
     alternates: { canonical: `/venues/${venue.slug}` },
   };
 }
@@ -37,7 +37,9 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
         {venue.name}
       </h1>
       <p className="mt-2 text-sm text-text-secondary">{venue.address}</p>
-      <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">{venue.description}</p>
+      <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">
+        {venue.venueProfile ?? venue.description}
+      </p>
 
       {venue.websiteUrl && (
         <a

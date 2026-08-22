@@ -56,6 +56,10 @@ export interface Venue {
   postalCode: string;
   websiteUrl: string | null;
   description: string;
+  /** ~20-35 words for the /venues overview list. Falls back to `description` when unset. */
+  shortDescription: string | null;
+  /** ~100-170 words for the venue's own detail page. Falls back to `description` when unset. */
+  venueProfile: string | null;
 }
 
 export interface Artist {

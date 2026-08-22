@@ -25,7 +25,14 @@ export const venues = pgTable("venues", {
   city: text("city").notNull(), // "Copenhagen" | "Frederiksberg"
   postalCode: text("postal_code").notNull(),
   websiteUrl: text("website_url"),
+  // Legacy single-purpose field, superseded by shortDescription/venueProfile
+  // below but kept (nullable-compatible callers still read it) until every
+  // venue has been migrated onto the new two-field content model.
   description: text("description").notNull(),
+  /** ~20-35 words for the /venues overview list: type + electronic relevance + broad programming. */
+  shortDescription: text("short_description"),
+  /** ~100-170 words for the venue's own detail page — genuinely more than the short description, not a restatement of it. */
+  venueProfile: text("venue_profile"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
