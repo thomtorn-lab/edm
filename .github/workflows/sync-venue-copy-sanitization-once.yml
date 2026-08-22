@@ -69,6 +69,18 @@ jobs:
           echo "--- MCR-T date/time text (manual eyeball check, expect Nov 20 2026 22:00) ---"
           grep -o '20.*November.*2026\|November 20\|20 Nov[a-z]*' mcrt.html || true
 
+      - name: Diagnostics — inspect what the homepage actually returned
+        run: |
+          echo "--- <title> ---"
+          grep -o '<title>[^<]*</title>' home.html || true
+          echo "--- occurrences of a few known-stable classes ---"
+          echo "text-text-secondary-strong: $(grep -o 'text-text-secondary-strong' home.html | wc -l)"
+          echo "text-text-tertiary: $(grep -o 'text-text-tertiary' home.html | wc -l)"
+          echo "border-b border-border: $(grep -o 'border-b border-border' home.html | wc -l)"
+          echo "/events/ links: $(grep -o 'href="/events/[a-z0-9-]*"' home.html | wc -l)"
+          echo "--- first /events/ href sample ---"
+          grep -o 'href="/events/[a-z0-9-]*"' home.html | head -5 || true
+
       - name: Confirm the event list/detail structural markers still render (no gross regression)
         run: |
           if grep -q 'text-text-secondary-strong' home.html; then
