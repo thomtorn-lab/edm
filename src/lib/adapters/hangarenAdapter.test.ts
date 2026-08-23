@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseHangarenEventsHtml, createHangarenAdapter, HANGAREN_EVENTS_URL } from "./hangarenAdapter";
+import { parseHangarenEventsHtml, createHangarenAdapter, HANGAREN_EVENTS_URL, truncateAtBoundary } from "./hangarenAdapter";
 
 /**
  * `hangaren-events.html` is a real, unmodified recording of
@@ -148,5 +148,29 @@ describe("createHangarenAdapter", () => {
     };
     const adapter = createHangarenAdapter(fetchImpl as unknown as typeof fetch, 0);
     await expect(adapter.fetchCandidates()).rejects.toThrow(/Hangaren fetch failed/);
+  });
+});
+
+describe("truncateAtBoundary — no mid-word/mid-sentence cuts (editorial-description follow-up)", () => {
+  it("cuts at the last complete sentence instead of a bare 600-char slice mid-word (real Production bio, Daria Kolosova)", () => {
+    // Real, unmodified Production description text (as of this task's live audit)
+    // that a bare `.slice(0, 600)` cut to a dangling "...Today, ".
+    const realBio =
+      'Daria Kolosova: Daria was born in the small town of Lutugino in eastern Ukraine. Her love for music was instilled by her father, and her devotion to electronic music began at the age of nine when she first heard "Diesel Power" by The Prodigy. Her passion grew even stronger when her mother sent her to music school, where she studied piano. Drawn to DJing from an early age, Daria embraced her vocation, which led to her first performance in February 2010. Following her debut, she continued performing actively in clubs across Luhansk and other cities, while also organizing her own parties. Today, she is';
+    const result = truncateAtBoundary(realBio, 600);
+    expect(result.endsWith("Today,")).toBe(false);
+    expect(result.endsWith(".")).toBe(true);
+    expect(result).toContain("while also organizing her own parties.");
+  });
+
+  it("returns the text unchanged when already under the limit", () => {
+    expect(truncateAtBoundary("Short bio.", 600)).toBe("Short bio.");
+  });
+
+  it("falls back to the last word boundary when no sentence end exists near the limit", () => {
+    const noSentences = "word ".repeat(200).trim(); // 999 chars, no punctuation at all
+    const result = truncateAtBoundary(noSentences, 600);
+    expect(result.length).toBeLessThanOrEqual(600);
+    expect(result.endsWith("word")).toBe(true); // never a dangling partial word
   });
 });

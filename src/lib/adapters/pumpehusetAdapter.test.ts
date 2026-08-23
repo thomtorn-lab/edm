@@ -224,6 +224,13 @@ describe("createPumpehusetAdapter", () => {
     expect(byhaven!.genreConfidenceHint).toBe("high");
     expect(byhaven!.artists).toEqual(["Leeni & Danilo Kupfernagel", "Lush", "NILU"]);
 
+    // Editorial-description follow-up: the "Line-Up:" list adopted into
+    // `artists` above must not also be duplicated as raw text underneath it
+    // in `description` — the event-detail page already renders `artists`
+    // separately, so repeating the same names in prose is pure duplication.
+    expect(byhaven!.description).not.toContain("Line-Up");
+    expect(byhaven!.description).not.toContain("NILU");
+
     // Afro Sundown Fest data-quality gap fix (Round 5): the fetch_concerts
     // JSON carries no support_bands data (support_bands: false), so the
     // only "artist" this adapter previously extracted was the generic
@@ -235,5 +242,7 @@ describe("createPumpehusetAdapter", () => {
     // lineup, keeping the combined act "Jayce + MC Mazi" as one entry.
     const afroSundown = results.find((e) => e.officialEventUrl === "https://pumpehuset.dk/koncerter/byhaven-afro-sundown-fest/");
     expect(afroSundown!.artists).toEqual(["Bullet", "Panda", "Sule", "Xzyl", "Ynxg Irie", "Jayce + MC Mazi"]);
+    expect(afroSundown!.description).not.toContain("lineup:");
+    expect(afroSundown!.description).not.toContain("Jayce");
   });
 });

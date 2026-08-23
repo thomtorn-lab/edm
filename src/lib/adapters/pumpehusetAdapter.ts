@@ -225,24 +225,34 @@ function splitCommaSeparatedLineup(line: string): string[] {
  * commas only (never on "+", so a combined act stays one entry); otherwise
  * it falls back to the original one-name-per-line collection.
  */
-function extractLineupFromBodyLines(lines: string[]): string[] {
+/**
+ * `consumedRange` is the [start, end) line-index span the lineup list
+ * itself occupies (the marker line through the last consumed name line) —
+ * callers use this to exclude exactly the lines that became `artists` from
+ * the stored description, so a lineup the venue's own copy states isn't
+ * also duplicated as raw text underneath it. Never touches any prose that
+ * follows the list (e.g. a presale-deadline sentence after "Lineup: A B").
+ */
+function extractLineupFromBodyLines(lines: string[]): { artists: string[]; consumedRange: [number, number] | null } {
   const startIdx = lines.findIndex((l) => LINEUP_START.test(l));
-  if (startIdx === -1) return [];
+  if (startIdx === -1) return { artists: [], consumedRange: null };
 
   const firstLine = lines[startIdx + 1];
   if (firstLine?.includes(",")) {
-    return splitCommaSeparatedLineup(firstLine);
+    return { artists: splitCommaSeparatedLineup(firstLine), consumedRange: [startIdx, startIdx + 2] };
   }
 
   const names: string[] = [];
+  let endIdx = startIdx + 1;
   for (let i = startIdx + 1; i < lines.length; i++) {
     const line = lines[i];
     // A lineup list is a short run of names — a long sentence (a new prose
     // paragraph resuming after the list) signals the list has ended.
     if (line.split(" ").length > 6) break;
     names.push(line);
+    endIdx = i + 1;
   }
-  return names;
+  return { artists: names, consumedRange: [startIdx, endIdx] };
 }
 
 /** Support-band names + free-text bios, when present — real per-band evidence from the venue's own JSON, not a title guess. */
@@ -462,7 +472,28 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
         }
         const presenter = extractPresenterLine(detailHtml);
         const bodyLines = extractBodyDescriptionLines(detailHtml);
-        const bodyDescription = bodyLines.length > 0 ? bodyLines.join(" ").replace(/\s+/g, " ").trim() : null;
+
+        // The body text's own "Line-Up:" list (when present) is only trusted
+        // when the listing JSON's support_bands data supplied nothing better
+        // than the generic title-derived fallback — real support_bands
+        // artists are never overridden. When adopted, the list's own lines
+        // are excluded from the stored description below — the venue's copy
+        // states a lineup once, and this adapter shouldn't repeat it a
+        // second time as raw text underneath the artists the site already
+        // shows separately (any prose that follows the list, e.g. a presale
+        // note, is kept).
+        let descriptionLines = bodyLines;
+        if (bodyLines.length > 0 && sameArtists(next.artists, artistsFromTitle(next.title))) {
+          const { artists: bodyLineup, consumedRange } = extractLineupFromBodyLines(bodyLines);
+          if (bodyLineup.length > 0) {
+            next = { ...next, artists: bodyLineup };
+            if (consumedRange) {
+              descriptionLines = [...bodyLines.slice(0, consumedRange[0]), ...bodyLines.slice(consumedRange[1])];
+            }
+          }
+        }
+
+        const bodyDescription = descriptionLines.length > 0 ? descriptionLines.join(" ").replace(/\s+/g, " ").trim() : null;
 
         // Combine the richer written description (see extractBodyDescriptionLines'
         // doc comment for why this previously-unread text matters) with any
@@ -471,15 +502,6 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
         // with the presenter line.
         const combinedDescription = [next.description, bodyDescription].filter(Boolean).join("\n\n") || presenter || next.description;
         if (combinedDescription !== next.description) next = { ...next, description: combinedDescription };
-
-        // The body text's own "Line-Up:" list (when present) is only trusted
-        // when the listing JSON's support_bands data supplied nothing better
-        // than the generic title-derived fallback — real support_bands
-        // artists are never overridden.
-        if (bodyLines.length > 0 && sameArtists(next.artists, artistsFromTitle(next.title))) {
-          const bodyLineup = extractLineupFromBodyLines(bodyLines);
-          if (bodyLineup.length > 0) next = { ...next, artists: bodyLineup };
-        }
 
         // Re-attempt genre resolution now that the fuller detail-page text is
         // available — the listing-time pass only ever saw the title and

@@ -312,6 +312,22 @@ export function extractResidentAdvisorUrl(detailHtml: string): string | null {
 }
 
 /**
+ * Culture Box's detail pages append two fixed paragraphs to literally
+ * every night — a generic "first drink free" note and an "Attitude Code"
+ * safety-policy blurb linking culture-box.com/attitude-code (verified
+ * against all 17 currently published events; wording varies slightly,
+ * "Safer Space"/"Safer space", "and training here:"/"on our website:", but
+ * the substance is always the same). Editorial-description cleanup: venue
+ * boilerplate and a bare URL, not information about this specific night —
+ * filtered only from the stored `description` (see
+ * enrichCandidatesWithDetailPages), never from extractDescriptionParagraphs
+ * itself, since attributeGenreToRoom still needs every real paragraph.
+ */
+function isCultureBoxBoilerplateParagraph(paragraph: string): boolean {
+  return /^First drink\/beer for free the first open hour\.?$/i.test(paragraph) || /^Attitude Code\b/i.test(paragraph);
+}
+
+/**
  * Whether `text` names this artist. Deliberately exact-substring only (full
  * display name, case-insensitive) — a looser first-name/partial match was
  * evaluated against all 15 real detail-page fixtures collected for this
@@ -392,7 +408,8 @@ export async function enrichCandidatesWithDetailPages(
 
     const paragraphs = extractDescriptionParagraphs(detailHtml);
     const residentAdvisorUrl = extractResidentAdvisorUrl(detailHtml);
-    const description = paragraphs.length > 0 ? paragraphs.join("\n\n") : null;
+    const descriptionParagraphs = paragraphs.filter((p) => !isCultureBoxBoilerplateParagraph(p));
+    const description = descriptionParagraphs.length > 0 ? descriptionParagraphs.join("\n\n") : null;
 
     for (const candidate of nightCandidates) {
       const otherRoomsArtists = nightCandidates.filter((c) => c !== candidate).flatMap((c) => c.artists);

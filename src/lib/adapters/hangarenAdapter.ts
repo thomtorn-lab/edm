@@ -61,6 +61,25 @@ function extractLineup(lines: string[]): { artists: string[]; lineupStartIdx: nu
   return { artists, lineupStartIdx: startIdx };
 }
 
+/**
+ * Truncates bio text to at most `maxLength` characters without cutting off
+ * mid-word or mid-sentence when a clean boundary exists near the limit —
+ * editorial-description follow-up (real evidence: Hangaren bios routinely
+ * got cut to a bare `.slice(0, 600)`, landing mid-word, e.g. "...She al",
+ * "...no dou", "...Today, "). Prefers the last sentence-ending punctuation
+ * within the limit; falls back to the last word boundary; only cuts
+ * mid-word as a last resort (a single 600+-character run with no space,
+ * which no real bio in this source has done).
+ */
+export function truncateAtBoundary(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const slice = text.slice(0, maxLength);
+  const lastSentenceEnd = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("! "), slice.lastIndexOf("? "));
+  if (lastSentenceEnd > maxLength * 0.5) return slice.slice(0, lastSentenceEnd + 1).trim();
+  const lastSpace = slice.lastIndexOf(" ");
+  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trim();
+}
+
 /** First RA (Resident Advisor) or Billetto ticket link found in the block, in that priority order. */
 function extractTicketUrl(blockHtml: string): { ticketUrl: string | null; residentAdvisorUrl: string | null } {
   const ra = blockHtml.match(/href="(https:\/\/ra\.co\/events\/\d+[^"]*)"/i);
@@ -157,7 +176,7 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
           ? lines.slice(icsIdx + 1, lineupStartIdx).filter((l) => !/^https?:\/\//i.test(l))
           : [];
       const fullBioText = bioLines.join(" ");
-      const description = fullBioText.slice(0, 600) || null;
+      const description = fullBioText ? truncateAtBoundary(fullBioText, 600) : null;
 
       // Genre evidence: a keyword match against the venue's OWN descriptive
       // text about this specific show is "official-description" tier

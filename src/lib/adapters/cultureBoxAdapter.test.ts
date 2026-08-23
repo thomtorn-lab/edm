@@ -641,6 +641,21 @@ describe("enrichCandidatesWithDetailPages — orchestration", () => {
     expect(enriched[0].description!.indexOf(roomLineupText!)).toBeGreaterThan(0); // real prose comes first
   });
 
+  it("excludes the venue's fixed 'first drink free' / 'Attitude Code' boilerplate and its raw URL from the stored description, without affecting genre attribution", async () => {
+    const nightUrl = "https://culture-box.com/event/fri-28-august/";
+    const fetchImpl = fetchImplFor({ [nightUrl]: loadDetailFixture("fri-28-august") });
+    const night = loadConsolidatedNight("fri-28-august", nightUrl);
+    const enriched = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+
+    expect(enriched[0].description).not.toContain("First drink/beer for free");
+    expect(enriched[0].description).not.toContain("Attitude Code");
+    expect(enriched[0].description).not.toMatch(/https?:\/\//);
+    // Real event-specific prose from the same fixture is still present.
+    expect(enriched[0].description).toContain("Taxman");
+    // Genre attribution (which reads the raw, unfiltered paragraphs) is unaffected.
+    expect(enriched[0].genreHint).toBe("drum-and-bass");
+  });
+
   it("a single night's detail-page fetch failure degrades only that night — other nights are still enriched, and no candidate anywhere is dropped", async () => {
     const fetchImpl = fetchImplFor({
       // fri-28-august deliberately NOT mocked -> 404, simulating a fetch failure for that one night
