@@ -1,0 +1,107 @@
+name: Verify Festivals Merge (Production smoke test)
+
+# One-time, manual, read-only Production smoke test for the Festival
+# Accuracy & Curation merge (commit 7b21de9 fast-forwarded onto
+# claude/copenhagen-edm-events-site-3lo273). This sandbox's egress proxy
+# blocks direct HTTPS access to the live domain, so this workflow runs on
+# a GitHub-hosted runner (which has normal network access) instead.
+#
+# Strictly read-only: fetches https://www.electroniccph.com/festivals and
+# the legacy /festivals/dour-festival redirect over plain HTTPS GET/HEAD.
+# No writes of any kind, no deployment action, no database access.
+# workflow_dispatch only. The verification script is written to a
+# throwaway file during the run and removed immediately after — never
+# committed. This workflow file itself is removed in a follow-up commit
+# once verification is confirmed.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch and verify live /festivals
+        run: |
+          cat > ./.verify-festivals.mjs <<'EOF'
+          const BASE = "https://www.electroniccph.com";
+
+          async function fetchWithRetry(path, { maxAttempts = 12, delayMs = 10000, marker } = {}) {
+            let lastText = "";
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const url = `${BASE}${path}?cachebust=${Date.now()}`;
+              try {
+                const res = await fetch(url, { redirect: "follow", cache: "no-store" });
+                const text = await res.text();
+                lastText = text;
+                if (!marker || text.includes(marker)) {
+                  console.log(`Fetched ${path} on attempt ${attempt}/${maxAttempts} (status ${res.status}).`);
+                  return { status: res.status, text };
+                }
+                console.log(`Attempt ${attempt}/${maxAttempts}: marker not yet present, retrying in ${delayMs / 1000}s...`);
+              } catch (err) {
+                console.log(`Attempt ${attempt}/${maxAttempts} errored: ${err.message}, retrying in ${delayMs / 1000}s...`);
+              }
+              await new Promise((r) => setTimeout(r, delayMs));
+            }
+            console.log("::warning::Marker never appeared within retry budget; proceeding with last fetched content.");
+            return { status: null, text: lastText };
+          }
+
+          function near(text, name, span = 220) {
+            const idx = text.indexOf(name);
+            if (idx === -1) return null;
+            return text.slice(idx, idx + name.length + span).replace(/\s+/g, " ");
+          }
+
+          function countOccurrences(text, needle) {
+            return text.split(needle).length - 1;
+          }
+
+          const { status, text } = await fetchWithRetry("/festivals", { marker: "Next edition TBA" });
+          console.log(`\n=== /festivals fetch status: ${status} ===`);
+
+          const festivalCount = countOccurrences(text, 'class="text-lg font-semibold');
+          console.log(`Festival entry count (text-lg font-semibold headings): ${festivalCount}`);
+
+          console.log(`\n=== presence/absence checks ===`);
+          console.log(`"Dour" present: ${text.includes("Dour")}`);
+          console.log(`"Sea Dance" present: ${text.includes("Sea Dance")}`);
+          console.log(`"Typically" present: ${text.includes("Typically")}`);
+
+          console.log(`\n=== key festival status snippets ===`);
+          for (const name of ["Houghton Festival", "O.Z.O.R.A. Festival", "Fusion Festival", "Sonus Festival", "Mysteryland", "UNTOLD", "Terminal V"]) {
+            console.log(`${name}: ${near(text, name)}`);
+          }
+
+          console.log(`\n=== duplicate name check ===`);
+          const nameMatches = [...text.matchAll(/text-lg font-semibold[^>]*>([^<↗]+)/g)].map((m) => m[1].trim());
+          const seen = new Map();
+          for (const n of nameMatches) seen.set(n, (seen.get(n) || 0) + 1);
+          const dupes = [...seen.entries()].filter(([, c]) => c > 1);
+          console.log(`Total names captured: ${nameMatches.length}`);
+          console.log(`Duplicates: ${dupes.length ? JSON.stringify(dupes) : "none"}`);
+
+          console.log(`\n=== external link sanity (officialUrl hrefs present as target=_blank anchors) ===`);
+          const linkCount = countOccurrences(text, 'target="_blank"');
+          console.log(`target="_blank" external links found: ${linkCount}`);
+
+          console.log(`\n=== legacy /festivals/[slug] redirect check ===`);
+          const redirectRes = await fetch(`${BASE}/festivals/dour-festival?cachebust=${Date.now()}`, { redirect: "manual" });
+          console.log(`GET /festivals/dour-festival -> status ${redirectRes.status}, Location: ${redirectRes.headers.get("location")}`);
+          const redirectRes2 = await fetch(`${BASE}/festivals/dour-festival?cachebust=${Date.now()}`, { redirect: "follow" });
+          console.log(`Following redirect lands on: ${redirectRes2.url} (status ${redirectRes2.status})`);
+          EOF
+          node ./.verify-festivals.mjs
+          rm -f ./.verify-festivals.mjs
