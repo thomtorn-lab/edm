@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { FestivalRecord } from "@/lib/types";
 import { getGenre, type GenreSlug } from "@/lib/taxonomy";
+import { formatFestivalEdition } from "@/lib/festivalEdition";
 
 export default function FestivalExplorer({ festivals }: { festivals: FestivalRecord[] }) {
   const [country, setCountry] = useState<string>("all");
@@ -94,7 +95,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
               <span className="text-lg font-semibold text-text-primary">{festival.name}</span>
             )}
             <p className="mt-1 text-xs font-medium uppercase tracking-wide text-text-tertiary">
-              {festival.location}, {festival.country} · {festival.currentDates ?? festival.typicalMonth}
+              {festival.location}, {festival.country} · {formatFestivalEdition(festival.edition)}
             </p>
             <p className="mt-2 text-sm leading-relaxed text-text-secondary">{festival.description}</p>
             <p className="mt-2 flex flex-wrap gap-1.5">

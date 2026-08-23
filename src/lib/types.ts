@@ -113,6 +113,20 @@ export interface EventRecord {
   lastChanged: string | null;
 }
 
+/**
+ * Public edition-status model for the /festivals guide. Exactly one of
+ * these applies at a time — never combine a status with a separately
+ * shown approximate date, and never fabricate exact dates that aren't
+ * confirmed by an official/organizer source.
+ */
+export type FestivalEditionStatus =
+  | { kind: "confirmed"; dates: string }
+  | { kind: "dates-tba" }
+  | { kind: "no-edition"; year: number }
+  | { kind: "cancelled" }
+  | { kind: "returns"; year: number }
+  | { kind: "biennial"; nextYear: number };
+
 export interface FestivalRecord {
   id: string;
   slug: string;
@@ -120,7 +134,7 @@ export interface FestivalRecord {
   country: string;
   location: string;
   typicalMonth: string;
-  currentDates: string | null;
+  edition: FestivalEditionStatus;
   genres: GenreSlug[];
   description: string;
   officialUrl: string;

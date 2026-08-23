@@ -11,7 +11,7 @@ const FESTIVAL_WITH_URL: FestivalRecord = {
   country: "Netherlands",
   location: "Amsterdam",
   typicalMonth: "July",
-  currentDates: null,
+  edition: { kind: "confirmed", dates: "12–14 Jul 2026" },
   genres: ["techno"],
   description: "A test festival.",
   officialUrl: "https://testfestival.example.com/",
