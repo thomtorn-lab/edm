@@ -233,7 +233,7 @@ function splitCommaSeparatedLineup(line: string): string[] {
  * also duplicated as raw text underneath it. Never touches any prose that
  * follows the list (e.g. a presale-deadline sentence after "Lineup: A B").
  */
-function extractLineupFromBodyLines(lines: string[]): { artists: string[]; consumedRange: [number, number] | null } {
+export function extractLineupFromBodyLines(lines: string[]): { artists: string[]; consumedRange: [number, number] | null } {
   const startIdx = lines.findIndex((l) => LINEUP_START.test(l));
   if (startIdx === -1) return { artists: [], consumedRange: null };
 
@@ -266,6 +266,22 @@ function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): { artis
 
 function sameArtists(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+// Product decision (editorial-description follow-up): Pumpehuset's own
+// body text is written in Danish, and Electronic CPH is English-language
+// with no runtime translation — a Danish-only description is not shown
+// publicly rather than displaying non-English prose. Narrow, deterministic
+// signal, deliberately not real language detection: the Danish alphabet's
+// three extra letters essentially never occur in English prose but occur
+// routinely in real Danish sentences of any length (verified against every
+// currently published Pumpehuset description). A description that happens
+// to avoid them entirely (e.g. a short English quote) is treated as
+// eligible to show — the narrowest reliable rule, not a robust classifier.
+const DANISH_LETTERS = /[æøåÆØÅ]/;
+
+export function isLikelyDanish(text: string): boolean {
+  return DANISH_LETTERS.test(text);
 }
 
 /** Falls back to parsing the title itself when no support_bands list is given (common for a single-headliner show). */
@@ -519,6 +535,13 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
           `[pumpehuset-adapter] detail page fetch failed for ${candidate.officialEventUrl}, keeping startDatetime unresolved for this candidate: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+    }
+    // English-language guard applies uniformly, whatever produced this
+    // candidate's description (detail-page prose, support-band bios alone,
+    // or the bare presenter-line fallback) — genre resolution above already
+    // used the real text as evidence; this only decides what's shown.
+    if (next.description && isLikelyDanish(next.description)) {
+      next = { ...next, description: null };
     }
     results.push(next);
     if (politenessDelayMs > 0) await delay(politenessDelayMs);

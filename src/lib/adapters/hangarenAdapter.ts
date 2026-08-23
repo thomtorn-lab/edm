@@ -176,7 +176,25 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
           ? lines.slice(icsIdx + 1, lineupStartIdx).filter((l) => !/^https?:\/\//i.test(l))
           : [];
       const fullBioText = bioLines.join(" ");
-      const description = fullBioText ? truncateAtBoundary(fullBioText, 600) : null;
+
+      // Product decision (editorial-description follow-up): Hangaren's own
+      // copy between "ICS" and "LINE-UP:" is consistently third-person
+      // encyclopedic artist biography ("X is an internationally renowned
+      // DJ...", "Born to chill, forced to DJ...") — never event-specific
+      // framing (what this particular night is, why it's worth going to).
+      // The page gives no structural signal to separate "about this event"
+      // text from "about the artist in general" text within that block, and
+      // building a heuristic to guess the difference would be exactly the
+      // fragile text-classification this project avoids. So this is never
+      // shown as the public event description — title/artists/venue/genre/
+      // ticket link already carry what's actually known about the event.
+      // fullBioText is still used for genre evidence directly below (a
+      // narrower, already-deterministic keyword match, unrelated to whether
+      // the prose itself gets displayed) — truncateAtBoundary remains
+      // available (and tested) as boundary-safe hygiene for any future
+      // event-specific text this source might one day provide, but isn't
+      // wired to anything here while every description is generic bio text.
+      const description = null;
 
       // Genre evidence: a keyword match against the venue's OWN descriptive
       // text about this specific show is "official-description" tier

@@ -6,6 +6,8 @@ import {
   parseDanishDate,
   parseDotTime,
   extractEventDateAndTime,
+  extractLineupFromBodyLines,
+  isLikelyDanish,
   createPumpehusetAdapter,
   PUMPEHUSET_SOURCE_ID,
   PUMPEHUSET_AJAX_URL,
@@ -206,12 +208,13 @@ describe("createPumpehusetAdapter", () => {
     expect(other!.startDatetime).toBeNull(); // detail page unavailable — never guessed
 
     // Pumpehuset information-gap fix (data-quality follow-up review): the
-    // detail page's own written description was previously never read at
-    // all — only a bare presenter line. WITCHZ's real page explicitly says
-    // his own sound is electronic ("elektroniske lyd" / "mørk electronica"),
-    // which is real, extractable event-specific evidence this adapter was
-    // silently discarding.
-    expect(witchz!.description).toContain("elektroniske lyd");
+    // detail page's own written description is read as real evidence for
+    // genre resolution below — WITCHZ's real page explicitly says his own
+    // sound is electronic ("elektroniske lyd" / "mørk electronica"). But
+    // that text is Danish (editorial-description follow-up: English-language
+    // guard), so it's never shown as the public description — only used
+    // internally as genre evidence.
+    expect(witchz!.description).toBeNull();
     expect(witchz!.genreHint).toBe("electronic-other"); // no NAMED specific subgenre — the assertion signal (relevance.ts) is what carries it, not genre precision
     expect(witchz!.genreConfidenceHint).toBe("high");
 
@@ -224,12 +227,11 @@ describe("createPumpehusetAdapter", () => {
     expect(byhaven!.genreConfidenceHint).toBe("high");
     expect(byhaven!.artists).toEqual(["Leeni & Danilo Kupfernagel", "Lush", "NILU"]);
 
-    // Editorial-description follow-up: the "Line-Up:" list adopted into
-    // `artists` above must not also be duplicated as raw text underneath it
-    // in `description` — the event-detail page already renders `artists`
-    // separately, so repeating the same names in prose is pure duplication.
-    expect(byhaven!.description).not.toContain("Line-Up");
-    expect(byhaven!.description).not.toContain("NILU");
+    // Editorial-description follow-up: real Byhaven copy is Danish, so the
+    // English-language guard suppresses it entirely here regardless of the
+    // lineup-duplication fix (see the dedicated lineup-range-exclusion unit
+    // test below, using English text, for that mechanism in isolation).
+    expect(byhaven!.description).toBeNull();
 
     // Afro Sundown Fest data-quality gap fix (Round 5): the fetch_concerts
     // JSON carries no support_bands data (support_bands: false), so the
@@ -242,7 +244,57 @@ describe("createPumpehusetAdapter", () => {
     // lineup, keeping the combined act "Jayce + MC Mazi" as one entry.
     const afroSundown = results.find((e) => e.officialEventUrl === "https://pumpehuset.dk/koncerter/byhaven-afro-sundown-fest/");
     expect(afroSundown!.artists).toEqual(["Bullet", "Panda", "Sule", "Xzyl", "Ynxg Irie", "Jayce + MC Mazi"]);
-    expect(afroSundown!.description).not.toContain("lineup:");
-    expect(afroSundown!.description).not.toContain("Jayce");
+    // Also real Danish copy — suppressed by the same English-language guard.
+    expect(afroSundown!.description).toBeNull();
+  });
+});
+
+describe("extractLineupFromBodyLines — consumedRange exclusion (editorial-description follow-up)", () => {
+  it("reports the exact line range a one-name-per-line list occupies, so it can be excluded from the stored description", () => {
+    const lines = [
+      "An English test night with a great lineup, entirely in English for this test.",
+      "Line-Up:",
+      "Artist One",
+      "Artist Two",
+      "Artist Three",
+      "Tickets purchased in advance remain valid until 00:30.",
+    ];
+    const { artists, consumedRange } = extractLineupFromBodyLines(lines);
+    expect(artists).toEqual(["Artist One", "Artist Two", "Artist Three"]);
+    expect(consumedRange).toEqual([1, 5]);
+
+    // Excluding exactly that range keeps the intro AND the trailing prose,
+    // dropping only the marker + name lines that became `artists`.
+    const withoutLineup = [...lines.slice(0, consumedRange![0]), ...lines.slice(consumedRange![1])];
+    expect(withoutLineup).toEqual([
+      "An English test night with a great lineup, entirely in English for this test.",
+      "Tickets purchased in advance remain valid until 00:30.",
+    ]);
+  });
+
+  it("reports a 2-line range for the single-line comma-separated shape", () => {
+    const lines = ["Intro text.", "DJ lineup:", "Artist One, Artist Two, Artist Three"];
+    const { artists, consumedRange } = extractLineupFromBodyLines(lines);
+    expect(artists).toEqual(["Artist One", "Artist Two", "Artist Three"]);
+    expect(consumedRange).toEqual([1, 3]);
+  });
+
+  it("returns a null range when there's no Line-Up marker at all", () => {
+    expect(extractLineupFromBodyLines(["Just some prose.", "No marker here."])).toEqual({ artists: [], consumedRange: null });
+  });
+});
+
+describe("isLikelyDanish — English-language guard (editorial-description follow-up)", () => {
+  it("treats real Danish prose (æ/ø/å) as Danish", () => {
+    expect(isLikelyDanish("Vi åbner kl. 15.00 og baren bugner af lækre øl.")).toBe(true);
+    expect(isLikelyDanish("Forbered dig på årets største dansefest med kæmpe stemning.")).toBe(true);
+  });
+
+  it("treats plain English prose as not Danish", () => {
+    expect(isLikelyDanish("Doors open at 21:00 and the lineup is stacked with techno DJs.")).toBe(false);
+  });
+
+  it("is a narrow heuristic, not full language detection — English text is only flagged if it happens to contain æ/ø/å", () => {
+    expect(isLikelyDanish("A short quote with no special characters at all.")).toBe(false);
   });
 });

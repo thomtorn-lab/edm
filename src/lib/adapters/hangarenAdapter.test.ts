@@ -47,7 +47,12 @@ describe("parseHangarenEventsHtml", () => {
   it("extracts lineup from the official description text, not a title guess, when available", () => {
     const kander = events.find((e) => e.title.startsWith("Kander"));
     expect(kander!.artists).toEqual(["Kander", "Kardinal Bertram", "Uber Knast", "Mëtro", "Elliott Taguchi", "Holtz"]);
-    expect(kander!.description).toContain("Hard Bounce, Schranz and Techno");
+  });
+
+  it("never renders the venue's own bio text as the public description (editorial-description follow-up: generic artist biography, not event-specific)", () => {
+    for (const e of events) {
+      expect(e.description).toBeNull();
+    }
   });
 
   it("credits an explicit genre statement in the venue's own bio as high-confidence (official-description tier), not the generic medium-confidence fallback", () => {
@@ -56,13 +61,12 @@ describe("parseHangarenEventsHtml", () => {
     expect(kander!.genreConfidenceHint).toBe("high");
   });
 
-  it("searches the FULL bio for a genre keyword, not just the truncated 600-char stored description", () => {
+  it("searches the FULL bio for a genre keyword even though the bio itself is never publicly shown", () => {
     // Daria's bio states "the fastest-rising names in the techno scene" well past
-    // character 600 — the stored `description` is truncated for display, but
-    // genre classification must not silently miss evidence past that cutoff.
+    // character 600 — genre classification reads the full bio text as evidence
+    // even though none of that text is ever rendered as a public description.
     const daria = events.find((e) => e.title.startsWith("Daria Kolosova"));
-    expect(daria!.description!.length).toBeLessThanOrEqual(600);
-    expect(daria!.description).not.toContain("techno");
+    expect(daria!.description).toBeNull();
     expect(daria!.genreHint).toBe("techno");
     expect(daria!.genreConfidenceHint).toBe("high");
   });
