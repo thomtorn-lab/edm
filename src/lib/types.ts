@@ -122,6 +122,7 @@ export interface EventRecord {
 export type FestivalEditionStatus =
   | { kind: "confirmed"; dates: string }
   | { kind: "dates-tba" }
+  | { kind: "next-edition-tba" }
   | { kind: "no-edition"; year: number }
   | { kind: "cancelled" }
   | { kind: "returns"; year: number }

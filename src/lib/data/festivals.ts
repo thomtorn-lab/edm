@@ -1,7 +1,7 @@
 import type { FestivalRecord, FestivalEditionStatus } from "../types";
 import type { GenreSlug } from "../taxonomy";
 import { slugify } from "../slug";
-import { confirmed, datesTBA, cancelled, returns, biennial } from "../festivalEdition";
+import { confirmed, datesTBA, nextEditionTBA, cancelled, returns, biennial } from "../festivalEdition";
 
 interface SeedFestivalInput {
   name: string;
@@ -360,7 +360,7 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Hungary",
     location: "Dádpuszta",
     typicalMonth: "July / August",
-    edition: datesTBA(),
+    edition: nextEditionTBA(),
     genres: ["psytrance", "ambient-experimental", "electronic-other"],
     description: "Psychedelic arts and music festival held near Dádpuszta, Hungary, centred on psytrance with additional ambient and experimental programming.",
     officialUrl: "https://ozorafestival.eu/",
@@ -401,7 +401,7 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "United Kingdom",
     location: "Houghton Hall, Norfolk",
     typicalMonth: "August",
-    edition: datesTBA(),
+    edition: nextEditionTBA(),
     genres: ["house", "techno", "electro", "ambient-experimental"],
     description: "Electronic music and arts festival at Houghton Hall in Norfolk, UK, curated by DJ Craig Richards and known for long-format sets across house, techno, electro and ambient.",
     officialUrl: "https://www.houghtonfestival.co.uk/",
