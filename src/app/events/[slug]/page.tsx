@@ -5,6 +5,7 @@ import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks } from "@/lib/links";
+import { cleanEventTitle, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
@@ -18,15 +19,16 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
   const event = await getEventBySlugWithVenue(slug);
   if (!event) return {};
 
+  const title = cleanEventTitle(event.title, event.venue.name);
   const genres = displayGenres(event.subgenres).map((g) => g.label).join(" · ");
-  const description = `${event.title}${event.artists.length ? `: ${event.artists.join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
+  const description = `${title}${event.artists.length ? `: ${event.artists.join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
 
   return {
-    title: event.title,
+    title,
     description,
     alternates: { canonical: `/events/${event.slug}` },
     openGraph: {
-      title: event.title,
+      title,
       description,
       type: "website",
       images: event.imageUrl ? [event.imageUrl] : undefined,
@@ -42,11 +44,13 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event);
   const statuses = getEventStatuses(event);
+  const title = cleanEventTitle(event.title, event.venue.name);
+  const subVenue = subVenueLabel(event.title, event.venue.name);
   const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
-  const jsonLd = buildEventJsonLd(event, canonicalUrl);
+  const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
   const calendarInput = {
-    title: event.title,
+    title,
     description: event.description,
     startDatetime: event.startDatetime,
     endDatetime: event.endDatetime,
@@ -76,7 +80,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
       <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-accent">Event</p>
       <h1 className="font-display mt-1 text-3xl font-extrabold uppercase leading-[1.05] tracking-tight text-text-primary sm:text-5xl">
-        {event.title}
+        {title}
       </h1>
 
       {event.artists.length > 0 && (
@@ -107,6 +111,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             >
               {event.venue.name}
             </Link>
+            {subVenue && <span className="text-text-secondary"> · {subVenue}</span>}
             <br />
             <span className="text-text-secondary">{event.venue.address}</span>
           </dd>

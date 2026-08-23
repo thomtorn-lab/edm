@@ -356,3 +356,49 @@ describe("EventRow — public/internal status separation (event-status audit, DA
     expect(soldOut.className).not.toContain("text-accent");
   });
 });
+
+describe("EventRow — sub-venue title cleanup (Pumpehuset Byhaven / Culture Box rooms)", () => {
+  afterEach(cleanup);
+
+  it("strips the Byhaven prefix from a Pumpehuset event's displayed title", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Byhaven: Love.Rave",
+          venue: { ...VENUE, name: "Pumpehuset" },
+          artists: [],
+        })}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Love.Rave" })).toBeTruthy();
+    expect(screen.queryByText(/Byhaven:/)).toBeNull();
+  });
+
+  it("strips Culture Box room prefixes from a two-room event's displayed title", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Black Box: TECHNO SPECIAL · Red Box: HOUSE SPECIAL",
+          venue: { ...VENUE, name: "Culture Box" },
+          artists: [],
+        })}
+      />,
+    );
+    expect(screen.getByText(/TECHNO SPECIAL · HOUSE SPECIAL/)).toBeTruthy();
+    expect(screen.queryByText(/Black Box:/)).toBeNull();
+    expect(screen.queryByText(/Red Box:/)).toBeNull();
+  });
+
+  it("leaves a title with the same wording unchanged at a venue the rule doesn't apply to", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Byhaven: Love.Rave",
+          venue: { ...VENUE, name: "Test Venue" },
+          artists: [],
+        })}
+      />,
+    );
+    expect(screen.getByText(/Byhaven: Love\.Rave/)).toBeTruthy();
+  });
+});

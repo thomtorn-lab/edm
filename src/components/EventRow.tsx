@@ -3,7 +3,7 @@ import type { EventWithVenue } from "@/lib/queries";
 import { formatRowDateLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
-import { shouldShowArtistPreview } from "@/lib/eventPresentation";
+import { cleanEventTitle, shouldShowArtistPreview } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 
@@ -14,10 +14,11 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
   const links = getExternalLinks(event, 2);
   const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);
-  const showArtistPreview = shouldShowArtistPreview(event.title, event.artists);
+  const title = cleanEventTitle(event.title, event.venue.name);
+  const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
   const calendarInput = {
-    title: event.title,
+    title,
     description: event.description,
     startDatetime: event.startDatetime,
     endDatetime: event.endDatetime,
@@ -42,7 +43,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
             href={`/events/${event.slug}`}
             className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110 sm:line-clamp-2"
           >
-            {event.title}
+            {title}
             <span className="font-normal text-text-secondary-strong">{lineup}</span>
           </Link>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">

@@ -212,3 +212,41 @@ describe("Event detail page — public/internal status separation (event-status 
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 });
+
+describe("Event detail page — sub-venue title cleanup (Pumpehuset Byhaven / Culture Box rooms)", () => {
+  afterEach(cleanup);
+
+  it("shows the clean title (no Byhaven prefix) and Byhaven as secondary venue context", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Byhaven: Love.Rave",
+        venue: { ...VENUE, name: "Pumpehuset", slug: "pumpehuset" },
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "Love.Rave" })).toBeTruthy();
+    expect(screen.queryByText(/Byhaven: Love\.Rave/)).toBeNull();
+    const venueLink = screen.getByRole("link", { name: "Pumpehuset" });
+    expect(venueLink.closest("dd")?.textContent).toContain("Byhaven");
+  });
+
+  it("shows a clean, room-prefix-free title for a Culture Box two-room event", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Black Box: TECHNO SPECIAL · Red Box: HOUSE SPECIAL",
+        description: "Black Box\nDJ One, DJ Two\n\nRed Box\nDJ Three, DJ Four",
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "TECHNO SPECIAL · HOUSE SPECIAL" })).toBeTruthy();
+    expect(screen.queryByText(/Black Box:/)).toBeNull();
+    // Room-specific lineup breakdown stays fully visible in the About section.
+    expect(screen.getByText(/DJ One, DJ Two/)).toBeTruthy();
+    expect(screen.getByText(/DJ Three, DJ Four/)).toBeTruthy();
+  });
+
+  it("shows no secondary venue context for a Pumpehuset event outside Byhaven", async () => {
+    await renderPage(makeEvent({ title: "WITCHZ", venue: { ...VENUE, name: "Pumpehuset", slug: "pumpehuset" } }));
+    const venueLink = screen.getByRole("link", { name: "Pumpehuset" });
+    expect(venueLink.closest("dd")?.textContent).not.toContain("Byhaven");
+  });
+});
