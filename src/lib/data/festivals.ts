@@ -204,9 +204,9 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Germany",
     location: "Lärz",
     typicalMonth: "June / July",
-    edition: datesTBA(),
+    edition: confirmed("28 Jun–2 Jul 2028"),
     genres: ["techno", "house", "electronic-other"],
-    description: "Non-commercial, art-driven festival on a former military airfield, spanning rock, hip-hop, jazz and experimental music alongside a substantial electronic/club programme across dozens of dancefloors — organizers describe Fusion as broader than a single-genre festival, but electronic music and club culture remain fundamental to its identity. Organizers announced a pause after 2026 for restructuring; a return is expected but not yet officially dated.",
+    description: "Non-commercial, art-driven festival on a former military airfield, spanning rock, hip-hop, jazz and experimental music alongside a substantial electronic/club programme across dozens of dancefloors — organizers describe Fusion as broader than a single-genre festival, but electronic music and club culture remain fundamental to its identity. Organizers confirmed 2027 is a Fusion-free year, with the next edition dated for 2028.",
     officialUrl: "https://fusion-festival.de/en/",
   }),
   // Multi-genre festival with a strong electronic programme, not a dedicated electronic
