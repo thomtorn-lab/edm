@@ -250,3 +250,58 @@ describe("Event detail page — sub-venue title cleanup (Pumpehuset Byhaven / Cu
     expect(venueLink.closest("dd")?.textContent).not.toContain("Byhaven");
   });
 });
+
+describe("Event detail page — suppress redundant artist preview when the title already names the lineup", () => {
+  afterEach(cleanup);
+
+  it("hides the grey artist line for a real Culture Box two-room event whose cleaned title already names every artist", async () => {
+    await renderPage(
+      makeEvent({
+        title:
+          "Black Box: TAXMAN, DWONJI, BOBBY 6 KILLA, HDN, DJ BREAKFAST, MAXI MO, L.A.D.J · Red Box: FIA2THEFLOOR, AMITTET, TINKI, DELFF",
+        artists: ["TAXMAN", "DWONJI", "BOBBY 6 KILLA", "HDN", "DJ BREAKFAST", "MAXI MO", "L.A.D.J", "FIA2THEFLOOR", "AMITTET", "TINKI", "DELFF"],
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+    expect(screen.queryByText(/TAXMAN \/ DWONJI/)).toBeNull();
+  });
+
+  it("still shows the grey artist line when the title is a showcase name that adds no artist information", async () => {
+    await renderPage(
+      makeEvent({
+        title: "HYGGELIT SHOWCASE",
+        artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"],
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG")).toBeTruthy();
+  });
+
+  it("still shows the grey artist line when only some artists are named in the title (partial overlap)", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Black Box: STELLAR FOUNTAIN · Red Box: GALATIUS, KEVIN FLOOR",
+        artists: ["ERICH VON KOLLAR", "MSW COLLECTIVE", "GÆO", "GALATIUS", "KEVIN FLOOR"],
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.getByText(/ERICH VON KOLLAR/)).toBeTruthy();
+  });
+
+  it("hides the grey artist line when the same artist name repeats across both rooms (real Culture Box shape)", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Black Box: Shaktu, Meoko, COSMINA, JOSEFINA TAPIA, ANA KARLA · Red Box: Shaktu, Meoko, YOON, CHRISTINA EVANGELISTA",
+        artists: ["Shaktu", "Meoko", "COSMINA", "JOSEFINA TAPIA", "ANA KARLA", "YOON", "CHRISTINA EVANGELISTA"],
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.queryByText(/Shaktu \/ Meoko/)).toBeNull();
+  });
+
+  it("still shows the grey artist line for a non-Culture-Box event whose title never names the artists (no regression)", async () => {
+    await renderPage(makeEvent({ title: "Test Event", artists: ["DJ Alpha", "DJ Beta"] }));
+    expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
+  });
+});

@@ -5,7 +5,7 @@ import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks } from "@/lib/links";
-import { cleanEventTitle, subVenueLabel } from "@/lib/eventPresentation";
+import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
@@ -46,6 +46,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name);
+  const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
   const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
@@ -83,7 +84,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         {title}
       </h1>
 
-      {event.artists.length > 0 && (
+      {showArtistPreview && (
         <p className="mt-3 text-lg text-text-secondary">{event.artists.join(" / ")}</p>
       )}
 
