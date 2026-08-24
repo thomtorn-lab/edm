@@ -3,7 +3,7 @@ import type { EventWithVenue } from "@/lib/queries";
 import { formatRowDateLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
-import { cleanEventTitle, shouldShowArtistPreview } from "@/lib/eventPresentation";
+import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 
@@ -15,6 +15,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
   const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
+  const subVenue = subVenueLabel(event.title, event.venue.name);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
   const calendarInput = {
@@ -53,6 +54,12 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
             >
               {event.venue.name}
             </Link>
+            {subVenue && (
+              <>
+                <span aria-hidden className="text-text-tertiary">·</span>
+                <span className="font-medium text-text-secondary-strong">{subVenue}</span>
+              </>
+            )}
             {genres.length > 0 && (
               <>
                 <span aria-hidden className="text-text-tertiary">·</span>

@@ -402,3 +402,69 @@ describe("EventRow — sub-venue title cleanup (Pumpehuset Byhaven / Culture Box
     expect(screen.getByText(/Byhaven: Love\.Rave/)).toBeTruthy();
   });
 });
+
+describe("EventRow — Byhaven sub-venue context in listing metadata (real Production examples)", () => {
+  afterEach(cleanup);
+
+  it("shows 'Pumpehuset · Byhaven · Techno' exactly once for a genuine Byhaven event", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Byhaven: Anything Everything Sensommerfest",
+          artists: ["Blikfang"],
+          subgenres: ["techno"] as GenreSlug[],
+          venue: { ...VENUE, name: "Pumpehuset", slug: "pumpehuset" },
+        })}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /^Anything Everything Sensommerfest/ })).toBeTruthy();
+    expect(screen.queryByText(/Byhaven:/)).toBeNull();
+    expect(screen.getByText(/Blikfang/)).toBeTruthy();
+    const byhaven = screen.getByText("Byhaven");
+    expect(screen.queryAllByText("Byhaven")).toHaveLength(1);
+    const venueLink = screen.getByRole("link", { name: "Pumpehuset" });
+    const genre = screen.getByText("Techno");
+    // Byhaven sits between the venue link and the genre, same metadata row.
+    expect(venueLink.compareDocumentPosition(byhaven) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(byhaven.compareDocumentPosition(genre) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the same 'Byhaven' context for another real Byhaven title (Love.Rave)", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Byhaven: Love.Rave",
+          venue: { ...VENUE, name: "Pumpehuset", slug: "pumpehuset" },
+        })}
+      />,
+    );
+    expect(screen.getByText("Byhaven")).toBeTruthy();
+  });
+
+  it("shows no Byhaven context for a normal Pumpehuset event (WITCHZ)", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "WITCHZ",
+          subgenres: ["techno"] as GenreSlug[],
+          venue: { ...VENUE, name: "Pumpehuset", slug: "pumpehuset" },
+        })}
+      />,
+    );
+    expect(screen.queryByText("Byhaven")).toBeNull();
+    expect(screen.getByRole("link", { name: "Pumpehuset" })).toBeTruthy();
+    expect(screen.getByText("Techno")).toBeTruthy();
+  });
+
+  it("never shows Byhaven for a non-Pumpehuset venue, even with matching title text (no regression)", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Byhaven: Love.Rave",
+          venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+        })}
+      />,
+    );
+    expect(screen.queryByText("Byhaven")).toBeNull();
+  });
+});
