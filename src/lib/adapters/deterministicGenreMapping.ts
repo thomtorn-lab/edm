@@ -19,7 +19,12 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bhouse\b/i, "house"],
   [/\bpsytrance\b/i, "psytrance"],
   [/\bpsy\b/i, "psytrance"],
-  [/\btrance\b/i, "trance"],
+  // Excludes "trance-inducing"/"trance-like"/"trance-inspired" and similar
+  // hyphenated adjectival uses — real evidence found live in ALICE's own
+  // copy ("trance-inducing rhythms" describing a Moroccan blues act's
+  // hypnotic quality, not the electronic genre Trance). Bare "trance" and
+  // "trance music"/"a night of trance" still match unconditionally.
+  [/\btrance\b(?!-\w)/i, "trance"],
   [/\bd\s?&\s?b\b|drum\s?(and|&)\s?bass\b|\bdnb\b/i, "drum-and-bass"],
   [/\bgarage\b/i, "garage"],
   [/\belectro\b/i, "electro"],

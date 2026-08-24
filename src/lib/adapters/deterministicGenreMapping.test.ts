@@ -25,6 +25,20 @@ describe("deterministicGenreFromText", () => {
     expect(deterministicGenreFromText("Gerd Janson, Harrison Heat, NAT")).toBeNull();
   });
 
+  it("does not false-positive on 'trance-inducing'/'trance-like' as an adjective, not the genre (the real ALICE Aïta Mon Amour bio text)", () => {
+    expect(
+      deterministicGenreFromText(
+        "On stage, Aïta Mon Amour unfolds a captivating universe where trance-inducing rhythms, poetry, and club energy merge into a concert experience.",
+      ),
+    ).toBeNull();
+    expect(deterministicGenreFromText("A trance-like ritual of drums and chanting.")).toBeNull();
+  });
+
+  it("still matches bare 'trance' and 'trance music' unconditionally", () => {
+    expect(deterministicGenreFromText("A night of uplifting trance anthems.")).toBe("trance");
+    expect(deterministicGenreFromText("Live trance music all night.")).toBe("trance");
+  });
+
   describe("ambient / experimental evidence quality", () => {
     it("matches bare 'ambient' unconditionally — a specific, low-ambiguity genre word", () => {
       expect(deterministicGenreFromText("An evening of ambient soundscapes")).toBe("ambient-experimental");

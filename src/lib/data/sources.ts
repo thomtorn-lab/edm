@@ -102,6 +102,37 @@ export const SOURCES: Source[] = [
     integrationNote: "First-party events page. Currently degraded: treat as a possible markup change, never as a sign the venue is inactive.",
   },
 
+  {
+    id: "src-alice",
+    sourceName: "ALICE",
+    sourceType: "official-venue",
+    baseUrl: "https://alicecph.com/en/",
+    roles: ["discovery", "ingestion", "verification", "link"],
+    // Real working adapter (src/lib/adapters/aliceAdapter.ts), two-stage
+    // like Poolen: the homepage (alicecph.com/en/) lists every real upcoming
+    // show with a title, date and a link to its own detail page — the
+    // /en/event/ archive page was evaluated and rejected as the listing
+    // source because it returns old, already-past events with no working
+    // "upcoming only" filter or pagination signal; the homepage's own event
+    // grid is the venue's real current programme. Doors/concert time, ticket
+    // link+price and the full description only exist on each event's own
+    // detail page, so this adapter fetches the homepage once, then every
+    // listed event's own detail page. robots.txt places no restriction on
+    // the site; no anti-bot behavior encountered.
+    adapter: "alice-html",
+    trustLevel: "high",
+    autoPublish: true,
+    syncFrequency: "every 6h",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Selected 2026-08-24 (venue-source ranking task) as the best next first-party venue source among curated venues with no active adapter. ALICE is explicitly a mixed-genre concert venue (jazz, global/roots, folk, live bands, and electronic sets in the same programme), never electronic-only — genre is never assumed from the venue alone, same rule poolenAdapter.ts already follows: a specific-subgenre keyword in the event's own detail-page description is credited high confidence (official-description tier); failing that, an explicit but non-specific 'electronic' mention in that same text is tagged the generic 'electronic-other' at the same tier; anything short of that is left unresolved for the shared deterministic-mapping fallback and Discogs lineup enrichment. Real evidence found live: only a minority of ALICE's ~38 currently-listed upcoming events (spanning Aug-Nov 2026) are electronic-relevant (e.g. Dengue Dengue Dengue — psychedelic cumbia/dub/techno fusion; Aïta Mon Amour + 3Phaz — Moroccan blues fused with modern electronic music; also real signal from A Tribe Called Red, Apparat Organ Quartet, Astrid Sonne elsewhere in the programme) — most of the catalogue (jazz, folk, singer-songwriter, world-music acts) will correctly fail relevance and never publish. Also found and fixed live: the shared deterministicGenreMapping.ts's bare 'trance' keyword false-matched 'trance-inducing' (an adjective describing hypnotic quality, not the Trance genre) in ALICE's own descriptive prose about the Aïta Mon Amour show — narrowed the pattern to exclude hyphenated adjectival uses ('trance-inducing'/'trance-like'/'trance-inspired'), a precision fix benefiting every existing adapter, not an ALICE-specific workaround; regression-tested in deterministicGenreMapping.test.ts. Ticketing is ALICE's own shop (billet.alicecph.com) for most shows, with at least one real co-presented show (Beverly Glenn-Copeland) linking an external venue's ticket page instead — both handled by trusting whatever ticket link the detail page actually states, never guessed. Real, unmodified fixtures (homepage + three detail pages chosen for the classification cases that matter) captured via inspect-source.yml's reachability mode 2026-08-24 — see aliceAdapter.test.ts. Not yet run against production — health fields will populate on the first real sync.",
+  },
+
   // ---- Candidate first-party venues evaluated 2026-08-18 (sourcing workstream, research-only pass) ----
   // Electronic music is not limited to a curated venue whitelist (spec:
   // relevant electronic events may occur at any Copenhagen venue) — these
