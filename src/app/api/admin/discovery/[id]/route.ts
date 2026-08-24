@@ -14,6 +14,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (typeof cleaned.probableStart === "string") {
     cleaned.probableStart = new Date(cleaned.probableStart);
   }
+  if (typeof cleaned.probableEnd === "string") {
+    cleaned.probableEnd = new Date(cleaned.probableEnd);
+  }
 
   try {
     await updateDiscoveryItem(id, cleaned);

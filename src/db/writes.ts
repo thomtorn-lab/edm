@@ -320,18 +320,22 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       description: null,
       artists: item.detectedLineup,
       startDatetime: item.probableStart,
-      endDatetime: null,
+      endDatetime: item.probableEnd,
       venueId: resolvedVenueId,
       primaryGenre: (item.predictedGenre as GenreSlug) ?? "electronic-other",
       subgenres: item.predictedGenre ? [item.predictedGenre as GenreSlug] : [],
       genreConfidence: item.genreConfidence as ConfidenceLevel,
       officialEventUrl: item.sourceUrl,
-      ticketUrl: null,
+      ticketUrl: item.probableTicketUrl,
       facebookUrl: item.sourceUrl.includes("facebook.com") ? item.sourceUrl : null,
       residentAdvisorUrl: item.sourceUrl.includes("ra.co") ? item.sourceUrl : null,
       imageUrl: null,
-      priceFrom: null,
-      currency: null,
+      // Explicit FREE flag (never inferred from ticketUrl's absence) — same
+      // canonical priceFrom=0 representation as EventManager's own Free
+      // checkbox (src/lib/links.ts). Unset means "not marked free" (unknown
+      // price), never a guessed default.
+      priceFrom: item.probableFree ? 0 : null,
+      currency: item.probableFree ? "DKK" : null,
       published: true,
       confidence: item.overallConfidence as ConfidenceLevel,
       // Provenance is persisted immediately here (via createEvent's own
@@ -389,6 +393,9 @@ export async function mergeDiscoveryItem(queueId: string, targetEventId: string)
 export interface DiscoveryEditPatch {
   probableTitle?: string;
   probableStart?: Date | null;
+  probableEnd?: Date | null;
+  probableTicketUrl?: string | null;
+  probableFree?: boolean;
   probableVenueName?: string | null;
   detectedLineup?: string[];
   predictedGenre?: GenreSlug | null;
@@ -466,6 +473,9 @@ export async function insertDiscoveryItem(item: {
   id: string;
   probableTitle: string;
   probableStart: Date | null;
+  probableEnd?: Date | null;
+  probableTicketUrl?: string | null;
+  probableFree?: boolean;
   probableVenueName: string | null;
   sourceName: string;
   sourceUrl: string;

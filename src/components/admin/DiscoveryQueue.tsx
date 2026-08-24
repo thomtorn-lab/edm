@@ -41,6 +41,10 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   const [title, setTitle] = useState(item.probableTitle);
   const [startLocal, setStartLocal] = useState(item.probableStart ? toLocalInput(item.probableStart) : "");
   const [dateTouched, setDateTouched] = useState(false);
+  const [endLocal, setEndLocal] = useState(item.probableEnd ? toLocalInput(item.probableEnd) : "");
+  const [endTouched, setEndTouched] = useState(false);
+  const [ticketUrl, setTicketUrl] = useState(item.probableTicketUrl ?? "");
+  const [free, setFree] = useState(item.probableFree);
   const [venueNameText, setVenueNameText] = useState(item.probableVenueName ?? "");
   const [lineup, setLineup] = useState(item.detectedLineup.join(", "));
   const [genre, setGenre] = useState(item.predictedGenre ?? "");
@@ -142,13 +146,21 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       setError("Date & time isn't a complete, valid date — use the picker or finish typing it before saving.");
       return;
     }
+    if (endTouched && !endLocal && item.probableEnd) {
+      setError("End time isn't a complete, valid date — use the picker, finish typing it, or clear it explicitly.");
+      return;
+    }
     const patch: Record<string, unknown> = {
       probableTitle: title,
       probableVenueName: venueNameText || null,
       detectedLineup: lineup.split(",").map((s) => s.trim()).filter(Boolean),
       predictedGenre: genre || null,
+      probableTicketUrl: ticketUrl || null,
+      probableFree: free,
     };
     if (startLocal) patch.probableStart = new Date(startLocal).toISOString();
+    if (endLocal) patch.probableEnd = new Date(endLocal).toISOString();
+    else if (endTouched) patch.probableEnd = null; // explicitly cleared
     const ok = await callPatch(`/api/admin/discovery/${item.id}`, patch, router, setBusy, setError);
     if (ok) setEditing(false);
   }
@@ -194,6 +206,27 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
               className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
             />
           </div>
+          <div>
+            <label htmlFor={`dq-end-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">End time (optional — leave blank when unknown)</label>
+            <input
+              id={`dq-end-${item.id}`}
+              type="datetime-local"
+              value={endLocal}
+              onChange={(e) => {
+                setEndLocal(e.target.value);
+                setEndTouched(true);
+              }}
+              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+            />
+          </div>
+          <div>
+            <label htmlFor={`dq-ticket-url-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Ticket URL (optional)</label>
+            <input id={`dq-ticket-url-${item.id}`} value={ticketUrl} onChange={(e) => setTicketUrl(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-text-primary">
+            <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
+            Free entry (does not affect the Tickets link if a ticket URL is also set)
+          </label>
           <div>
             <label htmlFor={`dq-venue-name-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Venue name (free text)</label>
             <input id={`dq-venue-name-${item.id}`} value={venueNameText} onChange={(e) => setVenueNameText(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />

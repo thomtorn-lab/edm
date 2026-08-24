@@ -26,7 +26,6 @@ export const SOURCES: Source[] = [
     // (incorrectly) claim. robots.txt places no restriction on /events/.
     adapter: "culture-box-html",
     trustLevel: "high",
-    trustedElectronicSource: true,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -53,7 +52,6 @@ export const SOURCES: Source[] = [
     // Calendar link with exact UTC start/end instants for every event.
     adapter: "hangaren-html",
     trustLevel: "high",
-    trustedElectronicSource: true,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -73,7 +71,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery", "ingestion", "verification", "link"],
     adapter: "first-party-json",
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -93,7 +90,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery", "ingestion", "verification", "link"],
     adapter: "first-party-json",
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -125,7 +121,6 @@ export const SOURCES: Source[] = [
     // the site; no anti-bot behavior encountered.
     adapter: "alice-html",
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -162,7 +157,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "medium",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -192,7 +186,6 @@ export const SOURCES: Source[] = [
     // at full 6h cadence long-term.
     adapter: "poolen-html",
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -221,7 +214,6 @@ export const SOURCES: Source[] = [
     // HTML) is fetched to resolve a real door/show start time.
     adapter: "pumpehuset-html",
     trustLevel: "medium",
-    trustedElectronicSource: false,
     autoPublish: true, // validated via a real live sync (validate-source.yml): 26/26 candidates auto-published at high genre confidence, 0 review cases, 0 dedup false positives, 26/26 venue resolution, idempotent on re-sync, zero regressions on every other source
     syncFrequency: "every 6h",
     active: true,
@@ -241,7 +233,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "medium",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -263,7 +254,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery", "verification", "link"],
     adapter: null,
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -282,7 +272,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery", "verification", "link"],
     adapter: null,
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -301,7 +290,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery", "verification", "link"],
     adapter: null,
     trustLevel: "high",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -322,7 +310,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "medium",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -341,7 +328,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "medium",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -376,7 +362,6 @@ export const SOURCES: Source[] = [
     // model (src/lib/dedup.ts) is reused completely unchanged.
     adapter: "billetto-api",
     trustLevel: "medium",
-    trustedElectronicSource: false,
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
@@ -420,7 +405,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual coverage check",
     active: true,
@@ -441,7 +425,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual",
     active: true,
@@ -460,7 +443,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual",
     active: true,
@@ -479,7 +461,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual",
     active: true,
@@ -498,7 +479,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual",
     active: true,
@@ -517,7 +497,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual",
     active: true,
@@ -536,7 +515,6 @@ export const SOURCES: Source[] = [
     roles: ["discovery"],
     adapter: null,
     trustLevel: "low",
-    trustedElectronicSource: false,
     autoPublish: false,
     syncFrequency: "manual",
     active: true,
@@ -551,4 +529,29 @@ export const SOURCES: Source[] = [
 
 export function getSourceById(id: string): Source | undefined {
   return SOURCES.find((s) => s.id === id);
+}
+
+/**
+ * Trusted-electronic-source routing (Admin/Discovery Queue quality work
+ * package, Section 6). A PRODUCT-ROUTING property, not accumulated mutable
+ * source health data — deliberately a static, code-level declaration
+ * (checked into the registry, not a Production DB column/migration): it
+ * never changes at runtime, is fully known at the moment a sync dispatches
+ * to a given source id, and every call site (src/db/sync.ts) already knows
+ * its own sourceId statically. Distinct from `trustLevel` (general
+ * data-quality trust, already used for dedup/authority ordering) and from
+ * per-event genreConfidence: this says the SOURCE ITSELF is definitive
+ * relevance evidence (an electronic-only venue), so a complete, valid
+ * candidate from it should auto-publish even when its own text names no
+ * specific subgenre keyword and even alongside an incidental non-electronic
+ * text phrase — see src/lib/adapters/pipeline.ts's computeDecision for
+ * exactly how this is consumed and exactly which genuine data blockers
+ * (missing fields, unresolved venue, malformed data, a real duplicate
+ * conflict) still apply regardless. Deliberately NOT set for a
+ * mixed-programme venue (ALICE, Poolen, Pumpehuset) or any aggregator.
+ */
+const TRUSTED_ELECTRONIC_SOURCE_IDS: ReadonlySet<string> = new Set(["src-hangaren", "src-culture-box"]);
+
+export function isTrustedElectronicSource(sourceId: string): boolean {
+  return TRUSTED_ELECTRONIC_SOURCE_IDS.has(sourceId);
 }

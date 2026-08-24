@@ -34,9 +34,6 @@ export interface Source {
   adapter: string | null;
   trustLevel: ConfidenceLevel;
   autoPublish: boolean;
-  /** Source-level trusted-electronic flag (Admin/Discovery Queue quality
-   *  work package, Section 6) — see src/db/schema.ts's column comment. */
-  trustedElectronicSource: boolean;
   syncFrequency: string;
   active: boolean;
   lastSuccessfulSync: string | null;
@@ -154,6 +151,13 @@ export interface DiscoveryQueueItem {
   id: string;
   probableTitle: string;
   probableStart: string | null;
+  /** Optional pre-publish end time / ticket URL / explicit free-admission
+   *  flag (admin/manual-event work package, 2026-08-24) — see
+   *  src/db/schema.ts's column comment. Carried straight onto the created
+   *  event's endDatetime/ticketUrl/priceFrom by publishDiscoveryItem. */
+  probableEnd: string | null;
+  probableTicketUrl: string | null;
+  probableFree: boolean;
   probableVenueName: string | null;
   sourceName: string;
   sourceUrl: string;

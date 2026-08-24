@@ -48,6 +48,9 @@ function makeItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueIt
     id: "dq-1",
     probableTitle: "Unknown Venue Night",
     probableStart: "2026-09-20T20:00:00.000Z",
+    probableEnd: null,
+    probableTicketUrl: null,
+    probableFree: false,
     probableVenueName: "Suporama",
     sourceName: "src-ra-copenhagen",
     sourceUrl: "https://ra.co/events/1",
@@ -313,5 +316,73 @@ describe("DiscoveryQueue — typed date entry (admin/manual-event work package, 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+});
+
+describe("DiscoveryQueue — End time / Ticket URL / FREE fields in the real pre-publish editor (correction item 1, 2026-08-24)", () => {
+  afterEach(cleanup);
+
+  it("lets an admin add an end time, ticket URL, and mark an event free on a candidate that had none of these — before it is ever published — and sends all three in the PATCH", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/End time/), { target: { value: "2026-09-21T02:00" } });
+    fireEvent.change(screen.getByLabelText(/Ticket URL/), { target: { value: "https://tickets.example.com/kaj" } });
+    fireEvent.click(screen.getByLabelText(/Free entry/));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/discovery/dq-1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: expect.stringContaining('"probableTicketUrl":"https://tickets.example.com/kaj"'),
+        }),
+      ),
+    );
+    const [, options] = fetchMock.mock.calls[0];
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.probableEnd).toBe(new Date("2026-09-21T02:00").toISOString());
+    expect(patch.probableTicketUrl).toBe("https://tickets.example.com/kaj");
+    expect(patch.probableFree).toBe(true);
+  });
+
+  it("pre-fills End time, Ticket URL, and FREE from the candidate's existing values when opening the editor (e.g. already extracted by the admin 'Add event from URL' tool for 'Kaj - Din ven i solen')", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(
+      <DiscoveryQueue
+        items={[
+          makeItem({
+            probableVenueName: "Culture Box",
+            probableEnd: "2026-09-21T02:00:00.000Z",
+            probableTicketUrl: "https://tickets.example.com/kaj",
+            probableFree: true,
+          }),
+        ]}
+        venues={VENUES}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Ticket URL/) as HTMLInputElement).value).toBe("https://tickets.example.com/kaj");
+    expect((screen.getByLabelText(/Free entry/) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText(/End time/) as HTMLInputElement).value).toBe("2026-09-21T02:00");
+  });
+
+  it("leaves end time out of the patch (never sends a corrupted value) when it was never touched and the candidate never had one", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Ticket URL/), { target: { value: "https://tickets.example.com/kaj" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, options] = fetchMock.mock.calls[0];
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch).not.toHaveProperty("probableEnd");
   });
 });

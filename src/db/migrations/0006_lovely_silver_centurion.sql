@@ -1,1 +1,0 @@
-ALTER TABLE "sources" ADD COLUMN "trusted_electronic_source" boolean DEFAULT false NOT NULL;

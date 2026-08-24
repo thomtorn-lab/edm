@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { syncLocks } from "./schema";
+import { discoveryQueue, syncLocks } from "./schema";
 import type { RawCandidateEvent, SourceAdapter } from "@/lib/adapters/types";
+import type { Venue } from "@/lib/types";
 
 /**
  * These tests exist because src-culture-box's advisory lock got stuck on a
@@ -92,12 +93,14 @@ vi.mock("./client", () => ({
         return Promise.resolve();
       },
     }),
-    // runSourceSyncLocked also reads sourceEventLinks/discoveryQueue/sources
+    // runSourceSyncLocked also reads sourceEventLinks/discoveryQueue
     // directly via db.select() — irrelevant to the lease mechanism under
-    // test here, so always resolves empty by default (the sources lookup
-    // additionally chains .limit(1)). Wrapped in vi.fn() so individual tests
-    // can override one call's return value (e.g. to report
-    // trustedElectronicSource: true for the sources lookup specifically).
+    // test here, so always resolves empty by default. Trusted-source status
+    // itself is a static, code-level lookup (src/lib/data/sources.ts) and
+    // never touches the DB at all. Wrapped in vi.fn() so individual tests
+    // can override the discoveryQueue call's return value (e.g. to simulate
+    // an existing pending row that must be resolved once evidence flips a
+    // candidate to auto_publish).
     select: vi.fn(() => ({
       from: () => ({
         where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) }),
@@ -304,8 +307,24 @@ describe("Billetto Discovery Queue noise — a genuinely irrelevant new candidat
   });
 });
 
-describe("trusted-electronic sources — a complete Hangaren/Culture Box candidate auto-publishes even with unresolved genre (Section 6)", () => {
-  it("auto-publishes the real 'Miley Serious' Hangaren case (genre never resolves) once the source row reports trustedElectronicSource, and never queues it", async () => {
+describe("trusted-electronic sources — a complete Hangaren/Culture Box candidate auto-publishes even with unresolved genre (Section 6, corrected 2026-08-24)", () => {
+  const hangarenVenues: Venue[] = [
+    {
+      id: "v-hangaren",
+      slug: "hangaren",
+      name: "Hangaren",
+      aliases: [],
+      address: "",
+      city: "Copenhagen",
+      postalCode: "",
+      websiteUrl: null,
+      description: "",
+      shortDescription: null,
+      venueProfile: null,
+    },
+  ];
+
+  it("auto-publishes the real 'Miley Serious' Hangaren case (genre never resolves) purely from the static isTrustedElectronicSource registry — no DB read involved — and never queues it", async () => {
     const miley: RawCandidateEvent = {
       ...rawCandidate,
       sourceId: "src-hangaren",
@@ -315,11 +334,80 @@ describe("trusted-electronic sources — a complete Hangaren/Culture Box candida
       venueName: "Hangaren",
       officialEventUrl: "https://www.hangaren.dk/events/miley-serious",
     };
-    vi.mocked(getVenues).mockResolvedValueOnce([
+    vi.mocked(getVenues).mockResolvedValueOnce(hangarenVenues);
+
+    const adapter = fakeAdapter(() => Promise.resolve([miley]));
+    const result = await runSourceSync("src-hangaren", "Hangaren", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(1);
+    expect(result.queuedForReview).toBe(0);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("existing queue behavior on next sync (correction item 5): a Hangaren candidate that already has a pending discovery_queue row from an earlier, lower-confidence sync gets that row resolved as published — never left stuck — once this sync's trusted-source evidence clears the auto-publish bar", async () => {
+    const miley: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-hangaren",
+      title: "Miley Serious",
+      description: null,
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      officialEventUrl: "https://www.hangaren.dk/events/miley-serious",
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce(hangarenVenues);
+
+    // Simulate the real Production shape: this candidate's URL already has a
+    // "pending" discovery_queue row from a past sync that only had
+    // low/unresolved genre confidence to go on.
+    const { db } = await import("./client");
+    vi.mocked(db.select).mockImplementation(() => {
+      const base = {
+        from: (table: unknown) => ({
+          where: () => {
+            // Second Promise.all call is the discoveryQueue pending lookup;
+            // the first (sourceEventLinks) stays at the empty default.
+            if (table === discoveryQueue) {
+              return Promise.resolve([
+                {
+                  id: "dq-miley-pending",
+                  sourceUrl: "https://www.hangaren.dk/events/miley-serious",
+                  status: "pending",
+                },
+              ]);
+            }
+            return Promise.resolve([]);
+          },
+        }),
+      };
+      return base as unknown as ReturnType<typeof db.select>;
+    });
+
+    const adapter = fakeAdapter(() => Promise.resolve([miley]));
+    const result = await runSourceSync("src-hangaren", "Hangaren", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(1);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    const { resolveDiscoveryItemAsPublished } = await import("./writes");
+    expect(resolveDiscoveryItemAsPublished).toHaveBeenCalledWith("dq-miley-pending");
+  });
+
+  it("the same trusted-source auto-publish applies to Culture Box, not just Hangaren", async () => {
+    const cultureBoxEvent: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-culture-box",
+      title: "Unresolved Genre Night",
+      description: null,
+      artists: ["DJ Unknown"],
+      venueName: "Culture Box",
+      officialEventUrl: "https://culture-box.com/event/unresolved-genre-night",
+    };
+    const cultureBoxVenues: Venue[] = [
       {
-        id: "v-hangaren",
-        slug: "hangaren",
-        name: "Hangaren",
+        id: "v-culture-box",
+        slug: "culture-box",
+        name: "Culture Box",
         aliases: [],
         address: "",
         city: "Copenhagen",
@@ -329,31 +417,11 @@ describe("trusted-electronic sources — a complete Hangaren/Culture Box candida
         shortDescription: null,
         venueProfile: null,
       },
-    ]);
-    // runSourceSyncLocked issues three db.select() calls in this fixed order
-    // (sourceEventLinks, then discoveryQueue, then sources) inside one
-    // Promise.all — override the third to report trustedElectronicSource:
-    // true, keeping the first two at their normal empty-result default.
-    const { db } = await import("./client");
-    const defaultSelectResult = {
-      from: () => ({
-        where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) }),
-      }),
-    } as unknown as ReturnType<typeof db.select>;
-    vi.mocked(db.select)
-      .mockReturnValueOnce(defaultSelectResult)
-      .mockReturnValueOnce(defaultSelectResult)
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () =>
-            Object.assign(Promise.resolve([]), {
-              limit: () => Promise.resolve([{ trustedElectronicSource: true }]),
-            }),
-        }),
-      } as unknown as ReturnType<typeof db.select>);
+    ];
+    vi.mocked(getVenues).mockResolvedValueOnce(cultureBoxVenues);
 
-    const adapter = fakeAdapter(() => Promise.resolve([miley]));
-    const result = await runSourceSync("src-hangaren", "Hangaren", adapter);
+    const adapter = fakeAdapter(() => Promise.resolve([cultureBoxEvent]));
+    const result = await runSourceSync("src-culture-box", "Culture Box", adapter);
 
     expect(result.outcome).toBe("ok");
     expect(result.created).toBe(1);

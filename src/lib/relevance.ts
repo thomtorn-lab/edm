@@ -59,26 +59,31 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
 ];
 
 /**
- * Non-music EVENT-TYPE signals (data-quality Workstream, Billetto queue
- * audit 2026-08-24): a general Copenhagen ticketing aggregator's own
- * inventory is mostly not music at all, not just "the wrong genre" — real
- * Production evidence, each phrase drawn from actual queued Billetto
- * candidates: "SpeedDating i København 25-35 år", "QualityDating i
- * København 30-45 år" (dating); "MAKEUP FOR MODEN HUD", "DRAG MAKEUP
- * MASTERCLASS" (makeup classes); "Sparkling Wine Festival København",
- * "Ølsmagning med Brygmester" (wine/beer tastings); "Sams Loppemarked i
- * Remisen", "LOPPELINDA på ENGHAVE PLADS", "Byens Lopper X Trianglen" (flea
- * markets — Danish "loppe" = flea); "Unge Talenter // Kammermusikforeningen
- * af 1911" (a chamber-music society's own concert series); "Guided Bike
- * Tour - Ørestad and Sydhavn", "By, brand og borgere – en byvandring i
- * Københavns Kulturkvarter", "Valbyparken: Urtevandringer og sanketure"
- * (guided walking/bike tours — Danish "vandring" = walk/hike); "Self Care
- * Sunday Soundbath™", "Body Temple - Mindful Cuddling" (wellness).
- * Deliberately narrow, multi-word/distinctive-root phrases only — never a
- * bare generic word like "wine" or "tour" alone, which a genuinely
- * electronic event could easily mention in passing (an afterparty's wine
- * reception, a tour-date announcement) without being interpreted as
- * evidence.
+ * Non-electronic EVENT-CATEGORY signals (data-quality Workstream, Billetto
+ * queue audit 2026-08-24): a general Copenhagen ticketing aggregator's own
+ * inventory is mostly not electronic-music at all — some of it isn't music
+ * at ALL (dating, tastings, makeup classes, flea markets, guided tours,
+ * wellness), and at least one real recurring case (chamber-music society
+ * concerts) IS music, just a different genre the existing word-based genre
+ * check doesn't cover. "Category," not "genre" or "non-music": that's the
+ * accurate name for what this list actually detects. Real Production
+ * evidence, each phrase drawn from actual queued Billetto candidates:
+ * "SpeedDating i København 25-35 år", "QualityDating i København 30-45 år"
+ * (dating); "MAKEUP FOR MODEN HUD", "DRAG MAKEUP MASTERCLASS" (makeup
+ * classes); "Sparkling Wine Festival København", "Ølsmagning med
+ * Brygmester" (wine/beer tastings); "Sams Loppemarked i Remisen",
+ * "LOPPELINDA på ENGHAVE PLADS", "Byens Lopper X Trianglen" (flea markets —
+ * Danish "loppe" = flea); "Unge Talenter // Kammermusikforeningen af 1911"
+ * (a chamber-music society's own concert series — real music, non-
+ * electronic); "Guided Bike Tour - Ørestad and Sydhavn", "By, brand og
+ * borgere – en byvandring i Københavns Kulturkvarter", "Valbyparken:
+ * Urtevandringer og sanketure" (guided walking/bike tours — Danish
+ * "vandring" = walk/hike); "Self Care Sunday Soundbath™", "Body Temple -
+ * Mindful Cuddling" (wellness). Deliberately narrow, multi-word/
+ * distinctive-root phrases only — never a bare generic word like "wine" or
+ * "tour" alone, which a genuinely electronic event could easily mention in
+ * passing (an afterparty's wine reception, a tour-date announcement)
+ * without being interpreted as evidence.
  *
  * Kept as a SEPARATE list/check from NON_ELECTRONIC_GENRE_SIGNALS rather
  * than merged into it: that list's proper-noun-mid-sentence suppression
@@ -90,10 +95,10 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
  * descriptive signal, not a coincidental collision. These are distinctive
  * multi-word/compound phrases, not single common words, so that specific
  * collision risk this module's other suppressions guard against doesn't
- * apply the same way — see hasNonMusicEventTypeSignal below for exactly
+ * apply the same way — see hasNonElectronicCategorySignal below for exactly
  * which suppressions still do (and don't) apply.
  */
-const NON_MUSIC_EVENT_TYPE_SIGNALS: RegExp[] = [
+const NON_ELECTRONIC_CATEGORY_SIGNALS: RegExp[] = [
   /\b(?:speed|quality)[\s-]?dating\b/i,
   /\bmakeup\s+masterclass\b/i,
   // No leading \b before "øl": JS regex word-boundary is ASCII-only, so
@@ -113,21 +118,23 @@ const NON_MUSIC_EVENT_TYPE_SIGNALS: RegExp[] = [
 ];
 
 /**
- * True when the text names a real, non-music event TYPE (see
- * NON_MUSIC_EVENT_TYPE_SIGNALS above). Still masks the event's own known
- * artists first (same reasoning as hasNonElectronicGenreSignal — an act
- * whose own name happens to overlap must never be penalized for it), but
- * deliberately skips the comparison-cue/historical-credit/proper-noun
- * suppressions that function applies: those exist specifically for common
- * single genre words that can coincidentally be part of a proper name (Daft
- * PUNK); these are distinctive multi-word/compound phrases where that
- * specific false-positive risk doesn't apply, and suppressing a capitalized
+ * True when the text names a real, non-electronic event CATEGORY (see
+ * NON_ELECTRONIC_CATEGORY_SIGNALS above — some non-music entirely, one
+ * category — chamber music — real music but a different genre). Still masks
+ * the event's own known artists first (same reasoning as
+ * hasNonElectronicGenreSignal — an act whose own name happens to overlap
+ * must never be penalized for it), but deliberately skips the
+ * comparison-cue/historical-credit/proper-noun suppressions that function
+ * applies: those exist specifically for common single genre words that can
+ * coincidentally be part of a proper name (Daft PUNK); these are
+ * distinctive multi-word/compound phrases where that specific
+ * false-positive risk doesn't apply, and suppressing a capitalized
  * institutional name (e.g. "Kammermusikforeningen") would wrongly discard
  * the real signal.
  */
-export function hasNonMusicEventTypeSignal(text: string, knownArtists: string[] = []): boolean {
+export function hasNonElectronicCategorySignal(text: string, knownArtists: string[] = []): boolean {
   const masked = maskKnownArtistNames(text, knownArtists);
-  return NON_MUSIC_EVENT_TYPE_SIGNALS.some((pattern) => pattern.test(masked));
+  return NON_ELECTRONIC_CATEGORY_SIGNALS.some((pattern) => pattern.test(masked));
 }
 
 /**

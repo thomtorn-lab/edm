@@ -64,6 +64,7 @@ async function seed() {
     const row = {
       ...d,
       probableStart: d.probableStart ? new Date(d.probableStart) : null,
+      probableEnd: d.probableEnd ? new Date(d.probableEnd) : null,
     };
     await db.insert(discoveryQueue).values(row).onConflictDoUpdate({ target: discoveryQueue.id, set: row });
   }

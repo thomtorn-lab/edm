@@ -46,19 +46,6 @@ export const sources = pgTable("sources", {
   adapter: text("adapter"),
   trustLevel: text("trust_level").notNull(),
   autoPublish: boolean("auto_publish").notNull().default(false),
-  /**
-   * Source-level trusted-electronic flag (Admin/Discovery Queue quality
-   * work package, Section 6). Distinct from `trustLevel` (general data-
-   * quality trust, already used for dedup/authority ordering) and from
-   * per-event genreConfidence: this says the SOURCE ITSELF is strong
-   * relevance evidence (an electronic-only venue — Hangaren, Culture Box),
-   * so a complete, valid candidate from it should auto-publish even when its
-   * own text names no specific subgenre keyword. Never set for a
-   * mixed-programme venue (ALICE, Poolen, Pumpehuset) — see
-   * src/lib/adapters/pipeline.ts's computeDecision for exactly how this is
-   * consumed.
-   */
-  trustedElectronicSource: boolean("trusted_electronic_source").notNull().default(false),
   syncFrequency: text("sync_frequency").notNull(),
   active: boolean("active").notNull().default(true),
   lastSuccessfulSync: timestamp("last_successful_sync", { withTimezone: true }),
@@ -115,6 +102,21 @@ export const discoveryQueue = pgTable("discovery_queue", {
   id: text("id").primaryKey(),
   probableTitle: text("probable_title").notNull(),
   probableStart: timestamp("probable_start", { withTimezone: true }),
+  /**
+   * Optional pre-publish end time, ticket URL and explicit free-admission
+   * flag (admin/manual-event work package, 2026-08-24) — so an admin
+   * editing a candidate before publish (or a source adapter that already
+   * extracted this data) never has to publish an incomplete event and edit
+   * it again afterward just to add these. Carried straight onto the created
+   * event's endDatetime/ticketUrl/priceFrom by publishDiscoveryItem.
+   * probableFree mirrors EventManager's own Free checkbox semantics
+   * (src/lib/links.ts's canonical priceFrom=0 representation) — unchecked
+   * is "not marked free" (unknown), never inferred from ticketUrl's
+   * absence.
+   */
+  probableEnd: timestamp("probable_end", { withTimezone: true }),
+  probableTicketUrl: text("probable_ticket_url"),
+  probableFree: boolean("probable_free").notNull().default(false),
   probableVenueName: text("probable_venue_name"),
   sourceName: text("source_name").notNull(),
   sourceUrl: text("source_url").notNull(),

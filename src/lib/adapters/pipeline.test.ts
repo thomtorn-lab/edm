@@ -460,7 +460,7 @@ describe("Billetto Discovery Queue noise (data-quality Workstream, 2026-08-24 qu
   });
 });
 
-describe("trusted-electronic sources (Section 6 — source-level electronic relevance vs. exact-genre confidence are not the same question)", () => {
+describe("trusted-electronic sources (Section 6 — corrected per explicit product decision 2026-08-24: source identity is DEFINITIVE relevance evidence, not a safety-net-gated bypass)", () => {
   function hangarenRaw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
     return raw({
       sourceId: "src-hangaren",
@@ -474,14 +474,27 @@ describe("trusted-electronic sources (Section 6 — source-level electronic rele
     });
   }
 
-  it("auto-publishes a complete, valid Hangaren candidate even with zero genre keyword evidence at all (the real 'Miley Serious' case)", () => {
+  function cultureBoxRaw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return raw({
+      sourceId: "src-culture-box",
+      genreHint: null,
+      genreConfidenceHint: null,
+      description: "",
+      artists: ["Black Box: BIESMANS, KAWUN, WILLE"],
+      venueName: "Culture Box",
+      title: "Black Box: BIESMANS, KAWUN, WILLE",
+      ...overrides,
+    });
+  }
+
+  it("Hangaren: auto-publishes a complete, valid candidate even with zero genre keyword evidence at all (the real 'Miley Serious' case)", () => {
     const result = runIngestionPipeline(hangarenRaw(), { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
     expect(result.genre).toBeNull(); // stays honest — sync.ts falls back to "electronic-other" at creation time
     expect(result.decision).toBe("auto_publish");
     expect(result.holdReason).toBeNull();
   });
 
-  it("auto-publishes even when a genre keyword resolves at only medium/low confidence — exact genre confidence alone is never a reason to review a trusted-electronic source", () => {
+  it("Hangaren: auto-publishes even when a genre keyword resolves at only medium/low confidence — exact genre confidence alone is never a reason to review a trusted-electronic source", () => {
     const result = runIngestionPipeline(
       hangarenRaw({ title: "Oliver Koletzki", description: "A night of tech house." }),
       { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
@@ -490,16 +503,16 @@ describe("trusted-electronic sources (Section 6 — source-level electronic rele
     expect(result.decision).toBe("auto_publish");
   });
 
-  it("still holds on a genuine non-electronic text signal — the trusted-source bypass is not a blanket override", () => {
+  it("Hangaren: still publishes even with a misleading/non-electronic text phrase — source identity is definitive, not a safety-net-gated bypass (explicit product decision: 'a generic/non-electronic text-signal must NOT by itself send these sources to Discovery Queue')", () => {
     const result = runIngestionPipeline(
       hangarenRaw({ title: "Comedy Night at Hangaren", description: "An evening of stand-up comedy." }),
       { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
     );
-    expect(result.decision).toBe("hold");
-    expect(result.holdReason).toBe("negative_relevance");
+    expect(result.decision).toBe("auto_publish");
+    expect(result.holdReason).toBeNull();
   });
 
-  it("still holds on a genuine blocker (unresolved venue) even for a trusted-electronic source", () => {
+  it("Hangaren: still holds on a genuine operational blocker (unresolved venue) even for a trusted-electronic source", () => {
     const result = runIngestionPipeline(hangarenRaw({ venueName: "Some Totally Unknown Bar" }), {
       venues: VENUES,
       existingEvents: [],
@@ -509,7 +522,59 @@ describe("trusted-electronic sources (Section 6 — source-level electronic rele
     expect(result.holdReason).toBe("incomplete_data");
   });
 
-  it("does NOT bypass genre-confidence routing for a non-trusted, mixed-programme source (ALICE) — same candidate shape, trustedElectronicSource omitted", () => {
+  it("Hangaren: still holds on a missing required field (no date) even for a trusted-electronic source", () => {
+    const result = runIngestionPipeline(hangarenRaw({ startDatetime: null }), {
+      venues: VENUES,
+      existingEvents: [],
+      trustedElectronicSource: true,
+    });
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("incomplete_data");
+  });
+
+  it("Culture Box: auto-publishes a complete, valid candidate with low genre confidence (mirrors Hangaren)", () => {
+    const result = runIngestionPipeline(cultureBoxRaw(), { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    expect(result.genre).toBeNull();
+    expect(result.decision).toBe("auto_publish");
+    expect(result.holdReason).toBeNull();
+  });
+
+  it("Culture Box: still publishes even with a misleading/non-electronic text phrase (mirrors Hangaren)", () => {
+    const result = runIngestionPipeline(
+      cultureBoxRaw({ title: "Quiz Night at Culture Box", description: "A pub quiz before the DJs take over." }),
+      { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
+    );
+    expect(result.decision).toBe("auto_publish");
+    expect(result.holdReason).toBeNull();
+  });
+
+  it("Culture Box: still holds on a genuine operational blocker (unresolved venue)", () => {
+    const result = runIngestionPipeline(cultureBoxRaw({ venueName: "Some Totally Unknown Bar" }), {
+      venues: VENUES,
+      existingEvents: [],
+      trustedElectronicSource: true,
+    });
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("incomplete_data");
+  });
+
+  it("Hangaren/Culture Box: still holds on a real duplicate/canonical conflict needing review — the trusted-source bypass never skips dedup", () => {
+    const existing: ExistingEventForDedup = {
+      id: "e-existing",
+      title: "Miley Serious",
+      artists: ["Miley Serious"],
+      venueId: VENUES.find((v) => v.name === "Hangaren")!.id,
+      startDatetime: hangarenRaw().startDatetime!,
+      sourceId: "src-hangaren",
+      officialEventUrl: hangarenRaw().officialEventUrl,
+      ticketUrl: null,
+      residentAdvisorUrl: null,
+    };
+    const result = runIngestionPipeline(hangarenRaw(), { venues: VENUES, existingEvents: [existing], trustedElectronicSource: true });
+    expect(result.decision).not.toBe("auto_publish"); // exact match resolves via findSyncMatch's update path in db/sync.ts, never a second create
+  });
+
+  it("ALICE does NOT inherit trusted-electronic-source behavior — same candidate shape, trustedElectronicSource omitted", () => {
     const result = runIngestionPipeline(
       raw({
         sourceId: "src-alice",
@@ -524,5 +589,22 @@ describe("trusted-electronic sources (Section 6 — source-level electronic rele
     );
     expect(result.decision).toBe("hold");
     expect(result.holdReason).toBe("incomplete_data"); // genre never resolved, and ALICE gets no relevance bypass
+  });
+
+  it("ALICE with a misleading/non-electronic text phrase is held, unlike Hangaren/Culture Box with the same shape (proves the rule is genuinely source-scoped, not accidentally global)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-alice",
+        genreHint: null,
+        genreConfidenceHint: null,
+        artists: ["Some ALICE Act"],
+        venueName: "ALICE",
+        title: "Comedy Night at ALICE",
+        description: "An evening of stand-up comedy.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance"); // genre still null, non-electronic category signal fires, ALICE gets no bypass
   });
 });

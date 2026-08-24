@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, lte } from "drizzle-orm";
 import { db } from "./client";
-import { discoveryQueue, sourceEventLinks, syncLocks, sources } from "./schema";
+import { discoveryQueue, sourceEventLinks, syncLocks } from "./schema";
 import {
   applyDiscoveryClassificationUpdate,
   applySourceSyncPatch,
@@ -16,6 +16,7 @@ import {
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
+import { isTrustedElectronicSource } from "@/lib/data/sources";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
 import {
   buildDiscoveryQueueClassificationPatch,
@@ -160,14 +161,16 @@ async function runSourceSyncLocked(
     };
   }
 
-  const [venues, existingEventRows, links, pendingDiscovery, sourceRows] = await Promise.all([
+  const [venues, existingEventRows, links, pendingDiscovery] = await Promise.all([
     getVenues(),
     getAllEventsAdmin(),
     db.select().from(sourceEventLinks).where(eq(sourceEventLinks.sourceId, sourceId)),
     db.select().from(discoveryQueue).where(eq(discoveryQueue.status, "pending")),
-    db.select({ trustedElectronicSource: sources.trustedElectronicSource }).from(sources).where(eq(sources.id, sourceId)).limit(1),
   ]);
-  const trustedElectronicSource = sourceRows[0]?.trustedElectronicSource ?? false;
+  // Static, code-level declaration (src/lib/data/sources.ts) — a
+  // product-routing property, not a DB read (see isTrustedElectronicSource's
+  // own doc comment for why this is deliberately not a Production column).
+  const trustedElectronicSource = isTrustedElectronicSource(sourceId);
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
   const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
@@ -421,6 +424,13 @@ async function runSourceSyncLocked(
         id: queueId,
         probableTitle: raw.title || "(untitled)",
         probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
+        // Carried straight from the adapter's own extraction — real data
+        // honestly found this run must never be silently dropped just
+        // because the candidate landed in review instead of auto-publish
+        // (admin/manual-event work package, 2026-08-24).
+        probableEnd: raw.endDatetime ? new Date(raw.endDatetime) : null,
+        probableTicketUrl: raw.ticketUrl,
+        probableFree: raw.priceFrom === 0,
         probableVenueName: raw.venueName,
         sourceName: sourceDisplayName,
         sourceUrl: dedupKey,

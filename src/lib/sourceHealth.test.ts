@@ -12,7 +12,6 @@ function baseSource(overrides: Partial<Source> = {}): Source {
     adapter: "first-party-json",
     trustLevel: "high",
     autoPublish: true,
-    trustedElectronicSource: false,
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: "2026-08-13T06:00:00+02:00",

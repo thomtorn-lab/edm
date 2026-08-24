@@ -10,7 +10,7 @@ import {
   hasExplicitElectronicAssertion,
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
-  hasNonMusicEventTypeSignal,
+  hasNonElectronicCategorySignal,
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
@@ -34,17 +34,19 @@ export interface PipelineOptions {
   existingEvents: ExistingEventForDedup[];
   /** Source-level trusted-electronic flag (Admin/Discovery Queue quality
    *  work package, Section 6 — src/lib/data/sources.ts's
-   *  `trustedElectronicSource`). Electronic RELEVANCE and exact GENRE
+   *  `isTrustedElectronicSource`, a static code-level declaration, never a
+   *  DB column: this is a product-routing property, not accumulated mutable
+   *  source health data). Electronic RELEVANCE and exact GENRE
    *  classification confidence are deliberately different questions: a
    *  source scoped to an electronic-only venue (Hangaren, Culture Box) is
-   *  itself strong relevance evidence, even on a night whose own text names
-   *  no specific subgenre keyword — so genre confidence being medium/low (or
-   *  genre being fully unresolved) must never alone hold/queue a candidate
-   *  from a trusted-electronic source. Never set for a mixed-programme venue
-   *  (ALICE, Poolen, Pumpehuset) or any aggregator (Billetto, RA) — see
-   *  computeDecision below for exactly what still forces review/hold even
-   *  here (missing fields, a genuine non-electronic text signal, a
-   *  duplicate/canonical conflict). */
+   *  ITSELF definitive relevance evidence — full stop, per explicit product
+   *  decision — so neither genre confidence being medium/low/unresolved NOR
+   *  an incidental non-electronic text phrase alone holds/queues a candidate
+   *  from a trusted-electronic source (see computeDecision below). Never set
+   *  for a mixed-programme venue (ALICE, Poolen, Pumpehuset) or any
+   *  aggregator (Billetto, RA). Only a genuine operational/data blocker
+   *  still forces review/hold: missing required fields, an unresolved
+   *  venue, malformed data, or a real duplicate/canonical conflict. */
   trustedElectronicSource?: boolean;
 }
 
@@ -133,17 +135,19 @@ function computeDecision(
     // evidence that the event fails inclusion.
     holdReason = "incomplete_data";
   } else if (trustedElectronicSource) {
-    // Source-level electronic relevance is trusted (Section 6): exact genre
-    // classification confidence is never itself a reason to hold/review a
-    // complete, valid candidate from Hangaren/Culture Box. Still holds on a
-    // genuine non-electronic text signal (safety net) and still goes through
-    // the ordinary duplicate-conflict downgrade below.
-    if (hasNonElectronicSignal) {
-      decision = "hold";
-      holdReason = "negative_relevance";
-    } else {
-      decision = "auto_publish";
-    }
+    // Source-level electronic relevance is TRUSTED, full stop (Section 6,
+    // corrected per explicit product decision 2026-08-24): for Hangaren/
+    // Culture Box, source identity is definitive relevance evidence on its
+    // own — exact genre confidence AND an incidental non-electronic text
+    // phrase are both explicitly NOT blockers here (unlike every other
+    // source's text-based relevance check above/below). Only genuine
+    // operational/data blockers prevent auto-publish: meetsMinimumFields
+    // above (required fields, resolved venue) and the duplicate-conflict
+    // downgrade below. This is deliberately NOT the same rule Billetto/RA/
+    // every other aggregator gets, and deliberately never applies to a
+    // mixed-programme venue (ALICE, Poolen, Pumpehuset) — see
+    // isTrustedElectronicSource's own doc comment for why.
+    decision = "auto_publish";
   } else if (decision === "auto_publish") {
     // Source-aware relevance evidence (data-quality Workstream A): a broad
     // venue/platform category tag or a generic mention is real evidence the
@@ -270,7 +274,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // CONFIDENCE / PUBLISH-REVIEW GATE
   const hasTrustedElectronicTicketing = raw.residentAdvisorUrl != null;
   const nonElectronicSignal =
-    hasNonElectronicGenreSignal(relevanceText, normalizedArtists) || hasNonMusicEventTypeSignal(relevanceText, normalizedArtists);
+    hasNonElectronicGenreSignal(relevanceText, normalizedArtists) || hasNonElectronicCategorySignal(relevanceText, normalizedArtists);
   const relevance = assessRelevance({
     genre,
     hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
@@ -371,7 +375,7 @@ export function applyEnrichedGenre(
       "none",
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
-        hasNonMusicEventTypeSignal(relevanceText, result.normalizedArtists),
+        hasNonElectronicCategorySignal(relevanceText, result.normalizedArtists),
     );
     return { ...result, genre, genreConfidence, decision, holdReason };
   }
@@ -388,7 +392,7 @@ export function applyEnrichedGenre(
     const finalGenreConfidence = result.genreConfidence;
     const nonElectronicSignal =
       hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
-      hasNonMusicEventTypeSignal(relevanceText, result.normalizedArtists);
+      hasNonElectronicCategorySignal(relevanceText, result.normalizedArtists);
     const relevance = assessRelevance({
       genre: finalGenre,
       hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),

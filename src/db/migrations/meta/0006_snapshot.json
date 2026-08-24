@@ -1,5 +1,5 @@
 {
-  "id": "86c3a1e9-aa55-4da7-a372-5949530ba72b",
+  "id": "dd57f5c1-d206-4b9c-b40c-1fb3c70d9fbf",
   "prevId": "77ae907d-f2b1-434d-89ad-70dcbd1e1120",
   "version": "7",
   "dialect": "postgresql",
@@ -100,6 +100,25 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "probable_end": {
+          "name": "probable_end",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "probable_ticket_url": {
+          "name": "probable_ticket_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "probable_free": {
+          "name": "probable_free",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "probable_venue_name": {
           "name": "probable_venue_name",
@@ -689,13 +708,6 @@
         },
         "auto_publish": {
           "name": "auto_publish",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "trusted_electronic_source": {
-          "name": "trusted_electronic_source",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
