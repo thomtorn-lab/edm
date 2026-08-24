@@ -27,16 +27,35 @@ name: Prepare Production Database
 # source's row, which the full bootstrap always does on every re-run.
 # Migrations still run first either way. Leave source_id empty for the
 # normal full bootstrap (venues + every source).
+#
+# Optional `migrations_only` input (Admin/Discovery Queue quality work
+# package follow-up, 2026-08-24): when true, this run applies pending
+# `npm run db:migrate` schema migrations and stops there — no
+# reference-data write of any kind (no venue/source upsert, whether full
+# bootstrap or a scoped source_id). `db:migrate` (drizzle-kit migrate) is
+# already a schema-only operation, tracked in its own migrations table,
+# fully independent of the reference-data seed steps below it — this flag
+# only controls whether this workflow proceeds past that point. Use this
+# when a merged migration needs to reach Production ahead of, or without,
+# any reference-data change. Takes precedence over source_id (a
+# migrations_only run ignores source_id if both are set). Leave false for
+# existing behavior (migrate, then the full bootstrap or scoped
+# source_id sync, exactly as before this input existed).
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type PREPARE-PRODUCTION-DB to confirm you want to run migrations and a production seed against the DATABASE_URL secret.'
+        description: 'Type PREPARE-PRODUCTION-DB to confirm you want to run migrations (and, unless migrations_only is true, a production reference-data seed) against the DATABASE_URL secret.'
         required: true
       source_id:
-        description: 'Optional: scope this run to exactly one source id (e.g. src-alice) via db:sync-source-registry, instead of the full db:seed:production bootstrap. Leave empty for the normal full bootstrap.'
+        description: 'Optional: scope this run to exactly one source id (e.g. src-alice) via db:sync-source-registry, instead of the full db:seed:production bootstrap. Leave empty for the normal full bootstrap. Ignored if migrations_only is true.'
         required: false
+      migrations_only:
+        description: "Apply pending schema migrations only, then stop — no venue/source reference-data write at all (skips the full bootstrap AND the scoped source_id sync). Leave false for existing behavior."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -95,6 +114,7 @@ jobs:
         run: npm run db:migrate
 
       - name: Seed production reference data (full bootstrap, or one scoped source if source_id was given)
+        if: ${{ !inputs.migrations_only }}
         run: |
           if [ -n "${{ inputs.source_id }}" ]; then
             echo "Scoped run: syncing only source id '${{ inputs.source_id }}' (no venue writes, no other source's row touched)."
@@ -102,6 +122,10 @@ jobs:
           else
             npm run db:seed:production
           fi
+
+      - name: Skipped reference-data seed (migrations_only)
+        if: ${{ inputs.migrations_only }}
+        run: echo "migrations_only was true — schema migrations applied above; no venue/source reference-data write was made."
 
       - name: Remove local env file
         if: always()

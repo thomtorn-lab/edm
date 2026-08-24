@@ -41,8 +41,12 @@ on:
           - reachability
           - snapshot
           - venues
+          - db-integrity
       source_id:
-        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability with no source scoping; must match src-[a-z0-9-]+)'
+        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity with no source scoping; must match src-[a-z0-9-]+)'
+        required: false
+      table:
+        description: "db-integrity mode only, optional: one of venues, sources, events, discovery_queue, source_event_links, sync_locks — reports that table's information_schema columns (name/type/nullable/default) alongside the row counts every db-integrity run always prints."
         required: false
       endpoint:
         description: "https:// URL to check (reachability mode only)"
@@ -149,6 +153,7 @@ jobs:
           [ -n "${{ inputs.dedup_venue }}" ] && args+=(--venue="${{ inputs.dedup_venue }}")
           [ -n "${{ inputs.dedup_start }}" ] && args+=(--start="${{ inputs.dedup_start }}")
           [ -n "${{ inputs.dedup_url }}" ] && args+=(--url="${{ inputs.dedup_url }}")
+          [ -n "${{ inputs.table }}" ] && args+=(--table="${{ inputs.table }}")
           if [ "${{ inputs.mode }}" = "reachability" ]; then
             node --import tsx src/db/inspectSource.ts "${args[@]}"
           else

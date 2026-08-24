@@ -16,9 +16,10 @@ import type { Source, Venue } from "@/lib/types";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
+ *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
  *
  * Also runnable via: npm run db:inspect-source -- --mode=... [...]
  *
@@ -471,11 +472,69 @@ async function modeVenues(client: Client, args: Record<string, string | boolean>
   console.log(JSON.stringify(rows, null, 2));
 }
 
+/**
+ * Read-only schema/row-count integrity check (migration verification
+ * follow-up, 2026-08-24): confirms a migration's actual effect —
+ * before/after — without any per-source scoping. Two independent things:
+ *
+ * 1. `--table=<name>` (optional, one of DB_INTEGRITY_ALLOWED_TABLES below):
+ *    information_schema.columns for that table — name, type, nullable,
+ *    default — so a specific column's existence/shape can be confirmed
+ *    directly rather than inferred from a query merely not erroring.
+ * 2. Always: total row counts for venues, sources, events, and
+ *    source_event_links, plus discovery_queue's count broken down by
+ *    status. Diffing this output before and after a migration proves no
+ *    reference-data table or row was touched by a schema-only change —
+ *    exactly the same regression-fingerprint idea modeSnapshot already
+ *    uses for one source, generalized to the whole database.
+ *
+ * The table name is validated against a fixed allowlist (never
+ * interpolated from free-form input beyond that check) before being
+ * substituted into the information_schema query.
+ */
+const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
+
+async function modeDbIntegrity(client: Client, args: Record<string, string | boolean>) {
+  const table = typeof args.table === "string" ? args.table : null;
+  if (table) {
+    if (!DB_INTEGRITY_ALLOWED_TABLES.includes(table)) {
+      throw new Error(`--table="${table}" is not in the allowed list: ${DB_INTEGRITY_ALLOWED_TABLES.join(", ")}.`);
+    }
+    section(`Schema columns: ${table}`);
+    const cols = await client.query(
+      `SELECT column_name, data_type, is_nullable, column_default
+       FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1
+       ORDER BY ordinal_position`,
+      [table],
+    );
+    console.log(JSON.stringify(cols.rows, null, 2));
+  }
+
+  section("Row counts (all reference/event tables)");
+  const counts = await client.query(`
+    SELECT 'venues' AS table_name, count(*)::int AS n FROM venues
+    UNION ALL SELECT 'sources', count(*)::int FROM sources
+    UNION ALL SELECT 'events', count(*)::int FROM events
+    UNION ALL SELECT 'discovery_queue', count(*)::int FROM discovery_queue
+    UNION ALL SELECT 'source_event_links', count(*)::int FROM source_event_links
+    ORDER BY table_name
+  `);
+  console.log(JSON.stringify(counts.rows, null, 2));
+
+  section("discovery_queue by status");
+  const byStatus = await client.query(
+    "SELECT status, count(*)::int AS n FROM discovery_queue GROUP BY status ORDER BY status",
+  );
+  console.log(JSON.stringify(byStatus.rows, null, 2));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (typeof mode !== "string") {
-    console.error("::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot> is required.");
+    console.error(
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity> is required.",
+    );
     process.exit(1);
   }
 
@@ -488,6 +547,7 @@ async function main() {
     "dedup-simulate": modeDedupSimulate,
     snapshot: modeSnapshot,
     venues: modeVenues,
+    "db-integrity": modeDbIntegrity,
   };
 
   if (mode === "reachability") {
@@ -498,7 +558,9 @@ async function main() {
 
   const runner = runners[mode];
   if (!runner) {
-    console.error(`::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot.`);
+    console.error(
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, db-integrity.`,
+    );
     process.exit(1);
   }
 
