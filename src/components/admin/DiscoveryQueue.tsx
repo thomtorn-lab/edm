@@ -40,6 +40,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
 
   const [title, setTitle] = useState(item.probableTitle);
   const [startLocal, setStartLocal] = useState(item.probableStart ? toLocalInput(item.probableStart) : "");
+  const [dateTouched, setDateTouched] = useState(false);
   const [venueNameText, setVenueNameText] = useState(item.probableVenueName ?? "");
   const [lineup, setLineup] = useState(item.detectedLineup.join(", "));
   const [genre, setGenre] = useState(item.predictedGenre ?? "");
@@ -128,6 +129,19 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   }
 
   async function handleSaveEdit() {
+    // A native datetime-local input reports value="" for any incomplete/
+    // unparseable typed entry (e.g. the user only got partway through typing
+    // digits) — it never throws or otherwise signals the attempt. Silently
+    // omitting the date from the patch in that case would save every other
+    // field while leaving "Missing: date" unresolved, with no indication
+    // anything went wrong. `dateTouched` distinguishes "the user interacted
+    // with this field and it never resolved to a valid value" from "this
+    // field was never touched" (e.g. genuinely still unknown) — only the
+    // former blocks save.
+    if (dateTouched && !startLocal) {
+      setError("Date & time isn't a complete, valid date — use the picker or finish typing it before saving.");
+      return;
+    }
     const patch: Record<string, unknown> = {
       probableTitle: title,
       probableVenueName: venueNameText || null,
@@ -164,24 +178,33 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       {editing ? (
         <div className="mt-3 space-y-2 rounded border border-border-strong p-3">
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
+            <label htmlFor={`dq-title-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Title</label>
+            <input id={`dq-title-${item.id}`} value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
           </div>
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Date &amp; time</label>
-            <input type="datetime-local" value={startLocal} onChange={(e) => setStartLocal(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
+            <label htmlFor={`dq-start-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Date &amp; time</label>
+            <input
+              id={`dq-start-${item.id}`}
+              type="datetime-local"
+              value={startLocal}
+              onChange={(e) => {
+                setStartLocal(e.target.value);
+                setDateTouched(true);
+              }}
+              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+            />
           </div>
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Venue name (free text)</label>
-            <input value={venueNameText} onChange={(e) => setVenueNameText(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
+            <label htmlFor={`dq-venue-name-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Venue name (free text)</label>
+            <input id={`dq-venue-name-${item.id}`} value={venueNameText} onChange={(e) => setVenueNameText(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
           </div>
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Lineup (comma-separated)</label>
-            <input value={lineup} onChange={(e) => setLineup(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
+            <label htmlFor={`dq-lineup-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Lineup (comma-separated)</label>
+            <input id={`dq-lineup-${item.id}`} value={lineup} onChange={(e) => setLineup(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
           </div>
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</label>
-            <select value={genre} onChange={(e) => setGenre(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary">
+            <label htmlFor={`dq-genre-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</label>
+            <select id={`dq-genre-${item.id}`} value={genre} onChange={(e) => setGenre(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary">
               <option value="">Unresolved</option>
               {GENRES.map((g) => (
                 <option key={g.slug} value={g.slug}>{g.label}</option>
@@ -369,15 +392,15 @@ async function callPost(
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(json.error ?? "Action failed.");
-      setBusy(false);
       return false;
     }
     router.refresh();
     return true;
   } catch {
     setError("Network error.");
-    setBusy(false);
     return false;
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -395,14 +418,14 @@ async function callPatch(
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(json.error ?? "Action failed.");
-      setBusy(false);
       return false;
     }
     router.refresh();
     return true;
   } catch {
     setError("Network error.");
-    setBusy(false);
     return false;
+  } finally {
+    setBusy(false);
   }
 }

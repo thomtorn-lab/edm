@@ -231,3 +231,87 @@ describe("DiscoveryQueue — normal existing-venue publication unchanged", () =>
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/discovery/dq-1/publish", expect.objectContaining({ method: "POST" })));
   });
 });
+
+describe("DiscoveryQueue — post-save button state (admin/manual-event work package, 2026-08-24)", () => {
+  afterEach(cleanup);
+
+  it("re-enables Edit/Publish/Ignore after a successful action, without a page reload (regression: busy never reset on the success path)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+
+    const ignoreButton = screen.getByRole("button", { name: "Ignore" }) as HTMLButtonElement;
+    fireEvent.click(ignoreButton);
+    await vi.waitFor(() => expect(ignoreButton.disabled).toBe(false));
+
+    const editButton = screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement;
+    expect(editButton.disabled).toBe(false);
+    fireEvent.click(editButton); // proves it's genuinely clickable, not just non-disabled in the DOM
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+  });
+
+  it("also re-enables buttons after a failed action (already worked before this fix, still holds)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "nope" }) }));
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+
+    const ignoreButton = screen.getByRole("button", { name: "Ignore" }) as HTMLButtonElement;
+    fireEvent.click(ignoreButton);
+    await screen.findByText("nope");
+    expect(ignoreButton.disabled).toBe(false);
+  });
+});
+
+describe("DiscoveryQueue — typed date entry (admin/manual-event work package, 2026-08-24 — the real Kaj manual-add bug)", () => {
+  afterEach(cleanup);
+
+  it("does not silently save while leaving the date missing when the date input ends up empty after being touched (an incomplete typed entry, real browser behavior)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableStart: null, probableVenueName: "Culture Box", missingFields: ["date"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dateInput = screen.getByLabelText("Date & time");
+    // A native datetime-local input reports value="" for any incomplete
+    // typed entry — simulate a real interaction (a value change, so the
+    // touched flag genuinely flips) landing back on an incomplete value.
+    fireEvent.change(dateInput, { target: { value: "2026-09-20T20:00" } });
+    fireEvent.change(dateInput, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/isn't a complete, valid date/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+    // The edit form must stay open so the admin can fix it, not silently close.
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+  });
+
+  it("saves normally when a complete date is entered via the picker (unaffected by the new validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableStart: null, probableVenueName: "Culture Box", missingFields: ["date"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Date & time"), { target: { value: "2026-09-20T20:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/discovery/dq-1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: expect.stringContaining('"probableStart"'),
+        }),
+      ),
+    );
+  });
+
+  it("does not block saving other fields when the date was never touched at all (still genuinely unset, not a failed attempt)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableStart: null, probableVenueName: "Culture Box", missingFields: ["date"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Updated Title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+});

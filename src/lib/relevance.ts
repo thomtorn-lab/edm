@@ -59,6 +59,78 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
 ];
 
 /**
+ * Non-music EVENT-TYPE signals (data-quality Workstream, Billetto queue
+ * audit 2026-08-24): a general Copenhagen ticketing aggregator's own
+ * inventory is mostly not music at all, not just "the wrong genre" — real
+ * Production evidence, each phrase drawn from actual queued Billetto
+ * candidates: "SpeedDating i København 25-35 år", "QualityDating i
+ * København 30-45 år" (dating); "MAKEUP FOR MODEN HUD", "DRAG MAKEUP
+ * MASTERCLASS" (makeup classes); "Sparkling Wine Festival København",
+ * "Ølsmagning med Brygmester" (wine/beer tastings); "Sams Loppemarked i
+ * Remisen", "LOPPELINDA på ENGHAVE PLADS", "Byens Lopper X Trianglen" (flea
+ * markets — Danish "loppe" = flea); "Unge Talenter // Kammermusikforeningen
+ * af 1911" (a chamber-music society's own concert series); "Guided Bike
+ * Tour - Ørestad and Sydhavn", "By, brand og borgere – en byvandring i
+ * Københavns Kulturkvarter", "Valbyparken: Urtevandringer og sanketure"
+ * (guided walking/bike tours — Danish "vandring" = walk/hike); "Self Care
+ * Sunday Soundbath™", "Body Temple - Mindful Cuddling" (wellness).
+ * Deliberately narrow, multi-word/distinctive-root phrases only — never a
+ * bare generic word like "wine" or "tour" alone, which a genuinely
+ * electronic event could easily mention in passing (an afterparty's wine
+ * reception, a tour-date announcement) without being interpreted as
+ * evidence.
+ *
+ * Kept as a SEPARATE list/check from NON_ELECTRONIC_GENRE_SIGNALS rather
+ * than merged into it: that list's proper-noun-mid-sentence suppression
+ * (isLikelyProperNounMidSentence, built for "Daft Punk" not being punk) is
+ * calibrated for single genre WORDS that can coincidentally be part of an
+ * artist's stage name — it wrongly suppressed a genuine match here, since a
+ * capitalized institutional name like "Kammermusikforeningen" (a chamber-
+ * music society's own name, real Production evidence) IS the actual
+ * descriptive signal, not a coincidental collision. These are distinctive
+ * multi-word/compound phrases, not single common words, so that specific
+ * collision risk this module's other suppressions guard against doesn't
+ * apply the same way — see hasNonMusicEventTypeSignal below for exactly
+ * which suppressions still do (and don't) apply.
+ */
+const NON_MUSIC_EVENT_TYPE_SIGNALS: RegExp[] = [
+  /\b(?:speed|quality)[\s-]?dating\b/i,
+  /\bmakeup\s+masterclass\b/i,
+  // No leading \b before "øl": JS regex word-boundary is ASCII-only, so
+  // \bøl fails to match at all before a non-ASCII letter like "ø" — real
+  // bug found writing this test against the actual Danish word.
+  /(?:vin|øl)smagning\b/i,
+  /\bwine\s+(?:festival|tasting)\b/i,
+  /\blopp(?:e|er)(?:marked|linda)?\b/i,
+  /\bkammermusik\w*/i,
+  /\b(?:guided\s+)?(?:bike|walking)\s+tour\b/i,
+  // No leading \b: Danish freely compounds without a separator
+  // ("byvandring" = "by" + "vandring", one word, real Production evidence)
+  // — a word boundary would never appear immediately before the suffix.
+  /vandring(?:er)?\b/i,
+  /\bsoundbath\b/i,
+  /\bmindful\s+cuddling\b/i,
+];
+
+/**
+ * True when the text names a real, non-music event TYPE (see
+ * NON_MUSIC_EVENT_TYPE_SIGNALS above). Still masks the event's own known
+ * artists first (same reasoning as hasNonElectronicGenreSignal — an act
+ * whose own name happens to overlap must never be penalized for it), but
+ * deliberately skips the comparison-cue/historical-credit/proper-noun
+ * suppressions that function applies: those exist specifically for common
+ * single genre words that can coincidentally be part of a proper name (Daft
+ * PUNK); these are distinctive multi-word/compound phrases where that
+ * specific false-positive risk doesn't apply, and suppressing a capitalized
+ * institutional name (e.g. "Kammermusikforeningen") would wrongly discard
+ * the real signal.
+ */
+export function hasNonMusicEventTypeSignal(text: string, knownArtists: string[] = []): boolean {
+  const masked = maskKnownArtistNames(text, knownArtists);
+  return NON_MUSIC_EVENT_TYPE_SIGNALS.some((pattern) => pattern.test(masked));
+}
+
+/**
  * A negative-signal match immediately preceded by one of these comparison/
  * lineage phrases (within a short window) is not trusted — it describes an
  * INFLUENCE or a COMPARISON, not the event's own genre. Deliberately does

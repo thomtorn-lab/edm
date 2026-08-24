@@ -10,6 +10,7 @@ import {
   hasExplicitElectronicAssertion,
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
+  hasNonMusicEventTypeSignal,
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
@@ -31,6 +32,20 @@ export interface ExistingEventForDedup extends DuplicateCandidate {
 export interface PipelineOptions {
   venues: Venue[];
   existingEvents: ExistingEventForDedup[];
+  /** Source-level trusted-electronic flag (Admin/Discovery Queue quality
+   *  work package, Section 6 — src/lib/data/sources.ts's
+   *  `trustedElectronicSource`). Electronic RELEVANCE and exact GENRE
+   *  classification confidence are deliberately different questions: a
+   *  source scoped to an electronic-only venue (Hangaren, Culture Box) is
+   *  itself strong relevance evidence, even on a night whose own text names
+   *  no specific subgenre keyword — so genre confidence being medium/low (or
+   *  genre being fully unresolved) must never alone hold/queue a candidate
+   *  from a trusted-electronic source. Never set for a mixed-programme venue
+   *  (ALICE, Poolen, Pumpehuset) or any aggregator (Billetto, RA) — see
+   *  computeDecision below for exactly what still forces review/hold even
+   *  here (missing fields, a genuine non-electronic text signal, a
+   *  duplicate/canonical conflict). */
+  trustedElectronicSource?: boolean;
 }
 
 /**
@@ -75,13 +90,17 @@ function computeDecision(
   genreConfidence: ConfidenceLevel,
   duplicateConfidence: "high" | "medium" | "low" | "none",
   relevance: RelevanceLevel,
+  trustedElectronicSource: boolean,
+  hasNonElectronicSignal: boolean,
 ): { decision: PublishDecision; holdReason: HoldReason } {
   const meetsMinimumFields =
     missingFields.every((f) => f !== "title") &&
     missingFields.every((f) => f !== "date") &&
     resolvedVenueId != null &&
     missingFields.every((f) => f !== "source url");
-  const hasCredibleElectronicRelevance = genre != null;
+  // A trusted-electronic source (Section 6) IS itself relevance evidence —
+  // no genre keyword needs to have matched at all.
+  const hasCredibleElectronicRelevance = genre != null || trustedElectronicSource;
 
   let decision = evaluateQualityGate({
     hasTitle: missingFields.every((f) => f !== "title"),
@@ -93,11 +112,38 @@ function computeDecision(
   });
   let holdReason: HoldReason = null;
 
-  if (!meetsMinimumFields || !hasCredibleElectronicRelevance) {
+  if (genre == null && !trustedElectronicSource && hasNonElectronicSignal) {
+    // Billetto Discovery Queue noise (data-quality Workstream, 2026-08-24):
+    // no genre keyword matched AT ALL (never true for a candidate that
+    // already has real positive genre evidence, so this can never discard a
+    // genuinely electronic event — see relevance.ts's new signal list), and
+    // the candidate's own title/description carries a strong, specific,
+    // non-electronic EVENT-TYPE or genre signal (a speed-dating night, a
+    // chamber-music concert, a flea market — real Production examples).
+    // Genuine "genuine evidence-based rejection" (see HoldReason's own doc
+    // comment) even though venue/other fields may ALSO be unresolved —
+    // fixing those later would never make this event worth a human's
+    // review, so it must never reach the queue at all (see db/sync.ts's
+    // skip-on-negative_relevance branch for a brand-new candidate).
+    holdReason = "negative_relevance";
+    decision = "hold";
+  } else if (!meetsMinimumFields || !hasCredibleElectronicRelevance) {
     // The gate returned "hold" purely because required fields or any genre
     // at all are missing this run — a data/parser gap, never itself
     // evidence that the event fails inclusion.
     holdReason = "incomplete_data";
+  } else if (trustedElectronicSource) {
+    // Source-level electronic relevance is trusted (Section 6): exact genre
+    // classification confidence is never itself a reason to hold/review a
+    // complete, valid candidate from Hangaren/Culture Box. Still holds on a
+    // genuine non-electronic text signal (safety net) and still goes through
+    // the ordinary duplicate-conflict downgrade below.
+    if (hasNonElectronicSignal) {
+      decision = "hold";
+      holdReason = "negative_relevance";
+    } else {
+      decision = "auto_publish";
+    }
   } else if (decision === "auto_publish") {
     // Source-aware relevance evidence (data-quality Workstream A): a broad
     // venue/platform category tag or a generic mention is real evidence the
@@ -223,11 +269,13 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
 
   // CONFIDENCE / PUBLISH-REVIEW GATE
   const hasTrustedElectronicTicketing = raw.residentAdvisorUrl != null;
+  const nonElectronicSignal =
+    hasNonElectronicGenreSignal(relevanceText, normalizedArtists) || hasNonMusicEventTypeSignal(relevanceText, normalizedArtists);
   const relevance = assessRelevance({
     genre,
     hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
     hasTrustedElectronicTicketing,
-    hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, normalizedArtists),
+    hasNonElectronicGenreSignal: nonElectronicSignal,
     hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
     hasCorroboratingArtistGenreEvidence: false, // no enrichment has run yet at this stage — see applyEnrichedGenre
   });
@@ -238,6 +286,8 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     genreConfidence,
     duplicateConfidence,
     relevance,
+    options.trustedElectronicSource ?? false,
+    nonElectronicSignal,
   );
 
   return {
@@ -319,6 +369,9 @@ export function applyEnrichedGenre(
       genreConfidence,
       result.duplicateConfidence,
       "none",
+      false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
+      hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
+        hasNonMusicEventTypeSignal(relevanceText, result.normalizedArtists),
     );
     return { ...result, genre, genreConfidence, decision, holdReason };
   }
@@ -333,11 +386,14 @@ export function applyEnrichedGenre(
     // is the ONLY evidence for genre at all, hence capped at medium; here,
     // the high-confidence floor already exists independently of Discogs).
     const finalGenreConfidence = result.genreConfidence;
+    const nonElectronicSignal =
+      hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
+      hasNonMusicEventTypeSignal(relevanceText, result.normalizedArtists);
     const relevance = assessRelevance({
       genre: finalGenre,
       hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
       hasTrustedElectronicTicketing,
-      hasNonElectronicGenreSignal: hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists),
+      hasNonElectronicGenreSignal: nonElectronicSignal,
       hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
       hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
     });
@@ -348,6 +404,8 @@ export function applyEnrichedGenre(
       finalGenreConfidence,
       result.duplicateConfidence,
       relevance,
+      false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
+      nonElectronicSignal,
     );
     return { ...result, genre: finalGenre, genreConfidence: finalGenreConfidence, decision, holdReason, relevance };
   }

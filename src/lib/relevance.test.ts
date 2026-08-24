@@ -4,6 +4,7 @@ import {
   hasExplicitElectronicAssertion,
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
+  hasNonMusicEventTypeSignal,
 } from "./relevance";
 
 describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
@@ -273,5 +274,36 @@ describe("hasNonElectronicGenreSignal — historical performance credits (follow
 
   it("still flags a genre word describing the event's OWN current programming, not offset by a historical-credit cue (regression guard: the new cue must not over-suppress)", () => {
     expect(hasNonElectronicGenreSignal("Dizzee Rascal is a pioneering grime and hip hop MC.")).toBe(true);
+  });
+});
+
+describe("hasNonMusicEventTypeSignal (data-quality Workstream, Billetto queue audit 2026-08-24 — real observed Production titles)", () => {
+  it("flags the real 'SpeedDating i København 25-35 år' / 'QualityDating' Billetto titles", () => {
+    expect(hasNonMusicEventTypeSignal("SpeedDating i København 25-35 år")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("QualityDating i København 30-45 år")).toBe(true);
+  });
+
+  it("flags real makeup-masterclass, wine/beer-tasting, flea-market, chamber-music and guided-tour titles", () => {
+    expect(hasNonMusicEventTypeSignal("DRAG MAKEUP MASTERCLASS")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Sparkling Wine Festival København - 20% early bird")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Ølsmagning med Brygmester")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Sams Loppemarked i Remisen")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Byens Lopper X Trianglen")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Unge Talenter // Kammermusikforeningen af 1911")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("By, brand og borgere – en byvandring i Københavns Kulturkvarter")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Guided Bike Tour - Ørestad and Sydhavn")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Self Care Sunday Soundbath™ w/Lori Webb")).toBe(true);
+    expect(hasNonMusicEventTypeSignal("Body Temple - Mindful Cuddling")).toBe(true);
+  });
+
+  it("does not flag an ordinary electronic-event title with none of these signals", () => {
+    expect(hasNonMusicEventTypeSignal("Dengue Dengue Dengue — a night of techno")).toBe(false);
+    expect(hasNonMusicEventTypeSignal("A night of house and disco at Culture Box")).toBe(false);
+  });
+
+  it("masks a known artist's own name first, same as hasNonElectronicGenreSignal", () => {
+    // Contrived but proves the masking wiring: an artist literally named
+    // "DJ Soundbath" must never fail relevance because of their own name.
+    expect(hasNonMusicEventTypeSignal("DJ Soundbath live at Culture Box", ["DJ Soundbath"])).toBe(false);
   });
 });

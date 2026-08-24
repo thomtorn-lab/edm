@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, lte } from "drizzle-orm";
 import { db } from "./client";
-import { discoveryQueue, sourceEventLinks, syncLocks } from "./schema";
+import { discoveryQueue, sourceEventLinks, syncLocks, sources } from "./schema";
 import {
   applyDiscoveryClassificationUpdate,
   applySourceSyncPatch,
@@ -160,12 +160,14 @@ async function runSourceSyncLocked(
     };
   }
 
-  const [venues, existingEventRows, links, pendingDiscovery] = await Promise.all([
+  const [venues, existingEventRows, links, pendingDiscovery, sourceRows] = await Promise.all([
     getVenues(),
     getAllEventsAdmin(),
     db.select().from(sourceEventLinks).where(eq(sourceEventLinks.sourceId, sourceId)),
     db.select().from(discoveryQueue).where(eq(discoveryQueue.status, "pending")),
+    db.select({ trustedElectronicSource: sources.trustedElectronicSource }).from(sources).where(eq(sources.id, sourceId)).limit(1),
   ]);
+  const trustedElectronicSource = sourceRows[0]?.trustedElectronicSource ?? false;
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
   const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
@@ -190,7 +192,7 @@ async function runSourceSyncLocked(
 
   for (const raw of candidates) {
     try {
-      let result = runIngestionPipeline(raw, { venues, existingEvents: existingForDedup });
+      let result = runIngestionPipeline(raw, { venues, existingEvents: existingForDedup, trustedElectronicSource });
 
       // Genre enrichment (Discogs; follow-up review — weak-evidence
       // enrichment). Runs when EITHER: (a) the deterministic classifier
@@ -209,7 +211,17 @@ async function runSourceSyncLocked(
       // own per-artist try/catch and simply leaves `result` exactly as the
       // deterministic classifier produced it.
       const relevanceText = `${raw.title} ${raw.description ?? ""}`;
-      const needsEnrichment = result.genre === null || (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak");
+      // Never spend a Discogs lookup on a candidate the pipeline already
+      // settled: "auto_publish" (including via a trusted-electronic
+      // source's own relevance, which enrichment must never second-guess
+      // back down) has nothing left to strengthen, and "negative_relevance"
+      // is already a genuine evidence-based rejection (data-quality
+      // Workstream, Billetto queue audit) — resurrecting it via enrichment
+      // would waste a call on something already correctly discarded.
+      const needsEnrichment =
+        result.decision !== "auto_publish" &&
+        result.holdReason !== "negative_relevance" &&
+        (result.genre === null || (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak"));
       if (needsEnrichment) {
         const enrichment = await enrichEventGenre(raw.artists);
         if (enrichment.genre && enrichment.genreConfidence) {
@@ -387,6 +399,20 @@ async function runSourceSyncLocked(
           },
         );
         await applyDiscoveryClassificationUpdate(existingPending.id, classificationPatch);
+        continue;
+      }
+
+      // Billetto Discovery Queue noise (data-quality Workstream, 2026-08-24):
+      // a genuine evidence-based rejection (see pipeline.ts's computeDecision
+      // and HoldReason's own doc comment) for a candidate that has never been
+      // queued before — never create a row for it at all. Deliberately only
+      // reachable here, AFTER the existingPending check above: a row already
+      // sitting in the queue from before this fix existed is left exactly as
+      // it is (its classification may still refresh via the branch above,
+      // but its status/existence is never touched) — this only changes
+      // routing for brand-new candidates on the next sync, never a bulk
+      // cleanup of history.
+      if (result.decision === "hold" && result.holdReason === "negative_relevance") {
         continue;
       }
 

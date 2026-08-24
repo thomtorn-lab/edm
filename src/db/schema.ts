@@ -46,6 +46,19 @@ export const sources = pgTable("sources", {
   adapter: text("adapter"),
   trustLevel: text("trust_level").notNull(),
   autoPublish: boolean("auto_publish").notNull().default(false),
+  /**
+   * Source-level trusted-electronic flag (Admin/Discovery Queue quality
+   * work package, Section 6). Distinct from `trustLevel` (general data-
+   * quality trust, already used for dedup/authority ordering) and from
+   * per-event genreConfidence: this says the SOURCE ITSELF is strong
+   * relevance evidence (an electronic-only venue — Hangaren, Culture Box),
+   * so a complete, valid candidate from it should auto-publish even when its
+   * own text names no specific subgenre keyword. Never set for a
+   * mixed-programme venue (ALICE, Poolen, Pumpehuset) — see
+   * src/lib/adapters/pipeline.ts's computeDecision for exactly how this is
+   * consumed.
+   */
+  trustedElectronicSource: boolean("trusted_electronic_source").notNull().default(false),
   syncFrequency: text("sync_frequency").notNull(),
   active: boolean("active").notNull().default(true),
   lastSuccessfulSync: timestamp("last_successful_sync", { withTimezone: true }),

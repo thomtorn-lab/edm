@@ -92,10 +92,17 @@ vi.mock("./client", () => ({
         return Promise.resolve();
       },
     }),
-    // runSourceSyncLocked also reads sourceEventLinks/discoveryQueue directly
-    // via db.select() — irrelevant to the lease mechanism under test here,
-    // so always resolves empty.
-    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+    // runSourceSyncLocked also reads sourceEventLinks/discoveryQueue/sources
+    // directly via db.select() — irrelevant to the lease mechanism under
+    // test here, so always resolves empty by default (the sources lookup
+    // additionally chains .limit(1)). Wrapped in vi.fn() so individual tests
+    // can override one call's return value (e.g. to report
+    // trustedElectronicSource: true for the sources lookup specifically).
+    select: vi.fn(() => ({
+      from: () => ({
+        where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) }),
+      }),
+    })),
   },
 }));
 
@@ -116,6 +123,8 @@ vi.mock("@/lib/queries", () => ({
 
 const { acquireSyncLock, releaseSyncLock, runSourceSync } = await import("./sync");
 const { getAllEventsAdmin } = await import("@/lib/queries");
+const { getVenues } = await import("@/lib/queries");
+const { insertDiscoveryItem } = await import("./writes");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
   return { sourceId: "src-culture-box", fetchCandidates };
@@ -255,5 +264,100 @@ describe("runSourceSync (lease acquire/release wrapping the actual sync)", () =>
       unpublished: 0,
       errors: [],
     });
+  });
+});
+
+describe("Billetto Discovery Queue noise — a genuinely irrelevant new candidate is never queued (data-quality Workstream, 2026-08-24)", () => {
+  it("never calls insertDiscoveryItem for the real 'SpeedDating i København 25-35 år' Billetto candidate", async () => {
+    const speedDating: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "SpeedDating i København 25-35 år",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/speeddating-i-kobenhavn-25-35-ar-billetter-1971692",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([speedDating]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(0);
+    expect(result.queuedForReview).toBe(0);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("still queues a genuinely unclear (not negative-evidenced) Billetto candidate as ordinary review — the gate is narrow, not a blanket drop", async () => {
+    const unclear: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([unclear]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.queuedForReview).toBe(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("trusted-electronic sources — a complete Hangaren/Culture Box candidate auto-publishes even with unresolved genre (Section 6)", () => {
+  it("auto-publishes the real 'Miley Serious' Hangaren case (genre never resolves) once the source row reports trustedElectronicSource, and never queues it", async () => {
+    const miley: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-hangaren",
+      title: "Miley Serious",
+      description: null,
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      officialEventUrl: "https://www.hangaren.dk/events/miley-serious",
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce([
+      {
+        id: "v-hangaren",
+        slug: "hangaren",
+        name: "Hangaren",
+        aliases: [],
+        address: "",
+        city: "Copenhagen",
+        postalCode: "",
+        websiteUrl: null,
+        description: "",
+        shortDescription: null,
+        venueProfile: null,
+      },
+    ]);
+    // runSourceSyncLocked issues three db.select() calls in this fixed order
+    // (sourceEventLinks, then discoveryQueue, then sources) inside one
+    // Promise.all — override the third to report trustedElectronicSource:
+    // true, keeping the first two at their normal empty-result default.
+    const { db } = await import("./client");
+    const defaultSelectResult = {
+      from: () => ({
+        where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) }),
+      }),
+    } as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockReturnValueOnce(defaultSelectResult)
+      .mockReturnValueOnce(defaultSelectResult)
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () =>
+            Object.assign(Promise.resolve([]), {
+              limit: () => Promise.resolve([{ trustedElectronicSource: true }]),
+            }),
+        }),
+      } as unknown as ReturnType<typeof db.select>);
+
+    const adapter = fakeAdapter(() => Promise.resolve([miley]));
+    const result = await runSourceSync("src-hangaren", "Hangaren", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(1);
+    expect(result.queuedForReview).toBe(0);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
   });
 });

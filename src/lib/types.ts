@@ -34,6 +34,9 @@ export interface Source {
   adapter: string | null;
   trustLevel: ConfidenceLevel;
   autoPublish: boolean;
+  /** Source-level trusted-electronic flag (Admin/Discovery Queue quality
+   *  work package, Section 6) — see src/db/schema.ts's column comment. */
+  trustedElectronicSource: boolean;
   syncFrequency: string;
   active: boolean;
   lastSuccessfulSync: string | null;

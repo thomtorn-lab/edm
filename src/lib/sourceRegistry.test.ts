@@ -21,6 +21,7 @@ function sourceFixture(overrides: Partial<Source> = {}): Source {
     adapter: "test-adapter",
     trustLevel: "high",
     autoPublish: true,
+    trustedElectronicSource: false,
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: "2026-08-13T07:00:00+02:00",

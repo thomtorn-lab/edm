@@ -45,6 +45,7 @@ export function sourceRowToRecord(row: SourceRow): Source {
     adapter: row.adapter,
     trustLevel: row.trustLevel as ConfidenceLevel,
     autoPublish: row.autoPublish,
+    trustedElectronicSource: row.trustedElectronicSource,
     syncFrequency: row.syncFrequency,
     active: row.active,
     lastSuccessfulSync: row.lastSuccessfulSync?.toISOString() ?? null,

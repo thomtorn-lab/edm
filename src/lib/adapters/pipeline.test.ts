@@ -402,3 +402,127 @@ describe("applyEnrichedGenre — CASE B: weak-evidence corroboration (follow-up 
     expect(result).toBe(specific); // untouched — same object
   });
 });
+
+describe("Billetto Discovery Queue noise (data-quality Workstream, 2026-08-24 queue audit — a general aggregator's own inventory is mostly not music at all, not just wrong-genre)", () => {
+  function billettoRaw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return raw({
+      sourceId: "src-billetto",
+      genreHint: null,
+      genreConfidenceHint: null,
+      description: "",
+      artists: [],
+      venueName: "Culture Box", // resolved, so the negative-signal branch (not "incomplete_data") is what's under test
+      ...overrides,
+    });
+  }
+
+  it("holds and never queues the real 'SpeedDating i København 25-35 år' Billetto candidate — no genre evidence at all, and a strong non-music-event signal", () => {
+    const result = runIngestionPipeline(billettoRaw({ title: "SpeedDating i København 25-35 år" }), { venues: VENUES, existingEvents: [] });
+    expect(result.genre).toBeNull();
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("holds real observed non-music Billetto titles the same way: chamber music, flea market, wine tasting, makeup class, guided walk", () => {
+    const titles = [
+      "Unge Talenter // Kammermusikforeningen af 1911",
+      "Byens Lopper X Trianglen",
+      "Ølsmagning med Brygmester",
+      "DRAG MAKEUP MASTERCLASS",
+      "By, brand og borgere – en byvandring i Københavns Kulturkvarter",
+    ];
+    for (const title of titles) {
+      const result = runIngestionPipeline(billettoRaw({ title }), { venues: VENUES, existingEvents: [] });
+      expect(result.decision, title).toBe("hold");
+      expect(result.holdReason, title).toBe("negative_relevance");
+    }
+  });
+
+  it("does NOT discard a genuinely electronic candidate merely because an incidental word overlaps a negative pattern (false-negative safety)", () => {
+    // Real specific-genre keyword evidence present — must never be treated
+    // as irrelevant, even though the description also happens to mention a
+    // wine reception (an unrelated, incidental detail of the night).
+    const result = runIngestionPipeline(
+      billettoRaw({
+        title: "Techno Warehouse Night",
+        description: "A night of techno. Doors open early with a complimentary wine tasting before the DJs start.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("techno");
+    expect(result.holdReason).not.toBe("negative_relevance");
+  });
+
+  it("still holds a plausible-but-unclear Billetto title as ordinary 'incomplete_data' (no strong signal either way) rather than discarding it", () => {
+    const result = runIngestionPipeline(billettoRaw({ title: "Melting Monday" }), { venues: VENUES, existingEvents: [] });
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("incomplete_data"); // reaches the queue — a human can judge it, unlike the negative-relevance cases above
+  });
+});
+
+describe("trusted-electronic sources (Section 6 — source-level electronic relevance vs. exact-genre confidence are not the same question)", () => {
+  function hangarenRaw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return raw({
+      sourceId: "src-hangaren",
+      genreHint: null,
+      genreConfidenceHint: null,
+      description: "",
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      title: "Miley Serious",
+      ...overrides,
+    });
+  }
+
+  it("auto-publishes a complete, valid Hangaren candidate even with zero genre keyword evidence at all (the real 'Miley Serious' case)", () => {
+    const result = runIngestionPipeline(hangarenRaw(), { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    expect(result.genre).toBeNull(); // stays honest — sync.ts falls back to "electronic-other" at creation time
+    expect(result.decision).toBe("auto_publish");
+    expect(result.holdReason).toBeNull();
+  });
+
+  it("auto-publishes even when a genre keyword resolves at only medium/low confidence — exact genre confidence alone is never a reason to review a trusted-electronic source", () => {
+    const result = runIngestionPipeline(
+      hangarenRaw({ title: "Oliver Koletzki", description: "A night of tech house." }),
+      { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
+    );
+    expect(result.genreConfidence).toBe("medium");
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("still holds on a genuine non-electronic text signal — the trusted-source bypass is not a blanket override", () => {
+    const result = runIngestionPipeline(
+      hangarenRaw({ title: "Comedy Night at Hangaren", description: "An evening of stand-up comedy." }),
+      { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("still holds on a genuine blocker (unresolved venue) even for a trusted-electronic source", () => {
+    const result = runIngestionPipeline(hangarenRaw({ venueName: "Some Totally Unknown Bar" }), {
+      venues: VENUES,
+      existingEvents: [],
+      trustedElectronicSource: true,
+    });
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("incomplete_data");
+  });
+
+  it("does NOT bypass genre-confidence routing for a non-trusted, mixed-programme source (ALICE) — same candidate shape, trustedElectronicSource omitted", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-alice",
+        genreHint: null,
+        genreConfidenceHint: null,
+        description: "",
+        artists: ["Some ALICE Act"],
+        venueName: "ALICE",
+        title: "Some ALICE Act",
+      }),
+      { venues: VENUES, existingEvents: [] }, // trustedElectronicSource omitted — defaults false
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("incomplete_data"); // genre never resolved, and ALICE gets no relevance bypass
+  });
+});
