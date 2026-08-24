@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks, venues } from "./schema";
+import { venueRowToRecord } from "./mappers";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { assessDuplicate } from "../lib/dedup";
-import type { ConfidenceLevel } from "../lib/types";
+import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
+import type { ConfidenceLevel, Venue } from "../lib/types";
 import type { GenreSlug } from "../lib/taxonomy";
 
 /**
@@ -251,6 +253,52 @@ export async function updateVenueAddress(venueId: string, newAddress: string) {
   const [existing] = await db.select().from(venues).where(eq(venues.id, venueId)).limit(1);
   if (!existing) throw new Error(`Venue ${venueId} not found`);
   await db.update(venues).set({ address: newAddress, updatedAt: new Date() }).where(eq(venues.id, venueId));
+}
+
+/**
+ * Human-gated venue creation (source onboarding follow-up: closing the
+ * runtime venue-creation gap — see DiscoveryQueue.tsx's "Create new venue"
+ * action). All the actual decision logic — duplicate prevention via the same
+ * conservative resolveVenue() normalization, and the Byhaven/Black Box/Red
+ * Box sub-venue guard — lives in the pure, unit-tested planVenueCreation();
+ * this is only the DB-touching wrapper around it. Never adds the new venue
+ * to CURATED_VENUE_SLUGS or /venues — that stays a separate, explicit
+ * editorial decision, unaffected by this write.
+ */
+export class VenueNeedsConfirmationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VenueNeedsConfirmationError";
+  }
+}
+
+export async function createVenue(
+  input: NewVenueInput,
+  options: { confirmed?: boolean } = {},
+): Promise<{ created: boolean; venue: Venue }> {
+  const existingRows = await db.select().from(venues);
+  const existing = existingRows.map(venueRowToRecord);
+  const plan = planVenueCreation(input, existing, options);
+
+  if (plan.kind === "existing") return { created: false, venue: plan.venue };
+  if (plan.kind === "needs-confirmation") throw new VenueNeedsConfirmationError(plan.reason);
+
+  const now = new Date();
+  try {
+    await db.insert(venues).values({ ...plan.venue, createdAt: now, updatedAt: now });
+  } catch (err) {
+    // Postgres unique_violation (23505) on the slug/id — two different
+    // source names that happened to normalize to the same slug. Never
+    // silently overwrite; surface it as a clear, actionable error instead of
+    // a raw driver exception.
+    const cause = err instanceof Error ? err.cause : undefined;
+    const code = (cause as { code?: string } | undefined)?.code ?? (err as { code?: string } | undefined)?.code;
+    if (code === "23505") {
+      throw new Error(`A venue with a conflicting identity already exists (slug "${plan.venue.slug}"). Use a more specific name.`);
+    }
+    throw err;
+  }
+  return { created: true, venue: plan.venue };
 }
 
 // ---- Discovery queue actions ----

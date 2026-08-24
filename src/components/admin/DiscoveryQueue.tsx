@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DiscoveryQueueItem } from "@/lib/types";
 import type { Venue } from "@/lib/types";
 import { getGenre, GENRES } from "@/lib/taxonomy";
 import { resolveVenue } from "@/lib/normalize";
+import { isProtectedSubVenueName } from "@/lib/venueCreation";
 import { formatIsoDateForInput } from "@/lib/format";
 
 interface Props {
@@ -33,7 +34,8 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const guessedVenue = item.probableVenueName ? resolveVenue(item.probableVenueName, venues) : undefined;
+  const [venuesLocal, setVenuesLocal] = useState(venues);
+  const guessedVenue = item.probableVenueName ? resolveVenue(item.probableVenueName, venuesLocal) : undefined;
   const [venueId, setVenueId] = useState(guessedVenue?.id ?? "");
 
   const [title, setTitle] = useState(item.probableTitle);
@@ -41,6 +43,66 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   const [venueNameText, setVenueNameText] = useState(item.probableVenueName ?? "");
   const [lineup, setLineup] = useState(item.detectedLineup.join(", "));
   const [genre, setGenre] = useState(item.predictedGenre ?? "");
+
+  // ---- Admin-driven venue creation (human-gated: never wired into any
+  // automated ingestion path — see src/lib/venueCreation.ts) ----
+  const [creatingVenue, setCreatingVenue] = useState(false);
+  const [newVenueName, setNewVenueName] = useState(item.probableVenueName ?? "");
+  const [newVenueAddress, setNewVenueAddress] = useState("");
+  const [newVenueCity, setNewVenueCity] = useState<"Copenhagen" | "Frederiksberg">("Copenhagen");
+  const [newVenuePostalCode, setNewVenuePostalCode] = useState("");
+  const [newVenueWebsite, setNewVenueWebsite] = useState("");
+  const [venueCreateBusy, setVenueCreateBusy] = useState(false);
+  const [venueCreateError, setVenueCreateError] = useState<string | null>(null);
+  const [venueNeedsConfirmation, setVenueNeedsConfirmation] = useState<string | null>(null);
+
+  const newVenueNameTrimmed = newVenueName.trim();
+  const liveExistingMatch = useMemo(
+    () => (newVenueNameTrimmed ? resolveVenue(newVenueNameTrimmed, venuesLocal) : undefined),
+    [newVenueNameTrimmed, venuesLocal],
+  );
+  const liveProtectedName = newVenueNameTrimmed ? isProtectedSubVenueName(newVenueNameTrimmed) : false;
+
+  async function handleCreateVenue(confirmed: boolean) {
+    setVenueCreateBusy(true);
+    setVenueCreateError(null);
+    if (!confirmed) setVenueNeedsConfirmation(null);
+    try {
+      const res = await fetch("/api/admin/venues", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: newVenueNameTrimmed,
+          address: newVenueAddress.trim(),
+          city: newVenueCity,
+          postalCode: newVenuePostalCode.trim(),
+          websiteUrl: newVenueWebsite.trim() || undefined,
+          confirmed,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (json.needsConfirmation) {
+          setVenueNeedsConfirmation(json.error ?? "This name is normally a sub-area of an existing venue.");
+        } else {
+          setVenueCreateError(json.error ?? "Venue creation failed.");
+        }
+        return;
+      }
+      const venue: Venue = json.venue;
+      setVenuesLocal((prev) => (prev.some((v) => v.id === venue.id) ? prev : [...prev, venue]));
+      setVenueId(venue.id);
+      setCreatingVenue(false);
+      setVenueNeedsConfirmation(null);
+      setNewVenueAddress("");
+      setNewVenuePostalCode("");
+      setNewVenueWebsite("");
+    } catch {
+      setVenueCreateError("Network error.");
+    } finally {
+      setVenueCreateBusy(false);
+    }
+  }
 
   async function handlePublish() {
     if (!venueId) {
@@ -143,7 +205,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
             className="rounded border border-border-strong bg-surface-1 px-2 py-1 text-[11px] text-text-secondary"
           >
             <option value="">Select venue to publish…</option>
-            {venues.map((v) => (
+            {venuesLocal.map((v) => (
               <option key={v.id} value={v.id}>{v.name}</option>
             ))}
           </select>
@@ -161,6 +223,127 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
               Merge into {item.suspectedDuplicateOfEventId}
             </button>
           )}
+          {!creatingVenue && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setCreatingVenue(true);
+                setVenueCreateError(null);
+                setVenueNeedsConfirmation(null);
+              }}
+              className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary hover:border-accent-dim hover:text-text-primary"
+            >
+              + Create new venue
+            </button>
+          )}
+        </div>
+      )}
+
+      {!editing && creatingVenue && (
+        <div className="mt-3 space-y-2 rounded border border-border-strong p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
+            New venue identity — not added to the curated /venues directory
+          </p>
+          <div>
+            <label htmlFor={`new-venue-name-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Name</label>
+            <input
+              id={`new-venue-name-${item.id}`}
+              value={newVenueName}
+              onChange={(e) => setNewVenueName(e.target.value)}
+              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+            />
+            {liveExistingMatch && (
+              <p className="mt-1 text-[11px] text-status-warn">
+                Matches existing venue &ldquo;{liveExistingMatch.name}&rdquo; — select it from the dropdown above instead of creating a new one.
+              </p>
+            )}
+            {!liveExistingMatch && liveProtectedName && (
+              <p className="mt-1 text-[11px] text-status-warn">
+                &ldquo;{newVenueNameTrimmed}&rdquo; is normally a sub-area/room of an existing venue (Byhaven → Pumpehuset,
+                Black Box/Red Box → Culture Box), not a standalone venue. You can still create it if this is genuinely a
+                different venue — creating will ask you to confirm.
+              </p>
+            )}
+          </div>
+          <div>
+            <label htmlFor={`new-venue-address-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Address</label>
+            <input
+              id={`new-venue-address-${item.id}`}
+              value={newVenueAddress}
+              onChange={(e) => setNewVenueAddress(e.target.value)}
+              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+            />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label htmlFor={`new-venue-city-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">City</label>
+              <select
+                id={`new-venue-city-${item.id}`}
+                value={newVenueCity}
+                onChange={(e) => setNewVenueCity(e.target.value as "Copenhagen" | "Frederiksberg")}
+                className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+              >
+                <option value="Copenhagen">Copenhagen</option>
+                <option value="Frederiksberg">Frederiksberg</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <label htmlFor={`new-venue-postal-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Postal code</label>
+              <input
+                id={`new-venue-postal-${item.id}`}
+                value={newVenuePostalCode}
+                onChange={(e) => setNewVenuePostalCode(e.target.value)}
+                className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor={`new-venue-website-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Website (optional)</label>
+            <input
+              id={`new-venue-website-${item.id}`}
+              value={newVenueWebsite}
+              onChange={(e) => setNewVenueWebsite(e.target.value)}
+              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
+            />
+          </div>
+
+          {venueNeedsConfirmation && (
+            <div className="rounded border border-status-warn/50 bg-status-warn/10 p-2">
+              <p className="text-[11px] text-status-warn">{venueNeedsConfirmation}</p>
+              <button
+                type="button"
+                disabled={venueCreateBusy}
+                onClick={() => handleCreateVenue(true)}
+                className="mt-2 rounded border border-status-warn px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-status-warn hover:bg-status-warn/10 disabled:opacity-50"
+              >
+                Yes, this is a genuinely different venue — create it
+              </button>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              disabled={venueCreateBusy || !newVenueNameTrimmed || !newVenueAddress.trim() || !newVenuePostalCode.trim() || !!liveExistingMatch}
+              onClick={() => handleCreateVenue(false)}
+              className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50"
+            >
+              Create venue
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCreatingVenue(false);
+                setVenueCreateError(null);
+                setVenueNeedsConfirmation(null);
+              }}
+              className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+          {venueCreateError && <p className="text-xs text-status-bad">{venueCreateError}</p>}
         </div>
       )}
       {error && <p className="mt-2 text-xs text-status-bad">{error}</p>}

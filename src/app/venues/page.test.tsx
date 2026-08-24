@@ -49,6 +49,22 @@ describe("/venues — top-level heading hierarchy (Round 19)", () => {
   });
 });
 
+describe("/venues — stays curated even when a non-curated venue row exists (admin venue creation follow-up)", () => {
+  afterEach(cleanup);
+
+  it("never shows a venue row whose slug isn't in the curated list, e.g. an admin-created one", async () => {
+    vi.mocked(getVenues).mockResolvedValue([
+      VENUE,
+      { ...VENUE, id: "v2", slug: "suporama", name: "Suporama" },
+    ]);
+    vi.mocked(getEventsForVenue).mockResolvedValue([]);
+    const { default: VenuesPage } = await import("./page");
+    render(await VenuesPage());
+    expect(screen.getByRole("link", { name: /Culture Box/ })).toBeTruthy();
+    expect(screen.queryByText("Suporama")).toBeNull();
+  });
+});
+
 describe("/venues — venue-name link affordance (Round 19)", () => {
   afterEach(cleanup);
 
