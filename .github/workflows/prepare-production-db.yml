@@ -17,13 +17,26 @@ name: Prepare Production Database
 # events/discovery-queue items) or the destructive bootstrap-verification
 # script (src/db/verifyProductionBootstrap.ts — drops tables), and makes
 # no deployment or infrastructure changes of any kind.
+#
+# Optional `source_id` input: when given, this run is scoped to exactly
+# one source's static registry row (src/db/syncSourceRegistry.ts /
+# `npm run db:sync-source-registry`) instead of the full reference-data
+# bootstrap. Use this to repair a single missing/drifted source row (e.g.
+# a source added to src/lib/data/sources.ts after the last full bootstrap
+# ran) without re-touching every venue row's updated_at and every other
+# source's row, which the full bootstrap always does on every re-run.
+# Migrations still run first either way. Leave source_id empty for the
+# normal full bootstrap (venues + every source).
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type PREPARE-PRODUCTION-DB to confirm you want to run migrations and the production seed against the DATABASE_URL secret.'
+        description: 'Type PREPARE-PRODUCTION-DB to confirm you want to run migrations and a production seed against the DATABASE_URL secret.'
         required: true
+      source_id:
+        description: 'Optional: scope this run to exactly one source id (e.g. src-alice) via db:sync-source-registry, instead of the full db:seed:production bootstrap. Leave empty for the normal full bootstrap.'
+        required: false
 
 permissions:
   contents: read
@@ -81,8 +94,14 @@ jobs:
       - name: Apply database migrations
         run: npm run db:migrate
 
-      - name: Seed production reference data (venues + sources only, no demo content)
-        run: npm run db:seed:production
+      - name: Seed production reference data (full bootstrap, or one scoped source if source_id was given)
+        run: |
+          if [ -n "${{ inputs.source_id }}" ]; then
+            echo "Scoped run: syncing only source id '${{ inputs.source_id }}' (no venue writes, no other source's row touched)."
+            npm run db:sync-source-registry -- "${{ inputs.source_id }}"
+          else
+            npm run db:seed:production
+          fi
 
       - name: Remove local env file
         if: always()
