@@ -39,6 +39,14 @@ describe("deterministicGenreFromText", () => {
     expect(deterministicGenreFromText("Live trance music all night.")).toBe("trance");
   });
 
+  it("does not false-positive on 'a trance state' as a psychological/hypnotic state, not the genre (the real ALICE Laryssa Kim bio text)", () => {
+    expect(
+      deterministicGenreFromText(
+        "Laryssa Kim crafts an immersive sound odyssey where the boundaries between song, sound art, and dream dissolve—a captivating trance state that awakens the senses.",
+      ),
+    ).toBeNull();
+  });
+
   describe("ambient / experimental evidence quality", () => {
     it("matches bare 'ambient' unconditionally — a specific, low-ambiguity genre word", () => {
       expect(deterministicGenreFromText("An evening of ambient soundscapes")).toBe("ambient-experimental");
