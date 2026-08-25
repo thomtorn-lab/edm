@@ -206,7 +206,7 @@ async function modeDiscoveryQueue(client: Client, args: Record<string, string | 
 
   section(`discovery_queue for ${sourceId}: most recent ${limit} rows`);
   const rows = await client.query(
-    `SELECT id, probable_title, status, predicted_genre, genre_confidence, overall_confidence,
+    `SELECT id, probable_title, probable_start, probable_venue_name, status, predicted_genre, genre_confidence, overall_confidence,
             suspected_duplicate_of_event_id, missing_fields, source_url, created_at
      FROM discovery_queue WHERE source_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [sourceId, limit],
