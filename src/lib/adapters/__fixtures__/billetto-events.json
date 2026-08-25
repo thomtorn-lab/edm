@@ -10,8 +10,14 @@
     "branded_url": "https://billetto.dk/e/infected-mushroom-30th-anniversary-tour-billetter-1879852?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
     "image_link": "https://billetto.imgix.net/d70mzt00dpz8xf95w1uphv7w7e9v?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=67%2C0%2C1787%2C1005&s=b7faee9eba343fe72c58e613c7ee3ccb",
     "availability": true,
-    "organiser": { "id": 2842151, "name": "EDM Copenhagen" },
-    "minimum_price": { "amount_in_cents": 425, "currency": "DKK" },
+    "organiser": {
+      "id": 2842151,
+      "name": "EDM Copenhagen"
+    },
+    "minimum_price": {
+      "amount_in_cents": 425,
+      "currency": "DKK"
+    },
     "categorization": {
       "category": "music",
       "category_localized": "Musik",
@@ -31,14 +37,29 @@
       "macroregion": "Danmark",
       "region": "Hovedstaden",
       "subregion": "Byen København",
-      "coordinates": { "latitude": 55.691, "longitude": 12.6226 }
+      "coordinates": {
+        "latitude": 55.691,
+        "longitude": 12.6226
+      }
     },
     "startdate": "2026-10-03T19:00:00Z",
     "enddate": "2026-10-04T01:00:00Z",
-    "organization": { "id": 1, "domain": "billetto.dk" },
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
     "headliners": {
       "object": "list",
-      "data": [{ "id": "75466ee6-978e-4392-8e63-e93670711144", "object": "headliner", "name": "Infected Mushroom", "title": "", "description": null, "image_url": null }],
+      "data": [
+        {
+          "id": "75466ee6-978e-4392-8e63-e93670711144",
+          "object": "headliner",
+          "name": "Infected Mushroom",
+          "title": "",
+          "description": null,
+          "image_url": null
+        }
+      ],
       "has_more": false,
       "total": 1
     }
@@ -54,8 +75,14 @@
     "branded_url": "https://billetto.dk/e/mellem-os-sagt-billetter-1983383?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
     "image_link": "https://billetto.imgix.net/r1u7wuirg96lj8xe380svikjed07?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=64%2C0%2C1820%2C1024&s=67859976149a1e2bf17351a99db66f68",
     "availability": true,
-    "organiser": { "id": 4041, "name": "BestTellers" },
-    "minimum_price": { "amount_in_cents": 50, "currency": "DKK" },
+    "organiser": {
+      "id": 4041,
+      "name": "BestTellers"
+    },
+    "minimum_price": {
+      "amount_in_cents": 50,
+      "currency": "DKK"
+    },
     "categorization": {
       "category": "performing_arts",
       "category_localized": "Optræden & Visuel Kunst",
@@ -75,12 +102,23 @@
       "macroregion": "Danmark",
       "region": "Hovedstaden",
       "subregion": "Byen København",
-      "coordinates": { "latitude": 55.6661, "longitude": 12.5558 }
+      "coordinates": {
+        "latitude": 55.6661,
+        "longitude": 12.5558
+      }
     },
     "startdate": "2026-10-22T18:00:00Z",
     "enddate": "2026-10-22T20:00:00Z",
-    "organization": { "id": 1, "domain": "billetto.dk" },
-    "headliners": { "object": "list", "data": [], "has_more": false, "total": 0 }
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
   },
   "hardcorePunkMoshpit": {
     "id": "1982601",
@@ -93,8 +131,14 @@
     "branded_url": "https://billetto.dk/e/omsorg-hudsult-barabbas-du-fortappade-se-kaempe-moshpit-vol-11-billetter-1982601",
     "image_link": null,
     "availability": true,
-    "organiser": { "id": 9012345, "name": "Kultur og Fritid Valby Valby" },
-    "minimum_price": { "amount_in_cents": 100, "currency": "DKK" },
+    "organiser": {
+      "id": 9012345,
+      "name": "Kultur og Fritid Valby Valby"
+    },
+    "minimum_price": {
+      "amount_in_cents": 100,
+      "currency": "DKK"
+    },
     "categorization": {
       "category": "music",
       "category_localized": "Musik",
@@ -114,12 +158,23 @@
       "macroregion": "Danmark",
       "region": "Hovedstaden",
       "subregion": "Byen København",
-      "coordinates": { "latitude": 55.6559, "longitude": 12.5019 }
+      "coordinates": {
+        "latitude": 55.6559,
+        "longitude": 12.5019
+      }
     },
     "startdate": "2026-11-06T18:00:00Z",
     "enddate": null,
-    "organization": { "id": 1, "domain": "billetto.dk" },
-    "headliners": { "object": "list", "data": [], "has_more": false, "total": 0 }
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
   },
   "outsideCopenhagenClassical": {
     "id": "1970001",
@@ -132,8 +187,14 @@
     "branded_url": "https://billetto.dk/e/julekoncert-billetter-1970001",
     "image_link": null,
     "availability": true,
-    "organiser": { "id": 1234, "name": "Aarhus Domkirke" },
-    "minimum_price": { "amount_in_cents": 150, "currency": "DKK" },
+    "organiser": {
+      "id": 1234,
+      "name": "Aarhus Domkirke"
+    },
+    "minimum_price": {
+      "amount_in_cents": 150,
+      "currency": "DKK"
+    },
     "categorization": {
       "category": "music",
       "category_localized": "Musik",
@@ -153,11 +214,302 @@
       "macroregion": "Danmark",
       "region": "Midtjylland",
       "subregion": "Aarhus",
-      "coordinates": { "latitude": 56.1567, "longitude": 10.2107 }
+      "coordinates": {
+        "latitude": 56.1567,
+        "longitude": 10.2107
+      }
     },
     "startdate": "2026-12-15T19:00:00Z",
     "enddate": "2026-12-15T20:30:00Z",
-    "organization": { "id": 1, "domain": "billetto.dk" },
-    "headliners": { "object": "list", "data": [], "has_more": false, "total": 0 }
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
+  },
+  "ecstaticDance": {
+    "id": "1984313",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "ECSTATIC DANCE by Range of Motion ",
+    "description": "Ecstatic Dance by Range Of MotionOctober Theme:&nbsp;TBA\n(formerly known as Ecstatic Dance with Grundstoff & Ionstrom)\nIn the framework of our new association, Range of Motion, our dance evenings are evolving into a bit more intentionally held and themed format. The events will open with a&nbsp;session of guided movement exploration, inspired by the theme of the night, before the dance unfolds into a free ecstatic wave. You can participate in the parts of the program that suits you.\n\nWe encourage all participants to become members, for a continued fellowship and discounted tickets on all events, which replaces our previous early bird-system.\nWHAT IS ECSTATIC DANCE?\nOur invitation is to approach dance as a moving meditation, as a way to sweat your prayers and celebrate being alive, with all that it includes! \nHave you ever been longing for a dancefloor where you can set yourself free to dance as if no one is watching, and where everyone else is doing the same? A dancefloor with a high and clear vibe - no alcohol, no small talk, no smartphones, no shoes. Simply a group of people moving freely, for the pure joy of it, the therapy, the medicine, the pleasure.\nWhatever mood you might be in when you arrive, let it move. There is no agenda and nothing you can do wrong. The dancefloor is a potential self-healing place, a potential meditation in motion, a potential ground for meeting others in movement - or an opportunity to move to really juicy music. Come and let your body lead the way!\nDO YOU WANT&nbsp;CACAO?\nRemember to buy your additional voucher next to your event ticket - latest 24 hours before the event!\n\n\nTHEME 10. OCTOBER: TBA ;)\nThis evening DJ Ionstrom will devote his set to some specific qualities of life and movement.\nThe specific flavor of his inspiration will be presented here very soon....\n✨\nTHE PROGRAM for OCTOBER 10th - PLEASE READ <3\n18.15 – Doors open.&nbsp;\n18.30 – Mini Warmup Workshop with&nbsp;Guided movement exploration, on the theme of the evening - details and facilitator TBA soon!19.30 - Doors open again - Cacao is served - Gathering Circle for the Ecstatic dance Journey.&nbsp;20.15 – Takeoff - Ecstatic Dance journey with DJ Ionstrom.\n22.00 – Landing -&nbsp;Dance journey ends. Closing Circle and soft landing.\n22.15 – You can chill while we pack our bags.\n23.00 – We all need to be out of the house.\n💜💜 \nTHE MUSIC\nThe DJ’s intention is to create a smooth wave with great variety — a multicolor journey with room for many aspects of being human.\nWe always start out soft and gentle, build intensity, and land back into gentle at the end.\nExpect electronic depth blended with ethnic and organic elements — voices, percussion, spacious bass, raw rhythms. Music that supports you to experience yourself and your moving body in a wide variety of ways.\nSometimes live elements will be woven into the journey as Range of Motion opens up for new collaborations with musicians and facilitators aligned with the theme of the evening.\n🌏\nCEREMONIAL CACAO\nWe offer the option to drink Ceremonial Cacao as a supplement to the dance. Make sure to pre-order cacao latest 18.30 the day before – see above!\nCeremonial Cacao can enhance your dance, energize the body and connect you more deeply with yourself and others. It works with your natural energy — supporting you to soften and open, while staying grounded.\nOur cacao will often be lightly infused with spices or herbs – information is given where you buy the cacao ticket.\nBring your own cup — let’s save single-use materials.\n✨\nECSTATIC DANCE GUIDELINES\n\n We      dance barefoot.\n We      dance without talking – sounds are most welcome\n We      get high on the same vibes — no alcohol or other mind-altering substances.\n We      dance off screen — no mobile phones, photo or filming on the dancefloor.\n We      look for consent before touching others.\n\nTake responsibility for your own yes/no and respect the (verbal or non-verbal) no of others.&nbsp;Own your experience and help create the best possible evening for all.\nNo ticket refunds. You can resell your ticket via the fb event page and transfer it through Billetto. Please be aware of fake fb profiles pretending to sell tickets.",
+    "url": "https://billetto.dk/e/ecstatic-dance-by-range-of-motion-billetter-1984313?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/ecstatic-dance-by-range-of-motion-billetter-1984313?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/3l4aysi16exep6s861rot1lfztz0?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=0%2C116%2C1866%2C1050&s=5b22e9a952110f91b5b8a41230d5a1dc",
+    "availability": true,
+    "organiser": {
+      "id": 6914224,
+      "name": "Range Of Motion"
+    },
+    "minimum_price": {
+      "amount_in_cents": 170,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "health_wellness",
+      "category_localized": "Helse & Wellness",
+      "subcategory": "personal_health",
+      "subcategory_localized": "Personlig Sundhed",
+      "type": "class_training",
+      "type_localized": "Kursus, Workshop, Træning"
+    },
+    "location": {
+      "location_name": "Valby Kulturhus",
+      "address_line": "Valgårdsvej 4",
+      "address_line_2": null,
+      "city": "København",
+      "postal_code": "2500",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.6612,
+        "longitude": 12.5184
+      }
+    },
+    "startdate": "2026-10-10T16:30:00Z",
+    "enddate": "2026-10-10T20:15:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
+  },
+  "krestenOsgood": {
+    "id": "1900600",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "ILK x KU.BE no. 6: Kresten Osgood Kvintet",
+    "description": "(scroll down for English)\nKresten Osgood Kvintet\nI de sidste 25 år har Kresten Osgood været centralt placeret i dansk musikliv. Han er blevet kaldt \"det bedste der er sket i dansk jazz siden 80erne\", \"Vildmanden i det danske jazz våbenskjold\" og avisoverskriften i Information: \"tendensen i dansk jazz hedder Osgood\" er ikke til at tage fejl af.\nHer præsenterer han sin kvintet bestående af nogle af de allerstærkeste kort på den københavnske jazzscene. Det er en gruppe der har eksisteret i snart 15 år. Deres livealbum fra 2024 vandt en DMA for bedste album. Det er et af byens bedste livebands.\nErik Kimestad – trompetMads Egetoft – saxofonJeppe Zeeberg – pianoMatthias Petri – basKresten Osgood – trommer\n\n\n\n\n/////\nKresten Osgood Quintet\nFor the past 25 years, Kresten Osgood has held a central position in the Danish music scene. He has been called “the best thing to happen to Danish jazz since the 1980s,” “the wild man in the Danish jazz coat of arms,” and the newspaper headline in Information—“the trend in Danish jazz is called Osgood”—speaks for itself.\nHere he presents his quintet, consisting of some of the strongest players on the Copenhagen jazz scene. It is a group that has existed for nearly 15 years. Their live album from 2024 won a Danish Music Award for Best Album. They are one of the best live bands in the city.\nErik Kimestad – trumpetMads Egetoft – saxophoneJeppe Zeeberg – pianoMatthias Petri – bassKresten Osgood – drums\n-------\nILK x KU.BE – Et nyt koncertsamarbejde på FrederiksbergILK er en koncertforening, pladeselskab og forlag, bestående af 25 musikere, komponister, forskere, udøvere og lydkunstnere. Sammenslutningen har igennem 19 år formidlet ny original musik igennem udgivelser og koncerter, deltaget i danske og internationale festivaler verden over og medvirket ved danske kulturfremstød i udlandet. ILK bygger bro mellem vækstlaget og etablerede kunstnere, og samarbejder med internationale musik- og kunstforeninger på tværs af kunstarter.  ILK har modtaget utallige roser for kunstnerisk integritet og har etableret en status som første-bevæger og eksponent for den eksperimenterende musik og lyd fra Danmark.I 2026 samarbejder KU.BE og ILK om produktionen af 10 unikke events fordelt over året. Indholdet tegnes af udvalgte aktuelle artister og projekter, bl.a fra ILKs omfattende samtidsmusikalske netværk. Nye værker, temakoncerter og crossover, improvisation, contemporer jazz og tværæstetiske performances. Rammerne er sat i KU.BE’s unikke rum, der åbner for rumlige og visuelle greb. Vær så velkommen!Initiativet er støttet af Frederiksberg Kommune og Statens Kunstfond. Billetter: 100 kr. standard / 80 kr. studerende (+ gebyr). Koncerterne starter kl. 20. /////ILK x KU.BE – A new concert collaboration in FrederiksbergILK Music is a concert association, record label, and publishing house consisting of 25 musicians, composers, researchers, performers, and sound artists. For 19 years, the collective has presented new music through releases and concerts, participated in Danish and international festivals around the world, and contributed to Danish cultural initiatives abroad. ILK builds bridges between emerging talent and established artists, and collaborates with international music and art organizations across artistic disciplines. ILK has received countless accolades for its artistic integrity and has established a reputation as a leading exponent of experimental music and sound from Denmark.In 2026, KU.BE and ILK will collaborate on the production of 10 unique events throughout the year. The content will be shaped by selected contemporary artists and projects, including from ILK’s extensive network within contemporary music. New works, themed concerts and crossovers, improvisation, contemporary jazz, and cross-aesthetic performances. The framework is set in KU.BE’s unique spaces, which invite spatial and visual approaches. The concerts are supported by Frederiksberg Municipality and the Danish Arts Foundation.\n\n\n\n",
+    "url": "https://billetto.dk/e/ilk-x-ku-be-no-6-kresten-osgood-kvintet-billetter-1900600?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/ilk-x-ku-be-no-6-kresten-osgood-kvintet-billetter-1900600?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/pw78h1e98sqy2mmyokayjcsrd028?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=0%2C306%2C3264%2C1836&s=89e4b808dda861ef00bf3a9723bc9cba",
+    "availability": true,
+    "organiser": {
+      "id": 4702551,
+      "name": "ILK Music"
+    },
+    "minimum_price": {
+      "amount_in_cents": 80,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "music",
+      "category_localized": "Musik",
+      "subcategory": "blues_jazz",
+      "subcategory_localized": "Jazz",
+      "type": "concert",
+      "type_localized": "Koncert, Forestilling, Opvisning"
+    },
+    "location": {
+      "location_name": "KU.BE",
+      "address_line": "Dirch Passers Allé 8A",
+      "address_line_2": null,
+      "city": "Frederiksberg",
+      "postal_code": "2000",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.6831,
+        "longitude": 12.5056
+      }
+    },
+    "startdate": "2026-08-26T18:00:00Z",
+    "enddate": "2026-08-26T20:00:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
+  },
+  "danskDanseteater": {
+    "id": "1790128",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "Dansk Danseteaters Summer Dance 2026",
+    "description": "\nDans af international kaliber ved fronten af Operahuset. Fri entré.Fra 26.-30. august 2026Dansk Danseteaters Summer Dance vender tilbage fra 26.–30. august 2026 – i år i nye, spektakulære omgivelser helt fremme ved vandkanten foran Operahuset. Her står dansen med Amalienborg i ryggen og vandet som et klukkende bagtæppe.Med Summer Dance i nye rammer præsenterer Dansk Danseteater forestillingen Le Scénario af den internationalt anerkendte koreograf Philip Berlin, opført af kompagniets 11 dansere på et af Københavns mest ikoniske steder – og i år er alle forestillinger tilmed gratis. Philip Berlin er en af de mest markante stemmer i indenfor dansens verden. Han skaber dans, der sprudler af energi: atletisk, fuld af glæde og med masser af kant.Summer Dance er en gestus til byen. Her gives der adgang til international dans i øjenhøjde, der kan mærkes i kroppen, uanset om man kommer for første gang eller har dansen under huden i forvejen – på en placering, hvor byen, publikum og kunsten mødes.Dansen stopper ikke ved scenekanten. Summer Dance breder sig i form af workshops for børn og voksne, samtaler, kaffe og vin på kajen.\nPRAKTISKE INFORMATIONERTid: 26. – 30. august AugustSted: Ved fronten af Operahuset på Holmen, Ekvipagemestervej 10.Pris: Gratis entré.Pladsreservation: 25DKK. Gebyret kan ikke refunderes.Regn: Ingen refusion af billetreservationer i tilfælde af aflysning grundet regnOBS: Siddepladser er unummererede på bænke uden ryglæn.Kørestolsbruger eller særlige behov:Vi vil gerne vide hvis du er kørestolsbruger eller har andre særlige behov, vi kan hjælpe med på publikumspladsen. Det er desuden muligt at reservere en gratis plads til en støtteledsager. Skriv til natalie@danskdanseteater.dk for at høre mere. //World-class contemporary dance under the open sky at the front of the Opera House. Free entry. 26–30 August 2026\nDanish Dance Theatre’s much-loved summer highlight, Dansk Danseteaters Summer Dance, returns from 26–30 August 2026 – this year in a completely new and spectacular setting. The summer event moves to the front of the Opera House on Holmen, overlooking Amalienborg, with the water as a gently rippling backdrop. One of Copenhagen’s most beautiful locations will frame six open-air performances filled with dance under the open sky - and this year all performances are free of charge.\nWith Summer Dance in its new setting, Danish Dance Theatre presents the performance Le Scénario, by the internationally acclaimed choreographer Philip Berlin performed by the company’s 11 dancers. Philip Berlin is one of the most distinctive voices in contemporary Scandinavian dance. He creates dance that crackles with energy: athletic, irreverent and unapologetically joyful. His work thrives on momentum, risk and the thrill of bodies pushed to their limits.\nSummer Dance is a gesture to the city. It offers access to international dance at eye level that can be felt in the body, whether you are encountering dance for the first time or already have it under your skin – in a setting where the city, the audience, and the art come together. Danish Dance Theatre’s Summer Dance also features workshops for children and adults, talks, and coffee and wine by the waterfront.\nPractical Information\nDates: 26–30 August 2026Location: Under the open sky in front of the Opera House, Holmen, Ekvipagemestervej 10, CopenhagenPrice: Free admissionSeat reservation: DKK 25. The reservation fee is non-refundable.Rain: No refunds of seat reservation in case of cancellation due to rain.NB: Seating for the performance is unnumbered on benches without backrests.\nWheelchair user or other access needs:We would like to know if you are a wheelchair user or have other access needs, we might be able to help with on site. It is also possible to reserve a free seat for a support person. Send an email to natalie@danskdanseteater.dk to know more.\n",
+    "url": "https://billetto.dk/e/dansk-danseteaters-summer-dance-2026-billetter-1790128?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/dansk-danseteaters-summer-dance-2026-billetter-1790128?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/a2ryw01u3cqaswvohtn9znbd71bd?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=0%2C183%2C2400%2C1350&s=5bb988939c48aa91dfee6b035161d197",
+    "availability": false,
+    "organiser": {
+      "id": 5038871,
+      "name": "Dansk Danseteater"
+    },
+    "minimum_price": {
+      "amount_in_cents": 25,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "performing_arts",
+      "category_localized": "Optræden & Visuel Kunst",
+      "subcategory": "dance",
+      "subcategory_localized": "Dans",
+      "type": "class_training",
+      "type_localized": "Kursus, Workshop, Træning"
+    },
+    "location": {
+      "location_name": "Operaen",
+      "address_line": "Ekvipagemestervej 10",
+      "address_line_2": null,
+      "city": "København",
+      "postal_code": "1438",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.682,
+        "longitude": 12.6006
+      }
+    },
+    "startdate": "2026-08-30T13:00:00Z",
+    "enddate": "2026-08-30T14:00:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
+  },
+  "klubRort": {
+    "id": "1978992",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "KLUB Rört",
+    "description": "WHAT: AFRO, SOUL, FUNK, DEEP HOUSE & MUCH MOREWHERE: Rört, Thoravej 35WHEN:&nbsp;Friday Evening SEPT 25th. Doors open 19:00, music starts & doors close 19:30. The event ends around 23:00.\n\nKLUB RÖRT is a dancing praise to connection, wildness, stillness and exploration. It is your Friday evening conscious and curious dance floor where people get high on own supply - no drugs and no alcohol, just sweat and movement - and connect deeply to themselves and to others.\nTHE EVENING GRAVITATES to a lively and heartful dance floor, but will also create spaces for arriving, for chilling in between and for landing afterward as the dancefloor ends with a Gong-shower & Sound-journey. The intention is to give you a full Friday evening and send you of in a state where you can rest deeply and be ready to enjoy the rest of your weekend from a vital state.\nIT’S NOT WHAT IT LOOKS LIKE it is what it feels like and in KLUB RÖRT we seek to share that attitude of body positivity. We seek to create a safe(r) space and a space where you feel supported by the vibe to really dig deep into yourself as you lean into the music.\nABOUT THE DJ:David Ramati is Danish dj who has played the scene in Denmark for 2 decades as well as internationally renowned, having played everything from Burning man in Nevada to The carnival at Copacabana in Brazil.Dj David Ramati has a special love for All kinds of music with a deep Groove and is known to keep a dancefloor going till the break of dawn.\nSOUND JOURNEY -&nbsp;with Mollie MaunaWe start of the Klub Rört dancefloor landing together in our bodies with a Sound journey - and we round of the dance floor in the same way - all facilitated by Mollie Maluna.\nPROGRAM19:00: Doors open - welcoming & hangout19:30 Event starts, doors close*! 22:00-ish Sound Journey rounds off the dancefloor23:00-ish Goodnight\n*Please arrive before 20:00 where doors close so you can be part of the collective start\nPRICE & SIGN-UPRört-members: 100 kr (if you are a rört member, go to rort.dk to get your ticket with member discount)\nNon-members: 160 kr\n*please note that a ticket for Klub Rört is non-refundable once bought, though you can sell your ticket on to someone else.",
+    "url": "https://billetto.dk/e/klub-rort-billetter-1978992?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/klub-rort-billetter-1978992?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/gg3dx0lxjtmvk120jogfhscrdbs2?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=61%2C0%2C1797%2C1011&s=883625c4ada65ee362de264c8114b606",
+    "availability": true,
+    "organiser": {
+      "id": 6666605,
+      "name": "Rört"
+    },
+    "minimum_price": {
+      "amount_in_cents": 160,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "music",
+      "category_localized": "Musik",
+      "subcategory": "house",
+      "subcategory_localized": "House",
+      "type": "party",
+      "type_localized": "Fest, Social Sammenkomst"
+    },
+    "location": {
+      "location_name": "Rört",
+      "address_line": "Thoravej 35",
+      "address_line_2": null,
+      "city": "København",
+      "postal_code": "2400",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.7064,
+        "longitude": 12.5259
+      }
+    },
+    "startdate": "2026-09-25T17:00:00Z",
+    "enddate": "2026-09-25T21:00:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
+  },
+  "highEnergyMovement": {
+    "id": "1977105",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "High Energy Movement - Social Clubbing",
+    "description": "We believe Saturday morning is the new Saturday night.\nHigh Energy Movement creates experiences where movement, music and meaningful connection come together. Think sunrise runs, live DJs, specialty coffee, alcohol-free drinks and hundreds of people choosing energy over hangovers.\nCreated by Nickolaj Damgaard in partnership with MOVV and Boozt, we're building a new social movement—one that proves you don't need alcohol to create unforgettable moments.\nThis is more than an event.It's a movement.Information:Nickolai Damgaard is a biohacker, keynote speaker and author dedicated to helping people unlock more energy and better health. Through his work with athletes, business leaders and organisations, he has become a leading voice in performance and wellbeing.\nHe is the founder of High Energy Movement alongside Danish running brand MOVV and Boozt. Together they are redefining Saturday mornings by combining movement, music, community and alcohol-free experiences into a new social ritual.Maria Fagranes (DJ) -&nbsp;Known for her melodic, energetic and immersive DJ sets, Maria Fagranes has quickly become a rising name in Copenhagen's electronic music scene. Blending melodic techno, progressive house and deep house, she creates the perfect soundtrack for a morning filled with movement, connection and high energy.\nMOVV is founding partner of High Energy Movement&nbsp;and a&nbsp;scandinavian running brand built with runners, not just for them. Combining data-driven design with a mission to help more people move better, MOVV creates running shoes focused on comfort, performance and injury prevention.\nAt High Energy Movement, you'll have the opportunity to test a pair of MOVV running shoes during the social run and experience the difference for yourself before the party begins.Boozt is one of the Nordic region's leading online fashion and lifestyle destinations, bringing together more than 1,000 premium brands across fashion, sports and beauty. Known for inspiring modern lifestyles, Boozt shares our vision of creating experiences that bring people together through energy, movement and community.\nAs a founding partner of High Energy Movement, Boozt helps redefine what Saturday mornings can look like.\nWE.GROUP is one of Denmark's fastest-growing active communities, bringing people together through movement, meaningful experiences and genuine connection. From social runs and cycling to wellness events, their mission is to make it easier for people to live an active lifestyle while building real relationships.\nAs a Founding Partner of High Energy Movement, WE.GROUP shares our belief that the best experiences happen when movement, music and community come together. Together, we're creating a new social movement where connection always comes before competition.\nAIOSS – Special Guest\nFor this event, we're excited to welcome AIOSS as our exclusive Special Guest Partner.\nAIOSS is a Danish wellness brand on a mission to simplify everyday health with one all-in-one daily supplement solution. Developed in Scandinavia and built around high-quality ingredients, AIOSS focuses on making healthy habits simple, enjoyable and easy to stick with—supporting energy, focus and overall wellbeing.\nMeet the team, discover the brand and experience AIOSS at this event only.\n\n",
+    "url": "https://billetto.dk/e/high-energy-movement-social-clubbing-billetter-1977105?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/high-energy-movement-social-clubbing-billetter-1977105?utm_campaign=websites&utm_content=DK+7354292&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/8uudqfobkb3vx2lub3hycvm333yy?w=1200&h=675&fit=crop&auto=compress%2Cformat&rect=149%2C0%2C1577%2C887&s=ecfcf9f7c101bbc581c3e68c11d32ca9",
+    "availability": true,
+    "organiser": {
+      "id": 1358420,
+      "name": "Nickolai Damgaard"
+    },
+    "minimum_price": {
+      "amount_in_cents": 100,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "music",
+      "category_localized": "Musik",
+      "subcategory": "cultural",
+      "subcategory_localized": "Kulturel",
+      "type": "party",
+      "type_localized": "Fest, Social Sammenkomst"
+    },
+    "location": {
+      "location_name": "Rørt",
+      "address_line": "Østergade 26C",
+      "address_line_2": null,
+      "city": "København",
+      "postal_code": "1100",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.6801,
+        "longitude": 12.5826
+      }
+    },
+    "startdate": "2026-08-29T06:00:00Z",
+    "enddate": "2026-08-29T09:00:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
   }
 }

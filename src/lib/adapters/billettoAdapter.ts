@@ -207,7 +207,30 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
     const textGenre = deterministicGenreFromText(`${title} ${description ?? ""}`);
     if (textGenre) {
       genreHint = textGenre;
-      genreConfidenceHint = genreConfidenceForEvidence("official-description");
+      // Billetto gave its own categorization for this event but it did NOT
+      // resolve to a trusted electronic subcategory (genre false-positive
+      // audit, 2026-08-25) — that is real evidence Billetto itself did not
+      // classify the event as electronic, so a bare keyword match from the
+      // generic text fallback is only as trustworthy as it is everywhere
+      // else in this codebase (deterministic-mapping tier, medium — see
+      // pipeline.ts's own identically-tiered use of the same function), not
+      // an explicit high-confidence assertion by the source. Without this,
+      // a single incidental word match (KEYWORD_MAP's bare "house"/"psy"/
+      // "electro" entries) auto-publishes: real Production false positives
+      // this fixes — "ECSTATIC DANCE by Range of Motion" (categorization
+      // health_wellness/personal_health, matched "house" in "...out of the
+      // house"), "ILK x KU.BE no. 6: Kresten Osgood Kvintet" (music/
+      // blues_jazz, matched "house" in "publishing house"), "Dansk
+      // Danseteaters Summer Dance 2026" (performing_arts/dance, matched
+      // "house" in "the Opera House"). Deliberately does NOT downgrade when
+      // Billetto gave no categorization at all — that's a different,
+      // unobserved-live scenario every other adapter already treats as
+      // official-description by default.
+      const categorizationPresentButUntrusted =
+        event.categorization?.category != null && event.categorization?.subcategory != null;
+      genreConfidenceHint = genreConfidenceForEvidence(
+        categorizationPresentButUntrusted ? "deterministic-mapping" : "official-description",
+      );
     }
   }
 

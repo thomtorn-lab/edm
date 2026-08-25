@@ -26,6 +26,23 @@ import type { ExistingEventForDedup } from "./pipeline";
  * shape. outsideCopenhagenClassical is a synthetic fixture (Billetto's real
  * live feed simply didn't happen to include an outside-Copenhagen example
  * worth capturing) used only to exercise the location-rejection path.
+ *
+ * ecstaticDance, krestenOsgood, danskDanseteater, klubRort,
+ * highEnergyMovement are real, unmodified records captured directly from a
+ * live authenticated GET against the same endpoint during the Billetto
+ * genre false-positive audit (2026-08-25) — the first three are the exact
+ * real Production discovery_queue rows the audit was asked to fix (all
+ * three were "house"/"high" via a bare `\bhouse\b` match on an ordinary
+ * English phrase — "out of the house", "publishing house", "the Opera
+ * House" — none of them about house music), the latter two are genuine
+ * electronic-relevant events used to prove the fix does not lose real
+ * candidates: klubRort corroborates via Billetto's own trusted "house"
+ * subcategory (untouched by the fix), highEnergyMovement corroborates via
+ * the same text-fallback path as the false positives but with real,
+ * event-specific genre text ("Blending melodic techno, progressive house
+ * and deep house" describing this event's own DJ set) — it still resolves
+ * to a real genre, just at the same medium confidence every other
+ * unconfirmed text match gets, not silently dropped.
  */
 const FIXTURES_PATH = path.join(__dirname, "__fixtures__", "billetto-events.json");
 const FIXTURES = JSON.parse(readFileSync(FIXTURES_PATH, "utf-8")) as Record<string, BillettoEvent>;
@@ -186,18 +203,70 @@ describe("mapBillettoEvent", () => {
     expect(mapped!.genreConfidenceHint).toBeNull();
   });
 
-  it("falls back to deterministic title/description text evidence when the subcategory itself is untrustworthy", () => {
+  it("falls back to deterministic title/description text evidence when the subcategory itself is untrustworthy, at deterministic-mapping/medium — not silently dropped, but not credited as the source's own official-description either (genre false-positive audit, 2026-08-25: see the REGRESSION block below for why this changed from high to medium)", () => {
     // subcategory is the untrusted "hardcore" tag, but the description text
-    // explicitly names a deterministically-mapped genre — this must still be
-    // credited via the same official-description tier every other adapter
-    // uses, not silently dropped just because the subcategory was rejected.
+    // explicitly names a deterministically-mapped genre — this must still
+    // surface, just no longer at the same confidence as a genuine official
+    // description: Billetto's own categorization for THIS event was
+    // non-electronic, and crediting a generic keyword-fallback match at
+    // full official-description/high was exactly the mechanism behind three
+    // real Production false positives (see FIXTURES.ecstaticDance,
+    // .krestenOsgood, .danskDanseteater below).
     const explicitInDescription: BillettoEvent = {
       ...FIXTURES.hardcorePunkMoshpit,
       description: "A night of hard techno and driving rhythms.",
     };
     const mapped = mapBillettoEvent(explicitInDescription);
     expect(mapped!.genreHint).toBe("hard-techno");
-    expect(mapped!.genreConfidenceHint).toBe("high");
+    expect(mapped!.genreConfidenceHint).toBe("medium");
+  });
+
+  describe("REGRESSION (genre false-positive audit, 2026-08-25): a bare KEYWORD_MAP word match must not be trusted as official-description/high when Billetto's own categorization is present but explicitly non-electronic", () => {
+    it('downgrades "ECSTATIC DANCE by Range of Motion" (health_wellness/personal_health; matched bare "house" in "...we all need to be out of the house") to medium, not high', () => {
+      const mapped = mapBillettoEvent(FIXTURES.ecstaticDance);
+      expect(mapped).not.toBeNull();
+      expect(mapped!.genreHint).toBe("house");
+      expect(mapped!.genreConfidenceHint).toBe("medium");
+    });
+
+    it('downgrades "ILK x KU.BE no. 6: Kresten Osgood Kvintet" (music/blues_jazz; matched bare "house" in "...record label, and publishing house") to medium, not high', () => {
+      const mapped = mapBillettoEvent(FIXTURES.krestenOsgood);
+      expect(mapped).not.toBeNull();
+      expect(mapped!.genreHint).toBe("house");
+      expect(mapped!.genreConfidenceHint).toBe("medium");
+    });
+
+    it('downgrades "Dansk Danseteaters Summer Dance 2026" (performing_arts/dance; matched bare "house" in "...the front of the Opera House") to medium, not high', () => {
+      const mapped = mapBillettoEvent(FIXTURES.danskDanseteater);
+      expect(mapped).not.toBeNull();
+      expect(mapped!.genreHint).toBe("house");
+      expect(mapped!.genreConfidenceHint).toBe("medium");
+    });
+
+    it("does NOT touch the trusted-categorization path — a real house-subcategory club night still classifies as official-source-metadata/high", () => {
+      const mapped = mapBillettoEvent(FIXTURES.klubRort);
+      expect(mapped).not.toBeNull();
+      expect(mapped!.genreHint).toBe("house");
+      expect(mapped!.genreConfidenceHint).toBe("high");
+    });
+
+    it("still surfaces a genuine electronic event caught only via text fallback (untrusted subcategory, real event-specific genre text) — downgraded to medium like any other unconfirmed text match, never silently dropped", () => {
+      const mapped = mapBillettoEvent(FIXTURES.highEnergyMovement);
+      expect(mapped).not.toBeNull();
+      expect(mapped!.genreHint).toBe("melodic-techno");
+      expect(mapped!.genreConfidenceHint).toBe("medium");
+    });
+
+    it("does not downgrade when Billetto provides no categorization at all — text fallback keeps official-description/high as every other adapter's default", () => {
+      const noCategorization: BillettoEvent = {
+        ...FIXTURES.hardcorePunkMoshpit,
+        categorization: null,
+        description: "A night of hard techno and driving rhythms.",
+      };
+      const mapped = mapBillettoEvent(noCategorization);
+      expect(mapped!.genreHint).toBe("hard-techno");
+      expect(mapped!.genreConfidenceHint).toBe("high");
+    });
   });
 
   it("throws on a genuinely missing title — callers skip a single bad record and continue", () => {
