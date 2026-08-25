@@ -329,6 +329,38 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
   );
 }
 
+/**
+ * Charset-aware body decode (KultuNaut source audit, 2026-08-25): plain
+ * `res.text()` decodes strictly per the HTTP Content-Type response
+ * header's charset param, defaulting to UTF-8 when that header omits one
+ * — but at least one real target (kultunaut.dk) serves `Content-Type:
+ * text/html` with NO charset param at all, relying entirely on an
+ * in-body `<meta charset>`/`<meta http-equiv content>` tag that `.text()`
+ * never looks at. Decoding real iso-8859-1 (Danish æ/ø/å) bytes as UTF-8
+ * produces silent, irreversible U+FFFD replacement-character corruption
+ * — caught here by comparing a captured fixture's title against the
+ * live page and finding "på KultuNaut" had become "p<EF BF BD> KultuNaut".
+ * Mirrors the sniffing order a real browser uses: HTTP header charset,
+ * else an in-body <meta> declaration (checked against the first 2KB,
+ * matching where these tags always appear in a real HTML <head>), else
+ * UTF-8. An adapter fetching real body content (not just this diagnostic
+ * tool) must do the same — see kultunautAdapter.ts.
+ */
+async function decodeResponseBody(res: Response): Promise<string> {
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const headerCharset = res.headers.get("content-type")?.match(/charset=([^;]+)/i)?.[1];
+  let charset = headerCharset;
+  if (!charset) {
+    const asciiPeek = new TextDecoder("windows-1252").decode(buf.slice(0, 2048));
+    charset = asciiPeek.match(/<meta[^>]+charset=["']?([a-z0-9_-]+)/i)?.[1];
+  }
+  try {
+    return new TextDecoder(charset?.trim() || "utf-8").decode(buf);
+  } catch {
+    return new TextDecoder("utf-8").decode(buf); // unrecognized charset label — fall back rather than throw
+  }
+}
+
 async function modeReachability(_client: Client, args: Record<string, string | boolean>) {
   const endpoint = typeof args.endpoint === "string" ? args.endpoint : null;
   if (!endpoint) throw new Error("reachability requires --endpoint=<https url>");
@@ -358,7 +390,7 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   // in this project cannot reach external hosts at all) without a fresh
   // one-off diagnostic workflow per source. Never used for anything but a
   // plain GET against a public https:// URL — no credentials, no DB.
-  const bodyText = await res.text();
+  const bodyText = await decodeResponseBody(res);
   console.log(`body length: ${bodyText.length} chars`);
   const saveBodyPath = typeof args["save-body"] === "string" ? args["save-body"] : null;
   const printFull = args["print-full-body"] === true;
