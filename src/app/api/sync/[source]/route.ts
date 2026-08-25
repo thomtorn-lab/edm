@@ -6,6 +6,7 @@ import { createPoolenAdapter, POOLEN_SOURCE_ID } from "@/lib/adapters/poolenAdap
 import { createBillettoAdapter, BILLETTO_SOURCE_ID } from "@/lib/adapters/billettoAdapter";
 import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pumpehusetAdapter";
 import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter";
+import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
@@ -21,6 +22,7 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   billetto: { sourceId: BILLETTO_SOURCE_ID, displayName: "Billetto", create: createBillettoAdapter },
   pumpehuset: { sourceId: PUMPEHUSET_SOURCE_ID, displayName: "Pumpehuset", create: createPumpehusetAdapter },
   alice: { sourceId: ALICE_SOURCE_ID, displayName: "ALICE", create: createAliceAdapter },
+  kultunaut: { sourceId: KULTUNAUT_SOURCE_ID, displayName: "KultuNaut", create: createKultunautAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {
