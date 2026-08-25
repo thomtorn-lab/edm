@@ -88,18 +88,46 @@ export const SOURCES: Source[] = [
     sourceType: "official-venue",
     baseUrl: "https://gravitycph.dk/",
     roles: ["discovery", "ingestion", "verification", "link"],
-    adapter: "first-party-json",
+    // Real working adapter (src/lib/adapters/gravityAdapter.ts), repair audit
+    // 2026-08-25. This entry's prior "first-party-json" / "0 events parsed"
+    // content was never a real integration: it was explicitly a deliberately
+    // degraded seed example, and no adapter file or ADAPTERS-map wiring for
+    // this source existed anywhere in the codebase before this pass (there
+    // was no JSON feed to repair, no parser that had regressed). The real
+    // site is plain WordPress + WooCommerce (ticketing happens in-page, not
+    // via a third-party platform); /events/ 404s, and the "event-addon"
+    // sitemap plugin is unused — real upcoming shows are plain WordPress
+    // Pages announced on the homepage's own hero carousel and linked to
+    // their own detail page, same two-stage shape as poolenAdapter.ts /
+    // aliceAdapter.ts. "Gravity" is a promoter brand, not a fixed venue: all
+    // 4 currently-listed shows (confirmed live 2026-08-25 — Eric Prydz,
+    // Armin van Buuren, CamelPhat, I Hate Models, all Oct-Dec 2026) are
+    // hosted at TAP1 (already in the venue registry as v-tap1); venueName is
+    // always taken from each page's own "Location:" info-row and resolved
+    // normally, never hardcoded to "Gravity". Every detail page also states
+    // an explicit "Music: <tags>" info-row (e.g. "Trance & Techno") — real,
+    // event-specific first-party genre evidence fed into the same
+    // deterministicGenreMapping.ts every other adapter uses, never inferred
+    // from the artist's name. All 4 real candidates resolved to
+    // high-confidence genre + auto_publish in a dry run, and all 4 were
+    // independently confirmed genuinely incremental (no duplicate) via
+    // inspect-source.yml's dedup-simulate mode against the real Production
+    // DB (93 existing events checked per candidate). Real, unmodified
+    // fixtures (homepage + all 4 detail pages) captured via inspect-source.yml's
+    // reachability mode 2026-08-25 — see gravityAdapter.test.ts. Not yet run
+    // against production — health fields will populate on the first real sync.
+    adapter: "gravity-html",
     trustLevel: "high",
     autoPublish: true,
     syncFrequency: "every 6h",
     active: true,
-    // Deliberately degraded example — mirrors spec section 43's "0 events detected" case.
-    lastSuccessfulSync: "2026-08-10T06:00:00+02:00",
-    lastAttemptedSync: "2026-08-13T06:00:00+02:00",
-    lastError: "0 events parsed from the last 3 attempts — likely page structure change, needs adapter review",
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
     eventsFound: 0,
     eventsUpdated: 0,
-    integrationNote: "First-party events page. Currently degraded: treat as a possible markup change, never as a sign the venue is inactive.",
+    integrationNote:
+      "Repaired 2026-08-25 (source-repair audit): the site was never actually broken — there was no prior working adapter to regress. Real, working first-party HTML adapter added; see the field-level comment above and gravityAdapter.ts's own module doc comment for the full technical story.",
   },
 
   {

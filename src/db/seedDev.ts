@@ -1,10 +1,10 @@
 /**
  * Development/demo seed — loads the FULL Phase-1 fixture set: the real
  * venue/source registries (via seedVenues(), shared with the production
- * bootstrap) PLUS sample events, sample discovery-queue items, and the
- * sources' staged demo sync-health states (e.g. Gravity's fabricated
- * "degraded" example). Useful for seeing the full UI locally with
- * something to look at — NEVER appropriate for a real deployment.
+ * bootstrap) PLUS sample events, sample discovery-queue items, and any
+ * sources' staged demo sync-health states. Useful for seeing the full UI
+ * locally with something to look at — NEVER appropriate for a real
+ * deployment.
  *
  * For production, use `npm run db:seed:production`
  * (src/db/bootstrapProduction.ts) instead, which seeds only the real

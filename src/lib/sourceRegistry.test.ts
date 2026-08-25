@@ -78,10 +78,22 @@ describe("toProductionSourceRow", () => {
     }
   });
 
-  it("Gravity's fabricated staged-degraded demo error specifically never reaches a production row", () => {
-    const gravity = SOURCES.find((s) => s.id === "src-gravity")!;
-    expect(gravity.lastError).toContain("0 events parsed"); // sanity: the fixture really is staged
-    const { insertRow, updateSet } = toProductionSourceRow(gravity);
+  it("a real registry-shaped source carrying a non-null staged/fabricated error never lets it reach a production row", () => {
+    // Regression fixture for the "0 events parsed, needs adapter review"
+    // staged-degraded case (spec section 43): src-gravity used to carry
+    // exactly this fabricated lastError as a deliberately-staged demo
+    // example, before being repaired into a real working adapter
+    // (gravityAdapter.ts, 2026-08-25) with a genuinely clean lastError. The
+    // stripping behavior this test guards still needs coverage against a
+    // real registry-shaped object (not just the fully-synthetic fixture in
+    // the first test above), so it's reproduced locally here instead of
+    // depending on any one SOURCES entry staying in a staged state forever.
+    const staged = sourceFixture({
+      id: "src-gravity",
+      sourceName: "Gravity Copenhagen",
+      lastError: "0 events parsed from the last 3 attempts — likely page structure change, needs adapter review",
+    });
+    const { insertRow, updateSet } = toProductionSourceRow(staged);
     expect(insertRow.lastError).toBeNull();
     expect(updateSet).not.toHaveProperty("lastError");
   });
