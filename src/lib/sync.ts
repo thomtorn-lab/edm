@@ -2,7 +2,7 @@ import type { RawCandidateEvent } from "./adapters/types";
 import type { ConfidenceLevel } from "./types";
 import type { GenreSlug } from "./taxonomy";
 import { getCopenhagenParts } from "./datetime";
-import type { DuplicateConfidence } from "./dedup";
+import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
 import type { PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
 
@@ -176,6 +176,13 @@ export interface DiscoveryQueueTarget {
    *  detect staleness (see buildDiscoveryQueueClassificationPatch) instead of
    *  assuming it's already correct. */
   overallConfidence: ConfidenceLevel;
+  /** Currently stored missing_fields, so a fresh venue resolution can prove
+   *  one specific entry no longer applies (see buildDiscoveryQueueClassificationPatch). */
+  missingFields: string[];
+  /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
+   *  only ever fills this in once — never overwrites or clears an existing
+   *  suspicion a reviewer may already be acting on. */
+  suspectedDuplicateOfEventId: string | null;
 }
 
 export interface DiscoveryQueueClassification {
@@ -190,12 +197,27 @@ export interface DiscoveryQueueClassification {
    * what this function is allowed to change (see the function's own doc).
    */
   decision: PublishDecision;
+  /**
+   * This run's fresh venue-resolution/dedup results (stale discovery-queue
+   * self-healing, 2026-08-25) — optional so every pre-existing call site
+   * (which only ever spoke to genre) keeps compiling and behaving exactly as
+   * before: omitting these three fields is equivalent to "nothing new to say
+   * about venue/duplicate this run," never touching missingFields or
+   * suspectedDuplicateOfEventId. In production these always come straight
+   * from the SAME runIngestionPipeline result the genre fields above already
+   * do — see src/db/sync.ts's existingPending branch.
+   */
+  resolvedVenueId?: string | null;
+  duplicateOfEventId?: string | null;
+  duplicateConfidence?: DuplicateConfidence;
 }
 
 export interface DiscoveryQueueClassificationPatch {
   predictedGenre?: GenreSlug;
   genreConfidence?: ConfidenceLevel;
   overallConfidence?: ConfidenceLevel;
+  missingFields?: string[];
+  suspectedDuplicateOfEventId?: string;
 }
 
 /**
@@ -254,6 +276,50 @@ export function buildDiscoveryQueueClassificationPatch(
   const freshOverallConfidence: ConfidenceLevel = fresh.decision === "review_queue" ? "medium" : "low";
   if (freshOverallConfidence !== existing.overallConfidence) {
     patch.overallConfidence = freshOverallConfidence;
+  }
+
+  // VENUE-RESOLUTION / DUPLICATE-SUSPICION SELF-HEALING (stale discovery-queue
+  // audit, 2026-08-25). resolveVenue and the dedup check both already re-run
+  // on EVERY sync inside runIngestionPipeline for every candidate — including
+  // one that's already pending — but until now nothing ever carried that
+  // fresh result back onto the stored row: missing_fields and
+  // suspected_duplicate_of_event_id were set once at insert time and frozen
+  // forever, even once the underlying problem no longer exists. Real
+  // Production case: src-billetto's "ETNICA 30 Years — Origin Of Trance"
+  // queued with venue "Pumpehuset" unresolved; the venue in fact resolves
+  // cleanly today and the same event is already published via Pumpehuset's
+  // own first-party adapter (confirmed live via dedup-simulate, medium
+  // confidence), yet the stored row kept showing "venue (unresolved against
+  // registry)" and a null suspectedDuplicateOfEventId indefinitely.
+  //
+  // Deliberately narrow and one-directional, unlike the genre patch above
+  // (which can move either way): this can only ever REMOVE the exact "venue
+  // (unresolved against registry)" entry, never add a new missingFields
+  // entry, so a transient extraction miss this run can never make an
+  // already-fine row look newly broken. It can only ever SET
+  // suspectedDuplicateOfEventId from null to a real id, never clear or
+  // replace an existing one, so a later ambiguous/no-match run can never
+  // erase a suspicion a reviewer may already be acting on. Neither ever
+  // changes `status` or is reachable at "high" duplicate confidence — a
+  // high-confidence match is already handled entirely by a different path
+  // (src/lib/sync.ts::findSyncMatch + src/db/sync.ts's `if (match)` branch,
+  // which resolves the row via resolveDiscoveryItemAsPublished and never
+  // reaches this function at all). This is intentionally NOT the same bar as
+  // auto-attaching an event: surfacing a suspicion here is informational for
+  // a human reviewer, not a merge.
+  if (!existing.overriddenFields.includes("probableVenueName") && fresh.resolvedVenueId != null) {
+    if (existing.missingFields.includes("venue (unresolved against registry)")) {
+      patch.missingFields = existing.missingFields.filter((f) => f !== "venue (unresolved against registry)");
+    }
+  }
+
+  if (
+    existing.suspectedDuplicateOfEventId == null &&
+    fresh.duplicateOfEventId != null &&
+    fresh.duplicateConfidence != null &&
+    decideDuplicateAction(fresh.duplicateConfidence) === "review_queue"
+  ) {
+    patch.suspectedDuplicateOfEventId = fresh.duplicateOfEventId;
   }
 
   return patch;

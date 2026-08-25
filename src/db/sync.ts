@@ -393,12 +393,21 @@ async function runSourceSyncLocked(
       const existingPending = pendingByUrl.get(dedupKey);
       if (existingPending) {
         const classificationPatch = buildDiscoveryQueueClassificationPatch(
-          { genre: result.genre, genreConfidence: result.genreConfidence, decision: result.decision },
+          {
+            genre: result.genre,
+            genreConfidence: result.genreConfidence,
+            decision: result.decision,
+            resolvedVenueId: result.resolvedVenueId,
+            duplicateOfEventId: result.duplicateOfEventId,
+            duplicateConfidence: result.duplicateConfidence,
+          },
           {
             status: existingPending.status,
             predictedGenre: existingPending.predictedGenre as GenreSlug | null,
             overriddenFields: existingPending.overriddenFields,
             overallConfidence: existingPending.overallConfidence as ConfidenceLevel,
+            missingFields: existingPending.missingFields,
+            suspectedDuplicateOfEventId: existingPending.suspectedDuplicateOfEventId,
           },
         );
         await applyDiscoveryClassificationUpdate(existingPending.id, classificationPatch);

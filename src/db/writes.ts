@@ -433,14 +433,25 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
  * Applies a later sync's refreshed genre classification
  * (buildDiscoveryQueueClassificationPatch) to an existing pending
  * discovery_queue row — never creates a row, never touches status or any
- * identity field. The status='pending' guard is belt-and-suspenders against
- * an admin resolving the item (publish/ignore/merge) between this sync's read
- * and this write; a no-op patch is skipped entirely rather than issuing an
- * empty UPDATE.
+ * identity field. Also carries the same function's narrow, one-directional
+ * venue-resolution/duplicate-suspicion self-healing (stale discovery-queue
+ * audit, 2026-08-25): missingFields can only ever shrink (never gains a new
+ * entry) and suspectedDuplicateOfEventId can only ever move from null to a
+ * real id (never overwritten or cleared) — see buildDiscoveryQueueClassificationPatch's
+ * own doc comment for the full safety reasoning. The status='pending' guard
+ * is belt-and-suspenders against an admin resolving the item (publish/ignore/
+ * merge) between this sync's read and this write; a no-op patch is skipped
+ * entirely rather than issuing an empty UPDATE.
  */
 export async function applyDiscoveryClassificationUpdate(
   queueId: string,
-  patch: { predictedGenre?: GenreSlug; genreConfidence?: ConfidenceLevel; overallConfidence?: ConfidenceLevel },
+  patch: {
+    predictedGenre?: GenreSlug;
+    genreConfidence?: ConfidenceLevel;
+    overallConfidence?: ConfidenceLevel;
+    missingFields?: string[];
+    suspectedDuplicateOfEventId?: string;
+  },
 ) {
   if (Object.keys(patch).length === 0) return;
   await db

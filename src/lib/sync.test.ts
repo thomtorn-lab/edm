@@ -187,6 +187,8 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     predictedGenre: null,
     overriddenFields: [],
     overallConfidence: "low",
+    missingFields: [],
+    suspectedDuplicateOfEventId: null,
     ...overrides,
   };
 }
@@ -425,6 +427,149 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
       overriddenRow,
     );
     expect(patch).toEqual({});
+  });
+
+  // ---- Regression coverage: stale discovery-queue self-healing (2026-08-25) ----
+  // Real Production case: src-billetto's "ETNICA 30 Years — Origin Of
+  // Trance" was queued with missingFields including "venue (unresolved
+  // against registry)" for "Pumpehuset" — a venue that in fact resolves
+  // cleanly, and whose same event is already published via Pumpehuset's own
+  // first-party adapter (medium-confidence dedup match, confirmed live). The
+  // stored row never updated because missingFields/suspectedDuplicateOfEventId
+  // were only ever written once, at insert time.
+
+  it("ETNICA-style case: venue resolves and a medium-confidence canonical duplicate is found — missingFields loses the unresolved entry, suspectedDuplicateOfEventId is filled in, status/overallConfidence untouched by this alone", () => {
+    const staleRow = pendingDiscoveryTarget({
+      predictedGenre: "psytrance",
+      overallConfidence: "medium",
+      missingFields: ["venue (unresolved against registry)"],
+      suspectedDuplicateOfEventId: null,
+    });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      {
+        genre: "psytrance",
+        genreConfidence: "high",
+        decision: "review_queue",
+        resolvedVenueId: "v-pumpehuset",
+        duplicateOfEventId: "e-ea497ba4",
+        duplicateConfidence: "medium",
+      },
+      staleRow,
+    );
+    expect(patch.missingFields).toEqual([]);
+    expect(patch.suspectedDuplicateOfEventId).toBe("e-ea497ba4");
+    expect(patch).not.toHaveProperty("status");
+  });
+
+  it("unresolved venue remains unresolved — no missingFields patch when the fresh run still can't resolve it", () => {
+    const row = pendingDiscoveryTarget({
+      missingFields: ["venue (unresolved against registry)"],
+    });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "electro", genreConfidence: "high", decision: "review_queue", resolvedVenueId: null },
+      row,
+    );
+    expect(patch).not.toHaveProperty("missingFields");
+  });
+
+  it("a transient venue-resolution miss this run never re-adds or otherwise touches missingFields on an already-clean row", () => {
+    const cleanRow = pendingDiscoveryTarget({ missingFields: [] });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "high", decision: "review_queue", resolvedVenueId: null },
+      cleanRow,
+    );
+    expect(patch).not.toHaveProperty("missingFields");
+  });
+
+  it("weak/ambiguous (low-confidence) dedup never populates suspectedDuplicateOfEventId — only a medium-confidence match does", () => {
+    const row = pendingDiscoveryTarget({ suspectedDuplicateOfEventId: null });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "house", genreConfidence: "medium", decision: "review_queue", duplicateOfEventId: "e-someid", duplicateConfidence: "low" },
+      row,
+    );
+    expect(patch).not.toHaveProperty("suspectedDuplicateOfEventId");
+  });
+
+  it("no dedup match this run never populates suspectedDuplicateOfEventId", () => {
+    const row = pendingDiscoveryTarget({ suspectedDuplicateOfEventId: null });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "house", genreConfidence: "medium", decision: "review_queue", duplicateOfEventId: null, duplicateConfidence: "none" },
+      row,
+    );
+    expect(patch).not.toHaveProperty("suspectedDuplicateOfEventId");
+  });
+
+  it("a high-confidence duplicate never reaches this function in production (src/db/sync.ts's `if (match)` branch intercepts it first), and even if it did, this function would not surface it as a suspicion here", () => {
+    const row = pendingDiscoveryTarget({ suspectedDuplicateOfEventId: null });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "house", genreConfidence: "high", decision: "review_queue", duplicateOfEventId: "e-someid", duplicateConfidence: "high" },
+      row,
+    );
+    expect(patch).not.toHaveProperty("suspectedDuplicateOfEventId");
+  });
+
+  it("never overwrites or clears an already-suspected duplicate, even when a fresh run finds a different one", () => {
+    const row = pendingDiscoveryTarget({ suspectedDuplicateOfEventId: "e-original" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "house", genreConfidence: "medium", decision: "review_queue", duplicateOfEventId: "e-different", duplicateConfidence: "medium" },
+      row,
+    );
+    expect(patch).not.toHaveProperty("suspectedDuplicateOfEventId");
+  });
+
+  it("manual override/edit is not overwritten: an admin who has already hand-corrected the venue (probableVenueName in overriddenFields) keeps their missingFields exactly as they left it, even once the venue would otherwise resolve", () => {
+    const adminEditedRow = pendingDiscoveryTarget({
+      overriddenFields: ["probableVenueName"],
+      missingFields: ["venue (unresolved against registry)"],
+    });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "high", decision: "review_queue", resolvedVenueId: "v-pumpehuset" },
+      adminEditedRow,
+    );
+    expect(patch).not.toHaveProperty("missingFields");
+  });
+
+  it("a manual edit to an unrelated field (e.g. probableTitle) does not block the venue-resolution self-heal", () => {
+    const row = pendingDiscoveryTarget({
+      overriddenFields: ["probableTitle"],
+      missingFields: ["venue (unresolved against registry)"],
+    });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "high", decision: "review_queue", resolvedVenueId: "v-pumpehuset" },
+      row,
+    );
+    expect(patch.missingFields).toEqual([]);
+  });
+
+  it("every pre-existing call site (genre-only fresh classification, no venue/dedup fields given) behaves exactly as before — omitting the new optional fields never touches missingFields or suspectedDuplicateOfEventId", () => {
+    const row = pendingDiscoveryTarget({
+      missingFields: ["venue (unresolved against registry)"],
+      suspectedDuplicateOfEventId: null,
+    });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" },
+      row,
+    );
+    expect(patch).not.toHaveProperty("missingFields");
+    expect(patch).not.toHaveProperty("suspectedDuplicateOfEventId");
+  });
+
+  it("candidates that genuinely become auto_publish remain governed entirely by the pre-existing behavior — this fix adds no new path to a status/published field even when venue/dedup fields are also present", () => {
+    const row = pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      {
+        genre: "techno",
+        genreConfidence: "high",
+        decision: "auto_publish",
+        resolvedVenueId: "v-hangaren",
+        duplicateOfEventId: null,
+        duplicateConfidence: "none",
+      },
+      row,
+    );
+    expect(patch).not.toHaveProperty("status");
+    expect(patch).not.toHaveProperty("published");
+    expect(patch.overallConfidence).not.toBe("high");
   });
 });
 
