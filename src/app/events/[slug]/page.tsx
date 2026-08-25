@@ -117,16 +117,18 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             <span className="text-text-secondary">{event.venue.address}</span>
           </dd>
         </div>
-        <div className="sm:col-span-2">
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</dt>
-          <dd className="mt-1.5 flex flex-wrap gap-1.5">
-            {genres.map((g) => (
-              <span key={g.slug} className="rounded-[3px] border border-border-strong px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-text-secondary">
-                {g.label}
-              </span>
-            ))}
-          </dd>
-        </div>
+        {genres.length > 0 && (
+          <div className="sm:col-span-2">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</dt>
+            <dd className="mt-1.5 flex flex-wrap gap-1.5">
+              {genres.map((g) => (
+                <span key={g.slug} className="rounded-[3px] border border-border-strong px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-text-secondary">
+                  {g.label}
+                </span>
+              ))}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {event.description && (

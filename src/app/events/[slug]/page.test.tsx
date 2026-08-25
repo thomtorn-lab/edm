@@ -251,6 +251,75 @@ describe("Event detail page — sub-venue title cleanup (Pumpehuset Byhaven / Cu
   });
 });
 
+describe("Event detail page — graceful degradation for sparse/missing metadata", () => {
+  afterEach(cleanup);
+
+  it("renders no GENRE label at all when the event has no resolved genre", async () => {
+    await renderPage(makeEvent({ subgenres: [] }));
+    expect(screen.queryByText("Genre")).toBeNull();
+  });
+
+  it("renders the GENRE label with an OTHER chip for a genuinely-classified Other event, distinct from unknown/missing genre", async () => {
+    await renderPage(makeEvent({ primaryGenre: "electronic-other", subgenres: ["electronic-other"] }));
+    expect(screen.getByText("Genre")).toBeTruthy();
+    expect(screen.getByText("Other")).toBeTruthy();
+  });
+
+  it("renders a real, non-Other genre normally (regression: the conditional wrap must not hide genuine genre chips)", async () => {
+    await renderPage(makeEvent({ subgenres: ["drum-and-bass"] }));
+    expect(screen.getByText("Genre")).toBeTruthy();
+    expect(screen.getByText("Drum & Bass")).toBeTruthy();
+  });
+
+  it("renders no empty About heading/block when the event has no description", async () => {
+    await renderPage(makeEvent({ description: null }));
+    expect(screen.queryByText("About")).toBeNull();
+  });
+
+  it("still renders the About block when a description is present", async () => {
+    await renderPage(makeEvent({ description: "A real description." }));
+    expect(screen.getByText("About")).toBeTruthy();
+    expect(screen.getByText("A real description.")).toBeTruthy();
+  });
+
+  it("a maximally sparse event (title + date/time + venue only, no genre/description/links/artists) renders its core fields with no empty optional sections", async () => {
+    await renderPage(
+      makeEvent({
+        subgenres: [],
+        description: null,
+        artists: [],
+        ticketUrl: null,
+        officialEventUrl: null,
+        facebookUrl: null,
+        residentAdvisorUrl: null,
+        otherSourceUrls: [],
+        endDatetime: null,
+      }),
+    );
+    // Core fields always present.
+    expect(screen.getByRole("heading", { level: 1, name: "Test Event" })).toBeTruthy();
+    expect(screen.getByText("Date & time")).toBeTruthy();
+    expect(screen.getByText("Venue")).toBeTruthy();
+    // No optional section renders empty.
+    expect(screen.queryByText("Genre")).toBeNull();
+    expect(screen.queryByText("About")).toBeNull();
+    expect(screen.queryByText("Links")).toBeNull();
+  });
+
+  it("shows the artist lineup on a sparse event even when description is absent (lineup and description are independent)", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Test Event",
+        artists: ["DJ Alpha", "DJ Beta"],
+        description: null,
+        subgenres: [],
+      }),
+    );
+    expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
+    expect(screen.queryByText("About")).toBeNull();
+  });
+});
+
 describe("Event detail page — suppress redundant artist preview when the title already names the lineup", () => {
   afterEach(cleanup);
 
