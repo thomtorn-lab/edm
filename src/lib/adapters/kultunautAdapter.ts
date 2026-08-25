@@ -150,10 +150,18 @@ export function parseKultunautDate(text: string): { date: DateKey; hour: number;
  * "Copenhagen Soul Weekender in Absalon", "EleKtro Universal: Mini
  * Festival", "Stvw pres. punk rave" are event names, not artists — a
  * colon/pipe, "pres."/"presents", or a generic festival/night/tour/
- * weekender word are all real evidence of the latter.
+ * weekender word are all real evidence of the latter. "musikforedrag"
+ * (real evidence: "Depeche Modes Violator - musikforedrag", precision
+ * audit 2026-08-25) is included for a second, more structural reason
+ * beyond just "not an artist name": if the whole title were wrongly
+ * treated as a single artist, relevance.ts's maskKnownArtistNames would
+ * mask this exact word out of the negative-relevance category-signal
+ * check downstream — silently defeating that check for the one case it
+ * exists to catch. A non-artist title must never reach that masking step
+ * at all.
  */
 export function guessArtistsFromTitle(title: string): string[] {
-  if (/[:|]|\bpres\.|\bpresents\b|\bfestival\b|\bweekender\b|\btour\b|club\s*night|mini\s*festival/i.test(title)) {
+  if (/[:|]|\bpres\.|\bpresents\b|\bfestival\b|\bweekender\b|\btour\b|club\s*night|mini\s*festival|\bmusikforedrag\b/i.test(title)) {
     return [];
   }
   return [title];
@@ -188,15 +196,23 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
   const ticketUrl = ticketMatch ? decodeHtmlEntities(ticketMatch[1]) : null;
 
   const articleMatch = html.match(/<article class="event-description">([\s\S]*?)<\/article>/);
-  const description = articleMatch
+  // Full, UNTRUNCATED cleaned text — genre classification below runs
+  // against this, never against the shorter stored `description`. Real
+  // bug found live during the precision audit (2026-08-25): a long
+  // full-lineup rave write-up (Chapter ii: possessed @ Hangaren) states
+  // "psytrance"/"Trance" only after character 800 — truncating first (as
+  // an earlier version of this function did) silently discarded that
+  // evidence and left the candidate's genre unresolved. Mirrors
+  // aliceAdapter.ts's own fullDescriptionText/description split exactly.
+  const fullDescriptionText = articleMatch
     ? htmlToText(articleMatch[1])
         .split("\n")
         .filter((line) => !/^K\S+\/bestil billet$/.test(line))
         .join(" ")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 800) || null
-    : null;
+    : "";
+  const description = fullDescriptionText ? fullDescriptionText.slice(0, 800) : null;
 
   const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
   const imageUrl = imageMatch ? decodeHtmlEntities(imageMatch[1]) : null;
@@ -210,8 +226,8 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
   // "electronic-other" rather than a guessed subgenre. Anything short of
   // that is left unresolved for the shared pipeline's own fallback and
   // Discogs lineup enrichment to attempt.
-  const specificGenre = description ? deterministicGenreFromText(description) : null;
-  const genericElectronic = !specificGenre && !!description && /\belectronic(s|a)?\b/i.test(description);
+  const specificGenre = fullDescriptionText ? deterministicGenreFromText(fullDescriptionText) : null;
+  const genericElectronic = !specificGenre && /\belectronic(s|a)?\b/i.test(fullDescriptionText);
   const genreHint: GenreSlug | null = specificGenre ?? (genericElectronic ? "electronic-other" : null);
 
   return {

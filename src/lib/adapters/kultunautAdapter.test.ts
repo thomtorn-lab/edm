@@ -11,6 +11,8 @@ import {
   createKultunautAdapter,
   KULTUNAUT_SOURCE_ID,
 } from "./kultunautAdapter";
+import { runIngestionPipeline } from "./pipeline";
+import { VENUES } from "@/lib/data/venues";
 
 /**
  * All fixtures are real, unmodified pages captured directly from
@@ -178,6 +180,45 @@ describe("parseKultunautDetailHtml (real Poliça @ Hotel Cecil fixture, ArrNr=19
   it("throws on a detail page missing its date block", () => {
     const noDate = DETAIL_HTML.replace(/class="event-date">[\s\S]*?<\/div>/, "");
     expect(() => parseKultunautDetailHtml(noDate, "19616511")).toThrow(/date/);
+  });
+});
+
+describe("precision/routing audit regressions (2026-08-25 — real KultuNaut false positives, both fixed)", () => {
+  it("BUG 1 (fixed): genre classification runs against the FULL description, not the 800-char truncated one — real evidence: 'Chapter ii: possessed' @ Hangaren only mentions psytrance/Trance after character 800 in a long DJ-lineup write-up, which the earlier (buggy) version of this adapter silently missed", () => {
+    const html = readFileSync(path.join(FIXTURES_DIR, "kultunaut-detail-20158318.html"), "utf-8");
+    const event = parseKultunautDetailHtml(html, "20158318");
+    expect(event.description!.length).toBeLessThanOrEqual(800); // stored description still truncated for display
+    expect(event.genreHint).not.toBeNull(); // genre WAS found — proves classification saw text beyond char 800
+  });
+
+  it("BUG 2 (fixed): a real event/lecture title ('Depeche Modes Violator - musikforedrag') must never be treated as a single-artist lineup, because doing so masks the exact word ('musikforedrag') the negative-relevance gate needs to see", () => {
+    const html = readFileSync(path.join(FIXTURES_DIR, "kultunaut-detail-20097798.html"), "utf-8");
+    const event = parseKultunautDetailHtml(html, "20097798");
+    expect(event.artists).toEqual([]); // never a fabricated single-artist lineup for an event/lecture title
+  });
+
+  it("end-to-end: the real Depeche Mode listening-lecture candidate correctly routes to negative_relevance (excluded from Discovery Queue entirely) despite its description being dense with 'elektronisk'/'elektroniske' describing the album's sound", () => {
+    const html = readFileSync(path.join(FIXTURES_DIR, "kultunaut-detail-20097798.html"), "utf-8");
+    const event = parseKultunautDetailHtml(html, "20097798");
+    const result = runIngestionPipeline(event, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("end-to-end: a genuinely electronic long-form rave write-up ('Chapter ii: possessed' @ Hangaren, real psytrance lineup) still resolves to auto_publish once the full-text genre fix is applied", () => {
+    const html = readFileSync(path.join(FIXTURES_DIR, "kultunaut-detail-20158318.html"), "utf-8");
+    const event = parseKultunautDetailHtml(html, "20158318");
+    const result = runIngestionPipeline(event, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("end-to-end: a clean, unambiguous DJ candidate (Paul Van Dyk @ Poolen, explicit 'trance icon' text) resolves to auto_publish with high-confidence trance", () => {
+    const html = readFileSync(path.join(FIXTURES_DIR, "kultunaut-detail-20137632.html"), "utf-8");
+    const event = parseKultunautDetailHtml(html, "20137632");
+    const result = runIngestionPipeline(event, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
+    expect(result.decision).toBe("auto_publish");
+    expect(result.genre).toBe("trance");
+    expect(result.genreConfidence).toBe("high");
   });
 });
 

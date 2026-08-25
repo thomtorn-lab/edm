@@ -306,4 +306,9 @@ describe("hasNonElectronicCategorySignal (data-quality Workstream, Billetto queu
     // "DJ Soundbath" must never fail relevance because of their own name.
     expect(hasNonElectronicCategorySignal("DJ Soundbath live at Culture Box", ["DJ Soundbath"])).toBe(false);
   });
+
+  it("flags the real 'Depeche Modes Violator - musikforedrag' KultuNaut title (source-expansion precision audit, 2026-08-25) — a lecture, not a performance, even though its own description text is separately dense with 'elektronisk'/'elektroniske' describing the album's sound (that description text alone, real evidence: 'Nu skal sangen omsættes til et elektronisk univers', never itself says 'musikforedrag' — the category signal is real evidence on the TITLE, matching how this source's own listing/detail pages label the event)", () => {
+    expect(hasNonElectronicCategorySignal("Depeche Modes Violator - musikforedrag")).toBe(true);
+    expect(hasNonElectronicCategorySignal("Nu skal sangen omsættes til et elektronisk univers.")).toBe(false);
+  });
 });

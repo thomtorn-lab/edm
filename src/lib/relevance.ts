@@ -79,7 +79,13 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
  * borgere – en byvandring i Københavns Kulturkvarter", "Valbyparken:
  * Urtevandringer og sanketure" (guided walking/bike tours — Danish
  * "vandring" = walk/hike); "Self Care Sunday Soundbath™", "Body Temple -
- * Mindful Cuddling" (wellness). Deliberately narrow, multi-word/
+ * Mindful Cuddling" (wellness); "Depeche Modes Violator - musikforedrag"
+ * (a KultuNaut real evidence case, source-expansion precision audit
+ * 2026-08-25 — Danish "musikforedrag" = "music lecture": a talk about an
+ * album's production, not a performance, despite its own description text
+ * being dense with "elektronisk"/"elektroniske" describing the band's
+ * sound — exactly the kind of case where genre-word density alone would
+ * wrongly signal relevance). Deliberately narrow, multi-word/
  * distinctive-root phrases only — never a bare generic word like "wine" or
  * "tour" alone, which a genuinely electronic event could easily mention in
  * passing (an afterparty's wine reception, a tour-date announcement)
@@ -115,6 +121,7 @@ const NON_ELECTRONIC_CATEGORY_SIGNALS: RegExp[] = [
   /vandring(?:er)?\b/i,
   /\bsoundbath\b/i,
   /\bmindful\s+cuddling\b/i,
+  /\bmusikforedrag\b/i,
 ];
 
 /**
