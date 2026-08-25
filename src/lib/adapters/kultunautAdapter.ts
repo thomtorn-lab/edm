@@ -2,6 +2,9 @@ import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
+import { isTrustedElectronicVenueId } from "../data/sources";
+import { VENUES } from "../data/venues";
+import { resolveVenue } from "../normalize";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -250,6 +253,47 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
   };
 }
 
+/**
+ * Positive-evidence gate (source-expansion precision audit follow-up,
+ * 2026-08-25): KultuNaut's own "Elektronisk"/"Club/DJ" tag is only ever
+ * used to SCOPE which listing pages get fetched at all (see the module
+ * doc comment) — it is never itself treated as evidence a specific
+ * candidate is worth surfacing. Real routing-simulation evidence found
+ * the tag alone is not reliable enough: two clearly non-electronic metal
+ * bands (Gloryhammer, Clawfinger) and a musikforedrag (lecture) all carry
+ * it. Rather than continuing to add source-specific negative keywords for
+ * every new noise pattern this site's own mistagging turns up, a
+ * candidate must clear this POSITIVE bar before it is even returned to
+ * the shared pipeline at all — omission (never queued, never seen by an
+ * admin) is preferred over piling up generic-cultural-listing noise in
+ * the Discovery Queue every sync:
+ *
+ *   1. genreHint is non-null — real, independent deterministic evidence
+ *      already extracted from the candidate's OWN title/description text
+ *      (never derived from KultuNaut's tag — see parseKultunautDetailHtml
+ *      above), OR
+ *   2. the candidate's venue resolves to one of the two genuinely
+ *      electronic-only venues (Hangaren, Culture Box) — deliberately NOT
+ *      any other known/curated venue (VEGA, Rust, Hotel Cecil, ALICE,
+ *      Poolen, Pumpehuset are all real mixed-programme venues; being in
+ *      this app's registry is not electronic evidence on its own — see
+ *      isTrustedElectronicVenueId's own doc comment).
+ *
+ * A candidate that clears neither is dropped here, before dedup, before
+ * the pipeline, before ever reaching Production in any form — never
+ * merely downgraded to a low-confidence hold (which would still queue
+ * it). This is a real, accepted false-negative cost: a genuinely
+ * electronic candidate whose own text happens to carry no deterministic
+ * keyword and whose venue isn't Hangaren/Culture Box is omitted, not
+ * queued — see the source-expansion audit report for the measured size
+ * of that cost.
+ */
+export function hasPositiveElectronicEvidence(candidate: Pick<RawCandidateEvent, "genreHint" | "venueName">): boolean {
+  if (candidate.genreHint != null) return true;
+  const resolvedVenue = candidate.venueName ? resolveVenue(candidate.venueName, VENUES) : undefined;
+  return !!resolvedVenue && isTrustedElectronicVenueId(resolvedVenue.id);
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -316,7 +360,12 @@ export function createKultunautAdapter(fetchImpl: typeof fetch = fetch, retryDel
         try {
           const detailRes = await fetchWithRetry(fetchImpl, buildDetailUrl(arrNr), retryDelayMs, `KultuNaut event page (ArrNr=${arrNr})`);
           const detailHtml = await decodeKultunautBody(detailRes);
-          results.push(parseKultunautDetailHtml(detailHtml, arrNr));
+          const candidate = parseKultunautDetailHtml(detailHtml, arrNr);
+          if (!hasPositiveElectronicEvidence(candidate)) {
+            console.error(`[kultunaut-adapter] omitting "${candidate.title}" (ArrNr=${arrNr}): no independent positive electronic evidence beyond KultuNaut's own tag`);
+          } else {
+            results.push(candidate);
+          }
         } catch (err) {
           console.error(`[kultunaut-adapter] skipping ArrNr=${arrNr}: ${err instanceof Error ? err.message : String(err)}`);
         }

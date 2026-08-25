@@ -640,3 +640,31 @@ const TRUSTED_ELECTRONIC_SOURCE_IDS: ReadonlySet<string> = new Set(["src-hangare
 export function isTrustedElectronicSource(sourceId: string): boolean {
   return TRUSTED_ELECTRONIC_SOURCE_IDS.has(sourceId);
 }
+
+/**
+ * Venue-level counterpart to TRUSTED_ELECTRONIC_SOURCE_IDS, for a
+ * multi-venue DISCOVERY source (KultuNaut — source-expansion precision
+ * audit, 2026-08-25) whose own candidates can resolve to any venue in the
+ * registry, not just the one venue its own adapter is scoped to. The exact
+ * same two venue ids (v-hangaren, v-culture-box) that back
+ * src-hangaren/src-culture-box above — resolving to one of THESE two
+ * venues is itself independent positive electronic evidence, for the same
+ * reason those two sources are trusted: they are genuinely electronic-only
+ * venues, not a mixed programme.
+ *
+ * Deliberately NOT every known/curated venue. VEGA, Rust, Hotel Cecil,
+ * ALICE, Poolen and Pumpehuset are all real, mixed-programme venues whose
+ * electronic content is a minority of their overall booking — being in
+ * this app's venue registry at all is not electronic evidence on its own.
+ * Real evidence this distinction matters: the precision audit found two
+ * clearly non-electronic metal bands (Gloryhammer, Clawfinger) booked at
+ * Amager Bio — a venue not even in the registry — whose own descriptions
+ * carried zero genre text; had "any known venue" been trusted instead of
+ * this exact two-venue set, plenty of real mixed-programme-venue noise
+ * would pass a positive-evidence gate for the wrong reason.
+ */
+const TRUSTED_ELECTRONIC_VENUE_IDS: ReadonlySet<string> = new Set(["v-hangaren", "v-culture-box"]);
+
+export function isTrustedElectronicVenueId(venueId: string): boolean {
+  return TRUSTED_ELECTRONIC_VENUE_IDS.has(venueId);
+}

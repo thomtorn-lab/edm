@@ -35,6 +35,18 @@ const ELEKTRONISK_HTML = readFileSync(path.join(FIXTURES_DIR, "kultunaut-arrlist
 const CLUBDJ_HTML = readFileSync(path.join(FIXTURES_DIR, "kultunaut-arrlist-clubdj.html"), "utf-8");
 const PAGE2_HTML = readFileSync(path.join(FIXTURES_DIR, "kultunaut-arrlist-page2.html"), "utf-8");
 const DETAIL_HTML = readFileSync(path.join(FIXTURES_DIR, "kultunaut-event-detail.html"), "utf-8");
+/**
+ * Positive-evidence-gate audit (2026-08-25): the end-to-end wiring tests
+ * below stand in a single fixture for "every detail page" to test
+ * pagination/dedup/error-handling, not routing. DETAIL_HTML (Poliça) has no
+ * genreHint and resolves to Hotel Cecil (not trusted-electronic), so it is
+ * correctly OMITTED by the new hasPositiveElectronicEvidence gate — using it
+ * here would make every result vanish and conflate "gate working" with "gate
+ * broken." GATED_DETAIL_HTML (Paul Van Dyk @ Poolen, genreHint="trance")
+ * passes the gate on its own genre evidence, so these tests can keep
+ * asserting on wiring behavior independent of the gate.
+ */
+const GATED_DETAIL_HTML = readFileSync(path.join(FIXTURES_DIR, "kultunaut-detail-20137632.html"), "utf-8");
 
 /**
  * The saved fixtures are clean UTF-8 text (already correctly decoded from
@@ -238,8 +250,10 @@ describe("createKultunautAdapter (end-to-end, mocked fetch over the real fixture
       }
       // Every detail page returns the same real fixture — fine for this
       // end-to-end wiring test, which only cares that every discovered id
-      // triggers exactly one detail fetch and produces one candidate.
-      return toIso88591Response(DETAIL_HTML);
+      // triggers exactly one detail fetch and produces one candidate. Uses
+      // GATED_DETAIL_HTML (has genreHint) so the positive-evidence gate
+      // doesn't omit every result and confound the wiring assertions below.
+      return toIso88591Response(GATED_DETAIL_HTML);
     });
 
     const adapter = createKultunautAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
@@ -258,9 +272,10 @@ describe("createKultunautAdapter (end-to-end, mocked fetch over the real fixture
 
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((r) => r.sourceId === KULTUNAUT_SOURCE_ID)).toBe(true);
-    // Every candidate is the real Poliça record (all detail fetches hit the
-    // same fixture in this test) — proves the whole pipeline wires through.
-    expect(results[0].title).toBe("Poliça");
+    // Every candidate is the real Paul Van Dyk record (all detail fetches hit
+    // the same fixture in this test) — proves the whole pipeline wires
+    // through, including the new positive-evidence gate passing it.
+    expect(results[0].title).toBe("Paul Van Dyk");
   });
 
   it("skips a single detail-page failure without failing the whole sync", async () => {
@@ -274,7 +289,10 @@ describe("createKultunautAdapter (end-to-end, mocked fetch over the real fixture
       if (detailCallCount === 1) {
         return new Response("not found", { status: 404 });
       }
-      return toIso88591Response(DETAIL_HTML);
+      // GATED_DETAIL_HTML has genreHint set, so it passes the
+      // positive-evidence gate and the 11 successful fetches all become
+      // real results.
+      return toIso88591Response(GATED_DETAIL_HTML);
     });
 
     const adapter = createKultunautAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
