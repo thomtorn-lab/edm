@@ -394,6 +394,29 @@ async function modeReachability(_client: Client, args: Record<string, string | b
         },
       });
       console.log(`Authenticated HTTP status: ${authRes.status} (credential value never printed)`);
+
+      // Same save/print-full/preview options as the unauthenticated fetch
+      // above, reused here so a real authenticated response body (the only
+      // way to see actual Billetto categorization/description payloads) can
+      // be captured without a one-off diagnostic script. Never prints or
+      // saves anything credential-related — only the response body.
+      const authBodyText = await authRes.text();
+      console.log(`Authenticated body length: ${authBodyText.length} chars`);
+      if (saveBodyPath) {
+        const { writeFileSync, mkdirSync } = await import("node:fs");
+        const { dirname } = await import("node:path");
+        const authSavePath = saveBodyPath.replace(/(\.[^./]+)?$/, (ext) => `.authenticated${ext || ""}`);
+        mkdirSync(dirname(authSavePath), { recursive: true });
+        writeFileSync(authSavePath, authBodyText, "utf-8");
+        console.log(`Authenticated full body saved to ${authSavePath} (not printed here — see uploaded artifact).`);
+      } else if (printFull) {
+        console.log("-- FULL authenticated body (--print-full-body) --");
+        console.log(authBodyText);
+        console.log("-- end of authenticated body --");
+      } else {
+        console.log("-- authenticated body preview (first 4000 chars; pass --save-body=<path> for an artifact, or --print-full-body to print the full body to this log) --");
+        console.log(authBodyText.slice(0, 4000));
+      }
     }
   } else if (args["with-credentials"]) {
     console.log("--with-credentials is currently only wired for src-billetto (BILLETTO_ACCESS_KEY_ID/SECRET) — extend this branch if a future source needs a different credential check.");
