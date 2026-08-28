@@ -72,8 +72,6 @@ function kanderCandidate(overrides: Partial<RawCandidateEvent> = {}): RawCandida
     priceFrom: null,
     genreHint: null,
     genreConfidenceHint: null,
-    soldOutHint: null,
-    cancelledHint: null,
     ...overrides,
   };
 }
