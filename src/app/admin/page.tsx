@@ -58,7 +58,7 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      <section className="mt-12">
+      <section id="discovery-queue" className="mt-12">
         <h2 className="text-sm font-semibold text-text-primary">Discovery queue</h2>
         <p className="mt-1 text-xs text-text-secondary">
           Medium/low-confidence imports awaiting a human decision (spec section 35).

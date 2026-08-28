@@ -6,6 +6,7 @@ import { venueRowToRecord } from "./mappers";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { assessDuplicate } from "../lib/dedup";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
+import { notifyDiscoveryQueueInsert } from "../lib/discoveryNotification";
 import type { ConfidenceLevel, Venue } from "../lib/types";
 import type { GenreSlug } from "../lib/taxonomy";
 
@@ -502,6 +503,22 @@ export async function insertDiscoveryItem(item: {
   overallConfidence: ConfidenceLevel;
 }) {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
+
+  // The row is already committed above. notifyDiscoveryQueueInsert catches
+  // its own errors and never throws, but the try/catch here is belt-and-
+  // suspenders: this insert must succeed regardless of notification
+  // behavior, now or after any future change to that function. Awaited
+  // (rather than fire-and-forget) so the attempt completes before we
+  // return, since a detached promise can be killed mid-flight on
+  // serverless.
+  try {
+    await notifyDiscoveryQueueInsert(item);
+  } catch (err) {
+    console.error(
+      `insertDiscoveryItem: notification failed for ${item.id}`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /** Finds the strongest duplicate among currently published events, for merge suggestions. */
