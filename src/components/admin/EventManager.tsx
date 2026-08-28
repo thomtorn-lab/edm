@@ -34,6 +34,9 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
   const [endLocal, setEndLocal] = useState(event.endDatetime ? toLocalInput(event.endDatetime) : "");
   const [endTouched, setEndTouched] = useState(false);
   const [free, setFree] = useState(event.priceFrom === 0);
+  const [soldOut, setSoldOut] = useState(event.soldOut);
+  const [cancelled, setCancelled] = useState(event.cancelled);
+  const [postponed, setPostponed] = useState(event.postponed);
 
   async function toggleHidden() {
     setBusy(true);
@@ -81,6 +84,9 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       if (newEndIso !== event.endDatetime) patch.endDatetime = newEndIso;
       const newPriceFrom = free ? 0 : event.priceFrom === 0 ? null : undefined;
       if (newPriceFrom !== undefined && newPriceFrom !== event.priceFrom) patch.priceFrom = newPriceFrom;
+      if (soldOut !== event.soldOut) patch.soldOut = soldOut;
+      if (cancelled !== event.cancelled) patch.cancelled = cancelled;
+      if (postponed !== event.postponed) patch.postponed = postponed;
 
       if (Object.keys(patch).length === 0) {
         setEditing(false);
@@ -164,6 +170,22 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
           <label className="flex items-center gap-2 text-xs text-text-primary">
             <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
             Free entry (does not affect the Tickets link if a ticket URL is also set)
+          </label>
+          <label className="flex items-center gap-2 text-xs text-text-primary">
+            <input type="checkbox" checked={soldOut} onChange={(e) => setSoldOut(e.target.checked)} />
+            Sold out
+          </label>
+          <label className="flex items-center gap-2 text-xs text-text-primary">
+            <input type="checkbox" checked={cancelled} onChange={(e) => setCancelled(e.target.checked)} />
+            Cancelled
+          </label>
+          <label className="flex items-center gap-2 text-xs text-text-primary">
+            <input
+              type="checkbox"
+              checked={postponed}
+              onChange={(e) => setPostponed(e.target.checked)}
+            />
+            Postponed (no confirmed new date yet — clears automatically once a sync brings in a real reschedule)
           </label>
           <div className="pt-1">
             <button type="button" disabled={busy} onClick={saveEdit} className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50">

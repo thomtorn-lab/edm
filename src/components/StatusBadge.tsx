@@ -6,16 +6,34 @@ interface StatusInfo {
 }
 
 /**
- * Public event-lifecycle statuses only. `dateChanged`/`timeChanged` are
- * internal data-quality/change-detection flags (set by sync's date diffing,
- * never reset) — they record that a stored value changed, not that a
- * reschedule was confirmed, so they must never surface here. Only take
- * `cancelled`/`soldOut` as input so a future field addition can't leak in
- * by accident.
+ * Public event-lifecycle statuses only (event lifecycle/status handling,
+ * 2026-08-28). `timeChanged` is still an internal data-quality flag (a
+ * same-day time correction is not worth a prominent badge) and must never
+ * surface here. `dateChanged`, however, now doubles as the public
+ * "Rescheduled" signal: it's set only when an already-known, already-linked
+ * event's date genuinely differs from what the source now reports (see
+ * buildSyncPatch in lib/sync.ts) — that IS a confirmed replacement date from
+ * the source's own authority, exactly what "rescheduled" means. It is a
+ * one-way flag (never reset), which is fine here: once the event's start
+ * date passes it drops out of the public "upcoming" listing entirely (see
+ * EventExplorer), so this can never linger as stale clutter.
+ *
+ * cancelled takes priority over postponed/rescheduled (mutually exclusive —
+ * showing both would be confusing/redundant), but NOT over soldOut, which
+ * still renders alongside cancelled exactly as it already did before this
+ * change.
  */
-export function getEventStatuses(event: Pick<EventRecord, "cancelled" | "soldOut">): StatusInfo[] {
+export function getEventStatuses(
+  event: Pick<EventRecord, "cancelled" | "soldOut" | "postponed" | "dateChanged">,
+): StatusInfo[] {
   const statuses: StatusInfo[] = [];
-  if (event.cancelled) statuses.push({ label: "Cancelled", tone: "bad" });
+  if (event.cancelled) {
+    statuses.push({ label: "Cancelled", tone: "bad" });
+  } else if (event.postponed) {
+    statuses.push({ label: "Postponed", tone: "bad" });
+  } else if (event.dateChanged) {
+    statuses.push({ label: "Rescheduled", tone: "neutral" });
+  }
   if (event.soldOut) statuses.push({ label: "Sold out", tone: "neutral" });
   return statuses;
 }

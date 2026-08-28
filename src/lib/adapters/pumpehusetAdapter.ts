@@ -331,6 +331,36 @@ function resolveGenre(title: string, ...textPieces: (string | null)[]) {
 }
 
 /**
+ * `ticket_status` (event lifecycle/status handling, 2026-08-28) is a real,
+ * structured, closed-vocabulary enum field on Pumpehuset's own concert JSON
+ * — confirmed real observed values are "Fri entré", "Normal", "Flyttet"
+ * (Danish for "Moved") and "Få tilbage" ("Few left"). Only "udsolgt" (sold
+ * out) and "aflyst" (cancelled) — the standard, unambiguous Danish words for
+ * those exact states — are trusted here, matching the same
+ * only-trust-unambiguous-values discipline the genre categorization already
+ * applies (see billettoAdapter.ts's excluded "hardcore"/"disco"
+ * subcategories). Deliberately NOT mapped:
+ *   - "Få tilbage" (few left) is availability-adjacent but is NOT sold out —
+ *     tickets are still purchasable, so flagging it soldOut would be an
+ *     actively wrong, sale-costing false positive.
+ *   - "Flyttet" (moved) is genuinely ambiguous from this field alone (a
+ *     confirmed new date already applied to this same record vs. a
+ *     postponement with no new date yet) — the generic date-diff mechanism
+ *     already used by every source (buildSyncPatch's dateChanged detection
+ *     in lib/sync.ts) correctly surfaces a real reschedule for Pumpehuset
+ *     the same as any other source once the concert's own date value
+ *     actually changes, without needing to interpret this ambiguous value.
+ */
+function soldOutHintFromTicketStatus(status: string | undefined): boolean | null {
+  if (status && /udsolgt/i.test(status)) return true;
+  return null;
+}
+function cancelledHintFromTicketStatus(status: string | undefined): boolean | null {
+  if (status && /aflyst/i.test(status)) return true;
+  return null;
+}
+
+/**
  * Parses the fetch_concerts JSON response (already genre-filtered
  * server-side) into candidates. startDatetime is always null at this
  * stage — the listing response carries no time, only a date — and is
@@ -363,6 +393,8 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
 
       const isFree = /fri\s*entr/i.test(concert.ticket_status ?? "");
       const priceFrom = isFree ? 0 : parsePriceFrom(concert.price ?? "");
+      const soldOutHint = soldOutHintFromTicketStatus(concert.ticket_status);
+      const cancelledHint = cancelledHintFromTicketStatus(concert.ticket_status);
 
       results.push({
         sourceId: PUMPEHUSET_SOURCE_ID,
@@ -381,6 +413,8 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
         priceFrom,
         genreHint,
         genreConfidenceHint,
+        soldOutHint,
+        cancelledHint,
       });
     } catch {
       // A single malformed record must never take down the whole sync.

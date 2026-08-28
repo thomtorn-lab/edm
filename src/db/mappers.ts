@@ -80,6 +80,7 @@ export function eventRowToRecord(row: EventRow): EventRecord {
     currency: row.currency as EventRecord["currency"],
     soldOut: row.soldOut,
     cancelled: row.cancelled,
+    postponed: row.postponed,
     dateChanged: row.dateChanged,
     timeChanged: row.timeChanged,
     published: row.published,

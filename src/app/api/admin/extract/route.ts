@@ -78,6 +78,8 @@ export async function POST(request: NextRequest) {
     priceFrom: null,
     genreHint: null,
     genreConfidenceHint: null,
+    soldOutHint: null,
+    cancelledHint: null,
   };
 
   const [venues, publishedEvents] = await Promise.all([getVenues(), getPublishedEventsWithVenue()]);
@@ -117,6 +119,8 @@ export async function POST(request: NextRequest) {
         imageUrl: raw.imageUrl,
         priceFrom: raw.priceFrom,
         currency: raw.priceFrom != null ? "DKK" : null,
+        soldOut: raw.soldOutHint ?? false,
+        cancelled: raw.cancelledHint ?? false,
         published: true,
         confidence: result.genreConfidence,
         canonicalSourceId: null,

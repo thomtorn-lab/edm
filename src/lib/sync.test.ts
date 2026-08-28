@@ -31,6 +31,8 @@ function raw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
     priceFrom: null,
     genreHint: null,
     genreConfidenceHint: null,
+    soldOutHint: null,
+    cancelledHint: null,
     ...overrides,
   };
 }
@@ -51,6 +53,9 @@ function target(overrides: Partial<SyncTargetEvent> = {}): SyncTargetEvent {
     imageUrl: "https://images.squarespace-cdn.com/kander.png",
     primaryGenre: "techno",
     overriddenFields: [],
+    soldOut: false,
+    cancelled: false,
+    postponed: false,
     ...overrides,
   };
 }
@@ -178,6 +183,68 @@ describe("buildSyncPatch", () => {
     const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
     expect(safePatch.primaryGenre).toBeUndefined(); // ...but the admin's choice is never actually written
     expect(safePatch.subgenres).toBeUndefined();
+  });
+
+  describe("soldOut/cancelled hints (event lifecycle/status handling, 2026-08-28)", () => {
+    it("most sources report null hints — no soldOut/cancelled patch at all", () => {
+      const { patch } = buildSyncPatch(raw(), resolved, target());
+      expect(patch).not.toHaveProperty("soldOut");
+      expect(patch).not.toHaveProperty("cancelled");
+    });
+
+    it("normal -> sold out: a true soldOutHint proposes soldOut:true on the same canonical event", () => {
+      const { patch } = buildSyncPatch(raw({ soldOutHint: true }), resolved, target({ soldOut: false }));
+      expect(patch.soldOut).toBe(true);
+    });
+
+    it("sold out -> available again: a false soldOutHint clears a previously-true soldOut", () => {
+      const { patch } = buildSyncPatch(raw({ soldOutHint: false }), resolved, target({ soldOut: true }));
+      expect(patch.soldOut).toBe(false);
+    });
+
+    it("normal -> cancelled: a true cancelledHint proposes cancelled:true, retaining the same event (no new id, no delete)", () => {
+      const { patch } = buildSyncPatch(raw({ cancelledHint: true }), resolved, target({ cancelled: false }));
+      expect(patch.cancelled).toBe(true);
+    });
+
+    it("a cancellation retracted by the source (cancelledHint reverses to false) clears cancelled", () => {
+      const { patch } = buildSyncPatch(raw({ cancelledHint: false }), resolved, target({ cancelled: true }));
+      expect(patch.cancelled).toBe(false);
+    });
+
+    it("no patch when the hint already matches the stored value — idempotent re-sync", () => {
+      const { patch } = buildSyncPatch(raw({ soldOutHint: true, cancelledHint: true }), resolved, target({ soldOut: true, cancelled: true }));
+      expect(patch).not.toHaveProperty("soldOut");
+      expect(patch).not.toHaveProperty("cancelled");
+    });
+  });
+
+  describe("postponed -> rescheduled (event lifecycle/status handling, 2026-08-28)", () => {
+    it("clears postponed the moment a genuine new date arrives for a postponed event — same canonical event, confirmed date applied", () => {
+      const newDate = raw({ startDatetime: "2026-09-22T18:00:00.000Z", endDatetime: "2026-09-23T04:00:00.000Z" });
+      const { patch, dateChanged } = buildSyncPatch(newDate, resolved, target({ postponed: true }));
+      expect(dateChanged).toBe(true);
+      expect(patch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
+      expect(patch.postponed).toBe(false);
+    });
+
+    it("does not touch postponed when the event isn't currently postponed", () => {
+      const newDate = raw({ startDatetime: "2026-09-22T18:00:00.000Z" });
+      const { patch } = buildSyncPatch(newDate, resolved, target({ postponed: false }));
+      expect(patch).not.toHaveProperty("postponed");
+    });
+
+    it("does not touch postponed on a routine re-sync with no date change", () => {
+      const { patch } = buildSyncPatch(raw(), resolved, target({ postponed: true }));
+      expect(patch).not.toHaveProperty("postponed");
+    });
+
+    it("a mere time-only change (same night) does not clear postponed — only a genuine date change counts as a confirmed reschedule", () => {
+      const laterDoors = raw({ startDatetime: "2026-08-15T20:00:00.000Z" }); // same date, +2h
+      const { patch, dateChanged } = buildSyncPatch(laterDoors, resolved, target({ postponed: true }));
+      expect(dateChanged).toBe(false);
+      expect(patch).not.toHaveProperty("postponed");
+    });
   });
 });
 

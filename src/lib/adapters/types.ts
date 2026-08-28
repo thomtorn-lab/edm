@@ -47,6 +47,18 @@ export interface RawCandidateEvent {
   priceFrom: number | null;
   genreHint: GenreSlug | null;
   genreConfidenceHint: ConfidenceLevel | null;
+  /**
+   * Explicit sold-out/cancelled signal from the source's OWN structured data
+   * (event lifecycle/status handling, 2026-08-28) — null means the source
+   * provides no reliable signal at all, never a guess/inference from prose
+   * or from disappearance. A non-null value can go either direction (a
+   * previous true can flip back to false), so a source correctly reversing
+   * itself — tickets back on sale, a cancellation retracted — is honored.
+   * See each adapter's own doc comment for exactly what it supports; most
+   * adapters set both to null.
+   */
+  soldOutHint: boolean | null;
+  cancelledHint: boolean | null;
 }
 
 export interface SourceAdapter {

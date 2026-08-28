@@ -42,6 +42,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     currency: null,
     soldOut: false,
     cancelled: false,
+    postponed: false,
     dateChanged: false,
     timeChanged: false,
     published: true,
@@ -171,20 +172,31 @@ describe("Event detail page — eyebrow + neutral H1 preserved (Round 19)", () =
   });
 });
 
-describe("Event detail page — public/internal status separation (event-status audit, DATE/TIME CHANGED are internal-only)", () => {
+describe("Event detail page — public/internal status separation (event lifecycle/status handling, 2026-08-28: dateChanged is now the public Rescheduled signal; timeChanged alone stays internal-only)", () => {
   afterEach(cleanup);
 
   it("shows no status text for a normal event", async () => {
     await renderPage(makeEvent());
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
     expect(screen.queryByText(/Sold out/i)).toBeNull();
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
+    expect(screen.queryByText(/Postponed/i)).toBeNull();
+  });
+
+  it("dateChanged alone renders the public Rescheduled status", async () => {
+    await renderPage(makeEvent({ dateChanged: true }));
+    expect(screen.getByText("Rescheduled")).toBeTruthy();
+  });
+
+  it("timeChanged alone renders no public status — internal same-day correction only", async () => {
+    await renderPage(makeEvent({ timeChanged: true }));
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
-  it("dateChanged + timeChanged together render no public status", async () => {
+  it("dateChanged + timeChanged together render only Rescheduled once", async () => {
     await renderPage(makeEvent({ dateChanged: true, timeChanged: true }));
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.getAllByText("Rescheduled")).toHaveLength(1);
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
@@ -198,18 +210,21 @@ describe("Event detail page — public/internal status separation (event-status 
     expect(screen.getByText("Sold out")).toBeTruthy();
   });
 
-  it("cancelled + internal dateChanged shows only CANCELLED", async () => {
-    await renderPage(makeEvent({ cancelled: true, dateChanged: true, timeChanged: true }));
-    expect(screen.getByText("Cancelled")).toBeTruthy();
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
-    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  it("postponed renders POSTPONED", async () => {
+    await renderPage(makeEvent({ postponed: true }));
+    expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("soldOut + internal dateChanged shows only SOLD OUT", async () => {
+  it("cancelled + dateChanged shows only CANCELLED — mutually exclusive, cancelled wins", async () => {
+    await renderPage(makeEvent({ cancelled: true, dateChanged: true, timeChanged: true }));
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
+  });
+
+  it("soldOut + dateChanged shows both SOLD OUT and RESCHEDULED", async () => {
     await renderPage(makeEvent({ soldOut: true, dateChanged: true, timeChanged: true }));
     expect(screen.getByText("Sold out")).toBeTruthy();
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
-    expect(screen.queryByText(/Time changed/i)).toBeNull();
+    expect(screen.getByText("Rescheduled")).toBeTruthy();
   });
 });
 

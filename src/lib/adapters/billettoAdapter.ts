@@ -153,13 +153,19 @@ export function genreFromBillettoCategorization(categorization: BillettoCategori
 }
 
 function isPubliclyAvailable(event: BillettoEvent): boolean {
-  // Billetto's own explicit publish state is the primary signal — anything
-  // other than "published" (draft, cancelled, or an unrecognized future
-  // state) is not a real public listing and must never be ingested.
+  // Billetto's own explicit publish state is the primary signal — "draft"
+  // (or any other unrecognized non-published, non-cancelled state) is not a
+  // real public listing and must never be ingested. "cancelled" is
+  // deliberately NOT excluded here (event lifecycle/status handling,
+  // 2026-08-28): an already-known event that Billetto explicitly marks
+  // cancelled must still flow through so mapBillettoEvent can propagate that
+  // as cancelledHint, rather than silently vanishing from sync output — see
+  // Section 2B ("cancelled" must never be treated as disappearance/deletion)
+  // and mapBillettoEvent's own cancelledHint mapping below.
   // `availability` (tickets currently on sale) is a secondary signal: false
   // on an otherwise-published event usually means sold out, not gone —
   // still a real event worth discovering — so only `state` gates inclusion.
-  if (event.state != null && event.state !== "published") return false;
+  if (event.state != null && event.state !== "published" && event.state !== "cancelled") return false;
   return true;
 }
 
@@ -254,6 +260,17 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
     priceFrom: mapPriceFrom(event.minimum_price),
     genreHint,
     genreConfidenceHint,
+    // `state` is Billetto's own explicit, reliable, always-checked publish
+    // status (event lifecycle/status handling, 2026-08-28) — "cancelled" is
+    // a genuine structured signal, not an inference, and a null/unset state
+    // (rare — most real records carry one) correctly yields "unknown" rather
+    // than a false negative.
+    cancelledHint: event.state == null ? null : event.state === "cancelled",
+    // `availability` (tickets currently on sale) is a real boolean field,
+    // not prose — false means sold out, true means on sale, null/undefined
+    // means Billetto didn't report it. Reflects reversals both ways (a
+    // previously sold-out show that opens back up is un-flagged).
+    soldOutHint: event.availability == null ? null : !event.availability,
   };
 }
 

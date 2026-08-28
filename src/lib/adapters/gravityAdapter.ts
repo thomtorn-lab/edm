@@ -185,6 +185,12 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
     priceFrom: null, // price is rendered client-side after a ticket-tier is picked — never present in the static HTML
     genreHint,
     genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
+    // The only "sold out" text present is a static FAQ accordion answer
+    // repeated verbatim on every event page (door-ticket policy), not a
+    // per-event status field (event lifecycle/status audit, 2026-08-28) —
+    // never guessed.
+    soldOutHint: null,
+    cancelledHint: null,
   };
 }
 

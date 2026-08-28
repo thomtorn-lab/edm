@@ -99,6 +99,7 @@ export interface EventRecord {
   currency: "DKK" | null;
   soldOut: boolean;
   cancelled: boolean;
+  postponed: boolean;
   dateChanged: boolean;
   timeChanged: boolean;
   published: boolean;

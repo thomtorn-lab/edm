@@ -43,6 +43,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     currency: null,
     soldOut: false,
     cancelled: false,
+    postponed: false,
     dateChanged: false,
     timeChanged: false,
     published: true,
@@ -281,34 +282,35 @@ describe("EventRow — three-level text hierarchy (Round 18: new secondary-stron
   });
 });
 
-describe("EventRow — public/internal status separation (event-status audit, DATE/TIME CHANGED are internal-only)", () => {
+describe("EventRow — public/internal status separation (event lifecycle/status handling, 2026-08-28: dateChanged is now the public Rescheduled signal; timeChanged alone stays internal-only)", () => {
   afterEach(cleanup);
 
   it("shows no status text for a normal event", () => {
     render(<EventRow event={makeEvent()} />);
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
     expect(screen.queryByText(/Sold out/i)).toBeNull();
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
-    expect(screen.queryByText(/Time changed/i)).toBeNull();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
+    expect(screen.queryByText(/Postponed/i)).toBeNull();
   });
 
-  it("dateChanged alone renders no public status", () => {
+  it("dateChanged alone renders the public Rescheduled status", () => {
     render(<EventRow event={makeEvent({ dateChanged: true })} />);
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.getByText("Rescheduled")).toBeTruthy();
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
     expect(screen.queryByText(/Sold out/i)).toBeNull();
   });
 
-  it("timeChanged alone renders no public status", () => {
+  it("timeChanged alone renders no public status — internal same-day correction only", () => {
     render(<EventRow event={makeEvent({ timeChanged: true })} />);
     expect(screen.queryByText(/Time changed/i)).toBeNull();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
     expect(screen.queryByText(/Sold out/i)).toBeNull();
   });
 
-  it("dateChanged + timeChanged together still render no public status", () => {
+  it("dateChanged + timeChanged together render only Rescheduled once, not a separate Time changed status", () => {
     render(<EventRow event={makeEvent({ dateChanged: true, timeChanged: true })} />);
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
+    expect(screen.getAllByText("Rescheduled")).toHaveLength(1);
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
@@ -322,18 +324,27 @@ describe("EventRow — public/internal status separation (event-status audit, DA
     expect(screen.getByText("Sold out")).toBeTruthy();
   });
 
-  it("cancelled + internal dateChanged shows only CANCELLED, not a second status", () => {
-    render(<EventRow event={makeEvent({ cancelled: true, dateChanged: true, timeChanged: true })} />);
-    expect(screen.getByText("Cancelled")).toBeTruthy();
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
-    expect(screen.queryByText(/Time changed/i)).toBeNull();
+  it("postponed renders POSTPONED", () => {
+    render(<EventRow event={makeEvent({ postponed: true })} />);
+    expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("soldOut + internal dateChanged shows only SOLD OUT, not a second status", () => {
+  it("cancelled + dateChanged shows only CANCELLED — mutually exclusive, cancelled wins", () => {
+    render(<EventRow event={makeEvent({ cancelled: true, dateChanged: true, timeChanged: true })} />);
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
+  });
+
+  it("cancelled + postponed shows only CANCELLED — mutually exclusive, cancelled wins", () => {
+    render(<EventRow event={makeEvent({ cancelled: true, postponed: true })} />);
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Postponed/i)).toBeNull();
+  });
+
+  it("soldOut + dateChanged shows both SOLD OUT and RESCHEDULED", () => {
     render(<EventRow event={makeEvent({ soldOut: true, dateChanged: true, timeChanged: true })} />);
     expect(screen.getByText("Sold out")).toBeTruthy();
-    expect(screen.queryByText(/Date changed/i)).toBeNull();
-    expect(screen.queryByText(/Time changed/i)).toBeNull();
+    expect(screen.getByText("Rescheduled")).toBeTruthy();
   });
 
   it("FREE is unaffected by internal dateChanged/timeChanged noise", () => {

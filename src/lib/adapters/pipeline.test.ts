@@ -21,6 +21,8 @@ function raw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
     priceFrom: 120,
     genreHint: "techno",
     genreConfidenceHint: "high",
+    soldOutHint: null,
+    cancelledHint: null,
     ...overrides,
   };
 }

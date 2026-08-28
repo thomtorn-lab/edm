@@ -178,16 +178,39 @@ describe("mapBillettoEvent", () => {
     expect(mapBillettoEvent(noCity)).toBeNull();
   });
 
-  it("rejects a non-published (cancelled/draft/unrecognized-state) event", () => {
-    const cancelled: BillettoEvent = { ...FIXTURES.infectedMushroom, state: "cancelled" };
-    expect(mapBillettoEvent(cancelled)).toBeNull();
+  it("rejects a draft/unrecognized-state event — not yet a real public listing", () => {
     const draft: BillettoEvent = { ...FIXTURES.infectedMushroom, state: "draft" };
     expect(mapBillettoEvent(draft)).toBeNull();
+    const unrecognized: BillettoEvent = { ...FIXTURES.infectedMushroom, state: "some_future_state" };
+    expect(mapBillettoEvent(unrecognized)).toBeNull();
   });
 
-  it("still includes a published-but-sold-out event — availability=false alone is not grounds for exclusion", () => {
+  it("still includes a published-but-sold-out event — availability=false alone is not grounds for exclusion — and sets soldOutHint true", () => {
     const soldOut: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: false };
-    expect(mapBillettoEvent(soldOut)).not.toBeNull();
+    const mapped = mapBillettoEvent(soldOut);
+    expect(mapped).not.toBeNull();
+    expect(mapped!.soldOutHint).toBe(true);
+  });
+
+  it("sets soldOutHint false when tickets are on sale, and null when Billetto doesn't report availability at all", () => {
+    const onSale: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: true };
+    expect(mapBillettoEvent(onSale)!.soldOutHint).toBe(false);
+    const unreported: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: null };
+    expect(mapBillettoEvent(unreported)!.soldOutHint).toBeNull();
+  });
+
+  it("REGRESSION (event lifecycle/status handling, 2026-08-28): includes — never silently drops — a cancelled event, with cancelledHint true, so an already-known event's cancellation can be propagated instead of the row just vanishing from sync output", () => {
+    const cancelled: BillettoEvent = { ...FIXTURES.infectedMushroom, state: "cancelled" };
+    const mapped = mapBillettoEvent(cancelled);
+    expect(mapped).not.toBeNull();
+    expect(mapped!.cancelledHint).toBe(true);
+  });
+
+  it("sets cancelledHint false for a normal published event, and null when Billetto doesn't report state at all", () => {
+    const published: BillettoEvent = { ...FIXTURES.infectedMushroom, state: "published" };
+    expect(mapBillettoEvent(published)!.cancelledHint).toBe(false);
+    const unreported: BillettoEvent = { ...FIXTURES.infectedMushroom, state: null };
+    expect(mapBillettoEvent(unreported)!.cancelledHint).toBeNull();
   });
 
   it("REGRESSION: rejects the real hardcore-punk moshpit event as electronic evidence — subcategory alone must never qualify it, and its title/description carry no deterministic electronic keyword either", () => {

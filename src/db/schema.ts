@@ -79,6 +79,16 @@ export const events = pgTable("events", {
   currency: text("currency"),
   soldOut: boolean("sold_out").notNull().default(false),
   cancelled: boolean("cancelled").notNull().default(false),
+  /**
+   * Explicitly postponed with no confirmed replacement date yet (event
+   * lifecycle/status handling, 2026-08-28) — distinct from cancelled (the
+   * event may still happen) and from dateChanged/rescheduled (no new date is
+   * known). No source currently signals this reliably; admin-set only via
+   * the same field-level override path as soldOut/cancelled. Cleared
+   * automatically once a genuine new date arrives via sync (see
+   * buildSyncPatch in lib/sync.ts).
+   */
+  postponed: boolean("postponed").notNull().default(false),
   dateChanged: boolean("date_changed").notNull().default(false),
   timeChanged: boolean("time_changed").notNull().default(false),
   published: boolean("published").notNull().default(true),

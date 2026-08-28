@@ -109,6 +109,7 @@ function makeEvent(startIso: string): EventWithVenue {
     currency: null,
     soldOut: false,
     cancelled: false,
+    postponed: false,
     dateChanged: false,
     timeChanged: false,
     published: true,

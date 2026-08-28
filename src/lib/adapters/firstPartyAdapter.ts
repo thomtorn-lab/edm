@@ -55,6 +55,8 @@ export function createFirstPartyAdapter(
             priceFrom: item.price_from ?? null,
             genreHint: null,
             genreConfidenceHint: null,
+            soldOutHint: null,
+            cancelledHint: null,
           });
         } catch {
           continue;

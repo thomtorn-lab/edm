@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { discoveryQueue, syncLocks } from "./schema";
 import type { RawCandidateEvent, SourceAdapter } from "@/lib/adapters/types";
 import type { Venue } from "@/lib/types";
+import type { EventWithVenue } from "@/lib/queries";
 
 /**
  * These tests exist because src-culture-box's advisory lock got stuck on a
@@ -116,6 +117,7 @@ vi.mock("./client", () => ({
 vi.mock("./writes", () => ({
   touchSourceSyncStats: vi.fn().mockResolvedValue(undefined),
   applySourceSyncPatch: vi.fn(),
+  applySyncHoldUnpublish: vi.fn(),
   createEvent: vi.fn(),
   insertDiscoveryItem: vi.fn().mockImplementation((item) =>
     Promise.resolve({
@@ -148,7 +150,7 @@ vi.mock("@/lib/discoveryNotification", () => ({
 const { acquireSyncLock, releaseSyncLock, runSourceSync } = await import("./sync");
 const { getAllEventsAdmin } = await import("@/lib/queries");
 const { getVenues } = await import("@/lib/queries");
-const { insertDiscoveryItem } = await import("./writes");
+const { insertDiscoveryItem, applySourceSyncPatch, applySyncHoldUnpublish } = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
@@ -172,6 +174,8 @@ const rawCandidate: RawCandidateEvent = {
   priceFrom: null,
   genreHint: null,
   genreConfidenceHint: null,
+  soldOutHint: null,
+  cancelledHint: null,
 };
 
 beforeEach(() => {
@@ -552,5 +556,91 @@ describe("Discovery Queue notification batching (safety correction — notificat
     expect(result.outcome).toBe("ok");
     expect(insertDiscoveryItem).not.toHaveBeenCalled();
     expect(notifyDiscoveryQueueInsertBatch).toHaveBeenCalledWith([]);
+  });
+});
+
+function existingCultureBoxEvent(): EventWithVenue {
+  return {
+    id: "e-already-known",
+    title: "Some Other Night",
+    slug: "some-other-night-e-already-known",
+    description: null,
+    artists: [],
+    startDatetime: "2026-09-05T22:00:00.000Z",
+    endDatetime: null,
+    timezone: "Europe/Copenhagen",
+    venueId: "v-culture-box",
+    primaryGenre: "techno",
+    subgenres: ["techno"],
+    genreConfidence: "high",
+    officialEventUrl: "https://culture-box.com/event/some-other-night",
+    ticketUrl: null,
+    facebookUrl: null,
+    residentAdvisorUrl: null,
+    otherSourceUrls: [],
+    imageUrl: null,
+    priceFrom: null,
+    currency: null,
+    soldOut: false,
+    cancelled: false,
+    postponed: false,
+    dateChanged: false,
+    timeChanged: false,
+    published: true,
+    manualOverride: false,
+    overriddenFields: [],
+    confidence: "high",
+    canonicalSourceId: "src-culture-box",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    lastSourceCheck: null,
+    lastChanged: null,
+    venue: {
+      id: "v-culture-box",
+      slug: "culture-box",
+      name: "Culture Box",
+      aliases: [],
+      address: "Kronprinsessegade 54A",
+      city: "Copenhagen",
+      postalCode: "1306",
+      websiteUrl: null,
+      description: "",
+      shortDescription: null,
+      venueProfile: null,
+    },
+  };
+}
+
+describe("Event lifecycle/status handling (2026-08-28) — source disappearance never implies cancellation", () => {
+  it("an existing published event this sync's candidates never mention is never touched — no write of any kind, cancelled included", async () => {
+    // A previously-known, currently-published event that this run's
+    // adapter output simply doesn't return (e.g. it already happened and
+    // fell off the venue's listing page, or a transient scrape gap) — the
+    // sync loop only ever visits events reachable via THIS run's own
+    // candidates (URL-linked or fuzzy-matched); an event absent from
+    // `candidates` entirely is structurally never looked up, so it can
+    // never be cancelled, unpublished, or otherwise modified by its mere
+    // absence from one run.
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([existingCultureBoxEvent()]);
+    // This run's own candidate is a completely unrelated new event —
+    // proves the existing row above is never even considered, not merely
+    // that its outcome happens to be "no change."
+    const adapter = fakeAdapter(() => Promise.resolve([rawCandidate]));
+
+    await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    expect(applySourceSyncPatch).not.toHaveBeenCalled();
+    expect(applySyncHoldUnpublish).not.toHaveBeenCalled();
+  });
+
+  it("zero candidates from the adapter (zero-event anomaly) never cancels or unpublishes any existing event — it's treated as a sync failure to investigate, not evidence of cancellation", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([existingCultureBoxEvent()]);
+    const adapter = fakeAdapter(() => Promise.resolve([]));
+
+    const result = await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    expect(result.outcome).toBe("zero_events");
+    expect(applySourceSyncPatch).not.toHaveBeenCalled();
+    expect(applySyncHoldUnpublish).not.toHaveBeenCalled();
   });
 });

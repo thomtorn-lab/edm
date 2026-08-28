@@ -1,0 +1,1 @@
+ALTER TABLE "events" ADD COLUMN "postponed" boolean DEFAULT false NOT NULL;

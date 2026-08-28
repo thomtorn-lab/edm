@@ -54,6 +54,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     currency: null,
     soldOut: false,
     cancelled: false,
+    postponed: false,
     dateChanged: false,
     timeChanged: false,
     published: true,
@@ -163,7 +164,7 @@ describe("EventManager — FREE (admin/manual-event work package, 2026-08-24)", 
     render(<EventManager events={[makeEvent({ priceFrom: null })]} venues={VENUES} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Free entry/ }));
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -205,7 +206,7 @@ describe("EventManager — FREE (admin/manual-event work package, 2026-08-24)", 
     render(<EventManager events={[makeEvent({ priceFrom: 0 })]} venues={VENUES} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("checkbox")); // was checked (priceFrom 0), now unchecking
+    fireEvent.click(screen.getByRole("checkbox", { name: /Free entry/ })); // was checked (priceFrom 0), now unchecking
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -220,12 +221,87 @@ describe("EventManager — FREE (admin/manual-event work package, 2026-08-24)", 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Ticket URL"), { target: { value: "https://billet.example.com/e/1" } });
-    fireEvent.click(screen.getByRole("checkbox")); // also mark Free — both fields set at once
+    fireEvent.click(screen.getByRole("checkbox", { name: /Free entry/ })); // also mark Free — both fields set at once
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
     expect(body.patch.ticketUrl).toBe("https://billet.example.com/e/1");
     expect(body.patch.priceFrom).toBe(0);
+  });
+});
+
+describe("EventManager — Sold out / Cancelled / Postponed (event lifecycle/status handling, 2026-08-28)", () => {
+  afterEach(cleanup);
+
+  it("sends soldOut in the patch only when toggled on", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sold out" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.soldOut).toBe(true);
+    expect(body.patch).not.toHaveProperty("cancelled");
+    expect(body.patch).not.toHaveProperty("postponed");
+  });
+
+  it("sends cancelled in the patch only when toggled on", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cancelled" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.cancelled).toBe(true);
+  });
+
+  it("sends postponed in the patch only when toggled on", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Postponed/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.postponed).toBe(true);
+  });
+
+  it("unchecking an already-true status sends false, not omission", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ cancelled: true })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cancelled" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.cancelled).toBe(false);
+  });
+
+  it("leaves the patch untouched (and doesn't submit) when no status checkbox is changed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    // No fields touched at all -> saveEdit's own empty-patch short-circuit,
+    // matching every other no-op-edit path already tested in this file.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -25,6 +25,7 @@ export const EDITABLE_EVENT_FIELDS = [
   "priceFrom",
   "soldOut",
   "cancelled",
+  "postponed",
   "dateChanged",
   "timeChanged",
   "published",

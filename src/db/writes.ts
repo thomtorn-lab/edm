@@ -183,6 +183,15 @@ interface NewEventInput {
   imageUrl: string | null;
   priceFrom: number | null;
   currency: "DKK" | null;
+  /**
+   * Explicit sold-out/cancelled state at creation time (event
+   * lifecycle/status handling, 2026-08-28) — callers pass the source's own
+   * hint (raw.soldOutHint/cancelledHint) when creating from a sync
+   * candidate, defaulting to false via `?? false` at the call site when the
+   * source gives no signal. Almost always false for a brand-new event.
+   */
+  soldOut: boolean;
+  cancelled: boolean;
   published: boolean;
   confidence: ConfidenceLevel;
   canonicalSourceId: string | null;
@@ -194,8 +203,10 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
     ...input,
     timezone: "Europe/Copenhagen",
     otherSourceUrls: [],
-    soldOut: false,
-    cancelled: false,
+    // postponed is never known at creation time — no source has evidence
+    // for it, and a brand-new event can't already be "postponed" (that
+    // requires a prior normal state); admin-only via applyAdminEventEdit.
+    postponed: false,
     dateChanged: false,
     timeChanged: false,
     manualOverride: false,
@@ -337,6 +348,12 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // price), never a guessed default.
       priceFrom: item.probableFree ? 0 : null,
       currency: item.probableFree ? "DKK" : null,
+      // Discovery Queue candidates carry no sold-out/cancelled signal (that
+      // schema predates and is out of scope for event lifecycle/status
+      // handling, 2026-08-28) — always false at publish time; an admin can
+      // set either afterward via the normal edit form if needed.
+      soldOut: false,
+      cancelled: false,
       published: true,
       confidence: item.overallConfidence as ConfidenceLevel,
       // Provenance is persisted immediately here (via createEvent's own

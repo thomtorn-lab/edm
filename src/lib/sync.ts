@@ -27,6 +27,9 @@ export interface SyncTargetEvent {
   imageUrl: string | null;
   primaryGenre: GenreSlug | null;
   overriddenFields: string[];
+  soldOut: boolean;
+  cancelled: boolean;
+  postponed: boolean;
 }
 
 export interface ResolvedCandidate {
@@ -105,6 +108,30 @@ export function buildSyncPatch(
   }
   if (dateChanged) patch.dateChanged = true;
   if (timeChanged) patch.timeChanged = true;
+
+  // Explicit sold-out/cancelled signals (event lifecycle/status handling,
+  // 2026-08-28) — only ever applied when the source actually reports one
+  // (raw.*Hint non-null; most sources always report null, so no patch is
+  // proposed for them at all). Unlike dateChanged/timeChanged, these are NOT
+  // a one-way ratchet: a hint can flip either direction, so a reversed
+  // cancellation or tickets coming back on sale is reflected correctly
+  // ("sold out -> available again").
+  if (raw.soldOutHint != null && raw.soldOutHint !== existing.soldOut) {
+    patch.soldOut = raw.soldOutHint;
+  }
+  if (raw.cancelledHint != null && raw.cancelledHint !== existing.cancelled) {
+    patch.cancelled = raw.cancelledHint;
+  }
+
+  // "postponed -> rescheduled": once a genuinely new date lands from the
+  // source for an event currently marked postponed (no confirmed date was
+  // known), that date IS the confirmed replacement — resolve postponed back
+  // to false in the same patch that applies it. Admin-set postponed status
+  // stays protected as usual (this patch, like every field here, still goes
+  // through stripOverriddenFields downstream — see db/writes.ts).
+  if (dateChanged && existing.postponed) {
+    patch.postponed = false;
+  }
 
   return { patch, dateChanged, timeChanged };
 }

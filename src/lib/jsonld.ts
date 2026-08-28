@@ -24,11 +24,18 @@ export function buildEventJsonLd(event: EventWithVenue, canonicalUrl: string) {
     name: event.title,
     startDate: event.startDatetime,
     endDate: event.endDatetime ?? undefined,
+    // Mirrors StatusBadge's own public-status precedence (event
+    // lifecycle/status handling, 2026-08-28): cancelled first, then
+    // postponed, then a confirmed reschedule (dateChanged only — a bare
+    // timeChanged is an internal same-day correction, not a reschedule
+    // worth structured data either).
     eventStatus: event.cancelled
       ? "https://schema.org/EventCancelled"
-      : event.dateChanged || event.timeChanged
-        ? "https://schema.org/EventRescheduled"
-        : "https://schema.org/EventScheduled",
+      : event.postponed
+        ? "https://schema.org/EventPostponed"
+        : event.dateChanged
+          ? "https://schema.org/EventRescheduled"
+          : "https://schema.org/EventScheduled",
     eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
     location: {
       "@type": "Place",

@@ -38,6 +38,7 @@ interface SeedEventInput {
   priceFrom?: number | null;
   soldOut?: boolean;
   cancelled?: boolean;
+  postponed?: boolean;
   dateChanged?: boolean;
   timeChanged?: boolean;
   confidence?: ConfidenceLevel;
@@ -73,6 +74,7 @@ function mkEvent(input: SeedEventInput): EventRecord {
     currency: input.priceFrom != null ? "DKK" : null,
     soldOut: input.soldOut ?? false,
     cancelled: input.cancelled ?? false,
+    postponed: input.postponed ?? false,
     dateChanged: input.dateChanged ?? false,
     timeChanged: input.timeChanged ?? false,
     published: input.published ?? true,

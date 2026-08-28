@@ -26,6 +26,7 @@ function event(overrides: Partial<EventRecord> = {}): EventRecord {
     currency: null,
     soldOut: false,
     cancelled: false,
+    postponed: false,
     dateChanged: false,
     timeChanged: false,
     published: true,

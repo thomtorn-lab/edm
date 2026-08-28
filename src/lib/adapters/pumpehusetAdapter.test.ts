@@ -164,6 +164,59 @@ describe("parsePumpehusetConcertsJson — real fetch_concerts fixture", () => {
   });
 });
 
+describe("parsePumpehusetConcertsJson — ticket_status lifecycle signal (event lifecycle/status handling, 2026-08-28)", () => {
+  const events = parsePumpehusetConcertsJson(CONCERTS_JSON);
+
+  it("does not flag soldOut/cancelled for a real 'Få tilbage' (few tickets left) concert — still purchasable, not sold out", () => {
+    const e = events.find((ev) => ev.officialEventUrl === "https://pumpehuset.dk/koncerter/mph-360-xp-guests/");
+    expect(e).toBeDefined();
+    expect(e!.soldOutHint).toBeNull();
+    expect(e!.cancelledHint).toBeNull();
+  });
+
+  it("does not flag soldOut/cancelled for a real 'Flyttet' (moved) concert — ambiguous on its own, left to the generic date-diff mechanism instead of guessed here", () => {
+    const e = events.find((ev) => ev.officialEventUrl === "https://pumpehuset.dk/koncerter/tonser/");
+    expect(e).toBeDefined();
+    expect(e!.soldOutHint).toBeNull();
+    expect(e!.cancelledHint).toBeNull();
+  });
+
+  it("every normally-on-sale concert in the fixture has null soldOut/cancelled hints — never guessed from an unrecognized status", () => {
+    for (const e of events) {
+      expect(e.soldOutHint).toBeNull();
+      expect(e.cancelledHint).toBeNull();
+    }
+  });
+
+  it("recognizes an explicit 'Udsolgt' (sold out) ticket_status", () => {
+    const json = JSON.stringify([
+      {
+        title: "Test Show",
+        link: "https://pumpehuset.dk/koncerter/test-show/",
+        genre: "Elektronisk",
+        ticket_status: "Udsolgt",
+      },
+    ]);
+    const [e] = parsePumpehusetConcertsJson(json);
+    expect(e.soldOutHint).toBe(true);
+    expect(e.cancelledHint).toBeNull();
+  });
+
+  it("recognizes an explicit 'Aflyst' (cancelled) ticket_status", () => {
+    const json = JSON.stringify([
+      {
+        title: "Test Show",
+        link: "https://pumpehuset.dk/koncerter/test-show/",
+        genre: "Elektronisk",
+        ticket_status: "Aflyst",
+      },
+    ]);
+    const [e] = parsePumpehusetConcertsJson(json);
+    expect(e.cancelledHint).toBe(true);
+    expect(e.soldOutHint).toBeNull();
+  });
+});
+
 describe("createPumpehusetAdapter", () => {
   it("posts the genre-filtered fetch_concerts action and resolves each candidate's startDatetime from its detail page", async () => {
     const fetchImpl = async (url: string | URL, init?: RequestInit) => {

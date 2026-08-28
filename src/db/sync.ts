@@ -266,6 +266,9 @@ async function runSourceSyncLocked(
           imageUrl: existing.imageUrl,
           primaryGenre: existing.primaryGenre,
           overriddenFields: existing.overriddenFields,
+          soldOut: existing.soldOut,
+          cancelled: existing.cancelled,
+          postponed: existing.postponed,
         };
         const { patch } = buildSyncPatch(
           raw,
@@ -367,6 +370,8 @@ async function runSourceSyncLocked(
             imageUrl: raw.imageUrl,
             priceFrom: raw.priceFrom,
             currency: raw.priceFrom != null ? "DKK" : null,
+            soldOut: raw.soldOutHint ?? false,
+            cancelled: raw.cancelledHint ?? false,
             published: true,
             confidence: result.genreConfidence,
             canonicalSourceId: sourceId,
