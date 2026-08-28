@@ -6,7 +6,7 @@ import { venueRowToRecord } from "./mappers";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { assessDuplicate } from "../lib/dedup";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
-import { notifyDiscoveryQueueInsert } from "../lib/discoveryNotification";
+import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import type { ConfidenceLevel, Venue } from "../lib/types";
 import type { GenreSlug } from "../lib/taxonomy";
 
@@ -501,24 +501,27 @@ export async function insertDiscoveryItem(item: {
   suspectedDuplicateOfEventId: string | null;
   missingFields: string[];
   overallConfidence: ConfidenceLevel;
-}) {
+}): Promise<DiscoveryQueueNotificationItem> {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
 
-  // The row is already committed above. notifyDiscoveryQueueInsert catches
-  // its own errors and never throws, but the try/catch here is belt-and-
-  // suspenders: this insert must succeed regardless of notification
-  // behavior, now or after any future change to that function. Awaited
-  // (rather than fire-and-forget) so the attempt completes before we
-  // return, since a detached promise can be killed mid-flight on
-  // serverless.
-  try {
-    await notifyDiscoveryQueueInsert(item);
-  } catch (err) {
-    console.error(
-      `insertDiscoveryItem: notification failed for ${item.id}`,
-      err instanceof Error ? err.message : err,
-    );
-  }
+  // Deliberately does NOT send the notification itself: a per-candidate
+  // sync loop must not serialize DB writes behind an external HTTP round-
+  // trip (see notifyDiscoveryQueueInsertBatch in lib/discoveryNotification —
+  // callers batch this echoed item and notify after all DB writes finish).
+  // Echoing back exactly what was inserted, rather than making each caller
+  // reconstruct the notification shape, keeps the two from drifting apart.
+  return {
+    id: item.id,
+    probableTitle: item.probableTitle,
+    probableStart: item.probableStart,
+    probableVenueName: item.probableVenueName,
+    sourceName: item.sourceName,
+    sourceUrl: item.sourceUrl,
+    predictedGenre: item.predictedGenre,
+    genreConfidence: item.genreConfidence,
+    overallConfidence: item.overallConfidence,
+    missingFields: item.missingFields,
+  };
 }
 
 /** Finds the strongest duplicate among currently published events, for merge suggestions. */

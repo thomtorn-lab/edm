@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createEvent, insertDiscoveryItem } from "@/db/writes";
+import { notifyDiscoveryQueueInsert } from "@/lib/discoveryNotification";
 import type { RawCandidateEvent } from "@/lib/adapters/types";
 
 /**
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
   }
 
   const queueId = `dq-${randomUUID().slice(0, 8)}`;
-  await insertDiscoveryItem({
+  const inserted = await insertDiscoveryItem({
     id: queueId,
     probableTitle: raw.title || "(untitled)",
     probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
@@ -143,6 +144,10 @@ export async function POST(request: NextRequest) {
     missingFields: result.missingFields,
     overallConfidence: result.decision === "review_queue" ? "medium" : "low",
   });
+
+  // Single item, not a batch — safe to await directly (never throws; see
+  // notifyDiscoveryQueueInsert).
+  await notifyDiscoveryQueueInsert(inserted);
 
   return NextResponse.json({ raw, result, persisted: { kind: "discovery", id: queueId } });
 }

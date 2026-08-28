@@ -14,6 +14,7 @@ import {
   updateSourceLinkUrl,
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
+import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
 import { isTrustedElectronicSource } from "@/lib/data/sources";
@@ -192,6 +193,11 @@ async function runSourceSyncLocked(
   let queuedForReview = 0;
   let unpublished = 0;
   const errors: string[] = [];
+  // Collected as rows are inserted, then notified in one bounded-concurrency
+  // batch after the loop finishes — never awaited per-candidate, so N new
+  // pending rows never become N sequential email round-trips inside the
+  // per-candidate DB write path (see notifyDiscoveryQueueInsertBatch).
+  const newlyQueuedItems: DiscoveryQueueNotificationItem[] = [];
 
   for (const raw of candidates) {
     try {
@@ -429,7 +435,7 @@ async function runSourceSyncLocked(
       }
 
       const queueId = `dq-${randomUUID().slice(0, 8)}`;
-      await insertDiscoveryItem({
+      const inserted = await insertDiscoveryItem({
         id: queueId,
         probableTitle: raw.title || "(untitled)",
         probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
@@ -451,6 +457,7 @@ async function runSourceSyncLocked(
         missingFields: result.missingFields,
         overallConfidence: result.decision === "review_queue" ? "medium" : "low",
       });
+      newlyQueuedItems.push(inserted);
       queuedForReview++;
     } catch (err) {
       // Drizzle wraps the real driver/Postgres error in `.cause` and puts
@@ -462,6 +469,17 @@ async function runSourceSyncLocked(
       const cause = err instanceof Error && err.cause instanceof Error ? ` (cause: ${err.cause.message})` : "";
       errors.push(`${raw.title || "(untitled)"}: ${err instanceof Error ? err.message : String(err)}${cause}`);
     }
+  }
+
+  // Fires only after every DB write above has finished — bounded-concurrency
+  // batch, not per-candidate — and is wrapped defensively so an unexpected
+  // failure here can never turn a successful sync into a failed one; the
+  // notification layer's own internals already never throw (see
+  // notifyDiscoveryQueueInsertBatch), this is belt-and-suspenders.
+  try {
+    await notifyDiscoveryQueueInsertBatch(newlyQueuedItems);
+  } catch (err) {
+    console.error(`[sync] "${sourceId}" discovery queue notification batch failed`, err instanceof Error ? err.message : err);
   }
 
   const writeSummary = summarizeWriteErrors(errors, candidates.length);

@@ -109,11 +109,28 @@ vi.mock("./client", () => ({
   },
 }));
 
+// Mirrors the real insertDiscoveryItem's echo-back return shape (see
+// db/writes.ts) — tests that only care about call count can ignore the
+// return value, but tests proving the notification batching wiring need a
+// realistic item flowing into notifyDiscoveryQueueInsertBatch.
 vi.mock("./writes", () => ({
   touchSourceSyncStats: vi.fn().mockResolvedValue(undefined),
   applySourceSyncPatch: vi.fn(),
   createEvent: vi.fn(),
-  insertDiscoveryItem: vi.fn(),
+  insertDiscoveryItem: vi.fn().mockImplementation((item) =>
+    Promise.resolve({
+      id: item.id,
+      probableTitle: item.probableTitle,
+      probableStart: item.probableStart,
+      probableVenueName: item.probableVenueName,
+      sourceName: item.sourceName,
+      sourceUrl: item.sourceUrl,
+      predictedGenre: item.predictedGenre,
+      genreConfidence: item.genreConfidence,
+      overallConfidence: item.overallConfidence,
+      missingFields: item.missingFields,
+    }),
+  ),
   recordSourceLink: vi.fn(),
   resolveDiscoveryItemAsPublished: vi.fn(),
   applyDiscoveryClassificationUpdate: vi.fn(),
@@ -124,10 +141,15 @@ vi.mock("@/lib/queries", () => ({
   getAllEventsAdmin: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("@/lib/discoveryNotification", () => ({
+  notifyDiscoveryQueueInsertBatch: vi.fn().mockResolvedValue(undefined),
+}));
+
 const { acquireSyncLock, releaseSyncLock, runSourceSync } = await import("./sync");
 const { getAllEventsAdmin } = await import("@/lib/queries");
 const { getVenues } = await import("@/lib/queries");
 const { insertDiscoveryItem } = await import("./writes");
+const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
   return { sourceId: "src-culture-box", fetchCandidates };
@@ -427,5 +449,108 @@ describe("trusted-electronic sources — a complete Hangaren/Culture Box candida
     expect(result.created).toBe(1);
     expect(result.queuedForReview).toBe(0);
     expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("Discovery Queue notification batching (safety correction — notifications must not serialize the per-candidate DB write path)", () => {
+  function unclearBilletto(id: string, title: string): RawCandidateEvent {
+    return {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title,
+      description: null,
+      artists: [],
+      officialEventUrl: `https://billetto.dk/e/${id}`,
+    };
+  }
+
+  it("batches all new rows into ONE notifyDiscoveryQueueInsertBatch call after the loop, not one call per candidate", async () => {
+    const candidates = [
+      unclearBilletto("a", "Melting Monday"),
+      unclearBilletto("b", "Tuesday Sessions"),
+      unclearBilletto("c", "Wednesday Warehouse"),
+    ];
+    const adapter = fakeAdapter(() => Promise.resolve(candidates));
+
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.queuedForReview).toBe(3);
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(3);
+    // The batching contract: exactly one call, carrying all three items —
+    // never three separate calls (that would just move the serialization
+    // problem rather than fix it).
+    expect(notifyDiscoveryQueueInsertBatch).toHaveBeenCalledTimes(1);
+    const [batchArg] = vi.mocked(notifyDiscoveryQueueInsertBatch).mock.calls[0];
+    expect(batchArg).toHaveLength(3);
+    expect(batchArg.map((i: { probableTitle: string }) => i.probableTitle)).toEqual([
+      "Melting Monday",
+      "Tuesday Sessions",
+      "Wednesday Warehouse",
+    ]);
+  });
+
+  it("calls notifyDiscoveryQueueInsertBatch only after every insertDiscoveryItem call has already resolved — never interleaved with the per-candidate DB path", async () => {
+    const callOrder: string[] = [];
+    vi.mocked(insertDiscoveryItem).mockImplementation((item) => {
+      callOrder.push(`insert:${item.id}`);
+      return Promise.resolve({
+        id: item.id,
+        probableTitle: item.probableTitle,
+        probableStart: item.probableStart,
+        probableVenueName: item.probableVenueName,
+        sourceName: item.sourceName,
+        sourceUrl: item.sourceUrl,
+        predictedGenre: item.predictedGenre,
+        genreConfidence: item.genreConfidence,
+        overallConfidence: item.overallConfidence,
+        missingFields: item.missingFields,
+      });
+    });
+    vi.mocked(notifyDiscoveryQueueInsertBatch).mockImplementation(async () => {
+      callOrder.push("notify-batch");
+    });
+
+    const candidates = [unclearBilletto("a", "Melting Monday"), unclearBilletto("b", "Tuesday Sessions")];
+    const adapter = fakeAdapter(() => Promise.resolve(candidates));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    // Both inserts must precede the single batch call — never interleaved.
+    expect(callOrder).toHaveLength(3);
+    expect(callOrder[callOrder.length - 1]).toBe("notify-batch");
+    expect(callOrder.slice(0, -1).every((c) => c.startsWith("insert:"))).toBe(true);
+  });
+
+  it("a notification batch failure never fails the sync — ingestion outcome is unaffected", async () => {
+    vi.mocked(notifyDiscoveryQueueInsertBatch).mockRejectedValueOnce(new Error("Resend outage"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const adapter = fakeAdapter(() => Promise.resolve([unclearBilletto("a", "Melting Monday")]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.queuedForReview).toBe(1);
+    expect(result.errors).toEqual([]);
+    errorSpy.mockRestore();
+  });
+
+  it("does not call notifyDiscoveryQueueInsertBatch at all when no new rows were queued", async () => {
+    const adapter = fakeAdapter(() =>
+      Promise.resolve([
+        {
+          ...rawCandidate,
+          sourceId: "src-billetto",
+          title: "SpeedDating i København 25-35 år",
+          description: null,
+          artists: [],
+          officialEventUrl: "https://billetto.dk/e/speeddating-i-kobenhavn-25-35-ar-billetter-1971692",
+        },
+      ]),
+    );
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(notifyDiscoveryQueueInsertBatch).toHaveBeenCalledWith([]);
   });
 });
