@@ -134,8 +134,13 @@ beforeEach(() => {
   MockIntersectionObserver.instances = [];
   vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
   Element.prototype.scrollIntoView = vi.fn();
+  window.scrollTo = vi.fn();
   stubScrollGeometry({ atBottom: false });
 });
+
+function setScrollY(value: number) {
+  Object.defineProperty(window, "scrollY", { value, configurable: true });
+}
 
 afterEach(() => {
   cleanup();
@@ -245,6 +250,87 @@ describe("EventExplorer month heading — reference purple token (Round 14: no n
     // use (Round 13) — not for ordinary text-link hover states elsewhere.
     expect(classes).toContain("text-accent");
     expect(classes).not.toContain("text-accent-strong");
+  });
+});
+
+describe("EventExplorer — Back to top", () => {
+  // The site header/H1 live above this component (see app/page.tsx) and are
+  // ordinary in-flow content, not sticky — only this component's own
+  // search/filter/month-nav bar is sticky. Clicking a later month (or any
+  // long scroll) can push the header/H1 fully out of view with no way back
+  // except a manual drag-scroll. This button is the fix; jsdom has no real
+  // layout so it can't assert pixel visibility of the header/H1 itself
+  // (verified separately in a real browser), but it can assert the button's
+  // own presence/absence and behavior precisely.
+  it("is not rendered at the initial, unscrolled top of the page", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    vi.runOnlyPendingTimers();
+
+    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
+  });
+
+  it("appears once the page is scrolled down past the threshold", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+  });
+
+  it("disappears again once scrolled back near the top", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+
+    setScrollY(0);
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
+  });
+
+  it("scrolls to the true top and clears a stale month hash when activated", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    vi.runOnlyPendingTimers();
+
+    // Simulate having navigated via month nav first (sets the hash).
+    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
+    expect(window.location.hash).toBe("#month-2026-09");
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+    expect(window.location.hash).toBe("");
+  });
+
+  it("is a real, keyboard-activatable button (not a div) with an accessible name", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    const button = screen.getByRole("button", { name: "Back to top" });
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+
+    fireEvent.click(button);
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+  });
+
+  it("works independent of month count — appears on scroll even with a single month", () => {
+    render(<EventExplorer events={[AUG_EVENT]} />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
   });
 });
 

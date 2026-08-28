@@ -73,6 +73,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   const [query, setQuery] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
   // "now" is deliberately read post-mount from the visitor's own clock rather
   // than at render time, so a statically prerendered page never bakes in a
@@ -222,6 +223,30 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
       isProgrammaticScrollRef.current = false;
     };
   }, [groups]);
+
+  // Both the month nav and long single-month listings can scroll the page
+  // far enough that the site header/H1 (ordinary in-flow content above this
+  // component — only the search/filter/month-nav bar here is sticky) is no
+  // longer visible, with no way back except dragging the scrollbar. Surfaced
+  // as its own small, independent scroll listener — deliberately not reusing
+  // the month-tracking effect above, which only runs once there are 2+
+  // months — so this works regardless of month count.
+  const BACK_TO_TOP_THRESHOLD = 480;
+  useEffect(() => {
+    function handleScroll() {
+      setShowBackToTop(window.scrollY > BACK_TO_TOP_THRESHOLD);
+    }
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  function handleBackToTop() {
+    window.scrollTo({ top: 0 }); // instant, matching handleMonthNavClick's own scroll (no smooth-scroll anywhere here, so no reduced-motion handling is needed)
+    if (window.location.hash) {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }
 
   const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
   const activeDrawerFilterCount = (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0);
@@ -517,6 +542,28 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
           ))
         )}
       </div>
+
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={handleBackToTop}
+          aria-label="Back to top"
+          className="fixed bottom-4 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-surface-1/95 text-text-secondary shadow-lg backdrop-blur transition-colors hover:text-text-primary sm:bottom-6 sm:right-6"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden="true"
+          >
+            <path d="M8 12.5V3.5M4 7.5 8 3.5l4 4" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
