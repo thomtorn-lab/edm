@@ -229,12 +229,6 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
         priceFrom: null,
         genreHint: descriptionGenre,
         genreConfidenceHint: descriptionGenre ? genreConfidenceForEvidence("official-description") : null,
-        // No sold-out/cancelled signal exists anywhere in this page's markup
-        // (event lifecycle/status audit, 2026-08-28) — the only "sold out"
-        // text present is generic door-policy boilerplate repeated on every
-        // event, not a per-event status field. Never guessed.
-        soldOutHint: null,
-        cancelledHint: null,
       });
     } catch {
       // A single malformed record must never take down the whole sync.

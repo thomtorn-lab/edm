@@ -96,8 +96,6 @@ function dariaCandidate(): RawCandidateEvent {
     priceFrom: null,
     genreHint: null,
     genreConfidenceHint: null,
-    soldOutHint: null,
-    cancelledHint: null,
   };
 }
 

@@ -185,18 +185,19 @@ describe("mapBillettoEvent", () => {
     expect(mapBillettoEvent(unrecognized)).toBeNull();
   });
 
-  it("still includes a published-but-sold-out event — availability=false alone is not grounds for exclusion — and sets soldOutHint true", () => {
-    const soldOut: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: false };
-    const mapped = mapBillettoEvent(soldOut);
+  it("still includes a published-but-availability=false event — that alone is not grounds for exclusion", () => {
+    const unavailable: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: false };
+    const mapped = mapBillettoEvent(unavailable);
     expect(mapped).not.toBeNull();
-    expect(mapped!.soldOutHint).toBe(true);
   });
 
-  it("sets soldOutHint false when tickets are on sale, and null when Billetto doesn't report availability at all", () => {
-    const onSale: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: true };
-    expect(mapBillettoEvent(onSale)!.soldOutHint).toBe(false);
-    const unreported: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: null };
-    expect(mapBillettoEvent(unreported)!.soldOutHint).toBeNull();
+  it("REGRESSION (re-audited 2026-08-28): soldOutHint is always null, regardless of `availability` — Billetto's own docs give no confirmed meaning for this field beyond a hedge, the one real captured example (a free/reservation event) is genuinely ambiguous, and a fresh live 100-event authenticated sample found no further corroborating example either way; a false-positive SOLD OUT label is worse than a missing one, so this is never inferred", () => {
+    const availabilityFalse: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: false };
+    expect(mapBillettoEvent(availabilityFalse)!.soldOutHint).toBeNull();
+    const availabilityTrue: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: true };
+    expect(mapBillettoEvent(availabilityTrue)!.soldOutHint).toBeNull();
+    const availabilityUnset: BillettoEvent = { ...FIXTURES.infectedMushroom, availability: null };
+    expect(mapBillettoEvent(availabilityUnset)!.soldOutHint).toBeNull();
   });
 
   it("REGRESSION (event lifecycle/status handling, 2026-08-28): includes — never silently drops — a cancelled event, with cancelledHint true, so an already-known event's cancellation can be propagated instead of the row just vanishing from sync output", () => {

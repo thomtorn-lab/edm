@@ -49,16 +49,17 @@ export interface RawCandidateEvent {
   genreConfidenceHint: ConfidenceLevel | null;
   /**
    * Explicit sold-out/cancelled signal from the source's OWN structured data
-   * (event lifecycle/status handling, 2026-08-28) — null means the source
-   * provides no reliable signal at all, never a guess/inference from prose
-   * or from disappearance. A non-null value can go either direction (a
-   * previous true can flip back to false), so a source correctly reversing
-   * itself — tickets back on sale, a cancellation retracted — is honored.
-   * See each adapter's own doc comment for exactly what it supports; most
-   * adapters set both to null.
+   * (event lifecycle/status handling, 2026-08-28) — optional and nullable:
+   * omitted or null both mean the source provides no reliable signal at all,
+   * never a guess/inference from prose or from disappearance. A non-null
+   * value can go either direction (a previous true can flip back to false),
+   * so a source correctly reversing itself — tickets back on sale, a
+   * cancellation retracted — is honored. Only Billetto and Pumpehuset
+   * currently set these (see their own doc comments for exactly what's
+   * trusted and why); every other adapter simply omits them.
    */
-  soldOutHint: boolean | null;
-  cancelledHint: boolean | null;
+  soldOutHint?: boolean | null;
+  cancelledHint?: boolean | null;
 }
 
 export interface SourceAdapter {

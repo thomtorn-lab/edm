@@ -251,10 +251,6 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     priceFrom,
     genreHint,
     genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
-    // No sold-out/cancelled signal found anywhere in this site's markup
-    // (event lifecycle/status audit, 2026-08-28) — never guessed.
-    soldOutHint: null,
-    cancelledHint: null,
   };
 }
 

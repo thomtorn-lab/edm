@@ -150,7 +150,7 @@ vi.mock("@/lib/discoveryNotification", () => ({
 const { acquireSyncLock, releaseSyncLock, runSourceSync } = await import("./sync");
 const { getAllEventsAdmin } = await import("@/lib/queries");
 const { getVenues } = await import("@/lib/queries");
-const { insertDiscoveryItem, applySourceSyncPatch, applySyncHoldUnpublish } = await import("./writes");
+const { insertDiscoveryItem, applySourceSyncPatch, applySyncHoldUnpublish, createEvent } = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
@@ -174,8 +174,6 @@ const rawCandidate: RawCandidateEvent = {
   priceFrom: null,
   genreHint: null,
   genreConfidenceHint: null,
-  soldOutHint: null,
-  cancelledHint: null,
 };
 
 beforeEach(() => {
@@ -417,6 +415,30 @@ describe("trusted-electronic sources — a complete Hangaren/Culture Box candida
     expect(insertDiscoveryItem).not.toHaveBeenCalled();
     const { resolveDiscoveryItemAsPublished } = await import("./writes");
     expect(resolveDiscoveryItemAsPublished).toHaveBeenCalledWith("dq-miley-pending");
+  });
+
+  it("event lifecycle/status handling, 2026-08-28 (Section 2): a candidate the source already reports cancelled is never auto-published as a brand-new event, even though it otherwise clears the same auto-publish bar as Miley Serious above — routes to the review queue instead, never a cancellation-specific path", async () => {
+    const cancelledFromBirth: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-hangaren",
+      title: "Miley Serious",
+      description: null,
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      officialEventUrl: "https://www.hangaren.dk/events/miley-serious-cancelled",
+      cancelledHint: true,
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce(hangarenVenues);
+
+    const adapter = fakeAdapter(() => Promise.resolve([cancelledFromBirth]));
+    const result = await runSourceSync("src-hangaren", "Hangaren", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(0);
+    expect(createEvent).not.toHaveBeenCalled();
+    // Falls through to the ordinary review-queue path, same as any other
+    // non-auto-publish candidate — not silently dropped, not auto-published.
+    expect(result.queuedForReview).toBe(1);
   });
 
   it("the same trusted-source auto-publish applies to Culture Box, not just Hangaren", async () => {

@@ -351,13 +351,21 @@ function resolveGenre(title: string, ...textPieces: (string | null)[]) {
  *     the same as any other source once the concert's own date value
  *     actually changes, without needing to interpret this ambiguous value.
  */
+// ticket_status is a small closed vocabulary, not free text (confirmed real
+// values: "Fri entré", "Normal", "Flyttet", "Få tilbage") — matched exactly
+// against the normalized value, not by substring, so this can never
+// misfire against an unrelated status that merely happens to contain these
+// words.
+function normalizeTicketStatus(status: string | undefined): string | null {
+  if (!status) return null;
+  const trimmed = status.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
 function soldOutHintFromTicketStatus(status: string | undefined): boolean | null {
-  if (status && /udsolgt/i.test(status)) return true;
-  return null;
+  return normalizeTicketStatus(status) === "udsolgt" ? true : null;
 }
 function cancelledHintFromTicketStatus(status: string | undefined): boolean | null {
-  if (status && /aflyst/i.test(status)) return true;
-  return null;
+  return normalizeTicketStatus(status) === "aflyst" ? true : null;
 }
 
 /**

@@ -209,12 +209,6 @@ export function parseAliceEventDetailHtml(html: string, entry: AliceProgramEntry
     priceFrom,
     genreHint,
     genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
-    // No sold-out/cancelled signal found anywhere in this site's markup
-    // (event lifecycle/status audit, 2026-08-28) — never guessed. Sampled
-    // fixtures only cover normally-on-sale events, so this isn't proof ALICE
-    // never renders one, just that nothing currently captured shows it.
-    soldOutHint: null,
-    cancelledHint: null,
   };
 }
 

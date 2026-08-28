@@ -254,10 +254,6 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
         priceFrom,
         genreHint,
         genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
-        // No sold-out/cancelled signal found anywhere in this site's markup
-        // (event lifecycle/status audit, 2026-08-28) — never guessed.
-        soldOutHint: null,
-        cancelledHint: null,
       });
     } catch {
       // A single malformed record must never take down the whole sync.

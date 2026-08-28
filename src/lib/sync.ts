@@ -123,13 +123,22 @@ export function buildSyncPatch(
     patch.cancelled = raw.cancelledHint;
   }
 
-  // "postponed -> rescheduled": once a genuinely new date lands from the
-  // source for an event currently marked postponed (no confirmed date was
-  // known), that date IS the confirmed replacement — resolve postponed back
-  // to false in the same patch that applies it. Admin-set postponed status
-  // stays protected as usual (this patch, like every field here, still goes
-  // through stripOverriddenFields downstream — see db/writes.ts).
-  if (dateChanged && existing.postponed) {
+  // "postponed -> rescheduled": once the source provides ANY concrete
+  // startDatetime value that actually differs from what's currently stored
+  // for an event marked postponed (no confirmed date was known), that value
+  // IS newly-confirmed information — clear postponed in the same patch that
+  // applies it. Deliberately keyed on `dateChanged || timeChanged` rather
+  // than `dateChanged` alone: for a postponed event, the currently-stored
+  // startDatetime is itself untrusted/stale (that's what postponed means),
+  // so even a same-calendar-day time correction is still new, real
+  // information about when the event will actually happen — the thing
+  // postponed says we don't have — not merely a minor door-time tweak on an
+  // otherwise-confirmed date the way it is for a NON-postponed event (where
+  // a bare time change deliberately stays internal-only, see StatusBadge).
+  // Admin-set postponed status stays protected as usual (this patch, like
+  // every field here, still goes through stripOverriddenFields downstream —
+  // see db/writes.ts).
+  if ((dateChanged || timeChanged) && existing.postponed) {
     patch.postponed = false;
   }
 

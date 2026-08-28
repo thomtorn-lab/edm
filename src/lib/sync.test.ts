@@ -31,8 +31,6 @@ function raw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
     priceFrom: null,
     genreHint: null,
     genreConfidenceHint: null,
-    soldOutHint: null,
-    cancelledHint: null,
     ...overrides,
   };
 }
@@ -217,6 +215,53 @@ describe("buildSyncPatch", () => {
       expect(patch).not.toHaveProperty("soldOut");
       expect(patch).not.toHaveProperty("cancelled");
     });
+
+    describe("admin override protection (Section 7 — reuses the existing stripOverriddenFields guarantee, exercised through the real buildSyncPatch -> stripOverriddenFields flow, exactly as applySourceSyncPatch calls it in production)", () => {
+      it("admin manually set soldOut=true; source now reports soldOutHint=false — the source's contradicting value is proposed by buildSyncPatch but stripped before it would ever reach the database", () => {
+        const existing = target({ soldOut: true, overriddenFields: ["soldOut"] });
+        const { patch } = buildSyncPatch(raw({ soldOutHint: false }), resolved, existing);
+        expect(patch.soldOut).toBe(false); // buildSyncPatch itself is override-agnostic by design (see the title test above)
+
+        const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+        expect(safePatch).not.toHaveProperty("soldOut"); // ...but the admin's true is never actually overwritten
+      });
+
+      it("admin manually set soldOut=false; source now reports soldOutHint=true — same protection in the other direction", () => {
+        const existing = target({ soldOut: false, overriddenFields: ["soldOut"] });
+        const { patch } = buildSyncPatch(raw({ soldOutHint: true }), resolved, existing);
+        expect(patch.soldOut).toBe(true);
+
+        const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+        expect(safePatch).not.toHaveProperty("soldOut");
+      });
+
+      it("admin manually set cancelled=true; source now reports cancelledHint=false — protected", () => {
+        const existing = target({ cancelled: true, overriddenFields: ["cancelled"] });
+        const { patch } = buildSyncPatch(raw({ cancelledHint: false }), resolved, existing);
+        expect(patch.cancelled).toBe(false);
+
+        const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+        expect(safePatch).not.toHaveProperty("cancelled");
+      });
+
+      it("admin manually set cancelled=false; source now reports cancelledHint=true — protected in the other direction", () => {
+        const existing = target({ cancelled: false, overriddenFields: ["cancelled"] });
+        const { patch } = buildSyncPatch(raw({ cancelledHint: true }), resolved, existing);
+        expect(patch.cancelled).toBe(true);
+
+        const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+        expect(safePatch).not.toHaveProperty("cancelled");
+      });
+
+      it("un-overridden fields in the same patch are unaffected — override protection is per-field, not all-or-nothing", () => {
+        const existing = target({ cancelled: true, overriddenFields: ["cancelled"] });
+        const { patch } = buildSyncPatch(raw({ cancelledHint: false, startDatetime: "2026-09-22T18:00:00.000Z" }), resolved, existing);
+
+        const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+        expect(safePatch).not.toHaveProperty("cancelled");
+        expect(safePatch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
+      });
+    });
   });
 
   describe("postponed -> rescheduled (event lifecycle/status handling, 2026-08-28)", () => {
@@ -239,11 +284,33 @@ describe("buildSyncPatch", () => {
       expect(patch).not.toHaveProperty("postponed");
     });
 
-    it("a mere time-only change (same night) does not clear postponed — only a genuine date change counts as a confirmed reschedule", () => {
+    it("a mere same-night time change ALSO clears postponed — for a postponed event the stored startDatetime is itself stale/untrusted, so any concrete time the source now provides is new information, not a minor door-time tweak (see buildSyncPatch's own comment for the non-postponed contrast)", () => {
       const laterDoors = raw({ startDatetime: "2026-08-15T20:00:00.000Z" }); // same date, +2h
-      const { patch, dateChanged } = buildSyncPatch(laterDoors, resolved, target({ postponed: true }));
+      const { patch, dateChanged, timeChanged } = buildSyncPatch(laterDoors, resolved, target({ postponed: true }));
       expect(dateChanged).toBe(false);
+      expect(timeChanged).toBe(true);
+      expect(patch.postponed).toBe(false);
+    });
+
+    it("does not touch postponed when startDatetime is provided but unchanged from what's already stored — no new information arrived", () => {
+      const { patch, dateChanged, timeChanged } = buildSyncPatch(raw(), resolved, target({ postponed: true }));
+      expect(dateChanged).toBe(false);
+      expect(timeChanged).toBe(false);
       expect(patch).not.toHaveProperty("postponed");
+    });
+
+    it("admin manually set postponed=true; a later sync brings a new date (which would normally clear postponed) — protected, same stripOverriddenFields flow as soldOut/cancelled above", () => {
+      const existing = target({ postponed: true, overriddenFields: ["postponed"] });
+      const newDate = raw({ startDatetime: "2026-09-22T18:00:00.000Z", endDatetime: "2026-09-23T04:00:00.000Z" });
+      const { patch } = buildSyncPatch(newDate, resolved, existing);
+      expect(patch.postponed).toBe(false); // buildSyncPatch still proposes clearing it...
+
+      const safePatch = stripOverriddenFields(patch, existing.overriddenFields);
+      expect(safePatch).not.toHaveProperty("postponed"); // ...but the admin's postponed=true is never actually overwritten
+      // The date itself is a DIFFERENT field (startDatetime, not in
+      // overriddenFields here) and is correctly still applied — override
+      // protection is per-field, not all-or-nothing.
+      expect(safePatch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
     });
   });
 });

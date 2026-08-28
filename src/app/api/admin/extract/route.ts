@@ -78,8 +78,6 @@ export async function POST(request: NextRequest) {
     priceFrom: null,
     genreHint: null,
     genreConfidenceHint: null,
-    soldOutHint: null,
-    cancelledHint: null,
   };
 
   const [venues, publishedEvents] = await Promise.all([getVenues(), getPublishedEventsWithVenue()]);

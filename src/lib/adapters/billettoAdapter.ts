@@ -162,9 +162,10 @@ function isPubliclyAvailable(event: BillettoEvent): boolean {
   // as cancelledHint, rather than silently vanishing from sync output — see
   // Section 2B ("cancelled" must never be treated as disappearance/deletion)
   // and mapBillettoEvent's own cancelledHint mapping below.
-  // `availability` (tickets currently on sale) is a secondary signal: false
-  // on an otherwise-published event usually means sold out, not gone —
-  // still a real event worth discovering — so only `state` gates inclusion.
+  // `availability` never gates inclusion either way — its real meaning is
+  // unconfirmed (re-audited 2026-08-28, see mapBillettoEvent's soldOutHint
+  // comment below), but a `false` value plainly does not mean "gone": the
+  // event is still `state: "published"` and worth discovering regardless.
   if (event.state != null && event.state !== "published" && event.state !== "cancelled") return false;
   return true;
 }
@@ -266,11 +267,23 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
     // (rare — most real records carry one) correctly yields "unknown" rather
     // than a false negative.
     cancelledHint: event.state == null ? null : event.state === "cancelled",
-    // `availability` (tickets currently on sale) is a real boolean field,
-    // not prose — false means sold out, true means on sale, null/undefined
-    // means Billetto didn't report it. Reflects reversals both ways (a
-    // previously sold-out show that opens back up is un-flagged).
-    soldOutHint: event.availability == null ? null : !event.availability,
+    // `availability` is deliberately NOT mapped to soldOutHint (re-audited
+    // 2026-08-28): Billetto's own documentation gives no confirmed meaning
+    // for this field beyond a hedge in the Phase 1 diagnosis notes
+    // (sources.ts's integrationNote), and the only real example captured —
+    // a free, reservation-based event (danskDanseteater, __fixtures__/
+    // billetto-events.json) — is genuinely ambiguous: `availability: false`
+    // there could mean sold-out reservations, a closed booking window, an
+    // already-passed date-instance within a multi-day listing, or something
+    // else entirely — not confirmed to specifically mean SOLD OUT. A fresh
+    // live 100-event authenticated sample (2026-08-28, subregion=Byen
+    // København) found zero further false-availability examples to
+    // corroborate either way. Billetto exposes no other, more specific
+    // ticket-status field. Per the product rule that a false-positive SOLD
+    // OUT label is worse than a missing one: soldOutHint stays null
+    // (unknown) for every Billetto event until a source-confirmed meaning
+    // for `availability` is found.
+    soldOutHint: null,
   };
 }
 

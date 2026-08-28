@@ -347,7 +347,19 @@ async function runSourceSyncLocked(
         continue;
       }
 
-      if (result.decision === "auto_publish" && result.resolvedVenueId && raw.startDatetime) {
+      // A candidate the source already reports as cancelled must never be
+      // auto-published as a brand-new event (event lifecycle/status
+      // handling, 2026-08-28, Section 2) — cancelledHint plays no part in
+      // `result.decision` above (genre/venue/date completeness alone decide
+      // that, exactly as before), so this is a deliberate, explicit guard,
+      // not a cancellation-driven bypass: it only ever routes a candidate
+      // AWAY from auto-publish, never toward it. Falls through to the same
+      // review_queue/hold handling below as any other non-auto-publish
+      // candidate — never a cancellation-specific path. An EXISTING
+      // canonical event this candidate matches (the `if (match)` branch
+      // above) is unaffected and still correctly updates to cancelled via
+      // buildSyncPatch.
+      if (result.decision === "auto_publish" && result.resolvedVenueId && raw.startDatetime && raw.cancelledHint !== true) {
         const eventId = `e-${randomUUID().slice(0, 8)}`;
         const slug = `${(raw.title || "event").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${eventId}`;
         await createEvent(
