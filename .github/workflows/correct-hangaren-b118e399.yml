@@ -1,0 +1,79 @@
+name: Correct Hangaren e-b118e399
+
+# One-time, deliberately temporary workflow (public-visibility QA follow-up,
+# 2026-08-29). Mirrors this repo's own established pattern for a one-time
+# Production data correction (see git history: the Culture Box room-pair
+# consolidation workflow, added, run once, then removed). Runs
+# src/db/hangarenEndDatetimeCorrection.ts, which corrects exactly one
+# event's endDatetime (a genuine upstream Hangaren source-data error — see
+# that script's own doc comment and hangarenAdapter.test.ts's "known
+# real-source anomaly" describe block for the full evidence trail) and
+# protects it from the next Hangaren sync via the existing manual-override
+# mechanism (src/lib/override.ts). Every fact about the target row is
+# re-verified immediately before any write, and the script aborts with no
+# write if Production state has changed since this was reviewed.
+#
+# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) or "apply" (writes)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: 'apply mode only: type CORRECT-HANGAREN-E-B118E399 to confirm the write.'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: correct-hangaren-b118e399
+  cancel-in-progress: false
+
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the correction script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run correction
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          node --env-file=.env.local --import tsx src/db/hangarenEndDatetimeCorrection.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
