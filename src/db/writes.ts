@@ -268,6 +268,19 @@ export async function updateVenueAddress(venueId: string, newAddress: string) {
 }
 
 /**
+ * Corrects a venue's postal code in place (venue coverage expansion
+ * follow-up, 2026-08-29) — a narrow sibling to updateVenueAddress for the
+ * case where an address correction changes the postal code too and the
+ * two writes need to stay independently auditable. Never touches address,
+ * name, or any other field.
+ */
+export async function updateVenuePostalCode(venueId: string, newPostalCode: string) {
+  const [existing] = await db.select().from(venues).where(eq(venues.id, venueId)).limit(1);
+  if (!existing) throw new Error(`Venue ${venueId} not found`);
+  await db.update(venues).set({ postalCode: newPostalCode, updatedAt: new Date() }).where(eq(venues.id, venueId));
+}
+
+/**
  * Sets a venue's editorial copy fields (venue coverage expansion, 2026-08-29)
  * — used when a venue is promoted to curated `/venues` and needs the
  * factual description/shortDescription/venueProfile the guide's own

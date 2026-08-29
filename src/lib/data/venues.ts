@@ -426,7 +426,7 @@ export const VENUES: Venue[] = [
     postalCode: "2720",
     websiteUrl: null,
     description:
-      "Performance-art venue, gallery and queer social space in the Meatpacking District, hosting occasional club and nightlife nights alongside its core art and theatre programme.",
+      "Performance-art venue, gallery and queer social space in Vanløse, hosting occasional club and nightlife nights alongside its core art and theatre programme.",
     shortDescription: null,
     venueProfile: null,
   },
