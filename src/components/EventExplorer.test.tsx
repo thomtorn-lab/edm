@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import EventExplorer from "./EventExplorer";
 import type { EventWithVenue } from "@/lib/queries";
 import type { GenreSlug } from "@/lib/taxonomy";
@@ -151,7 +152,7 @@ afterEach(() => {
 
 describe("EventExplorer month nav — active highlight", () => {
   it("tapping a month immediately highlights it, before any scroll/observer event resolves", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers(); // flush the post-mount setNow(new Date()) effect
 
     fireEvent.click(screen.getByRole("link", { name: "Sep" }));
@@ -161,7 +162,7 @@ describe("EventExplorer month nav — active highlight", () => {
   });
 
   it("stays pinned on the tapped month while stale observer data arrives mid-scroll (requirement 2)", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     fireEvent.click(screen.getByRole("link", { name: "Sep" }));
@@ -174,7 +175,7 @@ describe("EventExplorer month nav — active highlight", () => {
   });
 
   it("resumes scroll-spy once the scroll has settled (requirement 3)", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     fireEvent.click(screen.getByRole("link", { name: "Sep" }));
@@ -185,7 +186,7 @@ describe("EventExplorer month nav — active highlight", () => {
   });
 
   it("normal manual scrolling updates the active month with no nav tap involved (requirement 4)", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT, OCT_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT, OCT_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     latestObserver().trigger("2026-09");
@@ -198,7 +199,7 @@ describe("EventExplorer month nav — active highlight", () => {
   it("activates the LAST month once the page is scrolled to the bottom, independent of the observer band (root-cause fix, requirement 5)", () => {
     // Three months so the fix is provably not keyed to any specific name —
     // whichever group is last (October here, not September) must win.
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT, OCT_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT, OCT_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     // No observer entry ever claims October is intersecting — this is
@@ -211,7 +212,7 @@ describe("EventExplorer month nav — active highlight", () => {
   });
 
   it("does not special-case September: the same bottom-of-page fix applies when September is a middle month, not the last one", () => {
-    render(<EventExplorer events={[SEP_EVENT, OCT_EVENT]} />);
+    render(<EventExplorer events={[SEP_EVENT, OCT_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     stubScrollGeometry({ atBottom: true });
@@ -223,7 +224,7 @@ describe("EventExplorer month nav — active highlight", () => {
   });
 
   it("applies the accent/underline active-month treatment on desktop too, not just mobile", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     fireEvent.click(screen.getByRole("link", { name: "Sep" }));
@@ -241,7 +242,7 @@ describe("EventExplorer month nav — active highlight", () => {
 
 describe("EventExplorer month heading — reference purple token (Round 14: no numeric prefix)", () => {
   it("the month name itself (e.g. 'AUGUST') uses exactly the text-accent token, with no numeric prefix", () => {
-    render(<EventExplorer events={[AUG_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     expect(screen.queryByText(/^08 \/?$/)).toBeNull();
     expect(screen.queryByText(/08 \/ AUGUST/)).toBeNull();
@@ -264,14 +265,14 @@ describe("EventExplorer — Back to top", () => {
   // (verified separately in a real browser), but it can assert the button's
   // own presence/absence and behavior precisely.
   it("is not rendered at the initial, unscrolled top of the page", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
   });
 
   it("appears once the page is scrolled down past the threshold", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     setScrollY(600);
@@ -281,7 +282,7 @@ describe("EventExplorer — Back to top", () => {
   });
 
   it("disappears again once scrolled back near the top", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     setScrollY(600);
@@ -294,7 +295,7 @@ describe("EventExplorer — Back to top", () => {
   });
 
   it("scrolls to the true top and clears a stale month hash when activated", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     // Simulate having navigated via month nav first (sets the hash).
@@ -310,7 +311,7 @@ describe("EventExplorer — Back to top", () => {
   });
 
   it("is a real, keyboard-activatable button (not a div) with an accessible name", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     setScrollY(600);
@@ -325,7 +326,7 @@ describe("EventExplorer — Back to top", () => {
   });
 
   it("works independent of month count — appears on scroll even with a single month", () => {
-    render(<EventExplorer events={[AUG_EVENT]} />);
+    render(<EventExplorer events={[AUG_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
     setScrollY(600);
@@ -352,7 +353,7 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
   }
 
   it("stays neutral (not purple) with no active Genre/Venue filter", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const btn = filtersButton();
     expect(btn.textContent).toBe("Filters");
@@ -362,7 +363,7 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
   });
 
   it("turns purple (reusing the existing accent token) with only Genre active, and the Genre select itself picks up the same accent", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
     selectSecondOption(genreSelect);
@@ -382,7 +383,7 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
   });
 
   it("turns purple with only Venue active, and the Venue select itself picks up the same accent", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
     selectSecondOption(venueSelect);
@@ -397,7 +398,7 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
   });
 
   it("stays purple with both Genre and Venue active, reflecting the count, and both selects carry the accent", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
     const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
@@ -411,7 +412,7 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
   });
 
   it("returns to neutral once Genre and Venue are cleared back to 'all', including the selects themselves", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
     const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
@@ -442,7 +443,7 @@ describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", 
   // asserted below, and globalsCssCascade.test.ts for the CSS-side guard.
 
   it("Genre and Venue selects carry the accent-select hook that neutralizes the sitewide purple focus-visible ring", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
     const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
@@ -451,7 +452,7 @@ describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", 
   });
 
   it("both desktop and mobile search inputs carry the search-field hook and no longer turn purple on focus", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const searchInputs = screen.getAllByLabelText("Search events, artists or venues") as HTMLInputElement[];
     expect(searchInputs.length).toBeGreaterThanOrEqual(2);
@@ -462,7 +463,7 @@ describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", 
   });
 
   it("the desktop search input uses a neutral focus border instead of the purple accent", () => {
-    render(<EventExplorer events={[EVENT_A, EVENT_B]} />);
+    render(<EventExplorer events={[EVENT_A, EVENT_B]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     const desktopSearch = screen.getByPlaceholderText("Search events, artists, venues");
     expect(desktopSearch.className).toContain("focus:border-text-secondary");
@@ -475,7 +476,7 @@ describe("EventExplorer — mobile Filters sheet focus containment (QA follow-up
   const EVENT = makeEvent("2026-08-10T20:00:00.000Z");
 
   function openSheet() {
-    render(<EventExplorer events={[EVENT]} />);
+    render(<EventExplorer events={[EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     return screen.getByRole("dialog", { name: "Filters" });
@@ -521,5 +522,56 @@ describe("EventExplorer — mobile Filters sheet focus containment (QA follow-up
     fireEvent.click(screen.getByRole("button", { name: "Close filters" }));
     expect(screen.queryByRole("dialog", { name: "Filters" })).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe("EventExplorer — 'All venues' excludes a venue with only past events (Production bug, 2026-08-29)", () => {
+  afterEach(cleanup);
+
+  // Real-world shape of the bug: Nemoland's only event was months in the
+  // past by the time this was reported, but it kept appearing in "All
+  // venues". PAST_VENUE here plays that role; UPCOMING_VENUE is a normal
+  // venue that must keep appearing, proving this isn't just "the dropdown
+  // is empty" but a real exclude-only-this-one behavior.
+  const PAST_VENUE = { ...VENUE, id: "v-past-only", slug: "past-only-venue", name: "Past Only Venue" };
+  const UPCOMING_VENUE = { ...VENUE, id: "v-upcoming", slug: "upcoming-venue", name: "Upcoming Venue" };
+  const PAST_EVENT = { ...makeEvent("2026-01-10T20:00:00.000Z"), venueId: PAST_VENUE.id, venue: PAST_VENUE };
+  const UPCOMING_EVENT = { ...makeEvent("2026-08-10T20:00:00.000Z"), venueId: UPCOMING_VENUE.id, venue: UPCOMING_VENUE };
+
+  function venueDropdownOptions(): string[] {
+    const select = screen.getByLabelText("Venue", { exact: true }) as HTMLSelectElement;
+    return Array.from(select.querySelectorAll("option")).map((o) => o.textContent ?? "");
+  }
+
+  it("excludes the past-only venue from the actual server-rendered HTML — before any effect has ever run (the real SSR/first-paint bug)", () => {
+    // react-dom/server's renderToStaticMarkup never runs effects — this is
+    // the one way to genuinely observe what a real Next.js server render
+    // (and a client's first paint before hydration) produces, which
+    // React Testing Library's render() cannot: RTL wraps every render in
+    // act(), and act() flushes useEffect synchronously regardless of fake
+    // timers, so it can never observe the pre-effect state on its own.
+    // Before this fix, `now` started at `null` there and venueOptions fell
+    // back to the full unfiltered `events` list, so this exact assertion
+    // would have failed — Nemoland-like past-only venues were genuinely
+    // present in real Production HTML, not just a passing visual flash.
+    const html = renderToStaticMarkup(<EventExplorer events={[PAST_EVENT, UPCOMING_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    expect(html).toContain("Upcoming Venue");
+    expect(html).not.toContain("Past Only Venue");
+  });
+
+  it("still excludes the past-only venue after hydration settles (steady-state, unchanged from before)", () => {
+    render(<EventExplorer events={[PAST_EVENT, UPCOMING_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    const options = venueDropdownOptions();
+    expect(options).toContain("Upcoming Venue");
+    expect(options).not.toContain("Past Only Venue");
+  });
+
+  it("a venue with zero events at all is also absent from 'All venues'", () => {
+    render(<EventExplorer events={[UPCOMING_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    const options = venueDropdownOptions();
+    expect(options).toContain("Upcoming Venue");
+    expect(options).not.toContain("Past Only Venue");
   });
 });

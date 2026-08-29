@@ -65,8 +65,35 @@ function FilterIcon() {
   );
 }
 
-export default function EventExplorer({ events }: { events: EventWithVenue[] }) {
-  const [now, setNow] = useState<Date | null>(null);
+export default function EventExplorer({
+  events,
+  serverNow,
+}: {
+  events: EventWithVenue[];
+  /**
+   * ISO timestamp for "now" at the moment the server rendered this page
+   * (see app/page.tsx). Used as the initial value so the very first render
+   * — server-side, and the client's first paint before hydration's own
+   * effect below runs — already has a real, current clock to filter
+   * past/upcoming events by, rather than treating "now" as unknown.
+   *
+   * Bug fix (venue-dropdown/"All venues" follow-up): before this prop
+   * existed, `now` started as `null`, and every `now`-dependent value
+   * (`upcoming`, `venueOptions`, `filtered`) had its own "not yet known"
+   * fallback — for `venueOptions` specifically, that fallback was the full
+   * unfiltered `events` list, so a past-only venue (e.g. Nemoland, whose
+   * only event was months in the past) still appeared in "All venues" in
+   * every server-rendered response and every client's first paint, only
+   * disappearing once the mount effect below replaced `null` with a real
+   * Date. That's a genuine bug, not just a flash: it's what a search-engine
+   * crawler, a no-JS visitor, or anyone whose JS hasn't finished loading
+   * yet actually sees — this page is already fully dynamic (`revalidate =
+   * 0`), so there's no reason "now" can't be correct from the very first
+   * render, exactly like /venues/[slug]/page.tsx already does.
+   */
+  serverNow: string;
+}) {
+  const [now, setNow] = useState<Date>(() => new Date(serverNow));
   const [mode, setMode] = useState<Mode>("all");
   const [genre, setGenre] = useState<MainGenreSlug | "all">("all");
   const [venueId, setVenueId] = useState<string | "all">("all");
@@ -77,9 +104,11 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
-  // "now" is deliberately read post-mount from the visitor's own clock rather
-  // than at render time, so a statically prerendered page never bakes in a
-  // stale build-time date for Tonight/Weekend filtering.
+  // `now` starts from serverNow (always correct — see its doc comment
+  // above), then gets replaced with the visitor's own browser clock once
+  // mounted, so Tonight/Weekend filtering matches the visitor's actual
+  // clock rather than the server's, without ever passing through an
+  // "unknown" state in between.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date());
@@ -151,25 +180,22 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   }, [mobileFiltersOpen]);
 
   const upcoming = useMemo(() => {
-    if (!now) return [];
     return sortByStart(events.filter((e) => !isPastEvent(e, now)));
   }, [events, now]);
 
-  // Sourced from `upcoming` once `now` is hydrated, not the raw `events`
-  // prop — a venue with no upcoming event would otherwise appear as a
-  // selectable option that always yields a zero-result state (QA audit,
-  // 2026-08-29). Falls back to `events` while `now` is still null (SSR and
-  // the first client paint, before the hydration effect above runs) so the
-  // dropdown isn't briefly empty.
+  // Sourced from `upcoming`, never the raw `events` prop — a venue with no
+  // upcoming event would otherwise appear as a selectable option that
+  // always yields a zero-result state (QA audit, 2026-08-29). `now` is
+  // always a real Date (see the serverNow prop doc comment above), so this
+  // is correct from the very first render — no "not yet known" fallback
+  // that could leak a past-only venue into the dropdown.
   const venueOptions = useMemo(() => {
-    const source = now ? upcoming : events;
     const map = new Map<string, string>();
-    for (const e of source) map.set(e.venue.id, e.venue.name);
+    for (const e of upcoming) map.set(e.venue.id, e.venue.name);
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [now, upcoming, events]);
+  }, [upcoming]);
 
   const filtered = useMemo(() => {
-    if (!now) return [];
     return upcoming.filter((e) => {
       if (mode === "tonight" && !isTonight(e, now)) return false;
       if (mode === "weekend" && !isThisWeekend(e, now)) return false;
@@ -322,7 +348,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
     setQuery("");
   }
 
-  const countLabel = now ? `${filtered.length} event${filtered.length === 1 ? "" : "s"}` : "";
+  const countLabel = `${filtered.length} event${filtered.length === 1 ? "" : "s"}`;
 
   const genreSelect = (id: string) => (
     <select
@@ -588,7 +614,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
       )}
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        {!now ? null : groups.length === 0 ? (
+        {groups.length === 0 ? (
           <EmptyState
             title={mode === "all" ? "No events match" : MODE_EMPTY_TITLE[mode as Exclude<Mode, "all">]}
             hint={hasActiveFilters ? "Try a different date range or clear your filters." : "Check back soon — new events are added every week."}
