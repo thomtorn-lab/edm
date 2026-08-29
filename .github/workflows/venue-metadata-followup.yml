@@ -1,0 +1,73 @@
+name: Venue Metadata Followup
+
+# One-time, deliberately temporary workflow (venue coverage expansion
+# follow-up, 2026-08-29). Mirrors this repo's established one-time-
+# correction pattern: added, run once, then removed. Runs
+# src/db/venueMetadataFollowup.ts, which corrects exactly the postal_code
+# and description fields on BETA2300 and WAREHOUSE9 — no address, name,
+# curation, or other-venue change; no event/source write of any kind.
+#
+# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) or "apply" (writes)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: 'apply mode only: type VENUE-METADATA-FOLLOWUP-2026-08-29 to confirm the writes.'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: venue-metadata-followup
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run venue metadata followup
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          node --env-file=.env.local --import tsx src/db/venueMetadataFollowup.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
