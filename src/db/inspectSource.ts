@@ -3,6 +3,7 @@ import { getSourceHealth, describeSourceHealth } from "@/lib/sourceHealth";
 import { resolveVenue } from "@/lib/normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "@/lib/dedup";
 import { buildApiKeypairHeader } from "@/lib/adapters/billettoAdapter";
+import { isPastEvent } from "@/lib/datetime";
 import type { Source, Venue } from "@/lib/types";
 
 /**
@@ -16,7 +17,7 @@ import type { Source, Venue } from "@/lib/types";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|db-integrity> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -496,6 +497,84 @@ async function modeVenues(client: Client, args: Record<string, string | boolean>
 }
 
 /**
+ * Read-only venue x events cross-tab (venue-coverage-expansion audit,
+ * 2026-08-29): for every venue row, how many events reference it (published
+ * vs not) and how many of the published ones are currently upcoming
+ * (isPastEvent, same semantics the public site uses — src/lib/datetime.ts),
+ * plus up to 3 example upcoming event titles/dates. Generalizes the
+ * "which curated venues have upcoming events" question modeVenues alone
+ * can't answer (it only dumps venue rows, no event join), without a
+ * one-off script per audit.
+ */
+async function modeVenueEvents(client: Client, _args: Record<string, string | boolean>) {
+  section("Venues x events cross-tab");
+  const venueRows = await client.query(
+    "SELECT id, slug, name, address, website_url FROM venues ORDER BY name",
+  );
+  const now = new Date();
+  for (const v of venueRows.rows) {
+    const evRows = await client.query(
+      `SELECT id, title, start_datetime, end_datetime, published, canonical_source_id
+       FROM events WHERE venue_id = $1 ORDER BY start_datetime`,
+      [v.id],
+    );
+    const published = evRows.rows.filter((r) => r.published === true);
+    const upcoming = published.filter(
+      (r) => !isPastEvent({ startDatetime: new Date(r.start_datetime as string).toISOString(), endDatetime: r.end_datetime ? new Date(r.end_datetime as string).toISOString() : null }, now),
+    );
+    console.log(
+      JSON.stringify(
+        {
+          id: v.id,
+          slug: v.slug,
+          name: v.name,
+          address: v.address,
+          websiteUrl: v.website_url,
+          totalEvents: evRows.rows.length,
+          publishedEvents: published.length,
+          upcomingPublishedEvents: upcoming.length,
+          upcomingSourceIds: Array.from(new Set(upcoming.map((r) => r.canonical_source_id).filter(Boolean))),
+          upcomingExamples: upcoming.slice(0, 3).map((r) => ({ title: r.title, start: new Date(r.start_datetime as string).toISOString() })),
+        },
+        null,
+        2,
+      ),
+    );
+  }
+}
+
+/**
+ * Read-only discovery_queue probable_venue_name frequency, across ALL
+ * sources (unlike modeDiscoveryQueue, which requires --source) — for the
+ * venue-coverage-expansion audit's "repeated unresolved venue name" signal
+ * (a real, repeated probable_venue_name across many pending rows is
+ * stronger registry-addition evidence than a web listicle). Scoped to
+ * status='pending' only; never touches or previews queue-row publishing.
+ */
+async function modeDiscoveryQueueVenues(client: Client, args: Record<string, string | boolean>) {
+  const limit = typeof args.limit === "string" ? Number(args.limit) : 40;
+  section("discovery_queue: pending rows grouped by probable_venue_name (all sources)");
+  const grouped = await client.query(
+    `SELECT probable_venue_name, source_id, count(*)::int AS n
+     FROM discovery_queue
+     WHERE status = 'pending' AND probable_venue_name IS NOT NULL AND probable_venue_name != ''
+     GROUP BY probable_venue_name, source_id
+     ORDER BY n DESC
+     LIMIT $1`,
+    [limit],
+  );
+  console.log(JSON.stringify(grouped.rows, null, 2));
+
+  section("discovery_queue: pending rows with NO probable_venue_name (all sources)");
+  const nullCount = await client.query(
+    `SELECT source_id, count(*)::int AS n FROM discovery_queue
+     WHERE status = 'pending' AND (probable_venue_name IS NULL OR probable_venue_name = '')
+     GROUP BY source_id ORDER BY n DESC`,
+  );
+  console.log(JSON.stringify(nullCount.rows, null, 2));
+}
+
+/**
  * Read-only schema/row-count integrity check (migration verification
  * follow-up, 2026-08-24): confirms a migration's actual effect —
  * before/after — without any per-source scoping. Two independent things:
@@ -570,6 +649,8 @@ async function main() {
     "dedup-simulate": modeDedupSimulate,
     snapshot: modeSnapshot,
     venues: modeVenues,
+    "venue-events": modeVenueEvents,
+    "discovery-queue-venues": modeDiscoveryQueueVenues,
     "db-integrity": modeDbIntegrity,
   };
 
@@ -582,7 +663,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, db-integrity.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, db-integrity.`,
     );
     process.exit(1);
   }

@@ -41,6 +41,8 @@ on:
           - reachability
           - snapshot
           - venues
+          - venue-events
+          - discovery-queue-venues
           - db-integrity
       source_id:
         description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity with no source scoping; must match src-[a-z0-9-]+)'
