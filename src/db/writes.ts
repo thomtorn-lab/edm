@@ -268,6 +268,24 @@ export async function updateVenueAddress(venueId: string, newAddress: string) {
 }
 
 /**
+ * Sets a venue's editorial copy fields (venue coverage expansion, 2026-08-29)
+ * — used when a venue is promoted to curated `/venues` and needs the
+ * factual description/shortDescription/venueProfile the guide's own
+ * fallback chain (venue.shortDescription ?? venue.description,
+ * venue.venueProfile ?? venue.description) expects, matching the tone of
+ * every other curated entry. Never touches address/name/identity fields —
+ * that stays updateVenueAddress's job.
+ */
+export async function updateVenueProfile(
+  venueId: string,
+  patch: { description?: string; shortDescription?: string | null; venueProfile?: string | null },
+) {
+  const [existing] = await db.select().from(venues).where(eq(venues.id, venueId)).limit(1);
+  if (!existing) throw new Error(`Venue ${venueId} not found`);
+  await db.update(venues).set({ ...patch, updatedAt: new Date() }).where(eq(venues.id, venueId));
+}
+
+/**
  * Human-gated venue creation (source onboarding follow-up: closing the
  * runtime venue-creation gap — see DiscoveryQueue.tsx's "Create new venue"
  * action). All the actual decision logic — duplicate prevention via the same

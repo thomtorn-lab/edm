@@ -10,14 +10,14 @@ import type { Venue } from "../types";
  * fixture data for pure-logic unit tests (normalize.test.ts, dedup.test.ts)
  * that intentionally don't need a live database connection.
  *
- * The 21 venues flagged `curated: true` are the approved /venues highlights
- * list (Interaction + Venue Directory Quality package). This list is a
- * curated editorial highlight reel, NOT an event-ingestion whitelist —
- * Electronic CPH can still publish qualifying events at other Copenhagen
- * venues; being absent here never blocks that. Venues without the flag
- * (BETA2300, Gravity Copenhagen, KB18, Solvang Hallen, WAREHOUSE9) remain
- * real, event-linkable registry entries; they're simply not surfaced on the
- * curated /venues page.
+ * CURATED_VENUE_SLUGS (22 venues, as of the 2026-08-29 venue coverage
+ * expansion) is the approved /venues highlights list (Interaction + Venue
+ * Directory Quality package). This list is a curated editorial highlight
+ * reel, NOT an event-ingestion whitelist — Electronic CPH can still publish
+ * qualifying events at other Copenhagen venues; being absent here never
+ * blocks that. Venues not in that list (BETA2300, Gravity Copenhagen, KB18,
+ * Solvang Hallen, WAREHOUSE9) remain real, event-linkable registry entries;
+ * they're simply not surfaced on the curated /venues page.
  */
 export const VENUES: Venue[] = [
   {
@@ -374,10 +374,16 @@ export const VENUES: Venue[] = [
     id: "v-kb18",
     slug: "kb18",
     name: "KB18",
-    aliases: ["K.B.18", "KB 18"],
-    address: "Krusågade 18, 1719 København V",
+    aliases: ["K.B.18", "KB 18", "KB18 Kødboderne"],
+    // Corrected 2026-08-29 (venue coverage expansion audit): the previous
+    // "Krusågade 18, 1719 København V" address does not match any
+    // independently-verified source for this venue. Multiple real,
+    // independent listings (Songkick, Yelp, Facebook, TransArtists,
+    // Foursquare) consistently place KB18 at Kødboderne 18 in the
+    // Kødbyen/Vesterbro meatpacking district instead.
+    address: "Kødboderne 18, 1714 København V",
     city: "Copenhagen",
-    postalCode: "1719",
+    postalCode: "1714",
     websiteUrl: null,
     description:
       "Artist-run project space and club on Vesterbro known for experimental, minimal and left-field electronic programming.",
@@ -388,13 +394,18 @@ export const VENUES: Venue[] = [
     id: "v-beta2300",
     slug: "beta2300",
     name: "BETA2300",
-    aliases: ["Beta 2300", "Beta Nørrebro"],
-    address: "Nørrebrogade 200, 2200 København N",
+    aliases: ["Beta 2300", "Beta Amager"],
+    // Corrected 2026-08-29 (venue coverage expansion audit): the previous
+    // "Nørrebrogade 200, 2200 København N" address contradicted the venue's
+    // own name — "2300" is the Amager postal code, not Nørrebro's 2200.
+    // Independently verified (Yelp, Facebook, Instagram, setlist.fm) at
+    // Øresundsvej 6 in Amager instead.
+    address: "Øresundsvej 6, 2300 København S",
     city: "Copenhagen",
-    postalCode: "2200",
+    postalCode: "2300",
     websiteUrl: null,
     description:
-      "Nørrebro event space hosting techno and electro-leaning club nights and touring live acts.",
+      "Amager event space hosting techno and electro-leaning club nights and touring live acts.",
     shortDescription: null,
     venueProfile: null,
   },
@@ -403,12 +414,17 @@ export const VENUES: Venue[] = [
     slug: "warehouse9",
     name: "WAREHOUSE9",
     aliases: ["Warehouse 9", "WH9"],
-    address: "Underground pladsen 9, 1620 København V",
+    // Corrected 2026-08-29 (venue coverage expansion audit): the previous
+    // "Underground pladsen 9, 1620 København V" address does not match any
+    // independently-verified source. Real address (Wikipedia, Yelp,
+    // VisitCopenhagen) is Halmtorvet 11 C, in the Meatpacking District
+    // (Kødbyen) — the same cluster as H15, Jolene Bar and Baggen.
+    address: "Halmtorvet 11 C, 1700 København V",
     city: "Copenhagen",
-    postalCode: "1620",
+    postalCode: "1700",
     websiteUrl: null,
     description:
-      "Underground club under Dybbølsbro known for queer-friendly, bass-forward electronic nights.",
+      "Performance-art venue, gallery and queer social space in the Meatpacking District, hosting occasional club and nightlife nights alongside its core art and theatre programme.",
     shortDescription: null,
     venueProfile: null,
   },
@@ -425,6 +441,22 @@ export const VENUES: Venue[] = [
       "Small former sports hall in Frederiksberg repurposed for occasional house and melodic techno showcases.",
     shortDescription: null,
     venueProfile: null,
+  },
+  {
+    id: "v-ungdomshuset",
+    slug: "ungdomshuset",
+    name: "Ungdomshuset",
+    aliases: ["Ungdomshuset Dortheavej", "UHU"],
+    address: "Dortheavej 61, 2400 København NV",
+    city: "Copenhagen",
+    postalCode: "2400",
+    websiteUrl: null,
+    description:
+      "Volunteer-run social centre and underground music venue in Bispebjerg, hosting punk, hardcore and DIY concerts alongside recurring rave, electro and techno nights.",
+    shortDescription:
+      "Volunteer-run, autonomist social centre in Bispebjerg with a powerful soundsystem, hosting punk and hardcore alongside a recurring basement rave, electro and techno night.",
+    venueProfile:
+      "Ungdomshuset (\"the Youth House\") is a volunteer-run social centre in Bispebjerg, rebuilt at Dortheavej 61 in 2013 after its original Nørrebro building was demolished. It operates as a focal point for Copenhagen's autonomist and leftist scenes, with a strict door policy against racism, sexism, homophobia, violence and hard drugs, and bar prices kept deliberately low. Its programme spans punk, hardcore and DIY concerts alongside a powerful soundsystem built for club-style nights, including a recurring basement party mixing electro, techno and rave classics. Ungdomshuset's non-commercial, community-run model makes it one of Copenhagen's longest-standing alternatives to the city's mainstream club circuit.",
   },
 ];
 
@@ -457,6 +489,7 @@ export const CURATED_VENUE_SLUGS: readonly string[] = [
   "alice",
   "hotel-cecil",
   "halvandet",
+  "ungdomshuset",
 ];
 
 export function getVenueBySlug(slug: string): Venue | undefined {
