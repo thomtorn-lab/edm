@@ -1,7 +1,13 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, stripBareUrls } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, stripBareUrls, truncateAtBoundary } from "./htmlExtraction";
+
+// Re-exported for backward compatibility — this helper moved to the shared
+// htmlExtraction.ts (pre-launch QA audit, 2026-08-29) since ALICE, Gravity,
+// and Poolen needed the same mid-word-cut fix; hangarenAdapter.test.ts still
+// imports it from here.
+export { truncateAtBoundary };
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
 /**
@@ -59,25 +65,6 @@ function extractLineup(lines: string[]): { artists: string[]; lineupStartIdx: nu
     if (cleaned) artists.push(cleaned);
   }
   return { artists, lineupStartIdx: startIdx };
-}
-
-/**
- * Truncates bio text to at most `maxLength` characters without cutting off
- * mid-word or mid-sentence when a clean boundary exists near the limit —
- * editorial-description follow-up (real evidence: Hangaren bios routinely
- * got cut to a bare `.slice(0, 600)`, landing mid-word, e.g. "...She al",
- * "...no dou", "...Today, "). Prefers the last sentence-ending punctuation
- * within the limit; falls back to the last word boundary; only cuts
- * mid-word as a last resort (a single 600+-character run with no space,
- * which no real bio in this source has done).
- */
-export function truncateAtBoundary(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  const slice = text.slice(0, maxLength);
-  const lastSentenceEnd = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("! "), slice.lastIndexOf("? "));
-  if (lastSentenceEnd > maxLength * 0.5) return slice.slice(0, lastSentenceEnd + 1).trim();
-  const lastSpace = slice.lastIndexOf(" ");
-  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trim();
 }
 
 /** First RA (Resident Advisor) or Billetto ticket link found in the block, in that priority order. */

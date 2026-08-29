@@ -150,7 +150,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
                 rel="noopener noreferrer"
                 className="rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
               >
-                {link.label} ↗
+                {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
               </a>
             ))}
           </div>
@@ -161,10 +161,10 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Add to calendar</h2>
         <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
           <a href={googleCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
-            Google Calendar
+            Google Calendar<span className="sr-only"> (opens in a new tab)</span>
           </a>
           <a href={outlookCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
-            Outlook
+            Outlook<span className="sr-only"> (opens in a new tab)</span>
           </a>
           <a href={icsDataUrl(calendarInput)} download={icsFilename} className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Apple Calendar / ICS

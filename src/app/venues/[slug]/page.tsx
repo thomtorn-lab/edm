@@ -38,9 +38,11 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
         {venue.name}
       </h1>
       <p className="mt-2 text-sm text-text-secondary">{venue.address}</p>
-      <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">
-        {venue.venueProfile ?? venue.description}
-      </p>
+      {(venue.venueProfile || venue.description) && (
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">
+          {venue.venueProfile || venue.description}
+        </p>
+      )}
 
       {venue.websiteUrl && (
         <a
@@ -49,7 +51,7 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
           rel="noopener noreferrer"
           className="mt-4 inline-block rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary"
         >
-          Official website ↗
+          Official website ↗<span className="sr-only"> (opens in a new tab)</span>
         </a>
       )}
 

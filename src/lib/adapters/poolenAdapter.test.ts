@@ -103,6 +103,11 @@ describe("parsePoolenEventDetailHtml — electronic event with no specific-subge
     expect(event.genreHint).toBe("electronic-other");
     expect(event.genreConfidenceHint).toBe("high");
   });
+
+  it("does not publish a Danish-language description (QA audit, 2026-08-29: this real fixture's own bio is Danish) — genre classification is unaffected since it still runs on the raw text", () => {
+    expect(event.description).toBeNull();
+    expect(event.genreHint).toBe("electronic-other");
+  });
 });
 
 describe("parsePoolenEventDetailHtml — non-electronic event must not be published solely for being at Poolen", () => {

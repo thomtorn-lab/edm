@@ -75,3 +75,40 @@ export function stripBareUrls(text: string): string {
     .replace(/^[\s:;,–—-]+|[\s:;,–—-]+$/g, "")
     .trim();
 }
+
+/**
+ * Truncates text to at most `maxLength` characters without cutting off
+ * mid-word or mid-sentence when a clean boundary exists near the limit —
+ * originally built for Hangaren (real evidence: bios routinely got cut to a
+ * bare `.slice(0, 600)`, landing mid-word, e.g. "...She al", "...no dou",
+ * "...Today, "). Prefers the last sentence-ending punctuation within the
+ * limit; falls back to the last word boundary; only cuts mid-word as a last
+ * resort. Reused by any adapter that hard-truncates a long description
+ * (pre-launch QA audit, 2026-08-29, found the same bare-slice mid-word cut
+ * on ALICE, Gravity, and Poolen).
+ */
+export function truncateAtBoundary(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const slice = text.slice(0, maxLength);
+  const lastSentenceEnd = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("! "), slice.lastIndexOf("? "));
+  if (lastSentenceEnd > maxLength * 0.5) return slice.slice(0, lastSentenceEnd + 1).trim();
+  const lastSpace = slice.lastIndexOf(" ");
+  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trim();
+}
+
+// Product decision (editorial-description follow-up, Pumpehuset): a
+// Danish-only description is not shown publicly rather than displaying
+// non-English prose, since Electronic CPH is English-language with no
+// runtime translation. Narrow, deterministic signal, deliberately not real
+// language detection: the Danish alphabet's three extra letters essentially
+// never occur in English prose but occur routinely in real Danish sentences
+// of any length. A description that happens to avoid them entirely (e.g. a
+// short English quote) is treated as eligible to show — the narrowest
+// reliable rule, not a robust classifier. Reused by any adapter with the
+// same risk (pre-launch QA audit, 2026-08-29, found Poolen had no such
+// guard despite the same Danish-source-text risk as Pumpehuset).
+const DANISH_LETTERS = /[æøåÆØÅ]/;
+
+export function isLikelyDanish(text: string): boolean {
+  return DANISH_LETTERS.test(text);
+}

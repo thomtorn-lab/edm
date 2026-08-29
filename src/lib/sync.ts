@@ -207,6 +207,11 @@ export interface DiscoveryQueueTarget {
   /** Only ever proposes a patch for "pending" — a resolved item (published/ignored/merged) is frozen. */
   status: string;
   predictedGenre: GenreSlug | null;
+  /** Currently stored genre_confidence — needed separately from predictedGenre
+   *  so a confidence-only change (the genre word itself is unchanged, but its
+   *  evidence tier should now be lower/higher) can still be detected and
+   *  repatched; see buildDiscoveryQueueClassificationPatch. */
+  genreConfidence: ConfidenceLevel;
   overriddenFields: string[];
   /** Currently stored overall_confidence, so a refreshed classification can
    *  detect staleness (see buildDiscoveryQueueClassificationPatch) instead of
@@ -306,6 +311,14 @@ export function buildDiscoveryQueueClassificationPatch(
   const patch: DiscoveryQueueClassificationPatch = {};
   if (fresh.genre !== existing.predictedGenre) {
     patch.predictedGenre = fresh.genre;
+    patch.genreConfidence = fresh.genreConfidence;
+  } else if (fresh.genreConfidence !== existing.genreConfidence) {
+    // Genre word unchanged but its evidence tier isn't — a stale row must
+    // still pick up a corrected confidence (e.g. a text-fallback match
+    // downgraded from high to medium), not just a changed genre value
+    // (QA audit, 2026-08-29: several known Billetto false-positive rows
+    // stayed stuck at their pre-fix "high" confidence indefinitely because
+    // this branch previously only fired when the genre word itself moved).
     patch.genreConfidence = fresh.genreConfidence;
   }
 

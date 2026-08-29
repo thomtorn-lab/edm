@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -172,7 +172,7 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
     sourceId: GRAVITY_SOURCE_ID,
     sourceUrl,
     title,
-    description: description ? description.slice(0, 800) : null,
+    description: description ? truncateAtBoundary(description, 800) : null,
     artists: [artistName],
     startDatetime,
     endDatetime,

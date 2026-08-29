@@ -319,6 +319,7 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
   return {
     status: "pending",
     predictedGenre: null,
+    genreConfidence: "low",
     overriddenFields: [],
     overallConfidence: "low",
     missingFields: [],
@@ -356,7 +357,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
   it("second identical sync is idempotent — no patch when the fresh genre already matches what's stored", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
       { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" },
-      pendingDiscoveryTarget({ predictedGenre: "psytrance", overallConfidence: "medium" }),
+      pendingDiscoveryTarget({ predictedGenre: "psytrance", genreConfidence: "medium", overallConfidence: "medium" }),
     );
     expect(patch).toEqual({});
   });
@@ -476,6 +477,33 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).not.toHaveProperty("overallConfidence");
   });
 
+  it("confidence-only self-heal (QA audit, 2026-08-29): a resync that keeps the same genre word but resolves a lower confidence still repatches genreConfidence", () => {
+    // Real Production case: several Billetto rows were classified "house" via
+    // a bare-keyword text fallback and stored at genre_confidence "high"
+    // before that fallback was corrected to only ever produce "medium". The
+    // genre word itself ("house") never changes on resync — only its
+    // evidence tier should — so the old `fresh.genre !== existing.predictedGenre`
+    // gate alone could never catch this; the stale "high" label persisted
+    // indefinitely across every subsequent sync.
+    const staleConfidenceRow = pendingDiscoveryTarget({ predictedGenre: "house", genreConfidence: "high", overallConfidence: "low" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "house", genreConfidence: "medium", decision: "review_queue" },
+      staleConfidenceRow,
+    );
+    expect(patch.genreConfidence).toBe("medium");
+    expect(patch).not.toHaveProperty("predictedGenre");
+  });
+
+  it("confidence-only self-heal: no-op when the resolved confidence already matches (no spurious write)", () => {
+    const alreadyCorrectRow = pendingDiscoveryTarget({ predictedGenre: "house", genreConfidence: "medium", overallConfidence: "medium" });
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { genre: "house", genreConfidence: "medium", decision: "review_queue" },
+      alreadyCorrectRow,
+    );
+    expect(patch).not.toHaveProperty("genreConfidence");
+    expect(patch).not.toHaveProperty("predictedGenre");
+  });
+
   it("no candidate can move to auto_publish solely because of this fix — the patch never contains a status field, and overallConfidence has no 'high' branch to fall into", () => {
     // In real usage `fresh.decision` is always "review_queue" or "hold" (an
     // "auto_publish" candidate is created as an event directly by a different
@@ -507,7 +535,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
   // genre_confidence "medium", overall_confidence stuck at "low".
 
   it("recovers a stale overallConfidence on a plain re-sync even when predictedGenre is UNCHANGED", () => {
-    const staleRow = pendingDiscoveryTarget({ predictedGenre: "electronic-other", overallConfidence: "low" });
+    const staleRow = pendingDiscoveryTarget({ predictedGenre: "electronic-other", genreConfidence: "medium", overallConfidence: "low" });
     const patch = buildDiscoveryQueueClassificationPatch(
       { genre: "electronic-other", genreConfidence: "medium", decision: "review_queue" },
       staleRow,
@@ -522,7 +550,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     // condition (`fresh.genre !== existing.predictedGenre`) is false here,
     // so predictedGenre/genreConfidence must never appear in the patch,
     // regardless of what overallConfidence does.
-    const staleRow = pendingDiscoveryTarget({ predictedGenre: "techno", overallConfidence: "low" });
+    const staleRow = pendingDiscoveryTarget({ predictedGenre: "techno", genreConfidence: "medium", overallConfidence: "low" });
     const patch = buildDiscoveryQueueClassificationPatch(
       { genre: "techno", genreConfidence: "medium", decision: "review_queue" },
       staleRow,
@@ -542,7 +570,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
   });
 
   it("still a no-op when both predictedGenre and overallConfidence already correctly match — fully idempotent", () => {
-    const correctRow = pendingDiscoveryTarget({ predictedGenre: "techno", overallConfidence: "medium" });
+    const correctRow = pendingDiscoveryTarget({ predictedGenre: "techno", genreConfidence: "medium", overallConfidence: "medium" });
     const patch = buildDiscoveryQueueClassificationPatch(
       { genre: "techno", genreConfidence: "medium", decision: "review_queue" },
       correctRow,

@@ -85,7 +85,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
                   rel="noopener noreferrer"
                   className="text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
                 >
-                  {link.label} ↗
+                  {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
                 </a>
               ))}
               {/* FREE is an admission/status badge, not a link — rendered

@@ -373,7 +373,12 @@ async function runSourceSyncLocked(
             endDatetime: raw.endDatetime ? new Date(raw.endDatetime) : null,
             venueId: result.resolvedVenueId,
             primaryGenre: result.genre ?? "electronic-other",
-            subgenres: result.genre ? [result.genre] : [],
+            // Must stay in lockstep with primaryGenre's own fallback —
+            // displayGenres() (the only thing the public page renders) reads
+            // subgenres, never primaryGenre directly, so an empty array here
+            // for a genuinely-unresolved genre made the "Other" badge vanish
+            // entirely instead of showing (QA audit, 2026-08-29).
+            subgenres: result.genre ? [result.genre] : ["electronic-other"],
             genreConfidence: result.genreConfidence,
             officialEventUrl: raw.officialEventUrl,
             ticketUrl: raw.ticketUrl,
@@ -427,6 +432,7 @@ async function runSourceSyncLocked(
           {
             status: existingPending.status,
             predictedGenre: existingPending.predictedGenre as GenreSlug | null,
+            genreConfidence: existingPending.genreConfidence as ConfidenceLevel,
             overriddenFields: existingPending.overriddenFields,
             overallConfidence: existingPending.overallConfidence as ConfidenceLevel,
             missingFields: existingPending.missingFields,

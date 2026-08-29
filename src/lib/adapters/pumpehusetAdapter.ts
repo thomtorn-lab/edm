@@ -1,8 +1,14 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, isLikelyDanish } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
+
+// Re-exported for backward compatibility — this helper moved to the shared
+// htmlExtraction.ts (pre-launch QA audit, 2026-08-29) since Poolen needed
+// the same Danish-language guard; pumpehusetAdapter.test.ts still imports
+// it from here.
+export { isLikelyDanish };
 
 /**
  * Real first-party adapter for Pumpehuset (src-pumpehuset in
@@ -266,22 +272,6 @@ function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): { artis
 
 function sameArtists(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
-}
-
-// Product decision (editorial-description follow-up): Pumpehuset's own
-// body text is written in Danish, and Electronic CPH is English-language
-// with no runtime translation — a Danish-only description is not shown
-// publicly rather than displaying non-English prose. Narrow, deterministic
-// signal, deliberately not real language detection: the Danish alphabet's
-// three extra letters essentially never occur in English prose but occur
-// routinely in real Danish sentences of any length (verified against every
-// currently published Pumpehuset description). A description that happens
-// to avoid them entirely (e.g. a short English quote) is treated as
-// eligible to show — the narrowest reliable rule, not a robust classifier.
-const DANISH_LETTERS = /[æøåÆØÅ]/;
-
-export function isLikelyDanish(text: string): boolean {
-  return DANISH_LETTERS.test(text);
 }
 
 /** Falls back to parsing the title itself when no support_bands list is given (common for a single-headliner show). */

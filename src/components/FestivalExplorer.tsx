@@ -89,7 +89,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
                 rel="noopener noreferrer"
                 className="text-lg font-semibold text-text-primary hover:text-accent-strong"
               >
-                {festival.name} ↗
+                {festival.name} ↗<span className="sr-only"> (opens in a new tab)</span>
               </a>
             ) : (
               <span className="text-lg font-semibold text-text-primary">{festival.name}</span>

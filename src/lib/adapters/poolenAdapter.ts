@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, truncateAtBoundary, isLikelyDanish } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -182,7 +182,17 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
   const descIdx = leftColHtml.indexOf(descMarker);
   const descriptionHtml = descIdx === -1 ? "" : leftColHtml.slice(descIdx + descMarker.length);
   const fullDescriptionText = htmlToText(descriptionHtml).replace(/\n/g, " ").trim();
-  const description = fullDescriptionText ? fullDescriptionText.slice(0, 600) : null;
+  // English-language guard (pre-launch QA audit, 2026-08-29 — Poolen's own
+  // body text is sometimes Danish, and Electronic CPH is English-language
+  // with no runtime translation; same rule Pumpehuset already applies).
+  // Genre resolution below still uses the real, untruncated
+  // fullDescriptionText as evidence regardless — this only decides what's
+  // shown.
+  const description = !fullDescriptionText
+    ? null
+    : isLikelyDanish(fullDescriptionText)
+      ? null
+      : truncateAtBoundary(fullDescriptionText, 600);
 
   const rightColLines = htmlToText(rightColHtml).split("\n");
   const dateText = rightColLines[0] ?? entry.dateText ?? "";

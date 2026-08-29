@@ -335,7 +335,9 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       endDatetime: item.probableEnd,
       venueId: resolvedVenueId,
       primaryGenre: (item.predictedGenre as GenreSlug) ?? "electronic-other",
-      subgenres: item.predictedGenre ? [item.predictedGenre as GenreSlug] : [],
+      // Must stay in lockstep with primaryGenre's own fallback — see the
+      // matching comment in db/sync.ts's auto-publish branch.
+      subgenres: item.predictedGenre ? [item.predictedGenre as GenreSlug] : ["electronic-other"],
       genreConfidence: item.genreConfidence as ConfidenceLevel,
       officialEventUrl: item.sourceUrl,
       ticketUrl: item.probableTicketUrl,

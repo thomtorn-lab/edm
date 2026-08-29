@@ -16,6 +16,11 @@ describe("deterministicGenreFromText", () => {
     expect(deterministicGenreFromText("A night of psytrance")).toBe("psytrance");
   });
 
+  it("matches compound forms with no space (QA audit, 2026-08-29: the real ETNICA 30 Years event text)", () => {
+    expect(deterministicGenreFromText("Copenhagen's most authentic psytrancefest")).toBe("psytrance");
+    expect(deterministicGenreFromText("reviving the electric atmosphere of the 90s/00s psytrancescene")).toBe("psytrance");
+  });
+
   it("does not false-positive on unrelated words containing 'psy'", () => {
     expect(deterministicGenreFromText("A talk on psychology and psychedelic art")).toBeNull();
     expect(deterministicGenreFromText("Psycho Killer live")).toBeNull();

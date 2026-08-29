@@ -66,8 +66,12 @@ export default function AddToCalendar({
         }}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={compact ? label : undefined}
-        title={compact ? label : undefined}
+        // Always set, not just when compact: the visible label span is also
+        // hidden below the `sm` breakpoint in the non-compact case (`hidden
+        // sm:inline`), which left the button with no accessible name at all
+        // on mobile before this fix (QA audit, 2026-08-29).
+        aria-label={label}
+        title={label}
         className="inline-flex min-h-[2.25rem] items-center gap-1.5 rounded border border-border-strong px-2.5 py-1 text-[11px] font-medium text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary"
       >
         <CalendarIcon />
@@ -97,7 +101,7 @@ export default function AddToCalendar({
               onClick={() => setOpen(false)}
               className="block rounded px-3 py-2.5 text-sm text-text-primary hover:bg-surface-3"
             >
-              Google Calendar
+              Google Calendar<span className="sr-only"> (opens in a new tab)</span>
             </a>
             <a
               role="menuitem"
@@ -107,7 +111,7 @@ export default function AddToCalendar({
               onClick={() => setOpen(false)}
               className="block rounded px-3 py-2.5 text-sm text-text-primary hover:bg-surface-3"
             >
-              Outlook
+              Outlook<span className="sr-only"> (opens in a new tab)</span>
             </a>
             <a
               role="menuitem"

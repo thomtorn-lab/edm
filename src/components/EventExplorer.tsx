@@ -93,16 +93,36 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
     };
   }, [mobileFiltersOpen]);
 
-  const venueOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const e of events) map.set(e.venue.id, e.venue.name);
-    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [events]);
+  // Escape closes the mobile filters sheet, matching the standard modal
+  // convention (and AddToCalendar's own dropdown, which already did this) —
+  // previously the only way to dismiss it was tapping the close button or
+  // the overlay (QA audit, 2026-08-29).
+  useEffect(() => {
+    if (!mobileFiltersOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileFiltersOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileFiltersOpen]);
 
   const upcoming = useMemo(() => {
     if (!now) return [];
     return sortByStart(events.filter((e) => !isPastEvent(e, now)));
   }, [events, now]);
+
+  // Sourced from `upcoming` once `now` is hydrated, not the raw `events`
+  // prop — a venue with no upcoming event would otherwise appear as a
+  // selectable option that always yields a zero-result state (QA audit,
+  // 2026-08-29). Falls back to `events` while `now` is still null (SSR and
+  // the first client paint, before the hydration effect above runs) so the
+  // dropdown isn't briefly empty.
+  const venueOptions = useMemo(() => {
+    const source = now ? upcoming : events;
+    const map = new Map<string, string>();
+    for (const e of source) map.set(e.venue.id, e.venue.name);
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [now, upcoming, events]);
 
   const filtered = useMemo(() => {
     if (!now) return [];

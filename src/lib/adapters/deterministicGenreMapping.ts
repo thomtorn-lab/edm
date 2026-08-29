@@ -17,7 +17,14 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bprogressive\s?house\b/i, "progressive-house"],
   [/\bafro\s?house\b/i, "afro-house"],
   [/\bhouse\b/i, "house"],
-  [/\bpsytrance\b/i, "psytrance"],
+  // No trailing \b: a real published event ("Origin Of Trance - 30 Years of
+  // ETNICA") described itself as "psytrancefest"/"psytrancescene" — compound
+  // forms with no space, which \bpsytrance\b previously missed (no word
+  // boundary between "trance" and "fest"/"scene"), silently falling through
+  // to the broader bare-"trance" match instead (QA audit, 2026-08-29). The
+  // leading \b alone is still enough to avoid matching "psytrance" as a
+  // substring of an unrelated longer word — there is no real such word.
+  [/\bpsytrance/i, "psytrance"],
   [/\bpsy\b/i, "psytrance"],
   // Excludes "trance-inducing"/"trance-like"/"trance-inspired" and similar
   // hyphenated adjectival uses, and "trance state"/"trance-like state" —
@@ -88,7 +95,9 @@ export function deterministicGenreFromText(text: string): GenreSlug | null {
  */
 const GENRE_REFINEMENTS: Partial<Record<GenreSlug, [RegExp, GenreSlug][]>> = {
   trance: [
-    [/\bpsytrance\b/i, "psytrance"],
+    // No trailing \b: see the matching comment on this same pattern in
+    // KEYWORD_MAP above (compound forms like "psytrancefest").
+    [/\bpsytrance/i, "psytrance"],
     [/\bpsy\b/i, "psytrance"],
   ],
   techno: [

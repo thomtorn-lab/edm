@@ -9,11 +9,22 @@ import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
  * shows the same getSourceHealth verdicts for on-demand inspection, this
  * script is the proactive/automated half.
  *
- * Deliberately scoped to only the sources that are actually automated in
- * Production today: Hangaren, Culture Box, and (since its Production merge)
- * Poolen. Only ever reads the `sources` table; never writes anything.
+ * Scoped to every source with a real, automated (cron-synced) adapter in
+ * Production today. Only ever reads the `sources` table; never writes
+ * anything. Pre-launch QA audit (2026-08-29) found ALICE, Gravity,
+ * Pumpehuset, and Billetto had gone live with automated syncs but were never
+ * added here, so a silently-broken selector on any of them would go
+ * completely unalerted.
  */
-const MONITORED_SOURCE_IDS = ["src-hangaren", "src-culture-box", "src-poolen"];
+const MONITORED_SOURCE_IDS = [
+  "src-hangaren",
+  "src-culture-box",
+  "src-poolen",
+  "src-pumpehuset",
+  "src-alice",
+  "src-billetto",
+  "src-gravity",
+];
 
 async function main() {
   const now = new Date();
