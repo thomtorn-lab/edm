@@ -468,3 +468,58 @@ describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", 
     expect(desktopSearch.className).toContain("focus:border-text-secondary");
   });
 });
+
+describe("EventExplorer — mobile Filters sheet focus containment (QA follow-up, 2026-08-29)", () => {
+  afterEach(cleanup);
+
+  const EVENT = makeEvent("2026-08-10T20:00:00.000Z");
+
+  function openSheet() {
+    render(<EventExplorer events={[EVENT]} />);
+    vi.runOnlyPendingTimers();
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    return screen.getByRole("dialog", { name: "Filters" });
+  }
+
+  it("moves focus into the sheet on open, to its first focusable control", () => {
+    openSheet();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Close filters");
+  });
+
+  it("Tab from the last focusable control wraps back to the first, never escaping into the page behind the sheet", () => {
+    const dialog = openSheet();
+    const showButton = screen.getByRole("button", { name: /^Show/ });
+    showButton.focus();
+    expect(document.activeElement).toBe(showButton);
+
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Close filters");
+  });
+
+  it("Shift+Tab from the first focusable control wraps to the last, never escaping into the page behind the sheet", () => {
+    const dialog = openSheet();
+    const closeButton = screen.getByRole("button", { name: "Close filters" });
+    expect(document.activeElement).toBe(closeButton);
+
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Show/ }));
+  });
+
+  it("restores focus to the Filters trigger button after Escape closes the sheet", () => {
+    const dialog = openSheet();
+    const trigger = screen.getByRole("button", { name: /^Filters/ });
+    expect(document.activeElement).not.toBe(trigger);
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Filters" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("restores focus to the Filters trigger button after the close button dismisses the sheet", () => {
+    openSheet();
+    const trigger = screen.getByRole("button", { name: /^Filters/ });
+    fireEvent.click(screen.getByRole("button", { name: "Close filters" }));
+    expect(screen.queryByRole("dialog", { name: "Filters" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+});

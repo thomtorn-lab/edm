@@ -110,6 +110,67 @@ describe("parsePoolenEventDetailHtml — electronic event with no specific-subge
   });
 });
 
+describe("parsePoolenEventDetailHtml — ticket-status badge line must not be misread as the date (QA follow-up, 2026-08-29)", () => {
+  // Real Production evidence: the date parser received the literal strings
+  // "Få tilbage" and "Aflyst" for real events (Vercel runtime logs), because
+  // the prior code blindly trusted the FIRST line of the right column to
+  // always be the date. This fixture reproduces that exact shape using the
+  // real right-column markup (the "lowercase text__h3 as-typed pb-6" div
+  // that ELECTRONIC_HTML's own real date lives in, confirmed against that
+  // fixture) with one extra status-badge div of that same class inserted
+  // immediately before the real date div — the real reported strings, in
+  // the real reported position, not a fabricated selector.
+  function withStatusBadge(status: string): string {
+    return ELECTRONIC_HTML.replace(
+      '<div class="lowercase text__h3 as-typed pb-6">',
+      `<div class="lowercase text__h3 as-typed pb-6">${status}</div><div class="lowercase text__h3 as-typed pb-6">`,
+    );
+  }
+
+  const entry: PoolenProgramEntry = {
+    title: "Test Artist",
+    detailUrl: "https://poolen.dk/da/koncerter/test-artist/",
+    ticketUrl: null,
+    imageUrl: null,
+    dateText: null,
+  };
+
+  it('"Aflyst" before the date line is recognized as cancelledHint, and the real date is still found (not thrown as unparseable)', () => {
+    const event = parsePoolenEventDetailHtml(withStatusBadge("Aflyst"), entry);
+    expect(event.cancelledHint).toBe(true);
+    expect(event.soldOutHint).toBeNull();
+    expect(event.startDatetime).toBeTruthy();
+  });
+
+  it('"Få tilbage" (few left) before the date line is recognized but carries NO sold-out hint — the same conservative rule Pumpehuset already applies', () => {
+    const event = parsePoolenEventDetailHtml(withStatusBadge("Få tilbage"), entry);
+    expect(event.soldOutHint).toBeNull();
+    expect(event.cancelledHint).toBeNull();
+    expect(event.startDatetime).toBeTruthy();
+  });
+
+  it('"Udsolgt" (sold out) before the date line is recognized as soldOutHint', () => {
+    const event = parsePoolenEventDetailHtml(withStatusBadge("Udsolgt"), entry);
+    expect(event.soldOutHint).toBe(true);
+    expect(event.cancelledHint).toBeNull();
+    expect(event.startDatetime).toBeTruthy();
+  });
+
+  it("an ordinary event with no status badge still resolves soldOutHint/cancelledHint as null (no false positives)", () => {
+    const event = parsePoolenEventDetailHtml(ELECTRONIC_HTML, entry);
+    expect(event.soldOutHint).toBeNull();
+    expect(event.cancelledHint).toBeNull();
+  });
+
+  it("still throws when no line in the right column is a real date at all (genuine structural failure, not swallowed)", () => {
+    const noDateHtml = ELECTRONIC_HTML.replace(
+      '<div class="lowercase text__h3 as-typed pb-6">\n\t\t                                18. july 2026\t\t                            </div>',
+      '<div class="lowercase text__h3 as-typed pb-6">Aflyst</div>',
+    );
+    expect(() => parsePoolenEventDetailHtml(noDateHtml, entry)).toThrow(/unparseable date/);
+  });
+});
+
 describe("parsePoolenEventDetailHtml — non-electronic event must not be published solely for being at Poolen", () => {
   const entry: PoolenProgramEntry = {
     title: "Swae Lee",

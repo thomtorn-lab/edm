@@ -31,17 +31,19 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * Every candidate the homepage currently carries (confirmed live: Eric
  * Prydz, Armin van Buuren, CamelPhat, I Hate Models — all Oct-Dec 2026) is
  * hosted at TAP1, not at Gravity's own registered address; "Gravity" is a
- * promoter brand renting TAP1's room, not a fixed physical venue. Every
- * detail page states this explicitly in a "Location: "TAP 1"" info-row
- * followed by TAP1's real street address, so venueName is always taken
- * verbatim from that row and resolved against the existing venue registry
- * (v-tap1) by the shared pipeline — never assumed or hardcoded to "Gravity".
+ * promoter brand renting TAP1's room, not a fixed physical venue.
  *
- * Genre evidence: every detail page also carries an explicit "Music: <tags>"
- * info-row (e.g. "Trance & Techno", "Melodic Techno") — real, first-party,
- * event-specific genre text, not inferred from the artist's name. This is
- * fed into the same deterministicGenreFromText mapping every other adapter
- * uses (never a bespoke artist-name lookup, never an artist database).
+ * QA follow-up (2026-08-29): detail pages are not all on the same template.
+ * Three of the four (Eric Prydz, Armin van Buuren, I Hate Models) still
+ * carry the original "icon-box" info-rows — a "Location: "TAP 1"" row for
+ * venue and an explicit "Music: <tags>" row for genre (e.g. "Trance &
+ * Techno") — fed into the same deterministicGenreFromText mapping every
+ * other adapter uses. CamelPhat's page alone has been migrated to a new
+ * template that drops those info-rows and instead serves a schema.org
+ * MusicEvent JSON-LD block. parseGravityEventDetailHtml tries the old
+ * template first, then falls back to JSON-LD, so a page on either template
+ * — and any future page migrated the same way CamelPhat's was — resolves
+ * correctly without title-specific handling.
  */
 
 export const GRAVITY_SOURCE_ID = "src-gravity";
@@ -70,13 +72,123 @@ function parseGravityTimeRange(text: string): { start: { hour: number; minute: n
   return { start: { hour: startHour, minute: startMinute }, end: { hour: endHour, minute: endMinute } };
 }
 
-/** Extracts one "icon-box" info-row's value by its label (e.g. "Location:", "Music:") — the shared markup shape every info-row on a Gravity detail page uses. */
+/** Extracts one "icon-box" info-row's value by its label (e.g. "Location:", "Music:") — the shared markup shape every old-template info-row on a Gravity detail page uses. */
 function extractInfoRow(html: string, label: string): string | null {
   const re = new RegExp(`${label}\\s*</strong>\\s*<span[^>]*>([\\s\\S]*?)</span>`, "i");
   const match = html.match(re);
   if (!match) return null;
   const text = htmlToText(match[1]).replace(/\s+/g, " ").trim();
   return text || null;
+}
+
+/**
+ * Structured MusicEvent data from the detail page's own JSON-LD block
+ * (QA follow-up, 2026-08-29: real Production evidence — the CamelPhat page
+ * specifically has been migrated to a new detail-page template that carries
+ * a schema.org MusicEvent block with a full startDate/endDate, venue name,
+ * and description, and drops the old "icon-box" date/Location/Music info-rows
+ * entirely. Live-reconfirmed the same day: Eric Prydz, Armin van Buuren, and
+ * I Hate Models — the rest of the current lineup — are all still on the old
+ * template with the old info-rows intact and no MusicEvent JSON-LD at all,
+ * so this is a per-page migration in progress, not a site-wide redesign; an
+ * unconditional switch to JSON-LD-only parsing would have fixed CamelPhat
+ * while silently breaking the other three. See tryOldTemplateFields /
+ * tryJsonLdFields below for the resulting two-path extraction.
+ */
+interface GravityJsonLd {
+  startDate: string;
+  endDate?: string;
+  description?: string;
+  location?: { name?: string };
+}
+
+function extractGravityJsonLd(html: string): GravityJsonLd | null {
+  const match = html.match(
+    /<script type="application\/ld\+json">(\{"@context":"https:\/\/schema\.org","@type":"MusicEvent".*?)<\/script>/,
+  );
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]) as Partial<GravityJsonLd>;
+    if (typeof parsed.startDate !== "string") return null;
+    return parsed as GravityJsonLd;
+  } catch {
+    return null;
+  }
+}
+
+/** Fields common to both extraction paths, assembled into a RawCandidateEvent by parseGravityEventDetailHtml. */
+interface GravityCoreFields {
+  startDatetime: string;
+  endDatetime: string | null;
+  venueName: string;
+  description: string | null;
+  genreEvidenceText: string;
+}
+
+/**
+ * Old template: date/time from the "23 October | Friday | 20:00 - 04:00"
+ * icon-box row (combined with the listing page's own date), venue from the
+ * "Location: "TAP 1"" row, description/genre from the body paragraph plus
+ * the "Music:" row. Returns null (never throws) when any required piece is
+ * absent, so the caller can fall back to the JSON-LD path — this is how a
+ * page on the new template (no old info-rows at all) is distinguished from
+ * a genuinely broken old-template page.
+ */
+function tryOldTemplateFields(html: string, dateKey: DateKey): GravityCoreFields | null {
+  const timeRangeMatch = html.match(/\d{1,2}\s+\w+\s*\|\s*\w+\s*\|\s*(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})/);
+  const timeRange = timeRangeMatch ? parseGravityTimeRange(timeRangeMatch[1]) : null;
+  if (!timeRange) return null;
+
+  // The Location info-row is shaped differently from every other info-row:
+  // the label AND the venue name both sit inside the same <strong> (curly
+  // quotes around the name, e.g. Location: "TAP 1"), while the <span> right
+  // after carries the street address instead of a repeated value — so this
+  // needs its own pattern rather than extractInfoRow's label-then-span shape.
+  const venueMatch = html.match(/Location:\s*[“"]([^”"]+)[”"]/);
+  const venueName = venueMatch ? decodeHtmlEntities(venueMatch[1]).trim() : null;
+  if (!venueName) return null;
+
+  const startDatetime = copenhagenWallClockToUtc(dateKey, timeRange.start.hour, timeRange.start.minute).toISOString();
+  // The end time is on the same calendar date as doors unless it's past
+  // midnight (a "20:00 - 04:00" show ends the following morning) — same
+  // next-day rule every other late-night adapter on this codebase applies.
+  const endDateKey =
+    timeRange.end.hour < timeRange.start.hour || (timeRange.end.hour === timeRange.start.hour && timeRange.end.minute < timeRange.start.minute)
+      ? { ...dateKey, day: dateKey.day + 1 }
+      : dateKey;
+  const endDatetime = copenhagenWallClockToUtc(endDateKey, timeRange.end.hour, timeRange.end.minute).toISOString();
+
+  const musicText = extractInfoRow(html, "Music:");
+  const paragraphMatch = html.match(/animate-paragraph">([\s\S]*?)<div class="d-flex align-items-center justify-content-center/);
+  const fullDescriptionText = paragraphMatch ? htmlToText(paragraphMatch[1]).replace(/\n/g, " ").replace(/\s+/g, " ").trim() : "";
+  const description = [fullDescriptionText, musicText ? `Music: ${musicText}` : null].filter(Boolean).join(" ") || null;
+  const genreEvidenceText = [musicText, fullDescriptionText].filter(Boolean).join(" ");
+
+  return { startDatetime, endDatetime, venueName, description, genreEvidenceText };
+}
+
+/**
+ * New template: everything from the page's own schema.org MusicEvent
+ * JSON-LD block. startDate/endDate already carry a UTC offset — no
+ * wall-clock/timezone-name parsing needed, unlike the old template. Returns
+ * null (never throws) when the block is absent or missing an essential
+ * field, so the caller reports one unified "no parseable start/end time"
+ * failure rather than a path-specific one.
+ */
+function tryJsonLdFields(html: string): GravityCoreFields | null {
+  const jsonLd = extractGravityJsonLd(html);
+  if (!jsonLd || Number.isNaN(Date.parse(jsonLd.startDate))) return null;
+
+  const startDatetime = new Date(jsonLd.startDate).toISOString();
+  const endDatetime = jsonLd.endDate && !Number.isNaN(Date.parse(jsonLd.endDate)) ? new Date(jsonLd.endDate).toISOString() : null;
+
+  const venueName = jsonLd.location?.name ? decodeHtmlEntities(jsonLd.location.name).trim() : null;
+  if (!venueName) return null;
+
+  const fullDescriptionText = jsonLd.description ? decodeHtmlEntities(jsonLd.description).trim() : "";
+  const description = fullDescriptionText || null;
+
+  return { startDatetime, endDatetime, venueName, description, genreEvidenceText: fullDescriptionText };
 }
 
 export interface GravityListingEntry {
@@ -124,40 +236,19 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
   if (!title) throw new Error(`Gravity detail page has no title (${detailUrl})`);
   if (!entry.dateKey) throw new Error(`Gravity listing date is unparseable for "${title}" (${detailUrl})`);
 
-  const timeRangeMatch = html.match(/\d{1,2}\s+\w+\s*\|\s*\w+\s*\|\s*(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})/);
-  const timeRange = timeRangeMatch ? parseGravityTimeRange(timeRangeMatch[1]) : null;
-  if (!timeRange) throw new Error(`Gravity detail page has no parseable start/end time (${detailUrl})`);
+  // Old template first — it's what most of the current lineup is still on —
+  // then JSON-LD for a page that's been migrated to the new one. Neither
+  // path throws on its own; only exhausting both is a real failure.
+  const fields = tryOldTemplateFields(html, entry.dateKey) ?? tryJsonLdFields(html);
+  if (!fields) throw new Error(`Gravity detail page has no parseable start/end time (${detailUrl})`);
+  const { startDatetime, endDatetime, venueName, description, genreEvidenceText } = fields;
 
-  const startDatetime = copenhagenWallClockToUtc(entry.dateKey, timeRange.start.hour, timeRange.start.minute).toISOString();
-  // The end time is on the same calendar date as doors unless it's past
-  // midnight (a "20:00 - 04:00" show ends the following morning) — same
-  // next-day rule every other late-night adapter on this codebase applies.
-  const endDateKey =
-    timeRange.end.hour < timeRange.start.hour || (timeRange.end.hour === timeRange.start.hour && timeRange.end.minute < timeRange.start.minute)
-      ? { ...entry.dateKey, day: entry.dateKey.day + 1 }
-      : entry.dateKey;
-  const endDatetime = copenhagenWallClockToUtc(endDateKey, timeRange.end.hour, timeRange.end.minute).toISOString();
-
-  // The Location info-row is shaped differently from every other info-row:
-  // the label AND the venue name both sit inside the same <strong> (curly
-  // quotes around the name, e.g. Location: "TAP 1"), while the <span> right
-  // after carries the street address instead of a repeated value — so this
-  // needs its own pattern rather than extractInfoRow's label-then-span shape.
-  const venueMatch = html.match(/Location:\s*[“"]([^”"]+)[”"]/);
-  const venueName = venueMatch ? decodeHtmlEntities(venueMatch[1]).trim() : null;
-  if (!venueName) throw new Error(`Gravity detail page has no Location info-row (${detailUrl})`);
-
-  const musicText = extractInfoRow(html, "Music:");
-
-  const paragraphMatch = html.match(/animate-paragraph">([\s\S]*?)<div class="d-flex align-items-center justify-content-center/);
-  const fullDescriptionText = paragraphMatch ? htmlToText(paragraphMatch[1]).replace(/\n/g, " ").replace(/\s+/g, " ").trim() : "";
-  const description = [fullDescriptionText, musicText ? `Music: ${musicText}` : null].filter(Boolean).join(" ") || null;
-
-  // Genre evidence: the page's own explicit "Music:" tag row is checked
-  // first (real, event-specific, first-party genre text — never the
-  // artist's name), then the body-copy description as a fallback, matching
-  // the same deterministic-mapping-first rule every other adapter follows.
-  const genreEvidenceText = [musicText, fullDescriptionText].filter(Boolean).join(" ");
+  // Genre evidence: whichever path matched already folds its own
+  // event-specific genre text (the old template's "Music:" row, or the new
+  // template's JSON-LD description) into genreEvidenceText. Same
+  // deterministic-mapping-first rule every other adapter follows; text with
+  // no specific genre/electronic keyword correctly resolves to no hint
+  // rather than a guess.
   const specificGenre = genreEvidenceText ? deterministicGenreFromText(genreEvidenceText) : null;
   const genericElectronic = !specificGenre && /\belectronic(s|a)?\b/i.test(genreEvidenceText);
   const genreHint: GenreSlug | null = specificGenre ?? (genericElectronic ? "electronic-other" : null);

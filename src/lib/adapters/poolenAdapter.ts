@@ -195,9 +195,46 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
       : truncateAtBoundary(fullDescriptionText, 600);
 
   const rightColLines = htmlToText(rightColHtml).split("\n");
-  const dateText = rightColLines[0] ?? entry.dateText ?? "";
-  const dateKey = parseDanishDate(dateText);
-  if (!dateKey) throw new Error(`Poolen detail page has an unparseable date "${dateText}" (${entry.detailUrl})`);
+  // The right column can carry a ticket-availability/status badge
+  // ("Udsolgt", "Aflyst", "Få tilbage", "Flyttet") as its own line, and on
+  // at least some pages it renders BEFORE the date line rather than after
+  // it — real Production evidence (QA follow-up, 2026-08-29): the date
+  // parser received the literal strings "Få tilbage" and "Aflyst" for real
+  // events, because the code blindly trusted rightColLines[0] to always be
+  // the date. Fixed structurally, not with title-specific exceptions: scan
+  // for the first line that actually matches parseDanishDate's tight,
+  // anchored "13. december 2026" shape (nothing else in this column — price,
+  // times, address — can accidentally match that shape), collecting any
+  // recognized status-label line encountered along the way as lifecycle
+  // evidence instead of discarding or misreading it. Mirrors Pumpehuset's
+  // conservative ticket_status handling: only the unambiguous "udsolgt"/
+  // "aflyst" values are trusted; "få tilbage" (few left) is deliberately NOT
+  // sold out, and "flyttet" (moved) is left to the ordinary reschedule
+  // detection instead of guessed.
+  let soldOutHint: boolean | null = null;
+  let cancelledHint: boolean | null = null;
+  let dateKey: DateKey | null = null;
+  for (const line of rightColLines) {
+    const normalized = line.trim().toLowerCase();
+    if (normalized === "udsolgt") {
+      soldOutHint = true;
+      continue;
+    }
+    if (normalized === "aflyst") {
+      cancelledHint = true;
+      continue;
+    }
+    const parsed = parseDanishDate(line);
+    if (parsed) {
+      dateKey = parsed;
+      break;
+    }
+  }
+  if (!dateKey) {
+    throw new Error(
+      `Poolen detail page has an unparseable date "${rightColLines[0] ?? entry.dateText ?? ""}" (${entry.detailUrl})`,
+    );
+  }
 
   const doorsIdx = rightColLines.findIndex((l) => /^dørene åbner$/i.test(l));
   const showIdx = rightColLines.findIndex((l) => /^show start$/i.test(l));
@@ -261,6 +298,8 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     priceFrom,
     genreHint,
     genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
+    soldOutHint,
+    cancelledHint,
   };
 }
 

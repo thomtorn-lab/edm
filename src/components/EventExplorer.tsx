@@ -72,6 +72,8 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   const [venueId, setVenueId] = useState<string | "all">("all");
   const [query, setQuery] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
+  const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
@@ -97,13 +99,55 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
   // convention (and AddToCalendar's own dropdown, which already did this) —
   // previously the only way to dismiss it was tapping the close button or
   // the overlay (QA audit, 2026-08-29).
+  //
+  // QA follow-up (2026-08-29): the sheet is visually opaque (a full-viewport
+  // fixed overlay) but nothing behind it was ever made inert, so Tab could
+  // walk keyboard/screen-reader focus straight through it into the page
+  // underneath — reachable and activatable while completely invisible. This
+  // adds the minimal containment the WAI-ARIA APG dialog pattern calls for:
+  // focus moves into the sheet on open, Tab/Shift+Tab wrap between its own
+  // first and last focusable elements while it's open, and focus returns to
+  // the "Filters" trigger button on close — no external dependency, no
+  // general-purpose focus-trap system, just the few lines this one sheet
+  // needs.
   useEffect(() => {
     if (!mobileFiltersOpen) return;
+    const dialog = mobileFiltersDialogRef.current;
+    if (!dialog) return;
+
+    const getFocusable = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), select, input, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      );
+
+    (getFocusable()[0] ?? dialog).focus();
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMobileFiltersOpen(false);
+      if (e.key === "Escape") {
+        setMobileFiltersOpen(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    const trigger = mobileFiltersTriggerRef.current;
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      trigger?.focus();
+    };
   }, [mobileFiltersOpen]);
 
   const upcoming = useMemo(() => {
@@ -324,6 +368,7 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
                 className="search-field min-w-0 flex-1 rounded-full border border-border-strong bg-surface-1 px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-text-secondary"
               />
               <button
+                ref={mobileFiltersTriggerRef}
                 type="button"
                 onClick={() => setMobileFiltersOpen(true)}
                 aria-haspopup="dialog"
@@ -460,9 +505,11 @@ export default function EventExplorer({ events }: { events: EventWithVenue[] }) 
             aria-hidden="true"
           />
           <div
+            ref={mobileFiltersDialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Filters"
+            tabIndex={-1}
             className="absolute inset-x-0 bottom-0 flex max-h-[80vh] flex-col rounded-t-2xl border-t border-border bg-surface-1 shadow-2xl"
           >
             <div className="flex items-center justify-between p-4 pb-3">

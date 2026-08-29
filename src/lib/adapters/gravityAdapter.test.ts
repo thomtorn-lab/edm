@@ -8,15 +8,24 @@ import { resolveVenue } from "@/lib/normalize";
 
 /**
  * All fixtures are real, unmodified pages captured directly from
- * gravitycph.dk via the sanctioned Inspect Source reachability tool
- * (Gravity source-repair audit, 2026-08-25) — not fabricated. There was no
- * prior working adapter for this source to preserve fixtures from (see the
- * module doc comment in gravityAdapter.ts): the registry's pre-existing
- * src-gravity entry was a deliberately-degraded placeholder, never a real
- * integration. The homepage fixture is the real hero carousel at the time
- * of capture (Eric Prydz, Armin van Buuren, CamelPhat, I Hate Models — all
- * confirmed live, all confirmed via dedup-simulate against the real
- * Production DB to be genuinely new, non-duplicate events).
+ * gravitycph.dk via the sanctioned Inspect Source reachability tool. There
+ * was no prior working adapter for this source to preserve fixtures from
+ * (see the module doc comment in gravityAdapter.ts): the registry's
+ * pre-existing src-gravity entry was a deliberately-degraded placeholder,
+ * never a real integration. The homepage fixture is the real hero carousel
+ * at the time of capture (Eric Prydz, Armin van Buuren, CamelPhat, I Hate
+ * Models — all confirmed live, all confirmed via dedup-simulate against the
+ * real Production DB to be genuinely new, non-duplicate events).
+ *
+ * QA follow-up (2026-08-29): re-captured against the real live site again
+ * after Production reported CamelPhat's detail page failing to parse. That
+ * page's real URL had also changed (a "-2" slug suffix was added), and its
+ * markup turned out to have been migrated to a different template entirely
+ * (schema.org MusicEvent JSON-LD, no more "icon-box" info-rows) — the other
+ * three detail-page fixtures were re-captured too and confirmed unchanged
+ * (still the original template), which is how tryOldTemplateFields vs.
+ * tryJsonLdFields in gravityAdapter.ts was discovered to be the right shape
+ * for this adapter, not a wholesale switch to JSON-LD.
  */
 const FIXTURES_DIR = path.join(__dirname, "__fixtures__");
 const HOME_HTML = readFileSync(path.join(FIXTURES_DIR, "gravity-home.html"), "utf-8");
@@ -27,7 +36,7 @@ const I_HATE_MODELS_HTML = readFileSync(path.join(FIXTURES_DIR, "gravity-i-hate-
 
 const DETAIL_HTML_BY_URL: Record<string, string> = {
   "https://gravitycph.dk/armin-van-buuren/": ARMIN_HTML,
-  "https://gravitycph.dk/camelphat-copenhagen-2026/": CAMELPHAT_HTML,
+  "https://gravitycph.dk/camelphat-copenhagen-2026-2/": CAMELPHAT_HTML,
   "https://gravitycph.dk/eric-prydz-copenhagen/": ERIC_PRYDZ_HTML,
   "https://gravitycph.dk/i-hate-models-cph/": I_HATE_MODELS_HTML,
 };
@@ -64,14 +73,32 @@ describe("parseGravityEventDetailHtml", () => {
     expect(candidate.description).toContain("Music:");
   });
 
-  it("CamelPhat: strips the 'Gravity Opera:' theme-night brand prefix from artists but keeps it in the real title verbatim", () => {
+  it("CamelPhat: real detail page is on the new JSON-LD template (no icon-box info-rows) — resolves via the JSON-LD fallback path", () => {
     const entries = parseGravityHomeHtml(HOME_HTML);
     const entry = entries.find((e) => e.title === "Gravity Opera: CAMELPHAT")!;
     const candidate = parseGravityEventDetailHtml(CAMELPHAT_HTML, entry);
 
     expect(candidate.title).toBe("Gravity Opera: CAMELPHAT");
     expect(candidate.artists).toEqual(["CAMELPHAT"]);
-    expect(candidate.genreHint).toBe("melodic-techno"); // real "Music: Melodic Techno & Techno" tag
+    // JSON-LD startDate/endDate already carry a UTC offset (2026-10-03T22:00:00+02:00 / 06:00 next day).
+    expect(candidate.startDatetime).toBe("2026-10-03T20:00:00.000Z");
+    expect(candidate.endDatetime).toBe("2026-10-04T04:00:00.000Z");
+    expect(candidate.venueName).toBe("TAP1 Copenhagen"); // JSON-LD location.name, resolves against the registry below
+    expect(candidate.description).toContain("dark warehouse");
+    // The new template's JSON-LD description has no explicit genre keyword
+    // (real evidence — not the old template's "Music:" tag, which no
+    // longer exists on this page), so genreHint correctly resolves to no
+    // hint rather than a guessed/remembered one.
+    expect(candidate.genreHint).toBeNull();
+  });
+
+  it("CamelPhat: real venue name from JSON-LD resolves against the existing registry to TAP1 (v-tap1)", () => {
+    const entries = parseGravityHomeHtml(HOME_HTML);
+    const entry = entries.find((e) => e.title === "Gravity Opera: CAMELPHAT")!;
+    const candidate = parseGravityEventDetailHtml(CAMELPHAT_HTML, entry);
+
+    const resolved = resolveVenue(candidate.venueName!, VENUES);
+    expect(resolved?.id).toBe("v-tap1");
   });
 
   it("Armin van Buuren: real venue name resolves against the existing registry to TAP1 (v-tap1), not assumed from the source", () => {
@@ -92,11 +119,26 @@ describe("parseGravityEventDetailHtml", () => {
     expect(candidate.genreConfidenceHint).toBe("high");
   });
 
-  it("throws on a missing Location info-row rather than guessing a venue", () => {
+  it("throws when neither the old template's info-rows nor a JSON-LD block are present, rather than guessing a venue", () => {
     const entries = parseGravityHomeHtml(HOME_HTML);
     const entry = entries.find((e) => e.title === "ERIC PRYDZ")!;
     const brokenHtml = ERIC_PRYDZ_HTML.replace(/Location:/, "NoLocationLabel:");
-    expect(() => parseGravityEventDetailHtml(brokenHtml, entry)).toThrow(/Location/);
+    expect(() => parseGravityEventDetailHtml(brokenHtml, entry)).toThrow(/parseable start\/end time/);
+  });
+
+  it("falls back to JSON-LD when the old template's info-rows are broken but a JSON-LD block is present (dual-template robustness)", () => {
+    const entries = parseGravityHomeHtml(HOME_HTML);
+    const entry = entries.find((e) => e.title === "ERIC PRYDZ")!;
+    // Break the old-template venue row (so tryOldTemplateFields returns
+    // null) but graft on a real JSON-LD block from the CamelPhat fixture —
+    // proves the fallback genuinely engages rather than the old path
+    // happening to still succeed some other way.
+    const jsonLdMatch = CAMELPHAT_HTML.match(/<script type="application\/ld\+json">\{"@context":"https:\/\/schema\.org","@type":"MusicEvent".*?<\/script>/);
+    expect(jsonLdMatch).not.toBeNull();
+    const brokenOldTemplateHtml = ERIC_PRYDZ_HTML.replace(/Location:/, "NoLocationLabel:") + jsonLdMatch![0];
+
+    const candidate = parseGravityEventDetailHtml(brokenOldTemplateHtml, entry);
+    expect(candidate.venueName).toBe("TAP1 Copenhagen"); // from the grafted JSON-LD, not the (broken) old template
   });
 
   it("throws when the listing date itself is unparseable rather than inventing one", () => {
@@ -106,16 +148,37 @@ describe("parseGravityEventDetailHtml", () => {
   });
 });
 
-describe("end-to-end pipeline: all 4 real Gravity candidates route to auto_publish", () => {
-  it("every real current candidate resolves to a high-confidence genre and auto_publish, with real venue resolution to TAP1", () => {
+describe("end-to-end pipeline: all 4 real Gravity candidates ingest with real venue resolution to TAP1", () => {
+  it("Eric Prydz, Armin van Buuren, and I Hate Models (old template, explicit 'Music:' tag) auto_publish at high genre confidence", () => {
     const entries = parseGravityHomeHtml(HOME_HTML);
-    for (const entry of entries) {
+    for (const title of ["ERIC PRYDZ", "ARMIN VAN BUUREN", "I HATE MODELS"]) {
+      const entry = entries.find((e) => e.title === title)!;
       const html = DETAIL_HTML_BY_URL[entry.detailUrl];
       const candidate = parseGravityEventDetailHtml(html, entry);
       const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
-      expect(result.decision, `${entry.title} should auto_publish`).toBe("auto_publish");
+      expect(result.decision, `${title} should auto_publish`).toBe("auto_publish");
       expect(result.genreConfidence).toBe("high");
+      expect(result.resolvedVenueId).toBe("v-tap1");
     }
+  });
+
+  it("CamelPhat (new JSON-LD template, no genre keyword in its own description) parses successfully and resolves venue, but holds for review rather than silently vanishing", () => {
+    const entries = parseGravityHomeHtml(HOME_HTML);
+    const entry = entries.find((e) => e.title === "Gravity Opera: CAMELPHAT")!;
+    const html = DETAIL_HTML_BY_URL[entry.detailUrl];
+    // The parse itself must not throw — this is the actual Production bug
+    // being fixed. Whether the pipeline then auto-publishes is a separate,
+    // independent question answered below.
+    const candidate = parseGravityEventDetailHtml(html, entry);
+    const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
+    expect(result.resolvedVenueId).toBe("v-tap1");
+    expect(result.genreConfidence).not.toBe("high");
+    // Real behavior change vs. the old template's explicit "Music:" tag:
+    // with no genre keyword and no other electronic-relevance signal in the
+    // JSON-LD description, the quality gate correctly holds this for human
+    // review rather than guessing a genre — a real, honest trade-off (see
+    // the QA follow-up report), not a bug in this fix.
+    expect(result.decision).toBe("hold");
   });
 });
 
