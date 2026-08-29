@@ -443,20 +443,23 @@ export const VENUES: Venue[] = [
     venueProfile: null,
   },
   {
-    id: "v-ungdomshuset",
-    slug: "ungdomshuset",
-    name: "Ungdomshuset",
-    aliases: ["Ungdomshuset Dortheavej", "UHU"],
-    address: "Dortheavej 61, 2400 København NV",
+    id: "v-pylonen",
+    slug: "pylonen",
+    name: "Pylonen",
+    aliases: ["Pylonen Langebro", "Frizonen Langebro"],
+    // Verified 2026-08-29 directly against the venue's own official site
+    // (pylonen.horse — live-fetched, HTTP 200): exact address and GPS
+    // coordinates both confirmed (55°40'14.8"N 12°34'38.6"E).
+    address: "Christians Brygge 31, 1219 Copenhagen K",
     city: "Copenhagen",
-    postalCode: "2400",
-    websiteUrl: null,
+    postalCode: "1219",
+    websiteUrl: "https://pylonen.horse/",
     description:
-      "Volunteer-run social centre and underground music venue in Bispebjerg, hosting punk, hardcore and DIY concerts alongside recurring rave, electro and techno nights.",
+      "Temporary art-and-event space under the Langebro bridge, running a mixed 2026 season that includes house and techno day parties from Copenhagen crews like Pleasure Control.",
     shortDescription:
-      "Volunteer-run, autonomist social centre in Bispebjerg with a powerful soundsystem, hosting punk and hardcore alongside a recurring basement rave, electro and techno night.",
+      "Temporary outdoor/indoor space under Langebro bridge, running a mixed 2026 programme of art, markets and parties, including house and techno nights from local crews like Pleasure Control.",
     venueProfile:
-      "Ungdomshuset (\"the Youth House\") is a volunteer-run social centre in Bispebjerg, rebuilt at Dortheavej 61 in 2013 after its original Nørrebro building was demolished. It operates as a focal point for Copenhagen's autonomist and leftist scenes, with a strict door policy against racism, sexism, homophobia, violence and hard drugs, and bar prices kept deliberately low. Its programme spans punk, hardcore and DIY concerts alongside a powerful soundsystem built for club-style nights, including a recurring basement party mixing electro, techno and rave classics. Ungdomshuset's non-commercial, community-run model makes it one of Copenhagen's longest-standing alternatives to the city's mainstream club circuit.",
+      "Pylonen is a temporary event and art space built into the raw edge under the Langebro bridge at Christians Brygge, on the water between Vesterbro and Christianshavn. Framed by its organisers as \"a raw edge between water, traffic and the unknown,\" it runs a full seasonal programme mixing art, markets, performance and outdoor parties rather than a single fixed genre identity. Its electronic programming includes outdoor day parties from established Copenhagen house and techno crews such as Pleasure Control, alongside a residency slot from the Fluid Sound Collective. As a temporary, seasonally-organised space rather than a permanent club, its exact form can change between seasons, but its current 2026 installation runs a booked calendar through December.",
   },
 ];
 
@@ -489,7 +492,7 @@ export const CURATED_VENUE_SLUGS: readonly string[] = [
   "alice",
   "hotel-cecil",
   "halvandet",
-  "ungdomshuset",
+  "pylonen",
 ];
 
 export function getVenueBySlug(slug: string): Venue | undefined {

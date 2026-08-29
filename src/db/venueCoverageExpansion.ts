@@ -5,22 +5,39 @@ import { createVenue, updateVenueAddress, updateVenueProfile } from "./writes";
 
 /**
  * One-time Production reference-data correction + addition (venue coverage
- * expansion audit, 2026-08-29). Two independent kinds of write, both narrow
- * and idempotent-checked before applying:
+ * expansion audit, 2026-08-29; revised after a re-audit round). Two
+ * independent kinds of write, both narrow and idempotent-checked before
+ * applying:
  *
  * 1. Address corrections for three already-registered, already-real venues
- *    whose stored address does not match any independently-verified source
- *    (KB18, BETA2300, WAREHOUSE9 — see src/lib/data/venues.ts's per-venue
- *    comments for the evidence). Never touches curation status, name, or
- *    any other field.
+ *    whose stored address did not match any independently-verified source —
+ *    KB18, BETA2300, WAREHOUSE9. Re-confirmed in the revision round as
+ *    actively operating in 2026 (Yelp listings updated June/July 2026,
+ *    live 2026 concert calendars on Songkick/Bandsintown/JamBase) — not
+ *    just historically real. See src/lib/data/venues.ts's per-venue
+ *    comments for the full evidence. Never touches curation status, name,
+ *    or any other field.
  *
- * 2. Adds one new real physical venue — Ungdomshuset (Dortheavej 61,
- *    Bispebjerg) — via the existing human-gated createVenue() path (the
- *    same one DiscoveryQueue's "Create new venue" action uses), then sets
- *    its editorial copy via updateVenueProfile() so it renders correctly on
- *    curated /venues from the moment src/lib/data/venues.ts's
- *    CURATED_VENUE_SLUGS addition reaches Production. Never adds any event
- *    or source — this is registry/curated-guide data only.
+ * 2. Adds one new real physical venue — Pylonen (Christians Brygge 31,
+ *    under the Langebro bridge) — via the existing human-gated
+ *    createVenue() path (the same one DiscoveryQueue's "Create new venue"
+ *    action uses), then sets its editorial copy via updateVenueProfile().
+ *    Verified directly against the venue's own official site
+ *    (pylonen.horse, live-fetched HTTP 200): exact address/GPS match, and a
+ *    real booked 2026 programme (15 events through December) including
+ *    confirmed house/techno day parties from the established Copenhagen
+ *    crew Pleasure Control. Replaces the previous round's Ungdomshuset
+ *    proposal, which is withdrawn pending stronger current-electronic-
+ *    programming evidence (its live official calendar is predominantly
+ *    punk/hardcore/DIY — see the audit report). Never adds any event or
+ *    source — this is registry/curated-guide data only.
+ *
+ * Solvang Hallen is deliberately NOT touched by this script: three
+ * independent search rounds (including Danish-language terms) found zero
+ * evidence it is a real, current venue at all. No address correction is
+ * possible without a verified source to correct it against, and no
+ * deletion is performed per instruction — it is flagged in the audit
+ * report for a future verification/removal pass instead.
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/venueCoverageExpansion.ts --mode=plan
@@ -38,18 +55,18 @@ const ADDRESS_FIXES: { venueId: string; expectedCurrent: string; corrected: stri
   { venueId: "v-warehouse9", expectedCurrent: "Underground pladsen 9, 1620 København V", corrected: "Halmtorvet 11 C, 1700 København V" },
 ];
 
-const UNGDOMSHUSET = {
-  name: "Ungdomshuset",
-  address: "Dortheavej 61, 2400 København NV",
+const PYLONEN = {
+  name: "Pylonen",
+  address: "Christians Brygge 31, 1219 Copenhagen K",
   city: "Copenhagen" as const,
-  postalCode: "2400",
-  websiteUrl: null,
+  postalCode: "1219",
+  websiteUrl: "https://pylonen.horse/",
   description:
-    "Volunteer-run social centre and underground music venue in Bispebjerg, hosting punk, hardcore and DIY concerts alongside recurring rave, electro and techno nights.",
+    "Temporary art-and-event space under the Langebro bridge, running a mixed 2026 season that includes house and techno day parties from Copenhagen crews like Pleasure Control.",
   shortDescription:
-    "Volunteer-run, autonomist social centre in Bispebjerg with a powerful soundsystem, hosting punk and hardcore alongside a recurring basement rave, electro and techno night.",
+    "Temporary outdoor/indoor space under Langebro bridge, running a mixed 2026 programme of art, markets and parties, including house and techno nights from local crews like Pleasure Control.",
   venueProfile:
-    'Ungdomshuset ("the Youth House") is a volunteer-run social centre in Bispebjerg, rebuilt at Dortheavej 61 in 2013 after its original Nørrebro building was demolished. It operates as a focal point for Copenhagen\'s autonomist and leftist scenes, with a strict door policy against racism, sexism, homophobia, violence and hard drugs, and bar prices kept deliberately low. Its programme spans punk, hardcore and DIY concerts alongside a powerful soundsystem built for club-style nights, including a recurring basement party mixing electro, techno and rave classics. Ungdomshuset\'s non-commercial, community-run model makes it one of Copenhagen\'s longest-standing alternatives to the city\'s mainstream club circuit.',
+    'Pylonen is a temporary event and art space built into the raw edge under the Langebro bridge at Christians Brygge, on the water between Vesterbro and Christianshavn. Framed by its organisers as "a raw edge between water, traffic and the unknown," it runs a full seasonal programme mixing art, markets, performance and outdoor parties rather than a single fixed genre identity. Its electronic programming includes outdoor day parties from established Copenhagen house and techno crews such as Pleasure Control, alongside a residency slot from the Fluid Sound Collective. As a temporary, seasonally-organised space rather than a permanent club, its exact form can change between seasons, but its current 2026 installation runs a booked calendar through December.',
 };
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -93,24 +110,24 @@ async function runAddressFixes(apply: boolean) {
   }
 }
 
-async function runUngdomshusetAdd(apply: boolean) {
+async function runPylonenAdd(apply: boolean) {
   console.log("\n" + "=".repeat(80));
-  console.log("ADD VENUE: Ungdomshuset");
+  console.log("ADD VENUE: Pylonen");
   console.log("=".repeat(80));
   const existingRows = await db.select().from(venues);
-  const bySlug = existingRows.find((v) => v.slug === "ungdomshuset");
+  const bySlug = existingRows.find((v) => v.slug === "pylonen");
   if (bySlug) {
-    console.log(`SKIP: a venue with slug "ungdomshuset" already exists (${bySlug.id}) — not creating a duplicate.`);
+    console.log(`SKIP: a venue with slug "pylonen" already exists (${bySlug.id}) — not creating a duplicate.`);
     return;
   }
-  console.log(`Intended: create venue "${UNGDOMSHUSET.name}" at "${UNGDOMSHUSET.address}", then set its editorial profile.`);
+  console.log(`Intended: create venue "${PYLONEN.name}" at "${PYLONEN.address}", then set its editorial profile.`);
   if (apply) {
-    const result = await createVenue(UNGDOMSHUSET, { confirmed: true });
+    const result = await createVenue(PYLONEN, { confirmed: true });
     console.log(`  createVenue -> created=${result.created}, id=${result.venue.id}`);
     await updateVenueProfile(result.venue.id, {
-      description: UNGDOMSHUSET.description,
-      shortDescription: UNGDOMSHUSET.shortDescription,
-      venueProfile: UNGDOMSHUSET.venueProfile,
+      description: PYLONEN.description,
+      shortDescription: PYLONEN.shortDescription,
+      venueProfile: PYLONEN.venueProfile,
     });
     const after = await loadVenue(result.venue.id);
     console.log("  Read-back:", after ? { id: after.id, slug: after.slug, name: after.name, address: after.address, description: after.description, shortDescription: after.shortDescription } : null);
@@ -128,7 +145,7 @@ async function main() {
   }
 
   await runAddressFixes(mode === "apply");
-  await runUngdomshusetAdd(mode === "apply");
+  await runPylonenAdd(mode === "apply");
 
   console.log("\n" + (mode === "plan" ? "PLAN ONLY — no writes were made." : "APPLY complete — see APPLIED/read-back lines above for what actually changed."));
 }
