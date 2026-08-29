@@ -5,18 +5,18 @@ import { createVenue, updateVenueAddress, updateVenueProfile } from "./writes";
 
 /**
  * One-time Production reference-data correction + addition (venue coverage
- * expansion audit, 2026-08-29; revised after a re-audit round). Two
+ * expansion audit, 2026-08-29; revised twice after re-audit rounds). Two
  * independent kinds of write, both narrow and idempotent-checked before
  * applying:
  *
- * 1. Address corrections for three already-registered, already-real venues
- *    whose stored address did not match any independently-verified source —
- *    KB18, BETA2300, WAREHOUSE9. Re-confirmed in the revision round as
- *    actively operating in 2026 (Yelp listings updated June/July 2026,
- *    live 2026 concert calendars on Songkick/Bandsintown/JamBase) — not
- *    just historically real. See src/lib/data/venues.ts's per-venue
- *    comments for the full evidence. Never touches curation status, name,
- *    or any other field.
+ * 1. Address corrections for two already-registered, already-real venues —
+ *    BETA2300, WAREHOUSE9. See src/lib/data/venues.ts's per-venue comments
+ *    for the full evidence. KB18 is deliberately EXCLUDED from this round:
+ *    secondary sources suggest a different/still-active address, but
+ *    first-party 2026 evidence wasn't strong enough to justify a Production
+ *    write — left untouched pending a dedicated verification pass (never
+ *    deleted or deactivated). Address fixes never touch curation status,
+ *    name, or any other field.
  *
  * 2. Adds one new real physical venue — Pylonen (Christians Brygge 31,
  *    under the Langebro bridge) — via the existing human-gated
@@ -26,11 +26,8 @@ import { createVenue, updateVenueAddress, updateVenueProfile } from "./writes";
  *    (pylonen.horse, live-fetched HTTP 200): exact address/GPS match, and a
  *    real booked 2026 programme (15 events through December) including
  *    confirmed house/techno day parties from the established Copenhagen
- *    crew Pleasure Control. Replaces the previous round's Ungdomshuset
- *    proposal, which is withdrawn pending stronger current-electronic-
- *    programming evidence (its live official calendar is predominantly
- *    punk/hardcore/DIY — see the audit report). Never adds any event or
- *    source — this is registry/curated-guide data only.
+ *    crew Pleasure Control. Never adds any event or source — this is
+ *    registry/curated-guide data only.
  *
  * Solvang Hallen is deliberately NOT touched by this script: three
  * independent search rounds (including Danish-language terms) found zero
@@ -46,13 +43,12 @@ import { createVenue, updateVenueAddress, updateVenueProfile } from "./writes";
  * --mode=plan is entirely read-only. --mode=apply re-verifies every expected
  * fact immediately before each write and skips (never aborts the whole run)
  * any single item whose current state no longer matches what was reviewed —
- * each of the 4 actions here is independent of the other 3.
+ * each action here is independent of the others.
  */
 
 const ADDRESS_FIXES: { venueId: string; expectedCurrent: string; corrected: string }[] = [
-  { venueId: "v-kb18", expectedCurrent: "Krusågade 18, 1719 København V", corrected: "Kødboderne 18, 1714 København V" },
   { venueId: "v-beta2300", expectedCurrent: "Nørrebrogade 200, 2200 København N", corrected: "Øresundsvej 6, 2300 København S" },
-  { venueId: "v-warehouse9", expectedCurrent: "Underground pladsen 9, 1620 København V", corrected: "Halmtorvet 11 C, 1700 København V" },
+  { venueId: "v-warehouse9", expectedCurrent: "Underground pladsen 9, 1620 København V", corrected: "Rosenlunds Allé 5, Baghuset, 2720 Vanløse" },
 ];
 
 const PYLONEN = {

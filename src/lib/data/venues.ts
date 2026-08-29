@@ -374,16 +374,16 @@ export const VENUES: Venue[] = [
     id: "v-kb18",
     slug: "kb18",
     name: "KB18",
-    aliases: ["K.B.18", "KB 18", "KB18 Kødboderne"],
-    // Corrected 2026-08-29 (venue coverage expansion audit): the previous
-    // "Krusågade 18, 1719 København V" address does not match any
-    // independently-verified source for this venue. Multiple real,
-    // independent listings (Songkick, Yelp, Facebook, TransArtists,
-    // Foursquare) consistently place KB18 at Kødboderne 18 in the
-    // Kødbyen/Vesterbro meatpacking district instead.
-    address: "Kødboderne 18, 1714 København V",
+    aliases: ["K.B.18", "KB 18"],
+    // NOT corrected in the 2026-08-29 venue coverage expansion audit:
+    // secondary sources (Songkick, Yelp, Facebook, TransArtists,
+    // Foursquare) consistently place KB18 at "Kødboderne 18" instead of
+    // this stored address, and suggest it's still active — but first-party
+    // 2026 evidence wasn't strong enough this round to justify a Production
+    // write. Left untouched pending a dedicated verification pass.
+    address: "Krusågade 18, 1719 København V",
     city: "Copenhagen",
-    postalCode: "1714",
+    postalCode: "1719",
     websiteUrl: null,
     description:
       "Artist-run project space and club on Vesterbro known for experimental, minimal and left-field electronic programming.",
@@ -414,14 +414,16 @@ export const VENUES: Venue[] = [
     slug: "warehouse9",
     name: "WAREHOUSE9",
     aliases: ["Warehouse 9", "WH9"],
-    // Corrected 2026-08-29 (venue coverage expansion audit): the previous
-    // "Underground pladsen 9, 1620 København V" address does not match any
-    // independently-verified source. Real address (Wikipedia, Yelp,
-    // VisitCopenhagen) is Halmtorvet 11 C, in the Meatpacking District
-    // (Kødbyen) — the same cluster as H15, Jolene Bar and Baggen.
-    address: "Halmtorvet 11 C, 1700 København V",
+    // Corrected 2026-08-29 (venue coverage expansion audit). The previous
+    // "Underground pladsen 9, 1620 København V" address matched no source.
+    // An earlier pass proposed "Halmtorvet 11 C" from secondary sources
+    // (Wikipedia, Yelp, VisitCopenhagen) — its long-standing Meatpacking
+    // District address — but the venue's own current official site states
+    // its 2026 address as Rosenlunds Allé 5, Vanløse instead; corrected to
+    // that first-party value.
+    address: "Rosenlunds Allé 5, Baghuset, 2720 Vanløse",
     city: "Copenhagen",
-    postalCode: "1700",
+    postalCode: "2720",
     websiteUrl: null,
     description:
       "Performance-art venue, gallery and queer social space in the Meatpacking District, hosting occasional club and nightlife nights alongside its core art and theatre programme.",
