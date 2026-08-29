@@ -190,6 +190,29 @@ describe("archival / lifecycle", () => {
     expect(isPastEvent(event, new Date("2026-08-15T22:00:00+02:00"))).toBe(false);
     expect(isPastEvent(event, new Date("2026-08-15T23:30:00+02:00"))).toBe(true);
   });
+
+  // Reproduction of a real-world report (2026-08-29 follow-up): a daytime,
+  // non-overnight event — Fri 28 Aug 2026, 12:00-21:00 Copenhagen — that was
+  // reported as still publicly visible the next day. With a correctly
+  // stored startDatetime/endDatetime for that exact shape, isPastEvent
+  // already archives it the moment 21:00 CEST passes and keeps it visible
+  // right up to that instant, matching target behavior exactly — proving
+  // the general archival logic itself was never the bug. (Root cause,
+  // confirmed against real Hangaren source markup: this specific listing's
+  // own stored endDatetime was genuinely wrong — Hangaren's own page and
+  // Google Calendar export both state a 33-hour span, "Fri Aug 28, 12:00
+  // PM" through "Sat Aug 29, 9:00 PM" — a source-data error our adapter
+  // faithfully carried through, not a defect in this filtering logic. See
+  // hangarenAdapter.test.ts's "known real-source anomaly" test for the
+  // evidence trail.)
+  it("a genuinely same-day daytime event (Fri 12:00-21:00, not overnight) archives exactly at its stated end, not before or after", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-28T12:00:00+02:00", endDatetime: "2026-08-28T21:00:00+02:00" };
+    expect(isPastEvent(event, new Date("2026-08-28T20:59:00+02:00"))).toBe(false);
+    expect(isPastEvent(event, new Date("2026-08-28T21:00:00+02:00"))).toBe(true);
+    // The next day, it must never still read as current — this is exactly
+    // the state a visitor checking the site "on 29 August" would observe.
+    expect(isPastEvent(event, new Date("2026-08-29T12:00:00+02:00"))).toBe(true);
+  });
 });
 
 describe("crossesMidnight", () => {

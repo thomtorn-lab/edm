@@ -104,6 +104,45 @@ describe("parseHangarenEventsHtml", () => {
   });
 });
 
+describe("known real-source anomaly — KARRUSEL AFTERPARTY end date (public-visibility follow-up, 2026-08-29)", () => {
+  const events = parseHangarenEventsHtml(FIXTURE_HTML);
+
+  // Investigated after a real report that a Fri 28 Aug, 12:00-21:00 event
+  // (same-day, not overnight) was still publicly visible on 29 Aug. Traced
+  // to this exact listing. Root cause is NOT this adapter or the general
+  // archival logic (see datetime.test.ts's matching regression test, which
+  // proves a correctly-stored 12:00-21:00 event archives exactly on time):
+  // Hangaren's own real page markup for this listing states BOTH in its
+  // human-visible date text ("Fri, Aug 28, 2026 12:00 PM" .. "Sat, Aug 29,
+  // 2026 9:00 PM") AND in its Google Calendar export metadata
+  // (dates=20260828T100000Z/20260829T190000Z) the same ~33-hour span — a
+  // real visitor to hangaren.dk/events would see the identical, apparently
+  // mistaken date range. This adapter deliberately prefers the venue's own
+  // gcal export specifically because Squarespace has already computed the
+  // exact UTC instant there (see extractDates's doc comment); that source
+  // of truth being wrong for one listing is a Hangaren-side data-entry
+  // issue (evidently introduced when this recurring "Karrusel Afterparty"
+  // slot was duplicated to create the Aug 28/29 instances — the immediately
+  // preceding Aug 27 instance, effy-z4wea, has a correct same-day 6-hour
+  // span), not something a general date-filtering fix can or should paper
+  // over — there is no independent, more-trustworthy signal on the page to
+  // fall back to instead. This test pins the current, faithfully-carried
+  // value so any future change to this file has to consciously decide
+  // whether it's touching this known case, rather than silently drifting.
+  it("faithfully carries through Hangaren's own (anomalous) 33-hour span for the Aug 28 instance — a real source-data issue, not an adapter bug", () => {
+    const kyleStarkey = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: Kyle Starkey"));
+    expect(kyleStarkey).toBeDefined();
+    expect(kyleStarkey!.startDatetime).toBe("2026-08-28T10:00:00.000Z"); // 12:00 CEST, matches the real report exactly
+    expect(kyleStarkey!.endDatetime).toBe("2026-08-29T19:00:00.000Z"); // Hangaren's own stated end, not ours to second-guess
+  });
+
+  it("the immediately-preceding Aug 27 instance of the same recurring slot is correctly same-day, confirming this is an isolated listing issue, not a systemic one", () => {
+    const skala = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: SKALA"));
+    expect(skala).toBeDefined();
+    expect(skala!.startDatetime!.slice(0, 10)).toBe(skala!.endDatetime!.slice(0, 10));
+  });
+});
+
 describe("createHangarenAdapter", () => {
   it("fetches the plain (robots.txt-permitted) /events URL and parses the response", async () => {
     const fetchImpl = async (url: string | URL) => {
