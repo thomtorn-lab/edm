@@ -1,0 +1,133 @@
+name: Audit Source Completeness (Read-Only)
+
+# Cross-source completeness/silent-drop audit (2026-08-30). Strictly
+# read-only: for each active source, lists every `events` row and every
+# `discovery_queue` row associated with it, upcoming and recent-past, so a
+# live source snapshot (via inspect-source.yml) can be compared against what
+# our own system actually holds — without inferring completeness from bare
+# row counts.
+#
+# Safety: workflow_dispatch only. BEGIN, SET LOCAL default_transaction_read_only,
+# SELECT-only queries, ROLLBACK, explicit connection close — same pattern as
+# verify-db-readonly.yml and correct-final-relevance-exclusions.yml's dry run.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run completeness audit
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > ./.audit-completeness.mjs <<'EOF'
+          import pg from "pg";
+
+          const SOURCE_IDS = [
+            "src-alice",
+            "src-culture-box",
+            "src-hangaren",
+            "src-poolen",
+            "src-gravity",
+            "src-billetto",
+            "src-pumpehuset",
+          ];
+
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '25s'");
+
+            for (const sourceId of SOURCE_IDS) {
+              console.log(`\n########## ${sourceId} ##########`);
+
+              const src = await client.query(
+                `SELECT id, source_name, trust_level, auto_publish, active,
+                        last_successful_sync, last_attempted_sync, last_error,
+                        events_found, events_updated
+                 FROM sources WHERE id = $1`,
+                [sourceId],
+              );
+              console.log("source row:", JSON.stringify(src.rows[0] ?? null));
+
+              const events = await client.query(
+                `SELECT id, slug, title, published, primary_genre, genre_confidence,
+                        confidence, cancelled, postponed, start_datetime, venue_id
+                 FROM events
+                 WHERE canonical_source_id = $1
+                 ORDER BY start_datetime`,
+                [sourceId],
+              );
+              console.log(`events (canonical_source_id = ${sourceId}): ${events.rowCount} row(s)`);
+              for (const r of events.rows) console.log(" ", JSON.stringify(r));
+
+              // Some events are matched by source_event_links rather than
+              // canonical_source_id (a different source discovered/linked
+              // the same canonical event) — surfaced separately so it's
+              // never confused with "this source's own canonical rows".
+              const linked = await client.query(
+                `SELECT e.id, e.title, e.published, e.start_datetime, sel.source_url
+                 FROM source_event_links sel
+                 JOIN events e ON e.id = sel.event_id
+                 WHERE sel.source_id = $1 AND e.canonical_source_id != $1
+                 ORDER BY e.start_datetime`,
+                [sourceId],
+              );
+              console.log(`source_event_links (linked but NOT canonical to ${sourceId}): ${linked.rowCount} row(s)`);
+              for (const r of linked.rows) console.log(" ", JSON.stringify(r));
+
+              const dq = await client.query(
+                `SELECT id, probable_title, probable_start, probable_venue_name, status,
+                        predicted_genre, genre_confidence, overall_confidence,
+                        missing_fields, suspected_duplicate_of_event_id, source_url
+                 FROM discovery_queue
+                 WHERE source_id = $1
+                 ORDER BY probable_start`,
+                [sourceId],
+              );
+              console.log(`discovery_queue (source_id = ${sourceId}): ${dq.rowCount} row(s)`);
+              for (const r of dq.rows) console.log(" ", JSON.stringify(r));
+            }
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only).");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("AUDIT SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.audit-completeness.mjs
+          rm -f ./.audit-completeness.mjs
