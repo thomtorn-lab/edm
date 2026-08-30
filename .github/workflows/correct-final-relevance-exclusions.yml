@@ -141,6 +141,21 @@ jobs:
               console.log(`  Exact match (title = '${exactTitle}' AND canonical_source_id = '${SOURCE_ID}') — ${exact.rowCount} row(s):`);
               for (const r of exact.rows) console.log("   ", r);
 
+              // Post-correction verification (read-only, unconditional):
+              // show the event_change_log trail for this row, whatever its
+              // current published state — confirms an unpublish() was
+              // actually recorded, distinct from just observing
+              // published=false.
+              if (exact.rowCount === 1) {
+                const changeLog = await client.query(
+                  `SELECT id, event_id, changed_by, change_type, fields_changed, note, created_at
+                   FROM event_change_log WHERE event_id = $1 ORDER BY created_at DESC LIMIT 5`,
+                  [exact.rows[0].id],
+                );
+                console.log(`  event_change_log for ${exact.rows[0].id} (most recent 5) — ${changeLog.rowCount} row(s):`);
+                for (const r of changeLog.rows) console.log("   ", r);
+              }
+
               if (exact.rowCount !== 1) {
                 console.log(
                   `  -> ABORTING correction for ${label}: expected exactly 1 exact-match row, found ${exact.rowCount}.` +
