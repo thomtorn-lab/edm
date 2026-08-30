@@ -1,0 +1,142 @@
+name: Audit Event Forensics (Read-Only)
+
+# General-purpose, read-only forensic lookup: for a given canonical_source_id
+# and an optional title-substring filter, prints the full `events` row(s)
+# plus every `event_change_log` row for each, ordered oldest-first, so the
+# real history of a specific event (who/what changed it, when, and why) can
+# be reconstructed without guessing. Built for the 2026-08-30 tonser/
+# Pumpehuset unpublished-row investigation but deliberately generic —
+# reusable for any future single-event forensic question.
+#
+# Safety: workflow_dispatch only. BEGIN, SET LOCAL default_transaction_read_only,
+# SELECT-only queries, ROLLBACK — same pattern as every other read-only audit
+# workflow in this repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_id:
+        description: 'Source id to scope the search, e.g. "src-pumpehuset"'
+        required: true
+      title_filter:
+        description: "Optional ILIKE substring to filter events.title (leave blank to list every event for the source)"
+        required: false
+      published_only_false:
+        description: "If true, only include events with published = false"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run forensics lookup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SOURCE_ID: ${{ inputs.source_id }}
+          TITLE_FILTER: ${{ inputs.title_filter }}
+          PUBLISHED_ONLY_FALSE: ${{ inputs.published_only_false }}
+        run: |
+          cat > ./.audit-forensics.mjs <<'EOF'
+          import pg from "pg";
+
+          const sourceId = process.env.SOURCE_ID;
+          const titleFilter = process.env.TITLE_FILTER || null;
+          const publishedOnlyFalse = process.env.PUBLISHED_ONLY_FALSE === "true";
+
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '25s'");
+
+            const conditions = ["e.canonical_source_id = $1"];
+            const params = [sourceId];
+            if (titleFilter) {
+              params.push(`%${titleFilter}%`);
+              conditions.push(`e.title ILIKE $${params.length}`);
+            }
+            if (publishedOnlyFalse) {
+              conditions.push("e.published = false");
+            }
+
+            const events = await client.query(
+              `SELECT e.id, e.slug, e.title, e.artists, e.published, e.manual_override,
+                      e.overridden_fields, e.primary_genre, e.subgenres, e.genre_confidence,
+                      e.confidence, e.cancelled, e.postponed, e.date_changed, e.time_changed,
+                      e.start_datetime, e.venue_id, v.name AS venue_name,
+                      e.canonical_source_id, e.created_at, e.updated_at, e.last_source_check,
+                      e.last_changed
+               FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+               WHERE ${conditions.join(" AND ")}
+               ORDER BY e.start_datetime`,
+              params,
+            );
+            console.log(`Matched events: ${events.rowCount}`);
+
+            for (const r of events.rows) {
+              console.log(`\n########## event ${r.id} — "${r.title}" ##########`);
+              console.log(JSON.stringify(r, null, 2));
+
+              const changeLog = await client.query(
+                `SELECT id, event_id, changed_by, change_type, fields_changed, note, created_at
+                 FROM event_change_log WHERE event_id = $1 ORDER BY created_at ASC`,
+                [r.id],
+              );
+              console.log(`event_change_log for ${r.id}: ${changeLog.rowCount} row(s)`);
+              for (const c of changeLog.rows) console.log(" ", JSON.stringify(c));
+
+              // Any discovery_queue row pointing at this event as a suspected
+              // duplicate, or sharing a very similar title — helps rule in/out
+              // a dedup-driven explanation.
+              const dq = await client.query(
+                `SELECT id, probable_title, status, source_id, suspected_duplicate_of_event_id, created_at
+                 FROM discovery_queue
+                 WHERE suspected_duplicate_of_event_id = $1 OR probable_title ILIKE $2
+                 ORDER BY created_at`,
+                [r.id, `%${r.title.split(" ")[0]}%`],
+              );
+              console.log(`discovery_queue rows referencing or title-matching "${r.title}": ${dq.rowCount} row(s)`);
+              for (const d of dq.rows) console.log(" ", JSON.stringify(d));
+            }
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only).");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("FORENSICS SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.audit-forensics.mjs
+          rm -f ./.audit-forensics.mjs
