@@ -61,6 +61,12 @@ on:
         required: false
         type: boolean
         default: false
+      body_start:
+        description: "Reachability mode only, requires print_full_body=true: byte offset into the response body to start printing from (default 0) — for a page too large for either the job log's own tail-anchored retrieval cap or the save_body_path artifact download to return in one piece; walk the page in a few bounded requests via this and body_length instead."
+        required: false
+      body_length:
+        description: "Reachability mode only, requires print_full_body=true: number of chars to print starting at body_start (default 200000)."
+        required: false
       method:
         description: "Reachability mode only: HTTP method, GET (default) or POST."
         required: false
@@ -146,6 +152,8 @@ jobs:
           [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
           [ -n "${{ inputs.save_body_path }}" ] && args+=(--save-body="${{ inputs.save_body_path }}")
           [ "${{ inputs.print_full_body }}" = "true" ] && args+=(--print-full-body)
+          [ -n "${{ inputs.body_start }}" ] && args+=(--body-start="${{ inputs.body_start }}")
+          [ -n "${{ inputs.body_length }}" ] && args+=(--body-length="${{ inputs.body_length }}")
           [ -n "${{ inputs.method }}" ] && args+=(--method="${{ inputs.method }}")
           [ -n "${{ inputs.body }}" ] && args+=(--body="${{ inputs.body }}")
           [ "${{ inputs.with_credentials }}" = "true" ] && args+=(--with-credentials)

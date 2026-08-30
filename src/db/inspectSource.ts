@@ -363,6 +363,19 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   console.log(`body length: ${bodyText.length} chars`);
   const saveBodyPath = typeof args["save-body"] === "string" ? args["save-body"] : null;
   const printFull = args["print-full-body"] === true;
+  // Bounded slice of the body, printed instead of the whole thing — for a
+  // page large enough that neither --print-full-body (the job log's own
+  // retrieval API has a fixed, tail-anchored output-size cap regardless of
+  // how many lines are requested — confirmed live against Hangaren's
+  // events page, 2026-08-30) nor --save-body's artifact (its download URL
+  // redirects to blob storage a caller's own network policy may not permit
+  // reaching) can get the WHOLE body back to the caller. `--body-start`
+  // (default 0) and `--body-length` (default 200000) select a byte range
+  // of `bodyText` — e.g. the first 200000 chars, which for a long page
+  // reliably lands well inside the job log's own return cap, letting a
+  // caller walk the page in a few bounded requests instead of none.
+  const bodyStart = typeof args["body-start"] === "string" ? Number(args["body-start"]) : 0;
+  const bodyLength = typeof args["body-length"] === "string" ? Number(args["body-length"]) : 200_000;
   if (saveBodyPath) {
     const { writeFileSync, mkdirSync } = await import("node:fs");
     const { dirname } = await import("node:path");
@@ -373,9 +386,16 @@ async function modeReachability(_client: Client, args: Record<string, string | b
     // Printed to the job log (not saved as an artifact) — for callers whose
     // network path can reach the GitHub Actions API/log endpoint but not
     // arbitrary blob storage hosts the artifact download redirects to.
-    console.log("-- FULL body (--print-full-body) --");
-    console.log(bodyText);
-    console.log("-- end of body --");
+    if (Number.isFinite(bodyStart) && (bodyStart > 0 || (typeof args["body-length"] === "string" && Number.isFinite(bodyLength)))) {
+      const slice = bodyText.slice(bodyStart, bodyStart + bodyLength);
+      console.log(`-- BODY SLICE chars [${bodyStart}, ${bodyStart + bodyLength}) of ${bodyText.length} total (--body-start/--body-length) --`);
+      console.log(slice);
+      console.log("-- end of slice --");
+    } else {
+      console.log("-- FULL body (--print-full-body) --");
+      console.log(bodyText);
+      console.log("-- end of body --");
+    }
   } else {
     console.log("-- body preview (first 4000 chars; pass --save-body=<path> for an artifact, or --print-full-body to print the full body to this log) --");
     console.log(bodyText.slice(0, 4000));
