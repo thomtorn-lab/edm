@@ -93,7 +93,7 @@ jobs:
                       e.confidence, e.cancelled, e.postponed, e.date_changed, e.time_changed,
                       e.start_datetime, e.venue_id, v.name AS venue_name,
                       e.canonical_source_id, e.created_at, e.updated_at, e.last_source_check,
-                      e.last_changed
+                      e.last_changed, e.description
                FROM events e LEFT JOIN venues v ON v.id = e.venue_id
                WHERE ${conditions.join(" AND ")}
                ORDER BY e.start_datetime`,
