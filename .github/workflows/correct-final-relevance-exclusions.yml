@@ -11,19 +11,34 @@ name: Correct Final EDM Relevance Rule Exclusions
 # weaker" rule (the shared pipeline's own decidePublishedEventSyncAction
 # safety net already refuses to do that automatically — see src/lib/
 # sync.ts). This is a targeted, human-triggered correction for exactly the
-# two named rows, matched by a distinctive title substring, scoped to
-# already-published rows only.
+# two named rows.
 #
-# Safety:
+# Safety (tightened 2026-08-30 follow-up review — target precision):
 #   - workflow_dispatch only.
 #   - Default (`execute: false`) is a strictly READ-ONLY dry run: BEGIN,
-#     SET LOCAL default_transaction_read_only, SELECT the exact matching
-#     rows, print what WOULD change, ROLLBACK. No write happens.
-#   - `execute: true` is required for the actual correction, and even then
-#     only ever sets `published = false` on the matched row(s) — it never
-#     deletes anything (events, sources, canonical history all stay
-#     intact) — and appends one event_change_log row per correction
-#     documenting why, so the action is fully auditable.
+#     SET LOCAL default_transaction_read_only, SELECT and print the exact
+#     matching rows (id, exact title, venue name, source, start_datetime,
+#     published, primary_genre/confidence), ROLLBACK. No write happens.
+#   - The WRITE PATH (execute=true) matches ONLY on an EXACT title (case-
+#     sensitive, full string — not a substring) scoped to
+#     canonical_source_id = 'src-pumpehuset' AND published = true. It never
+#     uses the broad ILIKE net below, which exists purely as a DIAGNOSTIC
+#     cross-check (e.g. to surface a title with drifted whitespace/
+#     diacritics that the exact match would then miss) and is clearly
+#     printed as "not used for any write."
+#   - Machine-enforced target-count invariant: for each of the two named
+#     artists, the exact-match query must return EXACTLY ONE row. Zero rows
+#     (nothing to correct) or more than one row (ambiguous — could mean a
+#     genuine duplicate, or the exact string no longer matches what's
+#     stored) both ABORT that target's write entirely and print an error,
+#     even when execute=true — this is what makes "there must be exactly
+#     the intended row" a property the script itself checks, not just
+#     something a human is trusted to eyeball from log output.
+#   - Even on a clean single-row match, the write only ever sets
+#     `published = false` — it never deletes anything (events, sources,
+#     canonical history all stay intact) — and appends one
+#     event_change_log row per correction documenting why, so the action
+#     is fully auditable.
 #   - Idempotent: a row already published=false is skipped, reported, not
 #     re-written.
 
@@ -31,7 +46,7 @@ on:
   workflow_dispatch:
     inputs:
       execute:
-        description: "false = dry run (read-only, default). true = actually unpublish the matched rows."
+        description: "false = dry run (read-only, default). true = actually unpublish the matched row(s), only if exactly one exact-title match exists per target."
         required: true
         default: "false"
         type: boolean
@@ -72,14 +87,15 @@ jobs:
           cat > ./.correct-relevance.mjs <<'EOF'
           import pg from "pg";
 
-          // Distinctive, diacritic-tolerant title substrings for the two
-          // confirmed false positives. Deliberately a short, explicit,
-          // human-reviewed allowlist — NOT a general rule — per the audit's
-          // "no broad blacklist" constraint.
+          // Exact, case-sensitive canonical titles — the ONLY predicate the
+          // write path is allowed to use. A short, explicit, human-reviewed
+          // allowlist — NOT a general rule — per the audit's "no broad
+          // blacklist" constraint.
           const TARGETS = [
-            { label: "Käärijä", pattern: "%rij%" },
-            { label: "Tinie Tempah", pattern: "%tempah%" },
+            { label: "Käärijä", exactTitle: "Käärijä", diagnosticPattern: "%rij%" },
+            { label: "Tinie Tempah", exactTitle: "Tinie Tempah", diagnosticPattern: "%tempah%" },
           ];
+          const SOURCE_ID = "src-pumpehuset";
 
           const execute = process.env.EXECUTE === "true";
           const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -94,43 +110,76 @@ jobs:
 
             console.log(`Mode: ${execute ? "EXECUTE (will write)" : "DRY RUN (read-only)"}\n`);
 
-            for (const { label, pattern } of TARGETS) {
-              const res = await client.query(
-                `SELECT id, slug, title, published, primary_genre, genre_confidence, canonical_source_id
-                 FROM events WHERE title ILIKE $1 ORDER BY start_datetime`,
-                [pattern],
-              );
-              console.log(`=== ${label} (pattern ${pattern}) — ${res.rowCount} matching row(s) ===`);
-              for (const r of res.rows) console.log(" ", r);
+            for (const { label, exactTitle, diagnosticPattern } of TARGETS) {
+              console.log(`=== ${label} ===`);
 
-              for (const r of res.rows) {
-                if (!r.published) {
-                  console.log(`  -> id=${r.id} already published=false, skipping (idempotent no-op).`);
-                  continue;
-                }
-                console.log(`  -> id=${r.id} published=true — ${execute ? "UNPUBLISHING now." : "would be unpublished (dry run, no write)."}`);
-                if (execute) {
-                  await client.query(
-                    `UPDATE events SET published = false, updated_at = now() WHERE id = $1`,
-                    [r.id],
-                  );
-                  await client.query(
-                    `INSERT INTO event_change_log (id, event_id, changed_by, change_type, fields_changed, note, created_at)
-                     VALUES ($1, $2, 'admin', 'unpublish', ARRAY['published'], $3, now())`,
-                    [
-                      `chg-${r.id}-final-relevance-2026-08-30`,
-                      r.id,
-                      `Final EDM Relevance Rule (2026-08-30) correction: ${label} is a pop/rap-crossover artist, not EDM-defined — see relevance-architecture audit report. Row preserved (published=false only, no delete).`,
-                    ],
-                  );
-                }
+              // DIAGNOSTIC ONLY — never used for the write path. Surfaces
+              // near-misses (whitespace/diacritic drift) the exact match
+              // below would silently miss, so a human reviewing dry-run
+              // output can catch that before ever flipping execute=true.
+              const diag = await client.query(
+                `SELECT e.id, e.title, e.published, e.canonical_source_id, e.start_datetime, v.name AS venue_name
+                 FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+                 WHERE e.title ILIKE $1 ORDER BY e.start_datetime`,
+                [diagnosticPattern],
+              );
+              console.log(`  Diagnostic broad match (pattern ${diagnosticPattern}, NOT used for any write) — ${diag.rowCount} row(s):`);
+              for (const r of diag.rows) console.log("   ", r);
+
+              // EXACT match — the only query the write path is allowed to
+              // act on. Full row detail requested by the safety review:
+              // event_id, exact title, venue, source, start_datetime,
+              // current published value, genre/confidence as current status.
+              const exact = await client.query(
+                `SELECT e.id, e.title, e.published, e.primary_genre, e.genre_confidence,
+                        e.canonical_source_id, e.start_datetime, v.name AS venue_name
+                 FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+                 WHERE e.title = $1 AND e.canonical_source_id = $2
+                 ORDER BY e.start_datetime`,
+                [exactTitle, SOURCE_ID],
+              );
+              console.log(`  Exact match (title = '${exactTitle}' AND canonical_source_id = '${SOURCE_ID}') — ${exact.rowCount} row(s):`);
+              for (const r of exact.rows) console.log("   ", r);
+
+              if (exact.rowCount !== 1) {
+                console.log(
+                  `  -> ABORTING correction for ${label}: expected exactly 1 exact-match row, found ${exact.rowCount}.` +
+                    (exact.rowCount === 0
+                      ? " Nothing to correct, or the exact title string no longer matches what's stored — check the diagnostic broad match above."
+                      : " Ambiguous — resolve manually before retrying (possible duplicate rows)."),
+                );
+                console.log("");
+                continue;
+              }
+
+              const r = exact.rows[0];
+              if (!r.published) {
+                console.log(`  -> id=${r.id} already published=false, skipping (idempotent no-op).`);
+                console.log("");
+                continue;
+              }
+              console.log(`  -> id=${r.id} published=true — ${execute ? "UNPUBLISHING now." : "would be unpublished (dry run, no write)."}`);
+              if (execute) {
+                await client.query(
+                  `UPDATE events SET published = false, updated_at = now() WHERE id = $1`,
+                  [r.id],
+                );
+                await client.query(
+                  `INSERT INTO event_change_log (id, event_id, changed_by, change_type, fields_changed, note, created_at)
+                   VALUES ($1, $2, 'admin', 'unpublish', ARRAY['published'], $3, now())`,
+                  [
+                    `chg-${r.id}-final-relevance-2026-08-30`,
+                    r.id,
+                    `Final EDM Relevance Rule (2026-08-30) correction: ${label} is a pop/rap-crossover artist, not EDM-defined — see relevance-architecture audit report. Row preserved (published=false only, no delete).`,
+                  ],
+                );
               }
               console.log("");
             }
 
             if (execute) {
               await client.query("COMMIT");
-              console.log("COMMITTED — corrections written.");
+              console.log("COMMITTED — corrections written for any target that passed the exactly-one-row check.");
             } else {
               await client.query("ROLLBACK");
               console.log("ROLLED BACK (dry run) — no data was changed.");
