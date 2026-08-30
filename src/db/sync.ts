@@ -219,7 +219,10 @@ async function runSourceSyncLocked(
       // failure/timeout/rate-limit here is swallowed by enrichEventGenre's
       // own per-artist try/catch and simply leaves `result` exactly as the
       // deterministic classifier produced it.
-      const relevanceText = `${raw.title} ${raw.description ?? ""}`;
+      // Mirrors pipeline.ts's own relevanceText construction — see
+      // RawCandidateEvent.relevanceText's doc comment for why this must
+      // never fall back to raw.description alone.
+      const relevanceText = `${raw.title} ${raw.relevanceText ?? raw.description ?? ""}`;
       // Never spend a Discogs lookup on a candidate the pipeline already
       // settled: "auto_publish" (including via a trusted-electronic
       // source's own relevance, which enrichment must never second-guess

@@ -35,6 +35,30 @@ export interface RawCandidateEvent {
    *      long copyrighted source write-up.
    */
   description: string | null;
+  /**
+   * The full evidentiary text (title + bio/body copy) an adapter used to
+   * resolve `genreHint`, independent of whatever ends up in `description`
+   * for public display (relevance-architecture audit, 2026-08-30 — Final
+   * EDM Relevance Rule). Some adapters null or truncate `description` for
+   * reasons that have nothing to do with genre evidence (Pumpehuset's and
+   * Poolen's English-language guard drops a real Danish bio entirely) —
+   * without this field, the shared pipeline's relevance check
+   * (`hasNonElectronicGenreSignal` etc. in relevance.ts) silently loses
+   * access to the exact same text that produced `genreHint` in the first
+   * place, so a negative signal genre resolution itself already "saw" can
+   * never be weighed against it. Real production incident this fixes: a
+   * Pumpehuset candidate's own Danish bio said "hiphop, grime og pop" (his
+   * own genre) in the same paragraph a support act's name-drop ("Swedish
+   * House Mafia") produced a false-positive "house" genre match — the bio
+   * was correctly nulled for the English-only public description, but with
+   * it went the ONLY evidence that should have kept this from auto-
+   * publishing. Optional and nullable: omitted or null means the adapter
+   * has no separate evidentiary text — callers fall back to `description`
+   * (`raw.relevanceText ?? raw.description ?? ""`), so every adapter that
+   * never redacts/truncates its description for non-evidentiary reasons is
+   * completely unaffected by this field's existence.
+   */
+  relevanceText?: string | null;
   artists: string[];
   startDatetime: string | null;
   endDatetime: string | null;

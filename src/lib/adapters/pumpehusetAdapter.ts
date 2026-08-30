@@ -651,6 +651,14 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
         );
       }
     }
+    // Captures the full text genre resolution above actually used as
+    // evidence — BEFORE the English-language guard below can null it for
+    // display — so the shared pipeline's relevance check sees the exact
+    // same text a negative signal in it (a real incident: "hiphop, grime og
+    // pop" in an artist's own bio) could otherwise be silently dropped
+    // alongside a redacted description (relevance-architecture audit,
+    // 2026-08-30). See RawCandidateEvent.relevanceText's doc comment.
+    next = { ...next, relevanceText: next.description };
     // English-language guard applies uniformly, whatever produced this
     // candidate's description (detail-page prose, support-band bios alone,
     // or the bare presenter-line fallback) — genre resolution above already

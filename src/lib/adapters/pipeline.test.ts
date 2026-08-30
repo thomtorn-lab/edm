@@ -403,6 +403,125 @@ describe("applyEnrichedGenre — CASE B: weak-evidence corroboration (follow-up 
   });
 });
 
+describe("Final EDM Relevance Rule (2026-08-30) — relevanceText must carry the same evidence genre resolution itself used", () => {
+  // Real production incident, exactly as it happened on the 2026-08-30
+  // Pumpehuset sync: Käärijä's own detail-page bio is Danish, so the
+  // adapter's English-language guard nulls `description` for public
+  // display — but genre resolution (and Discogs enrichment afterward) had
+  // already used the FULL bio as evidence, including "...Pumpehuset bliver
+  // fyldt af hans karakteristiske mix af elektroniske beats, punk-rap og
+  // energifyldt klublyd" (his own description of his sound, naming
+  // punk-rap as part of the mix — a real non-electronic signal). Before
+  // this fix, that evidence was silently discarded before relevance ever
+  // saw it (relevanceText was reconstructed from `description`, already
+  // null), so a Discogs "Electro" style match on one of his releases sailed
+  // through unopposed to auto_publish. Käärijä is fundamentally a pop/rap
+  // crossover artist (Eurovision 2023 viral hit "Cha Cha Cha") — not
+  // defined by EDM — so this must land in review_queue, not auto_publish.
+  const kaarijaBio =
+    'Finsk Eurovision-superstjerne kommer forbi Danmark. Efter at have lanceret det største show i sin karriere i Veikkaus Arena i Helsinki næste forår, fortsætter Käärijä sit store koncertår med at indtage Europa på sin hidtil mest omfattende turné i efteråret 2026. Eurodisko Tour byder på 24 shows. Käärijä er blevet et internationalt fænomen og har modtaget fem finske Grammy-priser samt prisen som Best Nordic Artist ved MTV EMA. Han skrev finsk musikhistorie ved at vinde publikumsafstemningen ved Eurovision Song Contest 2023 med sangen "Cha Cha Cha". Pumpehuset bliver fyldt af hans karakteristiske mix af elektroniske beats, punk-rap og energifyldt klublyd.';
+
+  it("Käärijä: real bio surfaces a genuine 'punk-rap' negative signal once relevanceText carries it, softening a Discogs-corroborated specific genre from auto_publish to review_queue", () => {
+    const withoutRelevanceText = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Käärijä",
+        description: null, // nulled by the adapter's English-language guard, same as real Production
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+        artists: ["Käärijä"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    // The Discogs corroboration step (applyEnrichedGenre) as sync.ts calls
+    // it — BEFORE the fix, its relevanceText argument was reconstructed
+    // from `description` alone (null here), so it never saw the negative
+    // "punk-rap" signal either.
+    const enrichedWithoutRelevanceText = applyEnrichedGenre(withoutRelevanceText, "electro", "medium", "Käärijä", false);
+    expect(enrichedWithoutRelevanceText.decision).toBe("auto_publish"); // the real, now-fixed bug — documents the failure mode this test guards against
+
+    const withRelevanceText = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Käärijä",
+        description: null,
+        relevanceText: kaarijaBio, // what pumpehusetAdapter.ts now populates before nulling description
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+        artists: ["Käärijä"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(withRelevanceText.relevance).toBe("weak"); // "punk-rap" is real, unsuppressed negative evidence
+    const enriched = applyEnrichedGenre(withRelevanceText, "electro", "medium", `Käärijä ${kaarijaBio}`, false);
+    expect(enriched.decision).toBe("review_queue"); // fixed: no longer auto-published
+    expect(enriched.decision).not.toBe("auto_publish");
+  });
+
+  // Real production incident: Tinie Tempah's own Danish bio says "Hans
+  // ørehængende blanding af hiphop, grime og pop..." (his own genre, in his
+  // own words) in the same paragraph that name-drops collaborator "Swedish
+  // House Mafia" — whose own name contains the bare word "house", producing
+  // a false-positive deterministic genre match with nothing to do with
+  // Tinie Tempah's own sound. Before this fix, the Danish bio (including
+  // the real "hiphop, grime og pop" self-description) was nulled for
+  // display and never reached relevance assessment at all.
+  const tinieTempahBio =
+    "Den britiske rapstjerne og hitmager Tinie Tempah rammer Pumpehuset med et katalog fyldt med internationale hits. Hans ørehængende blanding af hiphop, grime og pop krydret med en karismatisk scenetilstedeværelse har resulteret i samarbejder med blandt andre Calvin Harris, Zara Larsson, Wiz Khalifa, Ellie Goulding, Swedish House Mafia, Jess Glynne og Kelly Rowland.";
+
+  it("Tinie Tempah: a collaborator name-drop ('Swedish House Mafia') produces a false 'house' genre match, but relevanceText now also carries his own 'hiphop, grime og pop' self-description to weigh against it", () => {
+    const withoutRelevanceText = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Tinie Tempah",
+        description: null,
+        genreHint: "house", // the real false-positive deterministicGenreFromText match on "Swedish House Mafia"
+        genreConfidenceHint: "high",
+        artists: ["Tinie Tempah"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(withoutRelevanceText.decision).toBe("auto_publish"); // the real, now-fixed bug
+
+    const withRelevanceText = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Tinie Tempah",
+        description: null,
+        relevanceText: tinieTempahBio,
+        genreHint: "house",
+        genreConfidenceHint: "high",
+        artists: ["Tinie Tempah"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(withRelevanceText.relevance).toBe("weak"); // his own "hiphop, grime og pop" is real, unsuppressed negative evidence
+    expect(withRelevanceText.decision).toBe("review_queue"); // fixed: no longer auto-published
+  });
+
+  it("does not suppress a genuinely EDM-crossover borderline artist just because pop/R&B is mentioned as an INFLUENCE alongside a real specific-genre match (MNEK-type reference case — house/UK garage genuinely substantial to the artist's identity stays reviewable, not auto-excluded)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "MNEK",
+        description: null,
+        relevanceText:
+          "MNEK er en britisk sanger og producer, hvis egen lyd bevæger sig i krydsfeltet mellem UK garage, house og pop-krydsfelt-hits.",
+        genreHint: "house",
+        genreConfidenceHint: "high",
+        artists: ["MNEK"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    // A real specific-genre match (house) with no contradicting negative
+    // signal in this text stays a genuine strong signal — still correctly
+    // publishable/reviewable, not wrongly held, unlike Käärijä/Tinie Tempah
+    // above where a real negative signal was present.
+    expect(result.relevance).toBe("strong");
+    expect(result.decision).toBe("auto_publish");
+  });
+});
+
 describe("Billetto Discovery Queue noise (data-quality Workstream, 2026-08-24 queue audit — a general aggregator's own inventory is mostly not music at all, not just wrong-genre)", () => {
   function billettoRaw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
     return raw({

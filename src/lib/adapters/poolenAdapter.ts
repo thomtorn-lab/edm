@@ -298,6 +298,12 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     priceFrom,
     genreHint,
     genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
+    // The real, untruncated text genre resolution above used (see the
+    // comment on `description` a few lines up) — kept separately so the
+    // shared pipeline's relevance check sees it too, even for a Danish bio
+    // whose `description` above is null (relevance-architecture audit,
+    // 2026-08-30 — see RawCandidateEvent.relevanceText's doc comment).
+    relevanceText: fullDescriptionText || null,
     soldOutHint,
     cancelledHint,
   };

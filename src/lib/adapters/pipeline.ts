@@ -196,7 +196,13 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   if (raw.venueName && !resolvedVenue) missingFields.push("venue (unresolved against registry)");
   const normalizedArtists = dedupeArtistList(raw.artists);
 
-  const relevanceText = `${raw.title} ${raw.description ?? ""}`;
+  // Uses raw.relevanceText (the full text genre resolution itself saw) when
+  // an adapter supplies one — never the possibly-redacted raw.description —
+  // so a negative signal the adapter's own evidence already contained can
+  // never be silently dropped before relevance gets to weigh it (see
+  // RawCandidateEvent.relevanceText's doc comment for the real incident this
+  // fixes).
+  const relevanceText = `${raw.title} ${raw.relevanceText ?? raw.description ?? ""}`;
 
   // GENRE CLASSIFICATION (evidence order: hint from source metadata/description first,
   // deterministic keyword mapping as fallback, otherwise unresolved).
