@@ -7,6 +7,7 @@ import {
   parseDotTime,
   extractEventDateAndTime,
   extractLineupFromBodyLines,
+  extractGenreTags,
   isLikelyDanish,
   createPumpehusetAdapter,
   PUMPEHUSET_SOURCE_ID,
@@ -51,6 +52,18 @@ const BYHAVEN_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "p
  * Fest" as the sole "artist".
  */
 const AFRO_SUNDOWN_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "pumpehuset-detail-afro-sundown-fest.html"), "utf-8");
+/**
+ * `pumpehuset-detail-shrek-rave.html` is a real, unmodified recording of
+ * https://pumpehuset.dk/koncerter/shrek-rave/ (fetched via inspect-source.yml's
+ * reachability mode, 2026-08-30 — first-party source completeness audit).
+ * This event is the real, live counterexample that exposed the Pumpehuset
+ * multi-genre-tag completeness bug: fetch_concerts' own listing record
+ * reduces it to a single genre, "Pop" (confirmed via this same page's own
+ * GTM dataLayer marker, `genreName: 'Pop'`), even though this exact page
+ * itself links three real tags — Pop, Indie, and Elektronisk (see
+ * parsePumpehusetConcertsJson's and extractGenreTags's doc comments).
+ */
+const SHREK_RAVE_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "pumpehuset-detail-shrek-rave.html"), "utf-8");
 
 describe("parseDanishDate", () => {
   it("parses a real listing date", () => {
@@ -92,6 +105,18 @@ describe("extractEventDateAndTime — real detail-page fixtures", () => {
   it("parses a free-entry Byhaven pop-up night the same way", () => {
     const result = extractEventDateAndTime(BYHAVEN_DETAIL_HTML);
     expect(result).toEqual({ dateKey: { year: 2026, month: 8, day: 23 }, hour: 15, minute: 0 });
+  });
+});
+
+describe("extractGenreTags — real detail-page fixture (multi-genre completeness fix)", () => {
+  it("reads every /program?genre=... tag a real detail page links, not just the listing's single primary genre (Shrek Rave: Pop, Indie, Elektronisk)", () => {
+    const tags = extractGenreTags(SHREK_RAVE_DETAIL_HTML);
+    expect(tags).toEqual(expect.arrayContaining(["Pop", "Indie", "Elektronisk"]));
+    expect(tags.length).toBe(3); // deduplicated — the fixture links "Pop" twice
+  });
+
+  it("returns an empty array when a page has no genre tag links", () => {
+    expect(extractGenreTags("<html><body>No genre links here.</body></html>")).toEqual([]);
   });
 });
 
@@ -164,6 +189,43 @@ describe("parsePumpehusetConcertsJson — real fetch_concerts fixture", () => {
   });
 });
 
+describe("parsePumpehusetConcertsJson — multi-genre completeness fix (Shrek Rave root cause)", () => {
+  it("keeps a candidate whose listing genre isn't Elektronisk, instead of dropping it — genreHint left null for enrichWithShowTimes to resolve from the real detail-page tag list", () => {
+    const json = JSON.stringify([
+      {
+        title: "Shrek Rave",
+        link: "https://pumpehuset.dk/koncerter/shrek-rave/",
+        genre: "Pop", // the listing's own single primary genre — real, live value
+      },
+    ]);
+    const [e] = parsePumpehusetConcertsJson(json);
+    expect(e).toBeDefined();
+    expect(e.title).toBe("Shrek Rave");
+    expect(e.genreHint).toBeNull();
+    expect(e.genreConfidenceHint).toBeNull();
+  });
+
+  it("still credits genre immediately when the listing's own genre field already says Elektronisk (no regression for the common case)", () => {
+    const json = JSON.stringify([
+      {
+        title: "Test Show",
+        link: "https://pumpehuset.dk/koncerter/test-show/",
+        genre: "Elektronisk",
+      },
+    ]);
+    const [e] = parsePumpehusetConcertsJson(json);
+    expect(e.genreHint).toBe("electronic-other");
+    expect(e.genreConfidenceHint).toBe("high");
+  });
+
+  it("keeps a candidate with a missing/empty genre field the same way — never drops on genre alone at listing time", () => {
+    const json = JSON.stringify([{ title: "No Genre Listed", link: "https://pumpehuset.dk/koncerter/no-genre-listed/" }]);
+    const [e] = parsePumpehusetConcertsJson(json);
+    expect(e).toBeDefined();
+    expect(e.genreHint).toBeNull();
+  });
+});
+
 describe("parsePumpehusetConcertsJson — ticket_status lifecycle signal (event lifecycle/status handling, 2026-08-28)", () => {
   const events = parsePumpehusetConcertsJson(CONCERTS_JSON);
 
@@ -225,7 +287,11 @@ describe("createPumpehusetAdapter", () => {
         expect(init?.method).toBe("POST");
         const body = String(init?.body);
         expect(body).toContain("action=fetch_concerts");
-        expect(body).toContain("genres=Elektronisk");
+        // Deliberately unfiltered (multi-genre completeness fix): requesting
+        // genres=Elektronisk server-side would silently re-introduce the
+        // Shrek Rave root cause — see fetchAllConcerts's doc comment.
+        expect(body).toContain("genres=");
+        expect(body).not.toContain("genres=Elektronisk");
         // Simulate real pagination: page 1 returns the fixture (fewer than
         // pageAmount, since the fixture is the full real result set), which
         // ends the pagination loop after one page.
@@ -299,6 +365,92 @@ describe("createPumpehusetAdapter", () => {
     expect(afroSundown!.artists).toEqual(["Bullet", "Panda", "Sule", "Xzyl", "Ynxg Irie", "Jayce + MC Mazi"]);
     // Also real Danish copy — suppressed by the same English-language guard.
     expect(afroSundown!.description).toBeNull();
+  });
+});
+
+describe("createPumpehusetAdapter — multi-genre completeness fix (Shrek Rave, first-party source completeness audit 2026-08-30)", () => {
+  it("discovers a real event whose listing genre isn't Elektronisk by confirming the tag on its own detail page (Shrek Rave, listed genre 'Pop')", async () => {
+    const concertsJson = JSON.stringify([
+      {
+        title: "Shrek Rave",
+        link: "https://pumpehuset.dk/koncerter/shrek-rave/",
+        genre: "Pop", // real, live listing value — Pop is the primary GTM genre, not Elektronisk
+      },
+    ]);
+    const fetchImpl = async (url: string | URL) => {
+      const urlStr = url.toString();
+      if (urlStr === PUMPEHUSET_AJAX_URL) {
+        return new Response(concertsJson, { status: 200 });
+      }
+      if (urlStr === "https://pumpehuset.dk/koncerter/shrek-rave/") {
+        return new Response(SHREK_RAVE_DETAIL_HTML, { status: 200 });
+      }
+      return new Response("<html></html>", { status: 404 });
+    };
+
+    const adapter = createPumpehusetAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
+    const results = await adapter.fetchCandidates();
+
+    expect(results.length).toBe(1);
+    const shrekRave = results[0];
+    expect(shrekRave.title).toBe("Shrek Rave");
+    expect(shrekRave.startDatetime).toBe("2026-08-28T19:00:00.000Z"); // 21:00 CEST (UTC+2), "Showet starter"
+    // Confirmed electronic-relevant from the detail page's own real tag list
+    // (Pop, Indie, Elektronisk — see extractGenreTags), not the listing's
+    // single misleading "Pop" field. No specific subgenre keyword appears in
+    // this event's title/description, so it lands at the same
+    // official-source-metadata floor as any other Elektronisk-tagged show.
+    expect(shrekRave.genreHint).toBe("electronic-other");
+    expect(shrekRave.genreConfidenceHint).toBe("high");
+  });
+
+  it("drops a candidate whose detail page never confirms Elektronisk either — the fix does not flood non-electronic shows into the pipeline", async () => {
+    const concertsJson = JSON.stringify([
+      {
+        title: "Some Metal Show",
+        link: "https://pumpehuset.dk/koncerter/some-metal-show/",
+        genre: "Metal",
+      },
+    ]);
+    const fetchImpl = async (url: string | URL) => {
+      const urlStr = url.toString();
+      if (urlStr === PUMPEHUSET_AJAX_URL) {
+        return new Response(concertsJson, { status: 200 });
+      }
+      if (urlStr === "https://pumpehuset.dk/koncerter/some-metal-show/") {
+        // A real detail page for a genuinely non-electronic show: its own
+        // /program?genre= links never include Elektronisk.
+        return new Response('<a href="/program?genre=Metal">Metal</a><a href="/program?genre=Rock">Rock</a>', { status: 200 });
+      }
+      return new Response("<html></html>", { status: 404 });
+    };
+
+    const adapter = createPumpehusetAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
+    const results = await adapter.fetchCandidates();
+
+    expect(results).toEqual([]);
+  });
+
+  it("drops a candidate whose detail page fetch fails outright and was never confirmed electronic at listing time", async () => {
+    const concertsJson = JSON.stringify([
+      {
+        title: "Unreachable Show",
+        link: "https://pumpehuset.dk/koncerter/unreachable-show/",
+        genre: "Pop",
+      },
+    ]);
+    const fetchImpl = async (url: string | URL) => {
+      const urlStr = url.toString();
+      if (urlStr === PUMPEHUSET_AJAX_URL) {
+        return new Response(concertsJson, { status: 200 });
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const adapter = createPumpehusetAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
+    const results = await adapter.fetchCandidates();
+
+    expect(results).toEqual([]);
   });
 });
 

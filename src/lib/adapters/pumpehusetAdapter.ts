@@ -154,6 +154,27 @@ export function extractEventDateAndTime(detailHtml: string): { dateKey: DateKey;
   return { dateKey, hour: time.hour, minute: time.minute };
 }
 
+/**
+ * The complete, real set of genre tags an event's own detail page states —
+ * every page renders each of its tags as a `/program?genre=<Tag>` button
+ * (real evidence: Shrek Rave's own page links three — Pop, Indie,
+ * Elektronisk), which is the true multi-tag taxonomy the fetch_concerts
+ * listing's single `genre` field can't represent (see
+ * parsePumpehusetConcertsJson's doc comment). Returns the tags exactly as
+ * the site states them (e.g. "Elektronisk"), deduplicated; an empty array
+ * when the page carries none (never guessed).
+ */
+export function extractGenreTags(detailHtml: string): string[] {
+  const tags = new Set<string>();
+  const re = /\/program\?genre=([^"'&\s]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(detailHtml))) {
+    const tag = decodeURIComponent(match[1]).trim();
+    if (tag) tags.add(tag);
+  }
+  return [...tags];
+}
+
 /** The venue's own presenter/promoter line ("PUMPEHUSET og Live nation Præsenterer"), if present — real evidence, not invented. */
 function extractPresenterLine(detailHtml: string): string | null {
   const match = detailHtml.match(/<div class="u-text-white text__headline text__headline--size-5 grid">\s*([^<]+?)\s*<\/div>/);
@@ -359,12 +380,39 @@ function cancelledHintFromTicketStatus(status: string | undefined): boolean | nu
 }
 
 /**
- * Parses the fetch_concerts JSON response (already genre-filtered
- * server-side) into candidates. startDatetime is always null at this
- * stage — the listing response carries no time, only a date — and is
- * filled in later by enrichWithShowTimes from each event's own detail
- * page. A single malformed record is skipped, never thrown, matching every
- * other adapter's contract.
+ * Parses the fetch_concerts JSON response into candidates. Pumpehuset's own
+ * listing record reduces every event to a SINGLE `genre` string (confirmed
+ * live, 2026-08-30 completeness audit — "Shrek Rave" root cause), even
+ * though a single event can carry several real tags on its own detail page
+ * (e.g. Shrek Rave's own page links three: Pop, Indie, Elektronisk — Pop is
+ * the one that lands in this listing field). Requesting
+ * `genres=Elektronisk` server-side — the prior behavior — therefore silently
+ * drops any event whose LISTING-level genre isn't Elektronisk even when
+ * Elektronisk is genuinely one of its real tags, with no trace anywhere
+ * (not even a Discovery Queue row): confirmed live for two real, currently
+ * upcoming shows, "Shrek Rave" (28 Aug 2026) and "Twilight Rave" (23 Oct
+ * 2026, listed genre "Indie").
+ *
+ * This function therefore no longer filters by genre at all — every
+ * candidate with a title and link is kept, matching the now-unfiltered
+ * `genres=""` request in fetchAllConcerts below. Genre is only trusted
+ * immediately (official-source-metadata tier, same as before) when the
+ * listing's own single genre field already says Elektronisk; every other
+ * candidate is returned with `genreHint: null` and is NOT yet known to be
+ * electronic-relevant — enrichWithShowTimes below resolves that from each
+ * candidate's own detail page (which every candidate already gets fetched
+ * for anyway, to resolve its start time), checking the real, complete
+ * `/program?genre=...` tag list the listing can't represent, and discards
+ * any candidate that page doesn't confirm as Elektronisk. This never floods
+ * the pipeline with non-electronic candidates: a Metal/Pop/Rock/Hiphop show
+ * whose own detail page also never mentions Elektronisk is dropped here,
+ * before it ever reaches the shared relevance/genre gate — the gate's own
+ * thresholds are untouched.
+ *
+ * startDatetime is always null at this stage — the listing response carries
+ * no time, only a date — and is filled in later by enrichWithShowTimes from
+ * each event's own detail page. A single malformed record is skipped, never
+ * thrown, matching every other adapter's contract.
  */
 export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent[] {
   let concerts: unknown;
@@ -381,13 +429,16 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
       const concert = raw as PumpehusetConcert;
       const title = decodeHtmlEntities(concert.title ?? "").trim();
       if (!title || !concert.link) continue;
-      if (!concert.genre || !concert.genre.toLowerCase().includes(PUMPEHUSET_GENRE_FILTER.toLowerCase())) continue;
+      const listingConfirmsElektronisk = !!concert.genre && concert.genre.toLowerCase().includes(PUMPEHUSET_GENRE_FILTER.toLowerCase());
 
       const bands = Array.isArray(concert.support_bands) ? concert.support_bands : [];
       const { artists: bandArtists, description } = artistsAndDescriptionFromBands(bands);
       const artists = bandArtists.length > 0 ? bandArtists : artistsFromTitle(title);
 
-      const { genreHint, genreConfidenceHint } = resolveGenre(title, description);
+      // Only credited now when the listing's own field already says so —
+      // otherwise left null (never guessed) for enrichWithShowTimes to
+      // resolve from the real detail-page tag list.
+      const { genreHint, genreConfidenceHint } = listingConfirmsElektronisk ? resolveGenre(title, description) : { genreHint: null, genreConfidenceHint: null };
 
       const isFree = /fri\s*entr/i.test(concert.ticket_status ?? "");
       const priceFrom = isFree ? 0 : parsePriceFrom(concert.price ?? "");
@@ -464,7 +515,15 @@ async function fetchAllConcerts(fetchImpl: typeof fetch, retryDelayMs: number): 
       pageNumber: String(pageNumber),
       pageAmount: String(PAGE_AMOUNT),
       locations: "",
-      genres: PUMPEHUSET_GENRE_FILTER,
+      // Deliberately unfiltered (confirmed live, 2026-08-30): Pumpehuset's
+      // own server-side genres=X filter matches only the single primary
+      // genre this listing endpoint exposes, silently excluding events
+      // where Elektronisk is a real secondary tag (see
+      // parsePumpehusetConcertsJson's doc comment — the Shrek Rave / Twilight
+      // Rave root cause). Fetching every genre here and filtering
+      // client-side (using each candidate's own detail-page tag list) is
+      // the only way to see those events at all.
+      genres: "",
     }).toString();
 
     const res = await fetchWithRetry(
@@ -504,6 +563,14 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
   const results: RawCandidateEvent[] = [];
   for (const candidate of candidates) {
     let next = candidate;
+    // Listing didn't confirm Elektronisk (parsePumpehusetConcertsJson left
+    // genreHint null) — real evidence one way or the other only exists on
+    // this candidate's own detail page (fetched below regardless, to
+    // resolve its start time), so default to dropping it unless that page's
+    // own tag list confirms Elektronisk. Never reaches the shared
+    // relevance/genre gate otherwise — this is a source-completeness fix,
+    // not a threshold change.
+    let dropUnconfirmed = candidate.genreHint === null;
     if (candidate.officialEventUrl) {
       try {
         const res = await fetchWithRetry(
@@ -551,6 +618,22 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
         const combinedDescription = [next.description, bodyDescription].filter(Boolean).join("\n\n") || presenter || next.description;
         if (combinedDescription !== next.description) next = { ...next, description: combinedDescription };
 
+        // This candidate's listing genre didn't already confirm Elektronisk
+        // — check the real, complete tag list this page states (see
+        // extractGenreTags's doc comment). Confirmed: credit genre now from
+        // the richest text evidence available (title + whatever description
+        // was just resolved above), exactly like an already-confirmed
+        // candidate. Not confirmed: stays flagged for drop below.
+        if (dropUnconfirmed) {
+          const tags = extractGenreTags(detailHtml);
+          const confirmedElektronisk = tags.some((t) => t.toLowerCase() === PUMPEHUSET_GENRE_FILTER.toLowerCase());
+          if (confirmedElektronisk) {
+            const resolved = resolveGenre(next.title, next.description);
+            next = { ...next, genreHint: resolved.genreHint, genreConfidenceHint: resolved.genreConfidenceHint };
+            dropUnconfirmed = false;
+          }
+        }
+
         // Re-attempt genre resolution now that the fuller detail-page text is
         // available — the listing-time pass only ever saw the title and
         // support-band bios. Never downgrades an already-specific genre
@@ -575,7 +658,15 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
     if (next.description && isLikelyDanish(next.description)) {
       next = { ...next, description: null };
     }
-    results.push(next);
+    // dropUnconfirmed only ever clears when this candidate's own detail page
+    // confirmed a real Elektronisk tag; a still-null genreHint here means
+    // neither the listing nor the detail page ever confirmed relevance
+    // (including when the detail-page fetch itself failed above, or there
+    // was no officialEventUrl to check at all) — drop rather than let a
+    // null-genre candidate reach the shared gate.
+    if (!dropUnconfirmed) {
+      results.push(next);
+    }
     if (politenessDelayMs > 0) await delay(politenessDelayMs);
   }
   return results;
