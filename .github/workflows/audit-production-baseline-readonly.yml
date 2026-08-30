@@ -1,0 +1,126 @@
+name: Audit Production Baseline (Read-Only)
+
+# General-purpose, read-only Production baseline snapshot: total upcoming
+# published events, distinct live venues among them (same
+# effectiveEndInstant-style "upcoming" definition EventExplorer's own
+# `isPastEvent` uses — see src/lib/datetime.ts — approximated in SQL as
+# COALESCE(end_datetime, start_datetime + interval '1 day') > now()), every
+# source row, and Discovery Queue counts by status. Built for the 2026-08-30
+# new-source-expansion baseline (Section 1) but deliberately generic and
+# reusable for any future "where do we stand right now" check.
+#
+# Safety: workflow_dispatch only. BEGIN, SET LOCAL default_transaction_read_only,
+# SELECT-only queries, ROLLBACK — same pattern as every other read-only audit
+# workflow in this repo.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run baseline audit
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > ./.audit-baseline.mjs <<'EOF'
+          import pg from "pg";
+
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '25s'");
+
+            const upcoming = await client.query(
+              `SELECT e.id, e.title, e.venue_id, v.name AS venue_name, e.canonical_source_id,
+                      e.start_datetime, e.end_datetime, e.primary_genre, e.genre_confidence
+               FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+               WHERE e.published = true
+                 AND COALESCE(e.end_datetime, e.start_datetime + interval '1 day') > now()
+               ORDER BY e.start_datetime`,
+            );
+            console.log(`Total upcoming published events: ${upcoming.rowCount}`);
+
+            const venueSet = new Map();
+            for (const r of upcoming.rows) {
+              if (r.venue_id) venueSet.set(r.venue_id, r.venue_name);
+            }
+            const venueNames = Array.from(venueSet.values()).sort((a, b) => a.localeCompare(b));
+            console.log(`Distinct live venues among upcoming published events: ${venueSet.size}`);
+            console.log("Venue names:", JSON.stringify(venueNames, null, 2));
+
+            console.log("\nPer-source upcoming published event counts:");
+            const bySource = new Map();
+            for (const r of upcoming.rows) {
+              bySource.set(r.canonical_source_id, (bySource.get(r.canonical_source_id) ?? 0) + 1);
+            }
+            for (const [src, count] of bySource) console.log(`  ${src}: ${count}`);
+
+            const sources = await client.query(
+              `SELECT id, source_name, trust_level, auto_publish, active,
+                      last_successful_sync, last_attempted_sync, last_error,
+                      events_found, events_updated
+               FROM sources ORDER BY id`,
+            );
+            console.log(`\nAll source rows: ${sources.rowCount}`);
+            for (const r of sources.rows) console.log(" ", JSON.stringify(r));
+
+            const dqStatus = await client.query(
+              `SELECT status, count(*)::int AS count FROM discovery_queue GROUP BY status ORDER BY status`,
+            );
+            console.log(`\nDiscovery Queue counts by status:`);
+            for (const r of dqStatus.rows) console.log(" ", JSON.stringify(r));
+
+            const dqBySource = await client.query(
+              `SELECT source_id, status, count(*)::int AS count FROM discovery_queue GROUP BY source_id, status ORDER BY source_id, status`,
+            );
+            console.log(`\nDiscovery Queue counts by source_id + status:`);
+            for (const r of dqBySource.rows) console.log(" ", JSON.stringify(r));
+
+            // All venues with ANY published event (past or future) vs. only
+            // upcoming — helps distinguish "live" from "registry-only/curated"
+            // per the "do not count registry-only venues" instruction.
+            const allVenues = await client.query(`SELECT id, name FROM venues ORDER BY name`);
+            console.log(`\nTotal venue rows in registry: ${allVenues.rowCount}`);
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only).");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("BASELINE SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.audit-baseline.mjs
+          rm -f ./.audit-baseline.mjs
