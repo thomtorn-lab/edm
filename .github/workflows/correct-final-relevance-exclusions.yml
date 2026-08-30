@@ -1,0 +1,148 @@
+name: Correct Final EDM Relevance Rule Exclusions
+
+# Narrow, explicit, non-destructive correction for the two confirmed
+# production false positives identified by the 2026-08-30 Final EDM
+# Relevance Rule audit: Käärijä and Tinie Tempah (Pumpehuset sync) auto-
+# published under the pre-fix relevance architecture despite being pop/rap-
+# defined, not EDM-defined artists — see relevance-architecture audit
+# report, section B/C/D.
+#
+# Deliberately NOT a general "unpublish anything relevance now scores
+# weaker" rule (the shared pipeline's own decidePublishedEventSyncAction
+# safety net already refuses to do that automatically — see src/lib/
+# sync.ts). This is a targeted, human-triggered correction for exactly the
+# two named rows, matched by a distinctive title substring, scoped to
+# already-published rows only.
+#
+# Safety:
+#   - workflow_dispatch only.
+#   - Default (`execute: false`) is a strictly READ-ONLY dry run: BEGIN,
+#     SET LOCAL default_transaction_read_only, SELECT the exact matching
+#     rows, print what WOULD change, ROLLBACK. No write happens.
+#   - `execute: true` is required for the actual correction, and even then
+#     only ever sets `published = false` on the matched row(s) — it never
+#     deletes anything (events, sources, canonical history all stay
+#     intact) — and appends one event_change_log row per correction
+#     documenting why, so the action is fully auditable.
+#   - Idempotent: a row already published=false is skipped, reported, not
+#     re-written.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "false = dry run (read-only, default). true = actually unpublish the matched rows."
+        required: true
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run correction
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXECUTE: ${{ inputs.execute }}
+        run: |
+          cat > ./.correct-relevance.mjs <<'EOF'
+          import pg from "pg";
+
+          // Distinctive, diacritic-tolerant title substrings for the two
+          // confirmed false positives. Deliberately a short, explicit,
+          // human-reviewed allowlist — NOT a general rule — per the audit's
+          // "no broad blacklist" constraint.
+          const TARGETS = [
+            { label: "Käärijä", pattern: "%rij%" },
+            { label: "Tinie Tempah", pattern: "%tempah%" },
+          ];
+
+          const execute = process.env.EXECUTE === "true";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            if (!execute) {
+              await client.query("SET LOCAL default_transaction_read_only = on");
+            }
+            await client.query("SET LOCAL statement_timeout = '20s'");
+
+            console.log(`Mode: ${execute ? "EXECUTE (will write)" : "DRY RUN (read-only)"}\n`);
+
+            for (const { label, pattern } of TARGETS) {
+              const res = await client.query(
+                `SELECT id, slug, title, published, primary_genre, genre_confidence, canonical_source_id
+                 FROM events WHERE title ILIKE $1 ORDER BY start_datetime`,
+                [pattern],
+              );
+              console.log(`=== ${label} (pattern ${pattern}) — ${res.rowCount} matching row(s) ===`);
+              for (const r of res.rows) console.log(" ", r);
+
+              for (const r of res.rows) {
+                if (!r.published) {
+                  console.log(`  -> id=${r.id} already published=false, skipping (idempotent no-op).`);
+                  continue;
+                }
+                console.log(`  -> id=${r.id} published=true — ${execute ? "UNPUBLISHING now." : "would be unpublished (dry run, no write)."}`);
+                if (execute) {
+                  await client.query(
+                    `UPDATE events SET published = false, updated_at = now() WHERE id = $1`,
+                    [r.id],
+                  );
+                  await client.query(
+                    `INSERT INTO event_change_log (id, event_id, changed_by, change_type, fields_changed, note, created_at)
+                     VALUES ($1, $2, 'admin', 'unpublish', ARRAY['published'], $3, now())`,
+                    [
+                      `chg-${r.id}-final-relevance-2026-08-30`,
+                      r.id,
+                      `Final EDM Relevance Rule (2026-08-30) correction: ${label} is a pop/rap-crossover artist, not EDM-defined — see relevance-architecture audit report. Row preserved (published=false only, no delete).`,
+                    ],
+                  );
+                }
+              }
+              console.log("");
+            }
+
+            if (execute) {
+              await client.query("COMMIT");
+              console.log("COMMITTED — corrections written.");
+            } else {
+              await client.query("ROLLBACK");
+              console.log("ROLLED BACK (dry run) — no data was changed.");
+            }
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("CORRECTION SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.correct-relevance.mjs
+          rm -f ./.correct-relevance.mjs

@@ -228,15 +228,24 @@ function precedingSentenceStart(text: string, index: number): number {
 }
 
 /**
- * True when the given text (title + description/bio) is centered on a
- * recognized non-electronic genre — a strong negative signal against
- * crediting an isolated electronic-sounding word found in the same text.
- * `knownArtists` (the event's own extracted lineup) is masked out first so
- * an artist's own name never triggers a false match.
+ * Shared contextual-scan core behind hasNonElectronicGenreSignal and
+ * hasPopOrRnbSignal (Final EDM Relevance Rule follow-up, 2026-08-30):
+ * both need the exact same masking + comparison-cue + historical-credit +
+ * proper-noun suppression pipeline, so it's factored here once rather than
+ * duplicated — this function's own behavior is unchanged from the original
+ * inline loop it replaces. `forwardSuppression`, when given, is an
+ * additional check against the text immediately following a match (used by
+ * hasPopOrRnbSignal for the "-inspired" forward-influence suffix — see
+ * FORWARD_INFLUENCE_SUFFIX_RE).
  */
-export function hasNonElectronicGenreSignal(text: string, knownArtists: string[] = []): boolean {
+function scanForContextualSignal(
+  text: string,
+  knownArtists: string[],
+  patterns: RegExp[],
+  forwardSuppression?: RegExp,
+): boolean {
   const masked = maskKnownArtistNames(text, knownArtists);
-  for (const pattern of NON_ELECTRONIC_GENRE_SIGNALS) {
+  for (const pattern of patterns) {
     const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
     let match: RegExpExecArray | null;
     while ((match = global.exec(masked))) {
@@ -247,10 +256,65 @@ export function hasNonElectronicGenreSignal(text: string, knownArtists: string[]
       if (isLikelyProperNounMidSentence(masked.slice(0, match.index), match[0])) continue;
       const matchEnd = match.index + match[0].length;
       if (NAMED_OTHER_EVENT_RE.test(masked.slice(matchEnd, matchEnd + 30))) continue;
+      if (forwardSuppression && forwardSuppression.test(masked.slice(matchEnd, matchEnd + 60))) continue;
       return true; // a genuine, non-suppressed match
     }
   }
   return false;
+}
+
+/**
+ * True when the given text (title + description/bio) is centered on a
+ * recognized non-electronic genre — a strong negative signal against
+ * crediting an isolated electronic-sounding word found in the same text.
+ * `knownArtists` (the event's own extracted lineup) is masked out first so
+ * an artist's own name never triggers a false match.
+ */
+export function hasNonElectronicGenreSignal(text: string, knownArtists: string[] = []): boolean {
+  return scanForContextualSignal(text, knownArtists, NON_ELECTRONIC_GENRE_SIGNALS);
+}
+
+/**
+ * Pop/R&B genre words (Final EDM Relevance Rule, 2026-08-30 — see
+ * assessRelevance's header comment for how this is actually used). Kept
+ * OUT of NON_ELECTRONIC_GENRE_SIGNALS deliberately: unlike metal/rock/jazz/
+ * grime/hip-hop, pop and R&B are the two genres the final rule explicitly
+ * treats as a genuine CROSSOVER zone with EDM (real reference case: MNEK —
+ * "pop/R&B crossover, but house/UK garage/club-dance genuinely substantial
+ * to identity — INCLUDE"), so a bare match must never single-handedly force
+ * a "none"/hold verdict the way a genuine metal/rock/hip-hop match does.
+ * `(?!-up)` excludes "pop-up" (bar/shop/event) — extremely common in this
+ * domain's own Danish/English copy and unrelated to music genre.
+ */
+const POP_RNB_GENRE_SIGNALS: RegExp[] = [/\bpop\b(?!-up)/i, /\bR&B\b/i, /\brnb\b/i, /\brhythm\s+and\s+blues\b/i];
+
+/**
+ * A pop/R&B match immediately followed (within a short window, not crossing
+ * a hyphenated compound like Danish's "R&B- og K-pop-inspirerede") by an
+ * "-inspired"/"-influenced"-type suffix names an INFLUENCE on the event's
+ * own (already-established) electronic sound, not the event's own genre —
+ * same principle as COMPARISON_CUE_RE, just forward-looking because Danish
+ * attaches this marker as a suffix rather than a leading cue phrase (real
+ * production evidence: tonser's own Pumpehuset bio, already full of genuine
+ * electronic self-description ("elektronisk produktion", "EDM"), continues
+ * "...maksimalistisk EDM med R&B- og K-pop-inspirerede toplines" — R&B/
+ * K-pop are named as an influence ON his EDM sound, not a claim that the
+ * show itself is R&B or K-pop).
+ */
+const FORWARD_INFLUENCE_SUFFIX_RE =
+  /^[^.;!?]{0,50}?-\s*(?:inspirerede?|inspireret|inspired|influenced|infused|tinget|flavou?red)\b/i;
+
+/**
+ * True when the text names pop and/or R&B (see POP_RNB_GENRE_SIGNALS) as a
+ * genuine, non-suppressed signal — same masking/comparison/historical-
+ * credit/proper-noun suppressions as hasNonElectronicGenreSignal, plus the
+ * forward "-inspired" influence suppression above. See assessRelevance's
+ * header comment for how a true result actually affects the verdict (it is
+ * NOT treated as an automatic exclusion the way hasNonElectronicGenreSignal
+ * is — see that function's doc comment for why).
+ */
+export function hasPopOrRnbSignal(text: string, knownArtists: string[] = []): boolean {
+  return scanForContextualSignal(text, knownArtists, POP_RNB_GENRE_SIGNALS, FORWARD_INFLUENCE_SUFFIX_RE);
 }
 
 /**
@@ -300,9 +364,18 @@ export const GENERIC_ELECTRONIC_GENRE = "electronic-other";
  * følelsesladet elektronisk musik"; Cassius: "en hel æra af elektronisk
  * musik"). Every phrase here was found in real first-party Pumpehuset copy
  * during the data-quality audit — not speculative.
+ *
+ * Deliberately does NOT include a bare "beats" noun (Final EDM Relevance
+ * Rule, 2026-08-30): the rule's own "not sufficient for inclusion" list
+ * names "electronic beats/synths/production" alongside each other, but
+ * "elektronisk produktion" is real, deliberately-tested evidence for a
+ * genuinely electronic artist (tonser) and stays; "beats" alone (real
+ * incident: KLIKEN's own copy — "spiller elektroniske beats" — with no
+ * named subgenre) is exactly the "insufficient" case the rule describes and
+ * must not, by itself, count as a strong signal.
  */
 const EXPLICIT_ELECTRONIC_ASSERTION_RE =
-  /\b(?:electronic music|electronic sound|electronica|dance music|EDM)\b|\belektronisk[e]?\s+(?:musik\w*|lyd\w*|produktion\w*|beats?\b|scene\w*|kunstner\w*|artist\w*)/i;
+  /\b(?:electronic music|electronic sound|electronica|dance music|EDM)\b|\belektronisk[e]?\s+(?:musik\w*|lyd\w*|produktion\w*|scene\w*|kunstner\w*|artist\w*)/i;
 
 export function hasExplicitElectronicAssertion(text: string): boolean {
   return EXPLICIT_ELECTRONIC_ASSERTION_RE.test(text);
@@ -337,6 +410,11 @@ export interface RelevanceEvidenceInput {
    *  set true on a conservative, unanimous-agreement, never-guessed lookup
    *  — see genreEnrichment.ts's header comment. */
   hasCorroboratingArtistGenreEvidence: boolean;
+  /** Event-specific text names pop and/or R&B (see hasPopOrRnbSignal) —
+   *  Final EDM Relevance Rule, 2026-08-30. NOT a hard exclusion signal like
+   *  hasNonElectronicGenreSignal; see assessRelevance's header comment for
+   *  the graduated rule this actually drives. */
+  hasPopOrRnbSignal: boolean;
 }
 
 /**
@@ -363,14 +441,41 @@ export interface RelevanceEvidenceInput {
  *   buried in a third support act's blend description — a single incidental
  *   match must not outweigh the event's own stated identity); or no
  *   evidence of any kind.
+ *
+ * Pop/R&B crossover handling (Final EDM Relevance Rule, 2026-08-30): the
+ * rule requires EDM to be CENTRAL AND DEFINING, not merely present — for an
+ * artist positioned between pop and EDM, a genuinely SPECIFIC EDM subgenre
+ * match, OR the event's own EXPLICIT first-party description of its sound
+ * as electronic (hasExplicitElectronicAssertion — already narrowly scoped
+ * to a genuine self-description like "mørk electronica", never a bare
+ * "beats" mention — see that signal's own doc comment), each stand on
+ * their own as real evidence of substantiality. What must NOT, on its own,
+ * outweigh an otherwise pop/R&B-primary identity is an INDIRECT signal —
+ * trusted ticketing (a platform-level fact about where tickets are sold,
+ * not about this artist's sound) or third-party artist-genre corroboration
+ * (Discogs' own generic "Electronic" tag, not a first-party claim) — so
+ * only those two signal types are suppressed when pop/R&B is present
+ * without a specific genre already resolved. Real reference cases: WITCHZ's
+ * own bio explicitly blends "alternativ pop, mørk electronica og
+ * industriel phonk" — her own explicit self-description keeps her strong
+ * despite naming pop in the same breath, the same way MNEK's specific
+ * "house" match keeps him strong; a hypothetical pop artist whose only
+ * electronic evidence is a bare Discogs "Electronic" tag or a ticketing
+ * link, with no first-party claim of their own, must not. This is
+ * deliberately NOT treated as a hasNonElectronicGenreSignal-style hard
+ * exclusion (that would wrongly flip genuine EDM/pop crossover artists like
+ * tonser to "none") — at worst it caps the verdict at the generic-category
+ * floor ("weak"/review), never forces a contradiction ("none"/hold) on its
+ * own.
  */
 export function assessRelevance(input: RelevanceEvidenceInput): RelevanceLevel {
   const hasSpecificGenre = input.genre != null && input.genre !== GENERIC_ELECTRONIC_GENRE;
+  const popRnbWithoutSpecificGenre = input.hasPopOrRnbSignal && !hasSpecificGenre;
   const strongSignalCount =
     (hasSpecificGenre ? 1 : 0) +
     (input.hasExplicitElectronicAssertion ? 1 : 0) +
-    (input.hasTrustedElectronicTicketing ? 1 : 0) +
-    (input.hasCorroboratingArtistGenreEvidence ? 1 : 0);
+    (!popRnbWithoutSpecificGenre && input.hasTrustedElectronicTicketing ? 1 : 0) +
+    (!popRnbWithoutSpecificGenre && input.hasCorroboratingArtistGenreEvidence ? 1 : 0);
 
   if (input.hasNonElectronicGenreSignal) {
     if (strongSignalCount === 0) return "none";

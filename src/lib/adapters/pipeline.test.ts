@@ -417,11 +417,22 @@ describe("Final EDM Relevance Rule (2026-08-30) — relevanceText must carry the
   // null), so a Discogs "Electro" style match on one of his releases sailed
   // through unopposed to auto_publish. Käärijä is fundamentally a pop/rap
   // crossover artist (Eurovision 2023 viral hit "Cha Cha Cha") — not
-  // defined by EDM — so this must land in review_queue, not auto_publish.
+  // defined by EDM — so this must never reach auto_publish.
+  //
+  // With BOTH fixes in place (relevanceText carrying his real bio, and
+  // "beats" no longer alone sufficient for hasExplicitElectronicAssertion —
+  // see relevance.ts's EXPLICIT_ELECTRONIC_ASSERTION_RE doc comment), his
+  // own bio's only textual evidence is "elektroniske beats" (no longer a
+  // strong signal) contradicted by "punk-rap" (still a real negative
+  // signal) — so the pipeline now holds him with negative_relevance at
+  // initial classification, BEFORE Discogs enrichment ever runs (see
+  // db/sync.ts's needsEnrichment guard, which deliberately skips enrichment
+  // once holdReason is already "negative_relevance" — a stronger, cheaper
+  // fix than relying on relevance being merely "weak" post-enrichment).
   const kaarijaBio =
     'Finsk Eurovision-superstjerne kommer forbi Danmark. Efter at have lanceret det største show i sin karriere i Veikkaus Arena i Helsinki næste forår, fortsætter Käärijä sit store koncertår med at indtage Europa på sin hidtil mest omfattende turné i efteråret 2026. Eurodisko Tour byder på 24 shows. Käärijä er blevet et internationalt fænomen og har modtaget fem finske Grammy-priser samt prisen som Best Nordic Artist ved MTV EMA. Han skrev finsk musikhistorie ved at vinde publikumsafstemningen ved Eurovision Song Contest 2023 med sangen "Cha Cha Cha". Pumpehuset bliver fyldt af hans karakteristiske mix af elektroniske beats, punk-rap og energifyldt klublyd.';
 
-  it("Käärijä: real bio surfaces a genuine 'punk-rap' negative signal once relevanceText carries it, softening a Discogs-corroborated specific genre from auto_publish to review_queue", () => {
+  it("Käärijä: real bio surfaces a genuine 'punk-rap' negative signal once relevanceText carries it, holding a Discogs-corroborated specific genre instead of letting it auto_publish", () => {
     const withoutRelevanceText = runIngestionPipeline(
       raw({
         sourceId: "src-pumpehuset",
@@ -452,10 +463,14 @@ describe("Final EDM Relevance Rule (2026-08-30) — relevanceText must carry the
       }),
       { venues: VENUES, existingEvents: [] },
     );
-    expect(withRelevanceText.relevance).toBe("weak"); // "punk-rap" is real, unsuppressed negative evidence
-    const enriched = applyEnrichedGenre(withRelevanceText, "electro", "medium", `Käärijä ${kaarijaBio}`, false);
-    expect(enriched.decision).toBe("review_queue"); // fixed: no longer auto-published
-    expect(enriched.decision).not.toBe("auto_publish");
+    // "punk-rap" is real, unsuppressed negative evidence, and "elektroniske
+    // beats" no longer counts as a strong offsetting signal — genuinely no
+    // evidence left to justify publishing, so this holds outright rather
+    // than merely landing in review.
+    expect(withRelevanceText.relevance).toBe("none");
+    expect(withRelevanceText.decision).toBe("hold");
+    expect(withRelevanceText.holdReason).toBe("negative_relevance");
+    expect(withRelevanceText.decision).not.toBe("auto_publish");
   });
 
   // Real production incident: Tinie Tempah's own Danish bio says "Hans
@@ -519,6 +534,139 @@ describe("Final EDM Relevance Rule (2026-08-30) — relevanceText must carry the
     // above where a real negative signal was present.
     expect(result.relevance).toBe("strong");
     expect(result.decision).toBe("auto_publish");
+  });
+});
+
+describe("Binding reference regression suite — Final EDM Relevance Rule (2026-08-30 audit)", () => {
+  // Every case below exercises the GENERAL pipeline/relevance functions —
+  // none of them special-case an artist or event name. Byhaven: Juno +
+  // MONSUN, the two EPIC Drag Show fixtures, and Twilight Rave don't have a
+  // captured detail-page fixture the way Käärijä/Tinie Tempah/WITCHZ do, so
+  // their bio text below is realistic constructed copy built directly from
+  // the user's own binding characterization of each ("synth-pop/alt-pop",
+  // "drag/performance core, music supports the show", "mainly soundtracks/
+  // dark pop/emo/indie/2000s hits") — the same technique already used for
+  // the MNEK positive control above.
+
+  it("Byhaven: Juno + MONSUN — a synth-pop/alt-pop bill stays capped below auto_publish even with a broad venue-level 'Elektronisk' tag and no contradicting genre-word", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Byhaven: Juno + MONSUN",
+        description: null,
+        // A broad venue/platform tag alone (medium confidence, per the genre
+        // evidence hierarchy) — the same kind of secondary "Elektronisk" tag
+        // that legitimately justifies DISCOVERY (Pumpehuset completeness
+        // fix), not yet event-specific corroboration.
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+        relevanceText:
+          "Byhaven byder på en aften med MONSUN og Juno, to af den danske alt-pop-scenes mest efterspurgte navne. MONSUN er kendt for sine melankolske synths og fængende omkvæd, mens Juno bidrager med sin egen blanding af dreampop og introspektiv sangskrivning.",
+        artists: ["MONSUN", "Juno"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    // No specific EDM subgenre keyword and no first-party "this is
+    // electronic music" self-description anywhere in the text — only the
+    // generic category floor, so relevance can never clear "strong".
+    expect(result.relevance).not.toBe("strong");
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("The EPIC Drag Show — DJ presence and pop/R&B hits are not, on their own, EDM evidence (music supports the show, not the reverse)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "The EPIC Drag Show",
+        description: null,
+        genreHint: null, // let deterministic keyword mapping run — nothing in this text should match
+        relevanceText:
+          "The EPIC Drag Show er en overdådig aften med Danmarks skarpeste dragqueens, kostumeskift og liveoptrædener. DJ'en holder gulvet fyldt hele natten med et miks af pop- og R&B-hits, mens værterne guider publikum gennem showets numre.",
+        artists: [],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBeNull(); // no EDM subgenre keyword anywhere — "DJ" and "pop/R&B hits" alone never resolve one
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("The EPIC Halloween Drag Show — same drag/performance-core pattern under different seasonal copy, confirming this is a general rule and not a fixed phrase match", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "The EPIC Halloween Drag Show",
+        description: null,
+        genreHint: null,
+        relevanceText:
+          "Tag kostumet på og mød op til årets uhyggeligste dragshow. The EPIC Halloween Drag Show byder på gyseragtige looks, konkurrencer om bedste kostume, og en DJ der spiller de største Halloween-hits og pop-klassikere hele aftenen.",
+        artists: [],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBeNull();
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("KLIKEN — 'electronic beats' alone (no named subgenre) is not sufficient EDM evidence", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "KLIKEN",
+        description: null,
+        genreHint: null,
+        relevanceText: "KLIKEN spiller elektroniske beats hele natten på Pumpehusets ståendegulv.",
+        artists: ["KLIKEN"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    // "elektroniske beats" is deliberately excluded from
+    // hasExplicitElectronicAssertion's qualifying-noun list (see
+    // EXPLICIT_ELECTRONIC_ASSERTION_RE's doc comment) and no specific
+    // subgenre keyword (house/techno/trance/etc.) appears, so nothing here
+    // resolves a genre or a strong signal at all.
+    expect(result.genre).toBeNull();
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("Twilight Rave — 'rave' in the title alone is not EDM evidence when the actual content is soundtracks/dark pop/emo/indie/2000s hits", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Twilight Rave",
+        description: null,
+        genreHint: null, // "rave" is not a keyword deterministicGenreFromText recognizes at all
+        relevanceText:
+          "Twilight Rave tager dig tilbage til 2000'erne med en aften fyldt af filmmusik, mørk pop, emo-klassikere og indie-hits. Syng med på dine yndlingssoundtracks og nostalgiske ørehængere fra ungdomsårene.",
+        artists: [],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBeNull(); // the word "rave" in the title never substitutes for real genre evidence
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("a bare source-level 'Elektronisk' tag with no event-specific corroboration at all stays capped at the generic floor — never auto_publish, but still enters the pipeline (discovery vs. publication stay separate)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Untitled Club Night",
+        description: null,
+        genreHint: "electronic-other", // the venue's own broad secondary tag — discovery-level evidence only
+        genreConfidenceHint: "medium",
+        relevanceText: "Dørene åbner kl. 23 og der er baradgang hele aftenen. Billetter kan afhentes ved indgangen.",
+        artists: [],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    // Genre resolves (so this candidate is genuinely DISCOVERED — the
+    // Pumpehuset completeness fix stays intact), but with zero event-
+    // specific corroboration relevance can only ever be the generic-floor
+    // "weak", never "strong" — publication relevance is a separate,
+    // stricter bar.
+    expect(result.genre).toBe("electronic-other");
+    expect(result.relevance).toBe("weak");
+    expect(result.decision).toBe("review_queue");
+    expect(result.decision).not.toBe("auto_publish");
   });
 });
 

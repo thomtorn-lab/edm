@@ -105,6 +105,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("strong");
   });
@@ -118,6 +119,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("weak");
   });
@@ -131,6 +133,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: true,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("none");
   });
@@ -144,6 +147,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: true,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("weak");
   });
@@ -157,6 +161,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: true,
         hasExplicitNonElectronicIdentityAssertion: true,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("none");
   });
@@ -170,6 +175,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("strong");
   });
@@ -183,6 +189,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("strong");
   });
@@ -196,6 +203,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("none");
   });
@@ -209,6 +217,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: true,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("strong");
   });
@@ -222,6 +231,7 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasNonElectronicGenreSignal: false,
         hasExplicitNonElectronicIdentityAssertion: false,
         hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
       }),
     ).toBe("weak");
   });

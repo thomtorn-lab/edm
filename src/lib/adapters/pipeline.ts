@@ -11,6 +11,7 @@ import {
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
   hasNonElectronicCategorySignal,
+  hasPopOrRnbSignal,
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
@@ -288,6 +289,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     hasNonElectronicGenreSignal: nonElectronicSignal,
     hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
     hasCorroboratingArtistGenreEvidence: false, // no enrichment has run yet at this stage — see applyEnrichedGenre
+    hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, normalizedArtists),
   });
   const { decision, holdReason } = computeDecision(
     missingFields,
@@ -406,6 +408,7 @@ export function applyEnrichedGenre(
       hasNonElectronicGenreSignal: nonElectronicSignal,
       hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
       hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
+      hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
     });
     const { decision, holdReason } = computeDecision(
       result.missingFields,
