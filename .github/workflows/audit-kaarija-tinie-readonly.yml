@@ -1,0 +1,103 @@
+name: Audit Käärijä/Tinie Tempah rows (Read-Only)
+
+# One-off, manual, strictly read-only lookup to identify the exact canonical
+# `events` rows for Käärijä and Tinie Tempah ahead of a Final-EDM-Relevance-
+# Rule cleanup correction (see relevance-architecture audit, 2026-08-30).
+# Never writes — workflow_dispatch only, BEGIN/SET LOCAL read-only/ROLLBACK,
+# same pattern as verify-db-readonly.yml. Removed from the repo once its
+# output has been captured, per repo convention for one-off audit workflows.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run read-only lookup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat > ./.audit-readonly.mjs <<'EOF'
+          import pg from "pg";
+
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+          try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("SET LOCAL statement_timeout = '20s'");
+
+            // Broad, diacritic-tolerant net first (Käärijä's ä could be stored/typed
+            // several ways) — then full detail for every match it finds.
+            const broad = await client.query(
+              `SELECT id, slug, title, published FROM events
+               WHERE title ILIKE '%rij%' OR title ILIKE '%tempah%' OR title ILIKE '%tinie%'
+               ORDER BY start_datetime`,
+            );
+            console.log(`Broad net matches: ${broad.rowCount}`);
+            for (const r of broad.rows) console.log(JSON.stringify(r));
+
+            const ids = broad.rows.map((r) => r.id);
+            if (ids.length > 0) {
+              const res = await client.query(
+                `SELECT id, slug, title, artists, published, manual_override,
+                        primary_genre, subgenres, genre_confidence, confidence,
+                        canonical_source_id, venue_id, start_datetime,
+                        created_at, updated_at, last_source_check
+                 FROM events
+                 WHERE id = ANY($1::text[])
+                 ORDER BY start_datetime`,
+                [ids],
+              );
+              console.log(`\nFull detail for matched rows: ${res.rowCount}`);
+              for (const r of res.rows) console.log(JSON.stringify(r, null, 2));
+            }
+
+            // Also check discovery_queue in case either is still pending, not yet published.
+            const dq = await client.query(
+              `SELECT id, probable_title, status, predicted_genre, genre_confidence, source_id
+               FROM discovery_queue
+               WHERE probable_title ILIKE '%rij%' OR probable_title ILIKE '%tempah%' OR probable_title ILIKE '%tinie%'`,
+            );
+            console.log(`\nDiscovery queue matches: ${dq.rowCount}`);
+            for (const r of dq.rows) console.log(JSON.stringify(r));
+
+            await client.query("ROLLBACK");
+            console.log("\nTransaction rolled back (read-only).");
+          } catch (err) {
+            try { await client.query("ROLLBACK"); } catch {}
+            console.error("AUDIT SCRIPT ERROR:", err);
+            process.exitCode = 1;
+          } finally {
+            await client.end();
+            console.log("Connection closed.");
+          }
+          EOF
+          node ./.audit-readonly.mjs
+          rm -f ./.audit-readonly.mjs
