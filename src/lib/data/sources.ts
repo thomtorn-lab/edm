@@ -273,6 +273,43 @@ export const SOURCES: Source[] = [
       "Volunteer-run culture house on WordPress (bolsjefabrikken.com/wp/ — note bolsjefabrikken.dk is an unrelated housing association, not this venue) with a dedicated events page. Programme mixes electronic/underground club nights with board-game nights, workshops and film screenings, so electronic is present but not the venue's core identity; the events page may be a manually-formatted list rather than a queryable post type, lower confidence in clean parseability than Culture Box's WordPress setup. Lowest priority of the four candidates; confirm structure directly before building.",
   },
 
+  {
+    id: "src-rust",
+    sourceName: "RUST",
+    sourceType: "official-venue",
+    baseUrl: "https://rust.dk/",
+    roles: ["discovery", "ingestion"],
+    // Real working adapter (src/lib/adapters/rustAdapter.ts), built
+    // 2026-08-30 (source-expansion work package) after a live technical
+    // audit: robots.txt disallows only /wp-admin/; there is no dedicated
+    // /program/ listing page (confirmed 404) — the homepage itself
+    // (https://rust.dk/) IS the live events feed, fully server-rendered
+    // with real schema.org MusicEvent microdata (title, startDate, doorTime,
+    // performer, venue, ticket offer, first-party event-specific
+    // description) and no JS execution required. The adapter fetches only
+    // that one page. RUST is NOT a trusted-electronic source (unlike
+    // Hangaren/Culture Box) — its own copy proves mixed programming
+    // (concerts, and even its generic recurring "RUST Natklub" Friday/
+    // Saturday slot is branded "Nørrebro's hip hop nightclub" in its own
+    // description), so every candidate goes through the normal genre/
+    // relevance pipeline exactly like Pumpehuset; no relevance.ts/
+    // pipeline.ts changes were needed for this source. Venue resolution is
+    // trivial — "RUST" was already a fully curated registry venue
+    // (v-rust) with zero live events before this source existed.
+    adapter: "rust-html",
+    trustLevel: "medium",
+    autoPublish: true,
+    syncFrequency: "every 6h",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Implemented 2026-08-30 (source-expansion work package). Real, unmodified fixtures (three full event blocks captured live via inspect-source.yml's reachability mode) — see rustAdapter.test.ts. A real production parsing gotcha was found and fixed live: every event article's own opening tag embeds an Alpine.js arrow function (`$nextTick( () => ... )`) whose own `=>` contains a literal `>`, which breaks a naive `[^>]*`-bounded tag match — the adapter instead splits on `<article`/`</article>` boundaries and filters by the itemtype marker, confirmed against the real page. No dedicated `/event/{slug}` URL is exposed from the homepage listing itself, so officialEventUrl uses a stable `#event-<wordpress-post-id>` anchor derived from the page's own real per-event ID (used for its own in-page toggle), not invented. Not yet run against production — health fields will populate on the first real sync. Wired into the sync API route (src/app/api/sync/[source]/route.ts) but deliberately NOT given a recurring GitHub Actions sync-rust.yml workflow yet, matching the same 'onboard first, schedule later' precedent already used for ALICE — a first real sync against live Production should be verified before enabling a recurring auto-publish cadence.",
+  },
+
   // ---- Resident Advisor: primary discovery + secondary verification benchmark, no automated ingestion ----
   {
     id: "src-ra-copenhagen",

@@ -7,6 +7,7 @@ import { createBillettoAdapter, BILLETTO_SOURCE_ID } from "@/lib/adapters/billet
 import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pumpehusetAdapter";
 import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter";
 import { createGravityAdapter, GRAVITY_SOURCE_ID } from "@/lib/adapters/gravityAdapter";
+import { createRustAdapter, RUST_SOURCE_ID } from "@/lib/adapters/rustAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
@@ -23,6 +24,7 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   pumpehuset: { sourceId: PUMPEHUSET_SOURCE_ID, displayName: "Pumpehuset", create: createPumpehusetAdapter },
   alice: { sourceId: ALICE_SOURCE_ID, displayName: "ALICE", create: createAliceAdapter },
   gravity: { sourceId: GRAVITY_SOURCE_ID, displayName: "Gravity Copenhagen", create: createGravityAdapter },
+  rust: { sourceId: RUST_SOURCE_ID, displayName: "RUST", create: createRustAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {
