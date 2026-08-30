@@ -56,6 +56,23 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
   /\bstand[\s-]?up\b/i,
   /\bbingo\b/i,
   /\bquiz\b/i,
+  // Goth/postpunk relevance gap (Final EDM Relevance Rule follow-up,
+  // 2026-08-30 — real evidence: RUST's "Electronic Equinox Gathering" bio
+  // is a mixed live-band bill spanning "synth/goth/industrial/EBM/
+  // postpunk/darkwave" — a genuinely mixed dancefloor/band-genre bill, not
+  // clean EDM). Goth and postpunk are live-band/guitar-descended genres,
+  // not dancefloor-oriented EDM, even when they share a "dark electronic"
+  // vocabulary with genuinely dance-oriented industrial/EBM/darkwave.
+  // Deliberately NOT added for "industrial"/"EBM"/"darkwave" themselves —
+  // those remain real, dance-adjacent EDM evidence on their own (a clean
+  // industrial/EBM night with no goth/postpunk mention still resolves
+  // "strong"). Word-boundary \bpunk\b (above) never matches the compound
+  // "postpunk" (no boundary between "post" and "punk" — the same
+  // ASCII-word-boundary compounding gap already documented for Danish
+  // "øl"/"byvandring" in NON_ELECTRONIC_CATEGORY_SIGNALS), so postpunk
+  // needs its own pattern covering "postpunk"/"post-punk"/"post punk".
+  /\bgoth(?:ic)?\b/i,
+  /\bpost[\s-]?punk\b/i,
 ];
 
 /**

@@ -79,6 +79,28 @@ describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
   });
 });
 
+describe("hasNonElectronicGenreSignal — goth/postpunk (Final EDM Relevance Rule follow-up, 2026-08-30)", () => {
+  it("flags a real mixed dark-electronic/goth/postpunk bill (RUST's 'Electronic Equinox Gathering' evidence)", () => {
+    expect(
+      hasNonElectronicGenreSignal(
+        "Electronic Equinox Gathering byder på noget af det bedste inden for den mørke elektroniske musik: synth/goth/industrial/EBM/postpunk/darkwave natklub med DJ's.",
+      ),
+    ).toBe(true);
+  });
+
+  it("flags 'postpunk' as one unhyphenated compound word, distinct from the existing bare \\bpunk\\b match", () => {
+    expect(hasNonElectronicGenreSignal("A night of postpunk and shoegaze.")).toBe(true);
+    expect(hasNonElectronicGenreSignal("A night of post-punk and shoegaze.")).toBe(true);
+    expect(hasNonElectronicGenreSignal("A night of post punk and shoegaze.")).toBe(true);
+  });
+
+  it("does not flag a clean industrial/EBM/darkwave EDM night with no goth/postpunk mention (industrial/EBM/darkwave remain real dance-adjacent EDM evidence on their own)", () => {
+    expect(
+      hasNonElectronicGenreSignal("A hard-hitting night of industrial and EBM. Dark electronic dance music, DJs all night, darkwave and techno."),
+    ).toBe(false);
+  });
+});
+
 describe("hasExplicitElectronicAssertion (data-quality Workstream A)", () => {
   it("matches an event-specific first-party statement that the artist/event's own sound is electronic (real Pumpehuset evidence)", () => {
     expect(hasExplicitElectronicAssertion("sin dragende, elektroniske lyd")).toBe(true);
@@ -234,6 +256,34 @@ describe("assessRelevance (data-quality Workstream A — multi-signal evidence h
         hasPopOrRnbSignal: false,
       }),
     ).toBe("weak");
+  });
+
+  it("is 'weak' (review), not 'strong' (auto-publish) or 'none' (hold), for the real Electronic Equinox Gathering evidence — a genuinely mixed dark-electronic/goth/postpunk bill offset by two real strong signals (specific 'industrial' genre + explicit electronic assertion), with no explicit goth/postpunk scene-identity claim (Final EDM Relevance Rule follow-up, 2026-08-30)", () => {
+    expect(
+      assessRelevance({
+        genre: "industrial",
+        hasExplicitElectronicAssertion: true,
+        hasTrustedElectronicTicketing: false,
+        hasNonElectronicGenreSignal: true,
+        hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
+      }),
+    ).toBe("weak");
+  });
+
+  it("is 'strong' for a clean industrial/EBM/darkwave EDM night with no goth/postpunk contradiction — genuine EDM using this vocabulary must still qualify", () => {
+    expect(
+      assessRelevance({
+        genre: "industrial",
+        hasExplicitElectronicAssertion: true,
+        hasTrustedElectronicTicketing: false,
+        hasNonElectronicGenreSignal: false,
+        hasExplicitNonElectronicIdentityAssertion: false,
+        hasCorroboratingArtistGenreEvidence: false,
+        hasPopOrRnbSignal: false,
+      }),
+    ).toBe("strong");
   });
 });
 
