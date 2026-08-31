@@ -104,7 +104,7 @@ describe("isCopenhagenLocation", () => {
       expect(isCopenhagenLocation("Amager", "2300")).toBe(true); // real venues.ts postal code
     });
 
-    it('CRITICAL REGRESSION: rejects "Dragør" + postal 2791 even though Billetto\'s own subregion for this real record is "Byen København" — proves the fix does not expand scope beyond Copenhagen + Frederiksberg via subregion, and that Dragør (a separate municipality) never enters BILLETTO_INSCOPE_POSTAL_CODES', () => {
+    it('CRITICAL REGRESSION: rejects "Dragør" + postal 2791 even though Billetto\'s own subregion for this real record is "Byen København" — proves the fix does not expand scope beyond Copenhagen + Frederiksberg via subregion, and that Dragør (a separate municipality) falls outside the in-scope postal-code range', () => {
       expect(isCopenhagenLocation("Dragør", "2791")).toBe(false);
     });
 
@@ -116,6 +116,44 @@ describe("isCopenhagenLocation", () => {
     it("an unrecognized postal code falls back to the original city-prefix check rather than being silently accepted", () => {
       expect(isCopenhagenLocation("København", "9999")).toBe(true); // city check alone still passes
       expect(isCopenhagenLocation("Dragør", "9999")).toBe(false); // neither signal passes
+    });
+  });
+
+  describe("REGRESSION (merge-gate follow-up audit, 2026-08-31): postal-code scope is a deterministic structural range, not a whitelist limited to previously-observed codes — a district-labeled record with ANY genuine København/Frederiksberg postal code must be accepted, not just the ones already seen in this project's data", () => {
+    it("accepts real 1000-1999-block postal codes never previously observed in this project's fixtures/venue registry — the entire block belongs exclusively to København/Frederiksberg in the Danish postal system", () => {
+      expect(isCopenhagenLocation("Indre By", "1100")).toBe(true);
+      expect(isCopenhagenLocation("København", "1000")).toBe(true);
+      expect(isCopenhagenLocation("Frederiksberg C", "1999")).toBe(true);
+      expect(isCopenhagenLocation("Frederiksberg C", "1800")).toBe(true);
+    });
+
+    it("accepts every discrete København-outer-district/Frederiksberg code, including ones not previously in the old observed-only whitelist", () => {
+      expect(isCopenhagenLocation("Frederiksberg", "2000")).toBe(true);
+      expect(isCopenhagenLocation("Østerbro", "2100")).toBe(true);
+      expect(isCopenhagenLocation("Nordhavn", "2150")).toBe(true);
+      expect(isCopenhagenLocation("Nørrebro", "2200")).toBe(true);
+      expect(isCopenhagenLocation("Amager", "2300")).toBe(true);
+      expect(isCopenhagenLocation("Bispebjerg", "2400")).toBe(true);
+      expect(isCopenhagenLocation("Sydhavnen", "2450")).toBe(true);
+      expect(isCopenhagenLocation("Valby", "2500")).toBe(true);
+      expect(isCopenhagenLocation("Brønshøj", "2700")).toBe(true);
+      expect(isCopenhagenLocation("Vanløse", "2720")).toBe(true);
+    });
+
+    it("CRITICAL: rejects every real neighbouring-municipality postal code immediately outside the 1000-1999 block and the discrete outer-district set — proves the range is precise, not a wide 1000-2999-style sweep", () => {
+      expect(isCopenhagenLocation("Rødovre", "2610")).toBe(false);
+      expect(isCopenhagenLocation("Hvidovre", "2650")).toBe(false);
+      expect(isCopenhagenLocation("Kastrup", "2770")).toBe(false); // Tårnby municipality
+      expect(isCopenhagenLocation("Dragør", "2791")).toBe(false);
+      expect(isCopenhagenLocation("Gentofte", "2820")).toBe(false);
+      expect(isCopenhagenLocation("Hellerup", "2900")).toBe(false); // Gentofte municipality
+      expect(isCopenhagenLocation("Glostrup", "2600")).toBe(false);
+    });
+
+    it("rejects a malformed/non-4-digit postal code rather than coercing it into range", () => {
+      expect(isCopenhagenLocation(null, "12345")).toBe(false);
+      expect(isCopenhagenLocation(null, "abcd")).toBe(false);
+      expect(isCopenhagenLocation(null, "150")).toBe(false);
     });
   });
 });

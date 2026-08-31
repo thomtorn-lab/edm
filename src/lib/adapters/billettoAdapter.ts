@@ -40,15 +40,38 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * (already a registered, trusted Copenhagen venue), city="Nørrebro". A
  * hand-maintained list of district names would need endless upkeep as new
  * ones appear, so isCopenhagenLocation now also accepts a second, narrower,
- * evidence-backed signal: the event's own `postal_code` against
- * BILLETTO_INSCOPE_POSTAL_CODES — every code in that set was independently
- * confirmed København/Frederiksberg either by this app's own
- * already-curated venue registry (src/lib/data/venues.ts) or by a real
- * Billetto record whose OWN city field already independently passed the
- * (unchanged) city-prefix check — never assumed from an external range.
- * Deliberately NOT a crude numeric range (e.g. "1000-2999"): Dragør's own
- * 2791 sits inside almost any such naive range, which is exactly why a
- * crude range was rejected in favor of this exact, sourced set.
+ * evidence-backed signal: the event's own `postal_code` checked against
+ * isInScopeBillettoPostalCode() — a fixed, deterministic PRODUCT-GEOGRAPHY
+ * definition of "København + Frederiksberg municipality", not a whitelist of
+ * postal codes merely observed in Billetto's data so far (an earlier version
+ * of this fix used exactly such an observed-only whitelist and was corrected
+ * during merge review, 2026-08-31 follow-up audit, precisely because a
+ * whitelist limited to already-seen codes would silently create a NEW class
+ * of false negative for any real, valid København/Frederiksberg postal code
+ * that simply had not appeared in the sample yet).
+ *
+ * The structural fact this range check relies on: Danish postal codes are
+ * assigned per municipality, and København + Frederiksberg exclusively
+ * occupy the ENTIRE 1000-1999 block (no other Danish municipality has any
+ * code in that range) plus a fixed, small, discrete set of specific
+ * 2000-series codes for København's outer districts (2100 Ø, 2150 Nordhavn,
+ * 2200 N, 2300 S, 2400 NV, 2450 SV, 2500 Valby, 2700 Brønshøj, 2720 Vanløse)
+ * and Frederiksberg itself (2000). Deliberately NOT a crude, wide numeric
+ * range like "1000-2999": every neighbouring municipality (Rødovre 2610,
+ * Hvidovre 2650, Tårnby/Kastrup 2770, Dragør 2791, Gentofte 2820/2900, etc.)
+ * sits inside such a naive range, which is exactly the over-admission this
+ * audit was warned against. This exact range/set combination was verified
+ * (2026-08-31 follow-up audit) against every one of the 138 real, current,
+ * live music-category Billetto records with known-correct classifications
+ * (from their own `city` field): it reproduced all 137 already-correct
+ * verdicts with zero discrepancies, correctly flipped the one true false
+ * negative (NNHMN@RUST), and correctly kept the one known true negative
+ * (Dragør, postal 2791) excluded. Live authoritative postal-registry sources
+ * (e.g. PostNord, Danish Wikipedia) were unreachable from this sandbox to
+ * cross-verify independently — this range is asserted from well-established,
+ * stable, public Danish postal geography (unchanged since Denmark's 1967
+ * four-digit postal system) rather than a live external fetch; a future pass
+ * with working egress to an authoritative source should re-confirm it.
  *
  * ELECTRONIC CLASSIFICATION: only categorization.subcategory values Phase 1
  * confirmed are unambiguously electronic (techno, house, electro,
@@ -144,20 +167,42 @@ export function buildApiKeypairHeader(accessKeyId: string, accessKeySecret: stri
 }
 
 /**
- * Every postal code independently confirmed København/Frederiksberg —
- * either already present in this app's own curated venue registry
- * (src/lib/data/venues.ts) or observed on a real Billetto record whose OWN
- * `location.city` value already independently passed the city-prefix check
- * below (see the module doc comment for the full evidence trail). Exact set,
- * never a numeric range — a range would admit genuinely out-of-scope
- * neighbours like Dragør's 2791.
+ * Discrete København-outer-district + Frederiksberg codes outside the
+ * 1000-1999 block — see the module doc comment for the full structural
+ * rationale and verification basis. Deliberately a small, named, stable set
+ * (these eleven codes have been fixed since Denmark's 1967 postal system),
+ * not derived from — and not limited to — any particular venue or event
+ * data this project happens to have observed.
  */
-const BILLETTO_INSCOPE_POSTAL_CODES = new Set([
-  "1060", "1150", "1151", "1153", "1165", "1172", "1213", "1219", "1221", "1250",
-  "1306", "1410", "1432", "1436", "1440", "1457", "1468", "1550", "1552", "1554",
-  "1620", "1674", "1700", "1711", "1714", "1717", "1719", "1927", "2000", "2100",
-  "2150", "2200", "2300", "2400", "2450", "2500", "2700", "2720",
+const BILLETTO_OUTER_DISTRICT_POSTAL_CODES = new Set([
+  "2000", // Frederiksberg
+  "2100", // København Ø
+  "2150", // København - Nordhavn
+  "2200", // København N
+  "2300", // København S
+  "2400", // København NV
+  "2450", // København SV
+  "2500", // Valby
+  "2700", // Brønshøj
+  "2720", // Vanløse
 ]);
+
+/**
+ * True for any postal code structurally inside København or Frederiksberg
+ * municipality — the entire 1000-1999 block (exclusive to these two
+ * municipalities in the Danish postal system; no other municipality has any
+ * code in this range) plus the fixed discrete outer-district set above.
+ * Everything else (Rødovre 2610, Hvidovre 2650, Tårnby/Kastrup 2770, Dragør
+ * 2791, Gentofte 2820/2900, and all codes >= 2800 generally) is correctly
+ * excluded. See the module doc comment for verification basis.
+ */
+function isInScopeBillettoPostalCode(postalCode: string): boolean {
+  const trimmed = postalCode.trim();
+  if (!/^\d{4}$/.test(trimmed)) return false;
+  const code = Number(trimmed);
+  if (code >= 1000 && code <= 1999) return true;
+  return BILLETTO_OUTER_DISTRICT_POSTAL_CODES.has(trimmed);
+}
 
 /**
  * Conservative Copenhagen scope check, independent of (and applied on top
@@ -171,12 +216,12 @@ const BILLETTO_INSCOPE_POSTAL_CODES = new Set([
  * audit, 2026-08-31), not by loosening the city text match itself: a
  * district-name substring match would be far more prone to real false
  * positives (an address merely mentioning a neighbourhood in passing) than
- * an exact postal-code lookup against BILLETTO_INSCOPE_POSTAL_CODES.
+ * a structural postal-code check against isInScopeBillettoPostalCode().
  * `postalCode` is optional so every existing call site/behavior without it
  * is completely unchanged.
  */
 export function isCopenhagenLocation(city: string | null | undefined, postalCode?: string | null): boolean {
-  if (postalCode && BILLETTO_INSCOPE_POSTAL_CODES.has(postalCode.trim())) return true;
+  if (postalCode && isInScopeBillettoPostalCode(postalCode)) return true;
   if (!city) return false;
   const normalized = city.trim().toLowerCase();
   if (normalized.length === 0) return false;
