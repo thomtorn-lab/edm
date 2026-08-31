@@ -463,6 +463,87 @@ export const VENUES: Venue[] = [
     venueProfile:
       "Pylonen is a temporary event and art space built into the raw edge under the Langebro bridge at Christians Brygge, on the water between Vesterbro and Christianshavn. Framed by its organisers as \"a raw edge between water, traffic and the unknown,\" it runs a full seasonal programme mixing art, markets, performance and outdoor parties rather than a single fixed genre identity. Its electronic programming includes outdoor day parties from established Copenhagen house and techno crews such as Pleasure Control, alongside a residency slot from the Fluid Sound Collective. As a temporary, seasonally-organised space rather than a permanent club, its exact form can change between seasons, but its current 2026 installation runs a booked calendar through December.",
   },
+  // The following four venues (Rört, Råhuset, Henrikgaardens, KLEIN) were
+  // added 2026-08-31 (Billetto venue-registration activation): each was
+  // identified as blocking real, currently-qualifying Billetto candidates
+  // via a resolved-venue registry gap, not a code/relevance defect. Address
+  // and identity for each is drawn only from Billetto's own consistent,
+  // repeated event listings (same location_name + address_line across
+  // multiple independent events, plus a self-named organiser account in
+  // two cases) — no independent website could be reached from this
+  // sandbox's egress-restricted environment to corroborate further, so
+  // websiteUrl/description are kept minimal and strictly evidence-based
+  // rather than invented.
+  {
+    id: "v-rort",
+    slug: "rort",
+    name: "Rört",
+    aliases: [],
+    // Billetto's own event listings ("KLUB Rört", "Dance x Sauna") both
+    // give this exact address, with organiser account name "Rört" — a
+    // separate Billetto listing using the similar-but-distinct spelling
+    // "Rørt" at a different address (Østergade 26C, 1100) was found and is
+    // NOT treated as the same venue (different organiser, no corroborating
+    // evidence they are the same physical space) — see the activation
+    // report for that open discrepancy.
+    address: "Thoravej 35, 2400 København NV",
+    city: "Copenhagen",
+    postalCode: "2400",
+    websiteUrl: "https://rort.dk/",
+    description:
+      "Community space in Nordvest hosting a members' club night, Klub Rört, alongside wellness and social events.",
+    shortDescription: null,
+    venueProfile: null,
+  },
+  {
+    id: "v-rahuset",
+    slug: "rahuset",
+    name: "Råhuset",
+    aliases: [],
+    // Billetto's own event listings ("Electro Werkz", "Wyatt E. x Five The
+    // Hierophant", plus several non-electronic bookings) consistently give
+    // this address; one listing's own organiser account is named "Råhuset".
+    address: "Onkel Dannys Pl. 7, 1711 København V",
+    city: "Copenhagen",
+    postalCode: "1711",
+    websiteUrl: null,
+    description: "Vesterbro event space with a mixed programme spanning electronic club nights, comedy and live music.",
+    shortDescription: null,
+    venueProfile: null,
+  },
+  {
+    id: "v-henrikgaardens",
+    slug: "henrikgaardens",
+    name: "Henrikgaardens",
+    aliases: ["Henrikgaardens selskabslokale"],
+    // Billetto's own listing ("EleKtro Universal: Mini Festival") gives
+    // this address; "selskabslokale" (function/banquet room) is part of
+    // Billetto's own location_name string, kept as an alias rather than
+    // the canonical name.
+    address: "Vigerslev Vænge 68, 2500 Valby",
+    city: "Copenhagen",
+    postalCode: "2500",
+    websiteUrl: null,
+    description: "Valby function room hosting a booked electronic mini-festival programme.",
+    shortDescription: null,
+    venueProfile: null,
+  },
+  {
+    id: "v-klein",
+    slug: "klein",
+    name: "KLEIN",
+    aliases: [],
+    // Billetto's own event listings ("Zoumer", "Yalla Miku", "Yoni Mayraz")
+    // consistently give this address; one listing's own organiser account
+    // is named "KLEIN".
+    address: "Wagnersvej 19, 2450 København SV",
+    city: "Copenhagen",
+    postalCode: "2450",
+    websiteUrl: null,
+    description: "Sydhavnen event space running a recurring electronic club-night programme.",
+    shortDescription: null,
+    venueProfile: null,
+  },
 ];
 
 /**
