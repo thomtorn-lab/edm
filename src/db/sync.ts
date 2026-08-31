@@ -534,10 +534,11 @@ async function runSourceSyncLocked(
       eventsUpdated: updated,
       error: writeSummary.lastErrorMessage,
       complete: fetchComplete,
+      completeSyncAt: seenAt,
     });
     return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
   }
 
-  await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated, complete: fetchComplete });
+  await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated, complete: fetchComplete, completeSyncAt: seenAt });
   return { sourceId, outcome: "ok", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
 }

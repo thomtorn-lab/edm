@@ -3,6 +3,7 @@ import { discoveryQueue, syncLocks } from "./schema";
 import type { RawCandidateEvent, SourceAdapter } from "@/lib/adapters/types";
 import type { Venue } from "@/lib/types";
 import type { EventWithVenue } from "@/lib/queries";
+import { isDiscoveryRowCurrent } from "@/lib/sync";
 
 /**
  * These tests exist because src-culture-box's advisory lock got stuck on a
@@ -988,5 +989,45 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
     expect(created.venueId).toBe("v-rust");
     expect(created.primaryGenre).toBe("electro");
     expect(created.published).toBe(true);
+  });
+
+  it("11. REGRESSION: a candidate touched by THIS sync's write loop must be marked current by THIS sync's own completeness stamp, even though the write loop takes real wall-clock time between seenAt being captured and touchSourceSyncStats being called — real Production bug: the ACTIVE venue-blocks report came back empty ([]) immediately after a real sync because lastCompleteSyncAt (stamped via a fresh `new Date()` call AFTER the per-candidate write loop finished) was always later than the lastSeenAt (stamped from `seenAt`, captured BEFORE the loop) written for every candidate that same sync had just confirmed present", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T14:23:56.780Z"));
+
+    const { insertDiscoveryItem: mockedInsert, touchSourceSyncStats: mockedTouch } = await import("./writes");
+    vi.mocked(mockedInsert).mockImplementationOnce((item) => {
+      // Simulates the real per-candidate DB write loop taking tens of
+      // seconds in Production (confirmed: 14:23:56.780 -> 14:24:37.699,
+      // a 40s gap) — the clock moves forward here, between seenAt being
+      // captured and touchSourceSyncStats being called at the end of the
+      // sync.
+      vi.setSystemTime(new Date("2026-08-31T14:24:37.699Z"));
+      return Promise.resolve({ ...item, id: "dq-boris" });
+    });
+
+    const boris: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "BORIS & THE JOY [US] * CPH",
+      venueName: "Bartof Station",
+      genreHint: "electro",
+      genreConfidenceHint: "medium",
+      officialEventUrl: "https://billetto.dk/e/boris-the-joy-us-cph-billetter-1979248",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([boris]));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    const insertedSeenAt = vi.mocked(mockedInsert).mock.calls[0][0].lastSeenAt;
+    expect(insertedSeenAt).toEqual(new Date("2026-08-31T14:23:56.780Z"));
+
+    expect(mockedTouch).toHaveBeenCalledWith(
+      "src-billetto",
+      expect.objectContaining({ completeSyncAt: new Date("2026-08-31T14:23:56.780Z") }),
+    );
+
+    const call = vi.mocked(mockedTouch).mock.calls.at(-1)![1];
+    const completeSyncAt = call.completeSyncAt as Date;
+    expect(isDiscoveryRowCurrent(insertedSeenAt as Date, completeSyncAt)).toBe(true);
   });
 });

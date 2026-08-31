@@ -644,6 +644,24 @@ export async function touchSourceSyncStats(
      * itself reports a partial result.
      */
     complete?: boolean;
+    /**
+     * The exact timestamp already stamped onto every discovery_queue row's
+     * lastSeenAt during this same sync (src/db/sync.ts's `seenAt`, captured
+     * once before the candidate loop runs). Bug fixed 2026-08-31: this used
+     * to default to `now` computed HERE, after the entire per-candidate
+     * write loop had finished — on a real Production sync that loop takes
+     * tens of seconds, so lastCompleteSyncAt ended up strictly LATER than
+     * the lastSeenAt just written for every candidate touched in that same
+     * sync, and isDiscoveryRowCurrent (lastSeenAt >= lastCompleteSyncAt)
+     * marked every one of them stale immediately — confirmed live via the
+     * venue-blocks diagnostic returning an empty ACTIVE list right after a
+     * real sync. Passing the same instant used for lastSeenAt guarantees
+     * every row this sync touched satisfies `>=` (equality), while rows
+     * NOT touched (still holding an older or null lastSeenAt) correctly
+     * stay behind it. Falls back to `now` only for a failed/partial-only
+     * call path that never reaches the lastSeenAt-writing loop at all.
+     */
+    completeSyncAt?: Date;
   },
 ) {
   const now = new Date();
@@ -654,7 +672,7 @@ export async function touchSourceSyncStats(
       .set({
         lastSuccessfulSync: now,
         lastAttemptedSync: now,
-        ...(outcome.complete ?? true ? { lastCompleteSyncAt: now } : {}),
+        ...(outcome.complete ?? true ? { lastCompleteSyncAt: outcome.completeSyncAt ?? now } : {}),
         // Usually cleared on a clean success — but a partial-failure run
         // (fetch succeeded, some candidates failed to write) is still
         // "success" for stats purposes and must keep its error visible
