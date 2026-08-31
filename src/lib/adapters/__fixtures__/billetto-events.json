@@ -511,5 +511,117 @@
       "has_more": false,
       "total": 0
     }
+  },
+  "nnhmnRust": {
+    "id": "1983805",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "Det berlinske darkwave-fænomen NNHMN har sin debut i København!",
+    "description": "Bliv forført af NNHMN's mystiske lyde - sikr din plads til debuten i København nu! 🎶🔮",
+    "url": "https://billetto.dk/e/det-berlinske-darkwave-faenomen-nnhmn-har-sin-debut-i-kobenhavn-billetter-1983805?utm_campaign=websites&utm_content=DK+7335408&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/det-berlinske-darkwave-faenomen-nnhmn-har-sin-debut-i-kobenhavn-billetter-1983805?utm_campaign=websites&utm_content=DK+7335408&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/nnhmn-placeholder?w=1200&h=675&fit=crop&auto=compress%2Cformat",
+    "availability": true,
+    "organiser": {
+      "id": 7335408,
+      "name": "k-dreams records"
+    },
+    "minimum_price": {
+      "amount_in_cents": 165,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "music",
+      "category_localized": "Musik",
+      "subcategory": "electro",
+      "subcategory_localized": "Electro",
+      "type": "concert",
+      "type_localized": "Koncert, Forestilling, Opvisning"
+    },
+    "location": {
+      "location_name": "RUST",
+      "address_line": "Guldbergsgade 8",
+      "address_line_2": null,
+      "city": "Nørrebro",
+      "postal_code": "2200",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.6912,
+        "longitude": 12.5593
+      }
+    },
+    "startdate": "2027-11-14T18:00:00Z",
+    "enddate": "2027-11-14T22:00:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
+  },
+  "mendelssohnPaulusDragoer": {
+    "id": "1884416",
+    "object": "public_event",
+    "kind": "regular",
+    "state": "published",
+    "title": "Mendelssohn Paulus",
+    "description": "Melodisk skønhed i Mendelssohn Paulus",
+    "url": "https://billetto.dk/e/mendelssohn-paulus-billetter-1884416?utm_campaign=websites&utm_content=DK+5281855&utm_medium=publishers&utm_source=billetto+advertising",
+    "branded_url": "https://billetto.dk/e/mendelssohn-paulus-billetter-1884416?utm_campaign=websites&utm_content=DK+5281855&utm_medium=publishers&utm_source=billetto+advertising",
+    "image_link": "https://billetto.imgix.net/mendelssohn-placeholder?w=1200&h=675&fit=crop&auto=compress%2Cformat",
+    "availability": true,
+    "organiser": {
+      "id": 5281855,
+      "name": "Københavns Kantatekor"
+    },
+    "minimum_price": {
+      "amount_in_cents": 100,
+      "currency": "DKK"
+    },
+    "categorization": {
+      "category": "music",
+      "category_localized": "Musik",
+      "subcategory": "classical",
+      "subcategory_localized": "Klassisk",
+      "type": "concert",
+      "type_localized": "Koncert, Forestilling, Opvisning"
+    },
+    "location": {
+      "location_name": "Store Magleby Kirke",
+      "address_line": "Kirkevej 2",
+      "address_line_2": null,
+      "city": "Dragør",
+      "postal_code": "2791",
+      "country": "Danmark",
+      "country_code": "DK",
+      "macroregion": "Danmark",
+      "region": "Hovedstaden",
+      "subregion": "Byen København",
+      "coordinates": {
+        "latitude": 55.5958,
+        "longitude": 12.6362
+      }
+    },
+    "startdate": "2026-10-25T14:00:00Z",
+    "enddate": "2026-10-25T16:30:00Z",
+    "organization": {
+      "id": 1,
+      "domain": "billetto.dk"
+    },
+    "headliners": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "total": 0
+    }
   }
 }

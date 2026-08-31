@@ -85,6 +85,39 @@ describe("isCopenhagenLocation", () => {
     expect(isCopenhagenLocation("")).toBe(false);
     expect(isCopenhagenLocation("   ")).toBe(false);
   });
+
+  describe("REGRESSION (location-gate false-negative fix, 2026-08-31): a real Copenhagen district city string, combined with a verified in-scope postal code, must be accepted", () => {
+    it('accepts "Nørrebro" + postal 2200 — the real NNHMN@RUST record (RUST is an already-registered Copenhagen venue; Billetto reports its district name, not "København", as location.city)', () => {
+      expect(isCopenhagenLocation("Nørrebro", "2200")).toBe(true);
+    });
+
+    it("still rejects a bare district name with no postal code — the postal-code signal is required, a district name alone is not trusted", () => {
+      expect(isCopenhagenLocation("Nørrebro")).toBe(false);
+      expect(isCopenhagenLocation("Nørrebro", null)).toBe(false);
+      expect(isCopenhagenLocation("Nørrebro", undefined)).toBe(false);
+      expect(isCopenhagenLocation("Nørrebro", "")).toBe(false);
+    });
+
+    it("accepts other real in-scope postal codes already curated in this project's own venue registry, regardless of city string", () => {
+      expect(isCopenhagenLocation("Vesterbro", "1620")).toBe(true); // real venues.ts postal code
+      expect(isCopenhagenLocation("Østerbro", "2100")).toBe(true); // real venues.ts postal code
+      expect(isCopenhagenLocation("Amager", "2300")).toBe(true); // real venues.ts postal code
+    });
+
+    it('CRITICAL REGRESSION: rejects "Dragør" + postal 2791 even though Billetto\'s own subregion for this real record is "Byen København" — proves the fix does not expand scope beyond Copenhagen + Frederiksberg via subregion, and that Dragør (a separate municipality) never enters BILLETTO_INSCOPE_POSTAL_CODES', () => {
+      expect(isCopenhagenLocation("Dragør", "2791")).toBe(false);
+    });
+
+    it("a verified in-scope postal code alone (no usable city) is sufficient — the postal-code signal does not require the city check to also pass", () => {
+      expect(isCopenhagenLocation(null, "2200")).toBe(true);
+      expect(isCopenhagenLocation("", "1620")).toBe(true);
+    });
+
+    it("an unrecognized postal code falls back to the original city-prefix check rather than being silently accepted", () => {
+      expect(isCopenhagenLocation("København", "9999")).toBe(true); // city check alone still passes
+      expect(isCopenhagenLocation("Dragør", "9999")).toBe(false); // neither signal passes
+    });
+  });
 });
 
 describe("genreFromBillettoCategorization", () => {
@@ -173,9 +206,20 @@ describe("mapBillettoEvent", () => {
     expect(mapBillettoEvent(noLocation)).toBeNull();
   });
 
-  it("rejects an event with a missing city on an otherwise-present location object", () => {
-    const noCity: BillettoEvent = { ...FIXTURES.infectedMushroom, location: { ...FIXTURES.infectedMushroom.location!, city: null } };
+  it("rejects an event with a missing city AND no in-scope postal code on an otherwise-present location object", () => {
+    const noCity: BillettoEvent = {
+      ...FIXTURES.infectedMushroom,
+      location: { ...FIXTURES.infectedMushroom.location!, city: null, postal_code: null },
+    };
     expect(mapBillettoEvent(noCity)).toBeNull();
+  });
+
+  it("REGRESSION (location-gate fix, 2026-08-31): accepts an event with a missing city when its postal code alone is a verified in-scope code — the postal-code signal does not depend on the city check also passing", () => {
+    const noCityValidPostal: BillettoEvent = {
+      ...FIXTURES.infectedMushroom,
+      location: { ...FIXTURES.infectedMushroom.location!, city: null },
+    };
+    expect(mapBillettoEvent(noCityValidPostal)).not.toBeNull();
   });
 
   it("rejects a draft/unrecognized-state event — not yet a real public listing", () => {
@@ -301,6 +345,21 @@ describe("mapBillettoEvent", () => {
   it("throws on a genuinely missing start date", () => {
     const noDate: BillettoEvent = { ...FIXTURES.infectedMushroom, startdate: null };
     expect(() => mapBillettoEvent(noDate)).toThrow();
+  });
+
+  describe("REGRESSION (location-gate false-negative fix, 2026-08-31): real adapter path (Billetto record -> mapBillettoEvent -> location gate), not just the isolated isCopenhagenLocation function — this is exactly the path that silently dropped NNHMN@RUST before the fix", () => {
+    it("maps the real NNHMN@RUST record end to end — city is the district name 'Nørrebro', not 'København', but postal_code 2200 is a verified in-scope code", () => {
+      const mapped = mapBillettoEvent(FIXTURES.nnhmnRust);
+      expect(mapped).not.toBeNull();
+      expect(mapped!.title).toBe("Det berlinske darkwave-fænomen NNHMN har sin debut i København!");
+      expect(mapped!.venueName).toBe("RUST");
+      expect(mapped!.sourceId).toBe(BILLETTO_SOURCE_ID);
+    });
+
+    it("still rejects the real Dragør ('Mendelssohn Paulus') record even though its subregion is also 'Byen København' — proves the real adapter path does not expand scope beyond Copenhagen + Frederiksberg", () => {
+      expect(FIXTURES.mendelssohnPaulusDragoer.location?.subregion).toBe("Byen København");
+      expect(mapBillettoEvent(FIXTURES.mendelssohnPaulusDragoer)).toBeNull();
+    });
   });
 });
 

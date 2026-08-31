@@ -20,15 +20,35 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * was 337 events across 4 pages, so this cap is generous headroom, not a
  * real-world ceiling).
  *
- * GEOGRAPHIC SCOPE: `subregion=Byen København` is the API's own most
- * precise Copenhagen filter (confirmed live — its result set is exactly
- * København + Frederiksberg, matching this app's own Venue.city union
- * type). Per the task brief this is defense-in-depth, not the only guard:
- * every candidate is independently re-checked client-side in
- * isCopenhagenLocation() before being emitted, so an organiser being
- * Copenhagen-based, or an API filtering quirk, can never smuggle an
- * out-of-scope event in. A missing/malformed location is rejected, never
- * assumed to be in scope.
+ * GEOGRAPHIC SCOPE: `subregion=Byen København` is the API's own broad
+ * Copenhagen-area filter, used server-side to keep the fetched page count
+ * down — but it is NOT municipality-precise (Billetto location-gate audit,
+ * 2026-08-31: a real live record — "Mendelssohn Paulus" at Store Magleby
+ * Kirke, postal_code 2791 — carries subregion="Byen København" despite
+ * Dragør being its own municipality, entirely outside Copenhagen +
+ * Frederiksberg). Every candidate is therefore independently re-checked
+ * client-side in isCopenhagenLocation() before being emitted, so an
+ * organiser being Copenhagen-AREA-based (not Copenhagen-municipality-based),
+ * or an API filtering quirk, can never smuggle an out-of-scope event in. A
+ * missing/malformed location is rejected, never assumed to be in scope.
+ *
+ * That same audit found the reverse failure mode too: isCopenhagenLocation's
+ * city-prefix check alone silently drops a genuinely in-scope event whenever
+ * Billetto's own `location.city` field carries a Copenhagen DISTRICT name
+ * (e.g. "Nørrebro") instead of "København" — real live example: "Det
+ * berlinske darkwave-fænomen NNHMN har sin debut i København" at RUST
+ * (already a registered, trusted Copenhagen venue), city="Nørrebro". A
+ * hand-maintained list of district names would need endless upkeep as new
+ * ones appear, so isCopenhagenLocation now also accepts a second, narrower,
+ * evidence-backed signal: the event's own `postal_code` against
+ * BILLETTO_INSCOPE_POSTAL_CODES — every code in that set was independently
+ * confirmed København/Frederiksberg either by this app's own
+ * already-curated venue registry (src/lib/data/venues.ts) or by a real
+ * Billetto record whose OWN city field already independently passed the
+ * (unchanged) city-prefix check — never assumed from an external range.
+ * Deliberately NOT a crude numeric range (e.g. "1000-2999"): Dragør's own
+ * 2791 sits inside almost any such naive range, which is exactly why a
+ * crude range was rejected in favor of this exact, sourced set.
  *
  * ELECTRONIC CLASSIFICATION: only categorization.subcategory values Phase 1
  * confirmed are unambiguously electronic (techno, house, electro,
@@ -124,15 +144,39 @@ export function buildApiKeypairHeader(accessKeyId: string, accessKeySecret: stri
 }
 
 /**
+ * Every postal code independently confirmed København/Frederiksberg —
+ * either already present in this app's own curated venue registry
+ * (src/lib/data/venues.ts) or observed on a real Billetto record whose OWN
+ * `location.city` value already independently passed the city-prefix check
+ * below (see the module doc comment for the full evidence trail). Exact set,
+ * never a numeric range — a range would admit genuinely out-of-scope
+ * neighbours like Dragør's 2791.
+ */
+const BILLETTO_INSCOPE_POSTAL_CODES = new Set([
+  "1060", "1150", "1151", "1153", "1165", "1172", "1213", "1219", "1221", "1250",
+  "1306", "1410", "1432", "1436", "1440", "1457", "1468", "1550", "1552", "1554",
+  "1620", "1674", "1700", "1711", "1714", "1717", "1719", "1927", "2000", "2100",
+  "2150", "2200", "2300", "2400", "2450", "2500", "2700", "2720",
+]);
+
+/**
  * Conservative Copenhagen scope check, independent of (and applied on top
  * of) the API's own subregion filter — see the module doc comment. A
  * missing/blank city is rejected, never assumed in-scope. Tolerant of the
  * postal-suffix variants Phase 1 observed live ("København K", "København
  * S", trailing space/period, etc.) via a prefix match, but never matches on
  * substring alone (e.g. would not match "Nørrebro" or an address merely
- * containing "København" elsewhere).
+ * containing "København" elsewhere) — that gap is deliberately covered by
+ * the SEPARATE, narrower `postalCode` signal instead (Billetto location-gate
+ * audit, 2026-08-31), not by loosening the city text match itself: a
+ * district-name substring match would be far more prone to real false
+ * positives (an address merely mentioning a neighbourhood in passing) than
+ * an exact postal-code lookup against BILLETTO_INSCOPE_POSTAL_CODES.
+ * `postalCode` is optional so every existing call site/behavior without it
+ * is completely unchanged.
  */
-export function isCopenhagenLocation(city: string | null | undefined): boolean {
+export function isCopenhagenLocation(city: string | null | undefined, postalCode?: string | null): boolean {
+  if (postalCode && BILLETTO_INSCOPE_POSTAL_CODES.has(postalCode.trim())) return true;
   if (!city) return false;
   const normalized = city.trim().toLowerCase();
   if (normalized.length === 0) return false;
@@ -198,7 +242,7 @@ function mapPriceFrom(minimumPrice: BillettoEvent["minimum_price"]): number | nu
  */
 export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null {
   if (!isPubliclyAvailable(event)) return null;
-  if (!isCopenhagenLocation(event.location?.city)) return null;
+  if (!isCopenhagenLocation(event.location?.city, event.location?.postal_code)) return null;
 
   const title = event.title?.trim();
   if (!title) throw new Error(`Billetto event ${event.id} has no title`);
