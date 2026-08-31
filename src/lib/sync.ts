@@ -224,6 +224,13 @@ export interface DiscoveryQueueTarget {
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
   suspectedDuplicateOfEventId: string | null;
+  /** Currently stored venue-resolution counterfactual (venue-block
+   *  visibility precision fix), so a fresh recompute can detect it moved —
+   *  in either direction, since this is purely derived diagnostic state,
+   *  never an admin edit. See discoveryQueue.venueResolvedDecision's own
+   *  doc comment. */
+  venueResolvedDecision: PublishDecision | null;
+  venueResolvedHoldReason: HoldReason;
 }
 
 export interface DiscoveryQueueClassification {
@@ -251,6 +258,16 @@ export interface DiscoveryQueueClassification {
   resolvedVenueId?: string | null;
   duplicateOfEventId?: string | null;
   duplicateConfidence?: DuplicateConfidence;
+  /**
+   * This run's fresh venue-resolution counterfactual (venue-block visibility
+   * precision fix, follow-up to 2026-08-31's freshness work) — see
+   * pipeline.ts's PipelineResult.venueResolvedCounterfactual. Optional for
+   * the same backward-compatibility reason as resolvedVenueId above; in
+   * production this always comes straight from the SAME runIngestionPipeline
+   * result the genre fields above already do.
+   */
+  venueResolvedDecision?: PublishDecision | null;
+  venueResolvedHoldReason?: HoldReason;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -259,6 +276,8 @@ export interface DiscoveryQueueClassificationPatch {
   overallConfidence?: ConfidenceLevel;
   missingFields?: string[];
   suspectedDuplicateOfEventId?: string;
+  venueResolvedDecision?: PublishDecision | null;
+  venueResolvedHoldReason?: HoldReason;
 }
 
 /**
@@ -371,6 +390,27 @@ export function buildDiscoveryQueueClassificationPatch(
     patch.suspectedDuplicateOfEventId = fresh.duplicateOfEventId;
   }
 
+  // VENUE-RESOLVED-COUNTERFACTUAL REFRESH (venue-block visibility precision
+  // fix, follow-up to 2026-08-31's freshness work). Unlike missingFields'
+  // one-directional self-heal above, this is purely derived diagnostic
+  // state — never an admin edit — so it tracks whatever THIS run's real
+  // pipeline result says, in either direction: it can newly appear (a
+  // candidate whose genre only just resolved), change (another blocker
+  // appeared or cleared), or go back to null (venue itself resolved this
+  // run, so the "if venue resolved" question stops being applicable —
+  // missingFields' own self-heal already reflects that same fact). Only
+  // reached when `fresh.genre` is truthy (the shared early-return guards
+  // above already froze the entire row otherwise), matching every other
+  // field this function refreshes.
+  if (
+    fresh.venueResolvedDecision !== undefined &&
+    (fresh.venueResolvedDecision !== existing.venueResolvedDecision ||
+      fresh.venueResolvedHoldReason !== existing.venueResolvedHoldReason)
+  ) {
+    patch.venueResolvedDecision = fresh.venueResolvedDecision;
+    patch.venueResolvedHoldReason = fresh.venueResolvedHoldReason;
+  }
+
   return patch;
 }
 
@@ -418,6 +458,45 @@ export function summarizeWriteErrors(errors: string[], candidatesFound: number):
 export function isDiscoveryRowCurrent(lastSeenAt: Date | null, lastCompleteSyncAt: Date | null): boolean {
   if (lastSeenAt == null || lastCompleteSyncAt == null) return false;
   return lastSeenAt.getTime() >= lastCompleteSyncAt.getTime();
+}
+
+export type VenueBlockBucket = "active" | "stale" | "current_but_past" | "other_blockers";
+
+/**
+ * The venue-blocks diagnostic's bucket decision (venue-block visibility
+ * precision fix, follow-up to 2026-08-31's freshness work) — kept as its
+ * own pure, DB-free function (src/db/inspectSource.ts's modeVenueBlocks is
+ * the only caller) so the three dimensions it combines are independently
+ * regression-tested without a live database: SOURCE FRESHNESS (isCurrent,
+ * via isDiscoveryRowCurrent above), EVENT TIME (isPast — true/false/null
+ * for "date unknown", via the same isPastEvent the rest of the app uses),
+ * and PIPELINE BLOCK (venueResolvedDecision — the real quality-gate
+ * counterfactual from src/lib/adapters/pipeline.ts's
+ * computeVenueResolvedCounterfactual, never approximated here). Never
+ * conflates them (Section 3 of the precision-fix brief): freshness alone
+ * decides "stale" outright; only a DEFINITE past date (isPast === true)
+ * routes to "current_but_past" — an unknown date (null, no probableStart at
+ * all) falls through instead, since a missing date already fails the
+ * pipeline's own required-fields check and so naturally lands in
+ * "other_blockers" with an honest "missing required field(s): date" rather
+ * than being mischaracterized as a past event it may not actually be.
+ * "active" is the only bucket meant to justify registering a venue — it
+ * requires current + not-past + a real auto_publish/review_queue
+ * counterfactual; "hold" and null (not yet evaluated, e.g. a row from
+ * before this precision fix shipped and not yet re-synced) both fall to
+ * "other_blockers" rather than being assumed harmless.
+ */
+export function classifyVenueBlock(input: {
+  isCurrent: boolean;
+  isPast: boolean | null;
+  venueResolvedDecision: PublishDecision | null;
+}): VenueBlockBucket {
+  if (!input.isCurrent) return "stale";
+  if (input.isPast === true) return "current_but_past";
+  if (input.venueResolvedDecision === "auto_publish" || input.venueResolvedDecision === "review_queue") {
+    return "active";
+  }
+  return "other_blockers";
 }
 
 export interface SyncLeaseRow {

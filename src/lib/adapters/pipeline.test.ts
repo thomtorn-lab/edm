@@ -875,3 +875,89 @@ describe("trusted-electronic sources (Section 6 — corrected per explicit produ
     expect(result.holdReason).toBe("negative_relevance"); // genre still null, non-electronic category signal fires, ALICE gets no bypass
   });
 });
+
+describe("venueResolvedCounterfactual (venue-block visibility precision fix, follow-up to 2026-08-31's freshness work)", () => {
+  it("1. venue is the ONLY blocker + would auto-publish once resolved -> counterfactual {auto_publish, null}, even though the real decision is 'hold'", () => {
+    const result = runIngestionPipeline(raw({ venueName: "Some Unknown Bar" }), { venues: VENUES, existingEvents: [] });
+    expect(result.resolvedVenueId).toBeNull();
+    expect(result.decision).toBe("hold"); // real decision: still blocked, venue never resolved
+    expect(result.venueResolvedCounterfactual).toEqual({ decision: "auto_publish", holdReason: null });
+  });
+
+  it("2. venue is the ONLY blocker + would reach review once resolved -> counterfactual {review_queue, null}", () => {
+    const result = runIngestionPipeline(raw({ venueName: "Some Unknown Bar", genreConfidenceHint: "medium" }), {
+      venues: VENUES,
+      existingEvents: [],
+    });
+    expect(result.decision).toBe("hold");
+    expect(result.venueResolvedCounterfactual).toEqual({ decision: "review_queue", holdReason: null });
+  });
+
+  it("3. venue unresolved AND another required field missing -> counterfactual stays 'hold' (venue is NOT the only blocker)", () => {
+    const result = runIngestionPipeline(raw({ venueName: "Some Unknown Bar", title: "" }), { venues: VENUES, existingEvents: [] });
+    expect(result.missingFields).toContain("title");
+    expect(result.missingFields).toContain("venue (unresolved against registry)");
+    expect(result.venueResolvedCounterfactual).toEqual({ decision: "hold", holdReason: "incomplete_data" });
+  });
+
+  it("4. venue unresolved AND genre confidence below the review bar -> counterfactual 'hold'/'low_confidence' (never presented as a valuable opportunity)", () => {
+    const result = runIngestionPipeline(
+      raw({ venueName: "Some Unknown Bar", genreHint: null, genreConfidenceHint: null, title: "Untitled Night", description: "" }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    // No genre evidence at all here (deliberately vague copy) — the real
+    // decision AND the counterfactual both read as incomplete_data (missing
+    // credible electronic relevance), not low_confidence — see case 6 for
+    // the genuinely negative-relevance shape.
+    expect(result.venueResolvedCounterfactual).toEqual({ decision: "hold", holdReason: "incomplete_data" });
+  });
+
+  it("5. venue unresolved AND a genuine negative-relevance signal -> counterfactual 'hold'/'negative_relevance' (never a valuable opportunity, matches test 3's real-decision case)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        venueName: "Some Unknown Bar",
+        genreHint: null,
+        genreConfidenceHint: null,
+        title: "Wine Tasting Evening",
+        description: "Join us for a wine tasting event, nothing to do with electronic music.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+    expect(result.venueResolvedCounterfactual).toEqual({ decision: "hold", holdReason: "negative_relevance" });
+  });
+
+  it("6. venue already resolves -> counterfactual is null (not applicable, the question itself doesn't apply)", () => {
+    const result = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] }); // default fixture's venueName resolves cleanly
+    expect(result.resolvedVenueId).not.toBeNull();
+    expect(result.venueResolvedCounterfactual).toBeNull();
+  });
+
+  it("7. no venueName provided at all -> counterfactual is null (nothing to hypothetically resolve)", () => {
+    const result = runIngestionPipeline(raw({ venueName: null }), { venues: VENUES, existingEvents: [] });
+    expect(result.missingFields).toContain("venue");
+    expect(result.missingFields).not.toContain("venue (unresolved against registry)");
+    expect(result.venueResolvedCounterfactual).toBeNull();
+  });
+
+  it("8. Discogs enrichment (applyEnrichedGenre CASE A) recomputes the counterfactual using the enriched genre, not the stale pre-enrichment one", () => {
+    const held = runIngestionPipeline(
+      raw({ venueName: "Some Unknown Bar", genreHint: null, genreConfidenceHint: null, title: "Untitled Night", description: "" }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(held.venueResolvedCounterfactual?.decision).toBe("hold"); // no genre evidence yet -> not applicable-quality, still "hold"
+
+    const enriched = applyEnrichedGenre(held, "house", "medium", "", false);
+    // The REAL decision stays "hold" — venue is still unresolved, enrichment
+    // never touches venue resolution — but its holdReason narrows from
+    // "incomplete_data" (no genre AND no venue) to reflect genre now being
+    // resolved (venue is the sole remaining gap).
+    expect(enriched.decision).toBe("hold");
+    expect(enriched.resolvedVenueId).toBeNull();
+    // The COUNTERFACTUAL is what actually improves, proving it recomputes
+    // from the enriched genre rather than staying frozen at the
+    // pre-enrichment ("no genre at all") snapshot.
+    expect(enriched.venueResolvedCounterfactual).toEqual({ decision: "review_queue", holdReason: null });
+  });
+});

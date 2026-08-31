@@ -9,6 +9,8 @@ import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import type { ConfidenceLevel, Venue } from "../lib/types";
 import type { GenreSlug } from "../lib/taxonomy";
+import type { PublishDecision } from "../lib/classification";
+import type { HoldReason } from "../lib/adapters/pipeline";
 
 /**
  * All admin/sync write operations go through this module — API routes stay
@@ -508,6 +510,15 @@ export async function applyDiscoveryClassificationUpdate(
      *  matched again in this sync's fetch, independent of whether anything
      *  else in the patch changed. */
     lastSeenAt?: Date;
+    /**
+     * Venue-block visibility precision fix (follow-up to 2026-08-31's
+     * freshness work) — see discoveryQueue.venueResolvedDecision's own doc
+     * comment. Recomputed alongside genre on every sync so it can move in
+     * either direction (unlike missingFields' one-directional self-heal),
+     * including back to null once venue resolution stops being applicable.
+     */
+    venueResolvedDecision?: PublishDecision | null;
+    venueResolvedHoldReason?: HoldReason;
   },
 ) {
   if (Object.keys(patch).length === 0) return;
@@ -566,6 +577,9 @@ export async function insertDiscoveryItem(item: {
    *  scoped to rows with a real sourceId, which this kind of row also
    *  never has). */
   lastSeenAt?: Date;
+  /** See discoveryQueue.venueResolvedDecision's own doc comment. */
+  venueResolvedDecision?: PublishDecision | null;
+  venueResolvedHoldReason?: HoldReason;
 }): Promise<DiscoveryQueueNotificationItem> {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
 

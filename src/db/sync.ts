@@ -31,6 +31,8 @@ import {
 import { enrichEventGenre } from "./enrichment";
 import type { GenreSlug } from "@/lib/taxonomy";
 import type { ConfidenceLevel } from "@/lib/types";
+import type { PublishDecision } from "@/lib/classification";
+import type { HoldReason } from "@/lib/adapters/pipeline";
 
 /**
  * Orchestrates one full sync run for one source (task 4/5/6): fetch ->
@@ -442,6 +444,8 @@ async function runSourceSyncLocked(
             resolvedVenueId: result.resolvedVenueId,
             duplicateOfEventId: result.duplicateOfEventId,
             duplicateConfidence: result.duplicateConfidence,
+            venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
+            venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason ?? null,
           },
           {
             status: existingPending.status,
@@ -451,6 +455,8 @@ async function runSourceSyncLocked(
             overallConfidence: existingPending.overallConfidence as ConfidenceLevel,
             missingFields: existingPending.missingFields,
             suspectedDuplicateOfEventId: existingPending.suspectedDuplicateOfEventId,
+            venueResolvedDecision: existingPending.venueResolvedDecision as PublishDecision | null,
+            venueResolvedHoldReason: existingPending.venueResolvedHoldReason as HoldReason,
           },
         );
         // lastSeenAt is unconditional — this candidate's own sourceUrl was
@@ -499,6 +505,8 @@ async function runSourceSyncLocked(
         missingFields: result.missingFields,
         overallConfidence: result.decision === "review_queue" ? "medium" : "low",
         lastSeenAt: seenAt,
+        venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
+        venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason ?? null,
       });
       newlyQueuedItems.push(inserted);
       queuedForReview++;

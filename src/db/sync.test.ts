@@ -783,7 +783,15 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
     const { applyDiscoveryClassificationUpdate } = await import("./writes");
     expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith(
       "dq-electro-werkz",
-      expect.objectContaining({ lastSeenAt: new Date("2026-08-31T19:00:00Z") }),
+      expect.objectContaining({
+        lastSeenAt: new Date("2026-08-31T19:00:00Z"),
+        // venue-block visibility precision fix: venue is still unresolved
+        // and is the ONLY blocker (high-confidence genre, nothing else
+        // missing), so the counterfactual persisted alongside lastSeenAt is
+        // the real "would auto-publish" answer, not an approximation.
+        venueResolvedDecision: "auto_publish",
+        venueResolvedHoldReason: null,
+      }),
     );
   });
 
@@ -1029,5 +1037,89 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
     const call = vi.mocked(mockedTouch).mock.calls.at(-1)![1];
     const completeSyncAt = call.completeSyncAt as Date;
     expect(isDiscoveryRowCurrent(insertedSeenAt as Date, completeSyncAt)).toBe(true);
+  });
+
+  it("12. venue subsequently registered but the candidate reaches review (not auto-publish) -> stays pending, but venueResolvedDecision clears back to null (the 'if venue resolved' question stops applying — missingFields' own self-heal reflects the same fact) — proceeds normally, never a false onboarding signal afterward", async () => {
+    const raahuset: Venue[] = [
+      {
+        id: "v-rahuset",
+        slug: "rahuset",
+        name: "Råhuset",
+        aliases: [],
+        address: "Onkel Dannys Pl. 7, 1711 København V",
+        city: "Copenhagen",
+        postalCode: "1711",
+        websiteUrl: null,
+        description: "",
+        shortDescription: null,
+        venueProfile: null,
+      },
+    ];
+    vi.mocked(getVenues).mockResolvedValueOnce(raahuset);
+
+    const { db } = await import("./client");
+    vi.mocked(db.select).mockImplementation(() => {
+      const base = {
+        from: (table: unknown) => ({
+          where: () => {
+            if (table === discoveryQueue) {
+              return Promise.resolve([
+                {
+                  id: "dq-wyatt-e",
+                  sourceUrl: "https://billetto.dk/e/wyatt-e-x-five-the-hierophant-billetter-1957514",
+                  status: "pending",
+                  predictedGenre: "electronic-other",
+                  genreConfidence: "medium",
+                  overriddenFields: [],
+                  overallConfidence: "low",
+                  missingFields: ["venue (unresolved against registry)"],
+                  suspectedDuplicateOfEventId: null,
+                  venueResolvedDecision: "review_queue",
+                  venueResolvedHoldReason: null,
+                },
+              ]);
+            }
+            return Promise.resolve([]);
+          },
+        }),
+      };
+      return base as unknown as ReturnType<typeof db.select>;
+    });
+
+    const wyattE: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Wyatt E. x Five The Hierophant",
+      venueName: "Råhuset",
+      genreHint: "electronic-other",
+      genreConfidenceHint: "medium",
+      officialEventUrl: "https://billetto.dk/e/wyatt-e-x-five-the-hierophant-billetter-1957514",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([wyattE]));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    // Venue now resolves AND full data is present, so the real decision is
+    // "review_queue" — stays pending (never auto_publish, never deleted),
+    // but the venue-resolution question is no longer applicable: venue IS
+    // resolved now, so venueResolvedDecision/HoldReason both patch to null.
+    const { applyDiscoveryClassificationUpdate } = await import("./writes");
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith(
+      "dq-wyatt-e",
+      expect.objectContaining({
+        missingFields: [],
+        venueResolvedDecision: null,
+        venueResolvedHoldReason: null,
+      }),
+    );
+  });
+
+  it("13. a failed sync (adapter throws) never reaches the per-candidate write loop at all — venueResolvedDecision, lastSeenAt, and every other discovery_queue field are left completely untouched, exactly like the pre-existing freshness guarantee", async () => {
+    const { insertDiscoveryItem: mockedInsert, applyDiscoveryClassificationUpdate: mockedUpdate } = await import("./writes");
+    const adapter = fakeAdapter(() => Promise.reject(new Error("network blip")));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("failed");
+    expect(mockedInsert).not.toHaveBeenCalled();
+    expect(mockedUpdate).not.toHaveBeenCalled();
   });
 });

@@ -2,10 +2,12 @@ import { Client } from "pg";
 import { getSourceHealth, describeSourceHealth } from "@/lib/sourceHealth";
 import { resolveVenue } from "@/lib/normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "@/lib/dedup";
-import { isDiscoveryRowCurrent } from "@/lib/sync";
+import { isDiscoveryRowCurrent, classifyVenueBlock } from "@/lib/sync";
 import { buildApiKeypairHeader } from "@/lib/adapters/billettoAdapter";
 import { isPastEvent } from "@/lib/datetime";
 import type { Source, Venue } from "@/lib/types";
+import type { PublishDecision } from "@/lib/classification";
+import type { HoldReason } from "@/lib/adapters/pipeline";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -597,30 +599,55 @@ async function modeDiscoveryQueueVenues(client: Client, args: Record<string, str
 
 /**
  * Read-only "which unresolved venues are actually worth registering right
- * now" report (unknown-venue visibility work package, 2026-08-31) — across
- * ALL sources, not scoped to one. Directly answers the operational
- * question the Billetto activation test kept having to answer by hand:
- * "which qualifying/review candidates are blocked ONLY by an unresolved
- * venue, right now, as opposed to a stale row left over from an event the
- * source no longer returns at all" (real case: High Energy Movement/Rørt —
- * its discovery_queue row still showed the venue block after the event had
- * already dropped out of Billetto's live feed).
+ * now" report (unknown-venue visibility work package, 2026-08-31; precision
+ * fix follow-up) — across ALL sources, not scoped to one. Directly answers
+ * the operational question the Billetto activation test kept having to
+ * answer by hand: "which candidates are blocked ONLY by an unresolved
+ * venue, right now, upcoming, and would actually qualify (auto-publish or
+ * review) once that venue registers" — as opposed to a stale row left over
+ * from an event the source no longer returns (real case: High Energy
+ * Movement/Rørt), a past event the source still happens to return, or a
+ * row that carries some genre evidence yet would still hold for an
+ * unrelated reason even with its venue resolved.
  *
- * A row counts as a genuine venue-onboarding candidate only when it has
- * real genre evidence (predicted_genre IS NOT NULL — excludes the hundreds
- * of no-evidence rows that would never publish even with a resolved venue)
- * AND its own missing_fields already names the venue as the reason
- * (self-healing on every sync — see src/lib/sync.ts's
- * buildDiscoveryQueueClassificationPatch). "Current" vs "stale" is derived,
- * never stored: a row is current only if its own last_seen_at (bumped every
- * time a sync's fetch matches it again — see src/db/sync.ts) is at or after
- * its source's last_complete_sync_at (bumped only on a sync whose fetch is
- * known to have gathered its FULL candidate set — see
- * SourceAdapter.lastFetchWasComplete). A row with no last_seen_at at all
- * (pre-migration history) or a source with no last_complete_sync_at yet
- * (no complete sync recorded since this tracking began) is conservatively
- * treated as NOT current — never assumed fresh merely because the row
- * exists. `venue_now_resolves` cross-checks each distinct probable_venue_name
+ * Four mutually exclusive dimensions are never conflated (precision fix,
+ * follow-up to the first cut of this diagnostic, which conflated all of
+ * them): SOURCE FRESHNESS (current vs. stale upstream — derived exactly as
+ * before, never stored, via isDiscoveryRowCurrent), EVENT TIME (upcoming vs.
+ * past — via the same isPastEvent the rest of the app uses, never a
+ * hand-rolled date comparison), and PIPELINE BLOCK (venue-only vs. venue +
+ * another blocker vs. not actually relevant — via
+ * discovery_queue.venue_resolved_decision/venue_resolved_hold_reason, the
+ * REAL quality-gate outcome computed by src/lib/adapters/pipeline.ts's
+ * computeVenueResolvedCounterfactual on every sync, never approximated here
+ * from predicted_genre/genre_confidence). A row lands in exactly one of:
+ *
+ *   ACTIVE            current upstream + upcoming + venue is the ONLY
+ *                     blocker + counterfactual = auto_publish or
+ *                     review_queue. The only bucket that should ever
+ *                     justify registering a venue.
+ *   STALE             not confirmed present in the most recent complete
+ *                     sync (freshness alone decides this, regardless of
+ *                     event time or pipeline block).
+ *   CURRENT_BUT_PAST  still returned upstream, but the event's own date/
+ *                     time has passed (or is entirely unknown — nothing to
+ *                     confirm as "upcoming"). Useful diagnostically
+ *                     (a source still serving expired inventory), never an
+ *                     onboarding signal.
+ *   OTHER_BLOCKERS    current + upcoming + venue unresolved, but the real
+ *                     pipeline says it would still hold for another reason
+ *                     (or the counterfactual hasn't been (re)computed yet
+ *                     for a pre-precision-fix row) — a genre-evidenced
+ *                     candidate that is NOT the same claim as "would
+ *                     qualify if this venue registered".
+ *
+ * Deliberately still pre-filters on predicted_genre IS NOT NULL — the
+ * hundreds of Billetto rows with zero genre evidence at all would trivially
+ * land in OTHER_BLOCKERS (their counterfactual is always "hold") and add
+ * pure noise to a bucket meant to surface genuinely close calls, not
+ * restate that Discovery Queue has a long tail of irrelevant candidates.
+ *
+ * `venue_now_resolves` cross-checks each distinct probable_venue_name
  * against the REAL, live resolveVenue() and current venues table — a "yes"
  * here alongside a still-set venue-unresolved missing_fields entry would be
  * a genuine inconsistency worth flagging, not expected in normal operation.
@@ -628,8 +655,9 @@ async function modeDiscoveryQueueVenues(client: Client, args: Record<string, str
 async function modeVenueBlocks(client: Client) {
   const rows = await client.query(`
     SELECT
-      dq.id, dq.probable_title, dq.probable_start, dq.probable_venue_name, dq.source_id,
-      dq.predicted_genre, dq.genre_confidence, dq.overall_confidence, dq.source_url,
+      dq.id, dq.probable_title, dq.probable_start, dq.probable_end, dq.probable_venue_name, dq.source_id,
+      dq.predicted_genre, dq.genre_confidence, dq.overall_confidence, dq.source_url, dq.missing_fields,
+      dq.venue_resolved_decision, dq.venue_resolved_hold_reason,
       dq.last_seen_at, dq.created_at,
       s.source_name, s.last_complete_sync_at
     FROM discovery_queue dq
@@ -645,15 +673,42 @@ async function modeVenueBlocks(client: Client) {
   const venues = venueRows.rows.map(rowToVenue);
   const now = new Date();
 
-  const current: Record<string, unknown>[] = [];
+  /** Human-readable "exact blocker" for OTHER_BLOCKERS, derived entirely
+   *  from already-computed fields — never re-deriving relevance/quality-gate
+   *  logic here. */
+  function describeOtherBlocker(holdReason: HoldReason, missingFields: string[]): string {
+    if (holdReason === "negative_relevance") {
+      return "negative relevance signal once genre is considered (event/artist text reads as non-electronic)";
+    }
+    if (holdReason === "low_confidence") {
+      return "genre confidence below the auto-publish/review threshold";
+    }
+    if (holdReason === "incomplete_data") {
+      const otherMissing = missingFields.filter((f) => f !== "venue (unresolved against registry)");
+      return otherMissing.length > 0 ? `missing required field(s): ${otherMissing.join(", ")}` : "incomplete data this run";
+    }
+    return "not yet evaluated (row not re-synced since this precision fix shipped)";
+  }
+
+  const active: Record<string, unknown>[] = [];
   const stale: Record<string, unknown>[] = [];
+  const currentButPast: Record<string, unknown>[] = [];
+  const otherBlockers: Record<string, unknown>[] = [];
 
   for (const r of rows.rows) {
     const lastSeenAt = r.last_seen_at ? new Date(r.last_seen_at as string) : null;
     const lastCompleteSyncAt = r.last_complete_sync_at ? new Date(r.last_complete_sync_at as string) : null;
     const isCurrent = isDiscoveryRowCurrent(lastSeenAt, lastCompleteSyncAt);
-    const probableStart = r.probable_start ? new Date(r.probable_start as string) : null;
+    const probableStart = r.probable_start as string | null;
+    // Reuses the exact same "is this event over" logic the rest of the app
+    // uses (accounts for endDatetime/default duration) rather than a naive
+    // start-time-only comparison — null start is "unknown", never "past".
+    const isPast = probableStart ? isPastEvent({ startDatetime: probableStart, endDatetime: r.probable_end as string | null }, now) : null;
     const resolved = resolveVenue(r.probable_venue_name as string, venues);
+    const venueResolvedDecision = r.venue_resolved_decision as PublishDecision | null;
+    const venueResolvedHoldReason = r.venue_resolved_hold_reason as HoldReason;
+    const missingFields = (r.missing_fields as string[]) ?? [];
+
     const entry = {
       queueId: r.id,
       venue: r.probable_venue_name,
@@ -661,7 +716,7 @@ async function modeVenueBlocks(client: Client) {
       sourceName: r.source_name,
       title: r.probable_title,
       date: r.probable_start,
-      stillUpcoming: probableStart ? probableStart.getTime() > now.getTime() : null,
+      stillUpcoming: probableStart ? !isPast : null,
       predictedGenre: r.predicted_genre,
       genreConfidence: r.genre_confidence,
       overallConfidence: r.overall_confidence,
@@ -670,8 +725,27 @@ async function modeVenueBlocks(client: Client) {
       lastCompleteSyncAt: r.last_complete_sync_at,
       createdAt: r.created_at,
       venueNowResolves: resolved ? { id: resolved.id, name: resolved.name } : null,
+      counterfactualDecision: venueResolvedDecision,
     };
-    (isCurrent ? current : stale).push(entry);
+
+    // See classifyVenueBlock's own doc comment (src/lib/sync.ts) for exactly
+    // how the three dimensions — freshness, event time, pipeline block —
+    // combine into one bucket without conflating them.
+    const bucket = classifyVenueBlock({ isCurrent, isPast, venueResolvedDecision });
+    switch (bucket) {
+      case "stale":
+        stale.push(entry);
+        break;
+      case "current_but_past":
+        currentButPast.push({ ...entry, otherBlockers: "NONE" });
+        break;
+      case "active":
+        active.push({ ...entry, otherBlockers: "NONE" });
+        break;
+      case "other_blockers":
+        otherBlockers.push({ ...entry, otherBlockers: describeOtherBlocker(venueResolvedHoldReason, missingFields) });
+        break;
+    }
   }
 
   const groupBy = (list: Record<string, unknown>[]) => {
@@ -692,10 +766,16 @@ async function modeVenueBlocks(client: Client) {
       .sort((a, b) => b.blockedEventCount - a.blockedEventCount);
   };
 
-  section("ACTIVE venue blocks (qualifying/review candidates, venue unresolved, seen in the most recent complete sync)");
-  console.log(JSON.stringify(groupBy(current), null, 2));
+  section("ACTIVE venue blocks (current upstream + upcoming + venue is the ONLY blocker + would auto-publish or reach review) — the only bucket that should justify registering a venue");
+  console.log(JSON.stringify(groupBy(active), null, 2));
 
-  section("STALE venue blocks (same filter, but NOT confirmed present in the most recent complete sync — do not use these to justify venue onboarding)");
+  section("CURRENT_BUT_PAST (still returned upstream, but the event's own date has passed or is unknown) — diagnostic only, never an onboarding signal");
+  console.log(JSON.stringify(groupBy(currentButPast), null, 2));
+
+  section("OTHER_BLOCKERS (current + upcoming + venue unresolved, but the real pipeline says it would still hold for another reason)");
+  console.log(JSON.stringify(groupBy(otherBlockers), null, 2));
+
+  section("STALE venue blocks (NOT confirmed present in the most recent complete sync — do not use these to justify venue onboarding)");
   console.log(JSON.stringify(groupBy(stale), null, 2));
 }
 

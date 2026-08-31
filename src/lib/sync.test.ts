@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
+  classifyVenueBlock,
   decidePublishedEventSyncAction,
   decideSyncLeaseAcquisition,
   findPendingRowToResolve,
@@ -325,6 +326,8 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     overallConfidence: "low",
     missingFields: [],
     suspectedDuplicateOfEventId: null,
+    venueResolvedDecision: null,
+    venueResolvedHoldReason: null,
     ...overrides,
   };
 }
@@ -867,5 +870,43 @@ describe("isDiscoveryRowCurrent (unknown-venue visibility work package, 2026-08-
     const highEnergyMovementLastSeen = new Date("2026-08-20T09:59:08.917Z");
     const laterCompleteSync = new Date("2026-08-31T13:00:00.000Z");
     expect(isDiscoveryRowCurrent(highEnergyMovementLastSeen, laterCompleteSync)).toBe(false);
+  });
+});
+
+describe("classifyVenueBlock (venue-block visibility precision fix, follow-up to 2026-08-31's freshness work) — three dimensions never conflated: source freshness, event time, pipeline block", () => {
+  it("1. current + upcoming + venue-only + would auto-publish -> ACTIVE", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "auto_publish" })).toBe("active");
+  });
+
+  it("2. current + upcoming + venue-only + would reach review -> ACTIVE", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "review_queue" })).toBe("active");
+  });
+
+  it("3. current + upcoming + venue unresolved + another blocker remains (counterfactual 'hold') -> NOT ACTIVE (other_blockers)", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "hold" })).toBe("other_blockers");
+  });
+
+  it("3b. current + upcoming + counterfactual not yet computed (null, e.g. a pre-precision-fix row) -> NOT ACTIVE (other_blockers), never assumed harmless", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: null })).toBe("other_blockers");
+  });
+
+  it("4. current upstream + a DEFINITE past date -> CURRENT_BUT_PAST, not ACTIVE, even though the counterfactual would auto-publish (event time and pipeline block are independent dimensions)", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: true, venueResolvedDecision: "auto_publish" })).toBe("current_but_past");
+  });
+
+  it("4b. unknown event date (isPast null, no probableStart at all) falls through to the pipeline-block check rather than being called 'past' — a missing date already fails the counterfactual gate on its own, landing in other_blockers", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: null, venueResolvedDecision: "hold" })).toBe("other_blockers");
+  });
+
+  it("5. stale (not seen in the latest complete sync) + upcoming + would auto-publish -> STALE, not ACTIVE — freshness wins outright, independent of everything else (real Rørt/High Energy Movement case)", () => {
+    expect(classifyVenueBlock({ isCurrent: false, isPast: false, venueResolvedDecision: "auto_publish" })).toBe("stale");
+  });
+
+  it("5b. stale always wins even over a definite past date or any pipeline-block state — freshness is checked first, per Section 3's 'do not conflate'", () => {
+    expect(classifyVenueBlock({ isCurrent: false, isPast: true, venueResolvedDecision: "hold" })).toBe("stale");
+  });
+
+  it("6. null/negative-relevance counterfactual is never ACTIVE (mirrors pipeline.test.ts's venueResolvedCounterfactual case 5)", () => {
+    expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "hold" })).toBe("other_blockers");
   });
 });

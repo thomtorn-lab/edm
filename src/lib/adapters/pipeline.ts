@@ -79,6 +79,64 @@ export interface PipelineResult {
   relevance: RelevanceLevel;
   duplicateOfEventId: string | null;
   duplicateConfidence: "high" | "medium" | "low" | "none";
+  /**
+   * What the SAME quality gate (computeDecision below) would decide for this
+   * exact candidate if venue resolution were the only thing fixed — every
+   * other observed signal (genre, genreConfidence, relevance,
+   * duplicateConfidence, trustedElectronicSource, non-electronic signal)
+   * held exactly as this run actually found it (venue-block visibility
+   * precision fix, follow-up to 2026-08-31's freshness work). Null when not
+   * applicable: venue already resolved, or raw.venueName itself was never
+   * provided (nothing to hypothetically resolve). Exists so a caller (the
+   * venue-blocks diagnostic) can tell "would actually qualify once this
+   * venue registers" apart from "has some genre evidence" without
+   * re-deriving relevance/quality-gate logic outside this module — see
+   * computeVenueResolvedCounterfactual below, the ONLY place this is
+   * computed. Real Production motivation: the venue-blocks diagnostic's
+   * first cut treated every genre-evidenced, venue-unresolved row as an
+   * actionable opportunity, which is not the same claim as "would actually
+   * publish or reach review once the venue resolves" — a row can carry real
+   * genre evidence yet still be missing another required field, still read
+   * as a negative-relevance signal once genre is considered, or still sit
+   * below the confidence bar. This field answers the real question directly
+   * instead of approximating it from predictedGenre/genreConfidence.
+   */
+  venueResolvedCounterfactual: { decision: PublishDecision; holdReason: HoldReason } | null;
+}
+
+/**
+ * The venue-resolution counterfactual (see PipelineResult.venueResolvedCounterfactual's
+ * doc comment): re-runs the SAME computeDecision gate with resolvedVenueId
+ * forced to a non-null placeholder and the "venue (unresolved against
+ * registry)" entry stripped from missingFields — every other input is
+ * whatever THIS run actually observed. Never re-derives dedup against a
+ * hypothetical venue id (we don't know which real venue this would resolve
+ * to), so duplicateConfidence is passed through exactly as already computed
+ * for the real (venue-unresolved) run — the smallest generalized answer
+ * that still reuses the real gate rather than approximating it.
+ */
+function computeVenueResolvedCounterfactual(
+  applicable: boolean,
+  missingFields: string[],
+  genre: GenreSlug | null,
+  genreConfidence: ConfidenceLevel,
+  duplicateConfidence: "high" | "medium" | "low" | "none",
+  relevance: RelevanceLevel,
+  trustedElectronicSource: boolean,
+  hasNonElectronicSignal: boolean,
+): { decision: PublishDecision; holdReason: HoldReason } | null {
+  if (!applicable) return null;
+  const counterfactualMissingFields = missingFields.filter((f) => f !== "venue (unresolved against registry)");
+  return computeDecision(
+    counterfactualMissingFields,
+    "counterfactual-venue-resolved",
+    genre,
+    genreConfidence,
+    duplicateConfidence,
+    relevance,
+    trustedElectronicSource,
+    hasNonElectronicSignal,
+  );
 }
 
 /** The CONFIDENCE / PUBLISH-REVIEW GATE step, factored out so it can be re-run
@@ -301,6 +359,16 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     options.trustedElectronicSource ?? false,
     nonElectronicSignal,
   );
+  const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
+    resolvedVenue == null && raw.venueName != null,
+    missingFields,
+    genre,
+    genreConfidence,
+    duplicateConfidence,
+    relevance,
+    options.trustedElectronicSource ?? false,
+    nonElectronicSignal,
+  );
 
   return {
     decision,
@@ -313,6 +381,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     relevance,
     duplicateOfEventId,
     duplicateConfidence,
+    venueResolvedCounterfactual,
   };
 }
 
@@ -374,6 +443,9 @@ export function applyEnrichedGenre(
   }
 
   if (result.genre === null) {
+    const nonElectronicSignal =
+      hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
+      hasNonElectronicCategorySignal(relevanceText, result.normalizedArtists);
     const { decision, holdReason } = computeDecision(
       result.missingFields,
       result.resolvedVenueId,
@@ -382,10 +454,23 @@ export function applyEnrichedGenre(
       result.duplicateConfidence,
       "none",
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
-      hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
-        hasNonElectronicCategorySignal(relevanceText, result.normalizedArtists),
+      nonElectronicSignal,
     );
-    return { ...result, genre, genreConfidence, decision, holdReason };
+    // Re-derives the counterfactual with the newly-enriched genre (venue-block
+    // visibility precision fix) — applicability itself never changes here
+    // (enrichment never touches venue resolution), so it's carried over from
+    // whatever the pre-enrichment pass already determined.
+    const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
+      result.venueResolvedCounterfactual != null,
+      result.missingFields,
+      genre,
+      genreConfidence,
+      result.duplicateConfidence,
+      "none",
+      false,
+      nonElectronicSignal,
+    );
+    return { ...result, genre, genreConfidence, decision, holdReason, venueResolvedCounterfactual };
   }
 
   if (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak") {
@@ -420,7 +505,18 @@ export function applyEnrichedGenre(
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       nonElectronicSignal,
     );
-    return { ...result, genre: finalGenre, genreConfidence: finalGenreConfidence, decision, holdReason, relevance };
+    // See CASE A's identical comment — applicability carries over unchanged.
+    const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
+      result.venueResolvedCounterfactual != null,
+      result.missingFields,
+      finalGenre,
+      finalGenreConfidence,
+      result.duplicateConfidence,
+      relevance,
+      false,
+      nonElectronicSignal,
+    );
+    return { ...result, genre: finalGenre, genreConfidence: finalGenreConfidence, decision, holdReason, relevance, venueResolvedCounterfactual };
   }
 
   return result;

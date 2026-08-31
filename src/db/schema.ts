@@ -191,6 +191,35 @@ export const discoveryQueue = pgTable("discovery_queue", {
    * could itself go stale.
    */
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  /**
+   * The venue-resolution counterfactual (venue-block visibility precision
+   * fix, follow-up to 2026-08-31's freshness work) — what the SAME quality
+   * gate (src/lib/adapters/pipeline.ts's computeDecision, via
+   * computeVenueResolvedCounterfactual) would decide for this exact
+   * candidate if venue resolution were the only thing fixed, with every
+   * other signal held exactly as the most recent sync actually observed it.
+   * 'auto_publish' | 'review_queue' | 'hold', or NULL when not applicable
+   * (venue already resolved, no venue name was ever given, or — for a row
+   * created before this column existed — not yet recomputed by a later
+   * sync). Recomputed on EVERY sync alongside predictedGenre/genreConfidence
+   * (see buildDiscoveryQueueClassificationPatch) so it can move in either
+   * direction, unlike missingFields' one-directional self-heal — this is
+   * purely derived diagnostic state, never something an admin edits.
+   * Real motivation: the first cut of the venue-blocks diagnostic treated
+   * every genre-evidenced, venue-unresolved row as an actionable
+   * onboarding opportunity, which silently over-counted rows that would
+   * still hold for an unrelated reason (missing another required field, a
+   * negative-relevance read once genre is considered, confidence below the
+   * bar) even once their venue registered.
+   */
+  venueResolvedDecision: text("venue_resolved_decision"),
+  /**
+   * Companion to venueResolvedDecision above: WHY the counterfactual landed
+   * on "hold" (incomplete_data | low_confidence | negative_relevance), so a
+   * diagnostic can show the exact remaining blocker without re-deriving it.
+   * NULL whenever venueResolvedDecision is null or not "hold".
+   */
+  venueResolvedHoldReason: text("venue_resolved_hold_reason"),
 });
 
 /**
