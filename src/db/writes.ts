@@ -502,6 +502,12 @@ export async function applyDiscoveryClassificationUpdate(
     overallConfidence?: ConfidenceLevel;
     missingFields?: string[];
     suspectedDuplicateOfEventId?: string;
+    /** Source-freshness bump (unknown-venue visibility work package,
+     *  2026-08-31) — see discoveryQueue.lastSeenAt's own doc comment.
+     *  Always passed by src/db/sync.ts whenever this row's own candidate was
+     *  matched again in this sync's fetch, independent of whether anything
+     *  else in the patch changed. */
+    lastSeenAt?: Date;
   },
 ) {
   if (Object.keys(patch).length === 0) return;
@@ -551,6 +557,15 @@ export async function insertDiscoveryItem(item: {
   suspectedDuplicateOfEventId: string | null;
   missingFields: string[];
   overallConfidence: ConfidenceLevel;
+  /** First-sighting timestamp (unknown-venue visibility work package,
+   *  2026-08-31) — see discoveryQueue.lastSeenAt's own doc comment. Always
+   *  "now" when src/db/sync.ts inserts a fresh sync candidate. Omitted (left
+   *  NULL) by the admin "Add event from URL" tool — a manually-added item
+   *  was never observed via a source sync, so it correctly never appears in
+   *  source-freshness/venue-block reporting regardless (that reporting is
+   *  scoped to rows with a real sourceId, which this kind of row also
+   *  never has). */
+  lastSeenAt?: Date;
 }): Promise<DiscoveryQueueNotificationItem> {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
 
@@ -614,7 +629,22 @@ function rank(c: string): number {
 
 export async function touchSourceSyncStats(
   sourceId: string,
-  outcome: { success: boolean; eventsFound?: number; eventsUpdated?: number; error?: string | null },
+  outcome: {
+    success: boolean;
+    eventsFound?: number;
+    eventsUpdated?: number;
+    error?: string | null;
+    /**
+     * Whether this sync's fetch is known to have gathered its FULL
+     * candidate set (unknown-venue visibility work package, 2026-08-31) —
+     * see SourceAdapter.lastFetchWasComplete and sources.lastCompleteSyncAt's
+     * own doc comments. Defaults to true (every adapter without partial-
+     * fetch semantics is complete by construction whenever it succeeds at
+     * all) — only ever passed false by src/db/sync.ts when the adapter
+     * itself reports a partial result.
+     */
+    complete?: boolean;
+  },
 ) {
   const now = new Date();
   const { sources } = await import("./schema");
@@ -624,6 +654,7 @@ export async function touchSourceSyncStats(
       .set({
         lastSuccessfulSync: now,
         lastAttemptedSync: now,
+        ...(outcome.complete ?? true ? { lastCompleteSyncAt: now } : {}),
         // Usually cleared on a clean success — but a partial-failure run
         // (fetch succeeded, some candidates failed to write) is still
         // "success" for stats purposes and must keep its error visible

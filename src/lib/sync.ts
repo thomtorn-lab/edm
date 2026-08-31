@@ -398,6 +398,28 @@ export function summarizeWriteErrors(errors: string[], candidatesFound: number):
   };
 }
 
+/**
+ * Derives "is this still a CURRENT venue block, or a STALE one" (unknown-
+ * venue visibility work package, 2026-08-31) — never stored, always computed
+ * fresh from two timestamps: `lastSeenAt` (a discovery_queue row's own most
+ * recent sighting — see that column's doc comment in src/db/schema.ts) and
+ * `lastCompleteSyncAt` (its source's most recent sync known to have fetched
+ * its FULL candidate set — see sources.lastCompleteSyncAt's doc comment).
+ *
+ * Deliberately conservative on both missing inputs: a row never touched by
+ * this tracking (lastSeenAt null — every row that existed before this
+ * feature shipped) and a source with no confirmed-complete sync yet
+ * (lastCompleteSyncAt null) both read as NOT current — a row must prove
+ * freshness, never default to it. Equal timestamps count as current (the
+ * row WAS the thing that set lastCompleteSyncAt in the first place, in the
+ * common case where lastSeenAt is stamped from the very sync that just
+ * completed).
+ */
+export function isDiscoveryRowCurrent(lastSeenAt: Date | null, lastCompleteSyncAt: Date | null): boolean {
+  if (lastSeenAt == null || lastCompleteSyncAt == null) return false;
+  return lastSeenAt.getTime() >= lastCompleteSyncAt.getTime();
+}
+
 export interface SyncLeaseRow {
   lockToken: string;
   expiresAt: Date;

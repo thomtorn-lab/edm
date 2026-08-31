@@ -444,9 +444,17 @@ async function fetchPage(
  * discarding a partially-successful fetch.
  */
 export function createBillettoAdapter(fetchImpl: typeof fetch = fetch, retryDelayMs = 2_000): SourceAdapter {
+  // Tracks whether the most recent fetchCandidates() call gathered every
+  // page, or bailed out early on a later-page failure (see the `break`
+  // below) — see SourceAdapter.lastFetchWasComplete's own doc comment for
+  // why this matters. Starts true; only the partial-failure path below ever
+  // sets it false. A fresh fetchCandidates() call always resets it first.
+  let lastFetchComplete = true;
+
   return {
     sourceId: BILLETTO_SOURCE_ID,
     async fetchCandidates(): Promise<RawCandidateEvent[]> {
+      lastFetchComplete = true;
       const accessKeyId = process.env.BILLETTO_ACCESS_KEY_ID;
       const accessKeySecret = process.env.BILLETTO_ACCESS_KEY_SECRET;
       if (!accessKeyId || !accessKeySecret) {
@@ -464,6 +472,7 @@ export function createBillettoAdapter(fetchImpl: typeof fetch = fetch, retryDela
         } catch (err) {
           if (page === 1) throw err; // first-page failure is a genuine source failure
           console.error(`[billetto-adapter] page ${page} failed, returning ${results.length} candidate(s) gathered so far: ${err instanceof Error ? err.message : String(err)}`);
+          lastFetchComplete = false;
           break;
         }
 
@@ -486,6 +495,9 @@ export function createBillettoAdapter(fetchImpl: typeof fetch = fetch, retryDela
       }
 
       return results;
+    },
+    lastFetchWasComplete(): boolean {
+      return lastFetchComplete;
     },
   };
 }

@@ -162,6 +162,17 @@ async function runSourceSyncLocked(
     };
   }
 
+  // Source-freshness bookkeeping (unknown-venue visibility work package,
+  // 2026-08-31) — see sources.lastCompleteSyncAt's own doc comment. Adapters
+  // without partial-fetch semantics (everything except Billetto today) omit
+  // lastFetchWasComplete entirely, so this is true for them whenever they
+  // succeed at all, exactly like every existing sync outcome already treats
+  // them. seenAt is one timestamp for this whole sync run, not one per
+  // candidate — freshness only needs to know "was this row touched by THIS
+  // sync", not sub-second ordering within it.
+  const fetchComplete = adapter.lastFetchWasComplete?.() ?? true;
+  const seenAt = new Date();
+
   const [venues, existingEventRows, links, pendingDiscovery] = await Promise.all([
     getVenues(),
     getAllEventsAdmin(),
@@ -442,7 +453,12 @@ async function runSourceSyncLocked(
             suspectedDuplicateOfEventId: existingPending.suspectedDuplicateOfEventId,
           },
         );
-        await applyDiscoveryClassificationUpdate(existingPending.id, classificationPatch);
+        // lastSeenAt is unconditional — this candidate's own sourceUrl was
+        // matched in THIS sync's fetch, independent of whether its
+        // classification also changed (unknown-venue visibility work
+        // package, 2026-08-31). This is what lets a still-blocked candidate
+        // be told apart from one the source has since stopped returning.
+        await applyDiscoveryClassificationUpdate(existingPending.id, { ...classificationPatch, lastSeenAt: seenAt });
         continue;
       }
 
@@ -482,6 +498,7 @@ async function runSourceSyncLocked(
         suspectedDuplicateOfEventId: result.duplicateOfEventId,
         missingFields: result.missingFields,
         overallConfidence: result.decision === "review_queue" ? "medium" : "low",
+        lastSeenAt: seenAt,
       });
       newlyQueuedItems.push(inserted);
       queuedForReview++;
@@ -516,10 +533,11 @@ async function runSourceSyncLocked(
       eventsFound: candidates.length,
       eventsUpdated: updated,
       error: writeSummary.lastErrorMessage,
+      complete: fetchComplete,
     });
     return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
   }
 
-  await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated });
+  await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated, complete: fetchComplete });
   return { sourceId, outcome: "ok", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
 }

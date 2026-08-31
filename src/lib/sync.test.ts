@@ -6,6 +6,7 @@ import {
   decideSyncLeaseAcquisition,
   findPendingRowToResolve,
   findSyncMatch,
+  isDiscoveryRowCurrent,
   summarizeWriteErrors,
   type DiscoveryQueueTarget,
   type SyncTargetEvent,
@@ -833,5 +834,38 @@ describe("decidePublishedEventSyncAction (data-quality Workstream A follow-up �
     const fresh = { decision: "hold" as const, holdReason: "negative_relevance" as const };
     expect(decidePublishedEventSyncAction(current, fresh)).toBe("no_change");
     expect(decidePublishedEventSyncAction(current, fresh)).toBe("no_change");
+  });
+});
+
+describe("isDiscoveryRowCurrent (unknown-venue visibility work package, 2026-08-31): derives current-vs-stale from two timestamps, never stored, never inferred from mere age", () => {
+  it("current: lastSeenAt at or after lastCompleteSyncAt", () => {
+    expect(isDiscoveryRowCurrent(new Date("2026-08-31T13:00:00Z"), new Date("2026-08-31T12:00:00Z"))).toBe(true);
+  });
+
+  it("equal timestamps still count as current (the common case: this exact row is what set lastCompleteSyncAt)", () => {
+    const t = new Date("2026-08-31T13:00:00Z");
+    expect(isDiscoveryRowCurrent(t, t)).toBe(true);
+  });
+
+  it("stale: lastSeenAt before the source's most recent complete sync — the source stopped returning this candidate", () => {
+    expect(isDiscoveryRowCurrent(new Date("2026-08-20T09:59:00Z"), new Date("2026-08-31T12:00:00Z"))).toBe(false);
+  });
+
+  it("never current when lastSeenAt is null — a row from before this tracking existed must never default to fresh", () => {
+    expect(isDiscoveryRowCurrent(null, new Date("2026-08-31T12:00:00Z"))).toBe(false);
+  });
+
+  it("never current when lastCompleteSyncAt is null — no confirmed-complete sync recorded yet for this source, nothing to compare against", () => {
+    expect(isDiscoveryRowCurrent(new Date("2026-08-31T13:00:00Z"), null)).toBe(false);
+  });
+
+  it("never current when both are null", () => {
+    expect(isDiscoveryRowCurrent(null, null)).toBe(false);
+  });
+
+  it("REGRESSION (real Billetto case, High Energy Movement/Rørt): a row last seen 2026-08-20 is correctly stale once the source has a confirmed complete sync on 2026-08-31 — proves age alone doesn't decide this, the comparison does", () => {
+    const highEnergyMovementLastSeen = new Date("2026-08-20T09:59:08.917Z");
+    const laterCompleteSync = new Date("2026-08-31T13:00:00.000Z");
+    expect(isDiscoveryRowCurrent(highEnergyMovementLastSeen, laterCompleteSync)).toBe(false);
   });
 });

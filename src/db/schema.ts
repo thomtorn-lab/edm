@@ -50,6 +50,24 @@ export const sources = pgTable("sources", {
   active: boolean("active").notNull().default(true),
   lastSuccessfulSync: timestamp("last_successful_sync", { withTimezone: true }),
   lastAttemptedSync: timestamp("last_attempted_sync", { withTimezone: true }),
+  /**
+   * Set only when a sync both succeeded AND is known to have fetched its
+   * FULL candidate set — never on a partial fetch (unknown-venue visibility
+   * work package, 2026-08-31; see SourceAdapter.lastFetchWasComplete in
+   * src/lib/adapters/types.ts). Deliberately separate from
+   * lastSuccessfulSync, which stays true to its existing meaning ("the fetch
+   * didn't throw") and keeps being used for existing source-health
+   * reporting unchanged — e.g. billettoAdapter's own multi-page resilience
+   * already treats a later-page failure as a successful sync (it returns
+   * whatever it gathered rather than discarding a partial success), which is
+   * correct for health/monitoring but MUST NOT be trusted as evidence that
+   * every previously-seen candidate was re-checked this cycle. Only this
+   * column is safe to compare a discovery_queue row's lastSeenAt against to
+   * derive "no longer returned by the source" — comparing against
+   * lastSuccessfulSync instead would wrongly mark unseen-this-cycle
+   * candidates from Billetto's unfetched later pages as stale.
+   */
+  lastCompleteSyncAt: timestamp("last_complete_sync_at", { withTimezone: true }),
   lastError: text("last_error"),
   eventsFound: integer("events_found").notNull().default(0),
   eventsUpdated: integer("events_updated").notNull().default(0),
@@ -157,6 +175,22 @@ export const discoveryQueue = pgTable("discovery_queue", {
   overriddenFields: text("overridden_fields").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  /**
+   * Source-freshness tracking (unknown-venue visibility work package,
+   * 2026-08-31). Set to "now" every time a sync's fetch actually returns
+   * this exact candidate again (src/db/sync.ts's existingPending branch),
+   * and at first insertion — never touched by anything else (an admin edit,
+   * a classification refresh with nothing to say about freshness, etc. never
+   * bumps it). NULL for every row created before this column existed —
+   * deliberately never backfilled with a fabricated value (see the
+   * migration's own comment): unknown historical freshness must read as
+   * "stale/unknown", never as "just seen". Compared against
+   * sources.lastCompleteSyncAt (never sources.lastSuccessfulSync, which
+   * also covers a partial-fetch success — see that column's own comment) to
+   * derive current-vs-stale without ever storing a computed boolean that
+   * could itself go stale.
+   */
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 });
 
 /**

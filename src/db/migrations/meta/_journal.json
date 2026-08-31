@@ -57,6 +57,13 @@
       "when": 1787941985820,
       "tag": "0007_add_postponed_status",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788185489141,
+      "tag": "0008_source_freshness_venue_visibility",
+      "breakpoints": true
     }
   ]
 }

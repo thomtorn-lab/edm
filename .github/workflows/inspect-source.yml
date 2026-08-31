@@ -43,9 +43,10 @@ on:
           - venues
           - venue-events
           - discovery-queue-venues
+          - venue-blocks
           - db-integrity
       source_id:
-        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity with no source scoping; must match src-[a-z0-9-]+)'
+        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks with no source scoping; must match src-[a-z0-9-]+)'
         required: false
       table:
         description: "db-integrity mode only, optional: one of venues, sources, events, discovery_queue, source_event_links, sync_locks — reports that table's information_schema columns (name/type/nullable/default) alongside the row counts every db-integrity run always prints."

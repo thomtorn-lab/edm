@@ -90,4 +90,20 @@ export interface SourceAdapter {
   sourceId: string;
   /** Fetches raw candidate events for this source. Never throws on a single bad record — skips it and continues. */
   fetchCandidates(): Promise<RawCandidateEvent[]>;
+  /**
+   * Reports whether the MOST RECENT fetchCandidates() call is known to have
+   * gathered its full candidate set (unknown-venue visibility work package,
+   * 2026-08-31). Optional — omit entirely for any adapter that fetches its
+   * whole candidate set in one bounded request/pass, where a returned
+   * result (fetchCandidates not throwing) already IS complete by
+   * construction; sync bookkeeping treats an absent method as "always
+   * complete". Only implement this when an adapter can itself return a
+   * PARTIAL result on success — e.g. billettoAdapter's multi-page
+   * resilience, which returns whatever was gathered so far rather than
+   * discarding it when a later page fails. This exists specifically so
+   * source-freshness/discovery-queue-staleness derivation (src/db/sync.ts)
+   * never treats a previously-seen candidate absent from a partial fetch as
+   * genuinely no-longer-offered by the source.
+   */
+  lastFetchWasComplete?(): boolean;
 }

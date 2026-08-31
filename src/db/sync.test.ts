@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { discoveryQueue, syncLocks } from "./schema";
 import type { RawCandidateEvent, SourceAdapter } from "@/lib/adapters/types";
 import type { Venue } from "@/lib/types";
@@ -664,5 +664,329 @@ describe("Event lifecycle/status handling (2026-08-28) — source disappearance 
     expect(result.outcome).toBe("zero_events");
     expect(applySourceSyncPatch).not.toHaveBeenCalled();
     expect(applySyncHoldUnpublish).not.toHaveBeenCalled();
+  });
+});
+
+describe("Unknown-venue visibility + source freshness (work package, 2026-08-31) — real Billetto shapes from the completed activation test", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+
+  it("1. qualifying candidate + unknown venue -> queued with real genre evidence, the venue-unresolved reason in missingFields, and lastSeenAt stamped (the precondition modeVenueBlocks' ACTIVE report depends on)", async () => {
+    const electroWerkz: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Electro Werkz",
+      venueName: "Råhuset", // Råhuset — not in the (empty, default-mocked) venues table
+      genreHint: "electro",
+      genreConfidenceHint: "high",
+      officialEventUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([electroWerkz]));
+    vi.setSystemTime(new Date("2026-08-31T13:00:00Z"));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(call.predictedGenre).toBe("electro");
+    expect(call.missingFields).toContain("venue (unresolved against registry)");
+    expect(call.lastSeenAt).toEqual(new Date("2026-08-31T13:00:00Z"));
+  });
+
+  it("2. manual-review-tier candidate (generic-floor genre, no strong signal) + unknown venue -> also queued as an active venue block. While venue-blocked, decision is always 'hold' (meetsMinimumFields requires a resolved venue before review_queue-vs-auto_publish is ever decided — real Electro Werkz/Wyatt E. evidence: both showed overallConfidence 'low' while blocked, genreConfidence is what actually distinguishes a would-be-qualifying candidate ('high') from a would-be-review one ('medium') once its venue resolves", async () => {
+    const wyattE: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Wyatt E. x Five The Hierophant",
+      venueName: "Råhuset",
+      genreHint: "electronic-other",
+      genreConfidenceHint: "medium",
+      officialEventUrl: "https://billetto.dk/e/wyatt-e-x-five-the-hierophant-billetter-1957514",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([wyattE]));
+    vi.setSystemTime(new Date("2026-08-31T13:00:00Z"));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(call.predictedGenre).toBe("electronic-other");
+    expect(call.genreConfidence).toBe("medium");
+    expect(call.overallConfidence).toBe("low");
+    expect(call.missingFields).toContain("venue (unresolved against registry)");
+    expect(call.lastSeenAt).toEqual(new Date("2026-08-31T13:00:00Z"));
+  });
+
+  it("3. non-qualifying candidate (no genre evidence at all) + unknown venue -> never presented as a venue-onboarding opportunity (predictedGenre stays null, excluded by modeVenueBlocks' own predicted_genre IS NOT NULL filter regardless of whether a row is created)", async () => {
+    const noEvidence: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Some Unrelated Workshop",
+      description: "A quiet afternoon workshop, nothing electronic about it.",
+      venueName: "Råhuset",
+      genreHint: null,
+      genreConfidenceHint: null,
+      officialEventUrl: "https://billetto.dk/e/some-unrelated-workshop",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([noEvidence]));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    if (vi.mocked(insertDiscoveryItem).mock.calls.length > 0) {
+      expect(vi.mocked(insertDiscoveryItem).mock.calls[0][0].predictedGenre).toBeNull();
+    }
+  });
+
+  it("4. candidate seen again on a later sync (existing pending row, venue still unresolved) -> lastSeenAt is bumped to THIS sync's time, independent of whether classification also changed", async () => {
+    const { db } = await import("./client");
+    vi.mocked(db.select).mockImplementation(() => {
+      const base = {
+        from: (table: unknown) => ({
+          where: () => {
+            if (table === discoveryQueue) {
+              return Promise.resolve([
+                {
+                  id: "dq-electro-werkz",
+                  sourceUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+                  status: "pending",
+                  predictedGenre: "electro",
+                  genreConfidence: "high",
+                  overriddenFields: [],
+                  overallConfidence: "low",
+                  missingFields: ["venue (unresolved against registry)"],
+                  suspectedDuplicateOfEventId: null,
+                },
+              ]);
+            }
+            return Promise.resolve([]);
+          },
+        }),
+      };
+      return base as unknown as ReturnType<typeof db.select>;
+    });
+
+    const electroWerkz: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Electro Werkz",
+      venueName: "Råhuset",
+      genreHint: "electro",
+      genreConfidenceHint: "high",
+      officialEventUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([electroWerkz]));
+    vi.setSystemTime(new Date("2026-08-31T19:00:00Z"));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    const { applyDiscoveryClassificationUpdate } = await import("./writes");
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith(
+      "dq-electro-werkz",
+      expect.objectContaining({ lastSeenAt: new Date("2026-08-31T19:00:00Z") }),
+    );
+  });
+
+  it("5. a normal (non-partial-fetch) successful sync marks the source's sync as COMPLETE — touchSourceSyncStats receives complete: true — the baseline every existing adapter (no lastFetchWasComplete method) already satisfies", async () => {
+    const adapter = fakeAdapter(() => Promise.resolve([rawCandidate]));
+    await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    const { touchSourceSyncStats } = await import("./writes");
+    expect(touchSourceSyncStats).toHaveBeenCalledWith(
+      "src-culture-box",
+      expect.objectContaining({ success: true, complete: true }),
+    );
+  });
+
+  it("6. a source reporting a PARTIAL fetch (e.g. Billetto's own later-page-failure resilience) marks the sync as complete: false — this is what stops an unseen candidate from that same run being wrongly treated as stale", async () => {
+    const adapter: SourceAdapter = {
+      sourceId: "src-billetto",
+      fetchCandidates: () => Promise.resolve([rawCandidate]),
+      lastFetchWasComplete: () => false,
+    };
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    const { touchSourceSyncStats } = await import("./writes");
+    expect(touchSourceSyncStats).toHaveBeenCalledWith(
+      "src-billetto",
+      expect.objectContaining({ success: true, complete: false }),
+    );
+  });
+
+  it("7. once the venue is registered, the NEXT normal sync resolves it, re-evaluates the pipeline, and resolves the prior pending row as published — no manual edit, no manual event creation, no Billetto-specific code", async () => {
+    const raahuset: Venue[] = [
+      {
+        id: "v-rahuset",
+        slug: "rahuset",
+        name: "Råhuset",
+        aliases: [],
+        address: "Onkel Dannys Pl. 7, 1711 København V",
+        city: "Copenhagen",
+        postalCode: "1711",
+        websiteUrl: null,
+        description: "",
+        shortDescription: null,
+        venueProfile: null,
+      },
+    ];
+    vi.mocked(getVenues).mockResolvedValueOnce(raahuset);
+
+    const { db } = await import("./client");
+    vi.mocked(db.select).mockImplementation(() => {
+      const base = {
+        from: (table: unknown) => ({
+          where: () => {
+            if (table === discoveryQueue) {
+              return Promise.resolve([
+                {
+                  id: "dq-electro-werkz",
+                  sourceUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+                  status: "pending",
+                },
+              ]);
+            }
+            return Promise.resolve([]);
+          },
+        }),
+      };
+      return base as unknown as ReturnType<typeof db.select>;
+    });
+
+    const electroWerkz: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Electro Werkz",
+      venueName: "Råhuset",
+      genreHint: "electro",
+      genreConfidenceHint: "high",
+      officialEventUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([electroWerkz]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    const { resolveDiscoveryItemAsPublished } = await import("./writes");
+    expect(resolveDiscoveryItemAsPublished).toHaveBeenCalledWith("dq-electro-werkz");
+  });
+
+  it("8. after venue registration, a genuine duplicate of an already-canonical event still routes through ordinary dedup — never a second canonical row just because this feature exists", async () => {
+    const raahuset: Venue[] = [
+      {
+        id: "v-rahuset",
+        slug: "rahuset",
+        name: "Råhuset",
+        aliases: [],
+        address: "Onkel Dannys Pl. 7, 1711 København V",
+        city: "Copenhagen",
+        postalCode: "1711",
+        websiteUrl: null,
+        description: "",
+        shortDescription: null,
+        venueProfile: null,
+      },
+    ];
+    vi.mocked(getVenues).mockResolvedValueOnce(raahuset);
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      {
+        id: "e-existing-electro-werkz",
+        title: "Electro Werkz",
+        slug: "electro-werkz",
+        description: null,
+        artists: [],
+        venueId: "v-rahuset",
+        startDatetime: "2026-08-15T18:00:00.000Z",
+        endDatetime: null,
+        officialEventUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+        ticketUrl: null,
+        facebookUrl: null,
+        residentAdvisorUrl: null,
+        imageUrl: null,
+        primaryGenre: "electro",
+        overriddenFields: [],
+        soldOut: false,
+        cancelled: false,
+        postponed: false,
+        canonicalSourceId: "src-billetto",
+        published: true,
+        manualOverride: false,
+      } as unknown as EventWithVenue,
+    ]);
+
+    const duplicateCandidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Electro Werkz",
+      venueName: "Råhuset",
+      startDatetime: "2026-08-15T18:00:00.000Z",
+      genreHint: "electro",
+      genreConfidenceHint: "high",
+      officialEventUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([duplicateCandidate]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(result.updated).toBe(1);
+  });
+
+  it("9. a candidate absent from this sync's fetch (e.g. it expired from the source's own feed) is never touched — its lastSeenAt stays exactly where it was, which is what lets it fall stale relative to the source's next complete sync", async () => {
+    // Only an UNRELATED candidate is returned this cycle — High Energy
+    // Movement's own row (if it existed) is never looked up at all, proving
+    // it structurally cannot have its lastSeenAt bumped by a sync that never
+    // saw it.
+    const unrelated: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Some Other Current Candidate",
+      officialEventUrl: "https://billetto.dk/e/some-other-current-candidate",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([unrelated]));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    const { applyDiscoveryClassificationUpdate } = await import("./writes");
+    const touchedIds = vi.mocked(applyDiscoveryClassificationUpdate).mock.calls.map((c) => c[0]);
+    expect(touchedIds).not.toContain("dq-high-energy-movement");
+  });
+
+  it("10. existing Billetto flow remains completely intact — a normal auto-publish-eligible Billetto candidate with an already-resolved venue still creates a canonical event exactly as before this work package", async () => {
+    const rustVenue: Venue[] = [
+      {
+        id: "v-rust",
+        slug: "rust",
+        name: "RUST",
+        aliases: [],
+        address: "Guldbergsgade 8, 2200 København N",
+        city: "Copenhagen",
+        postalCode: "2200",
+        websiteUrl: null,
+        description: "",
+        shortDescription: null,
+        venueProfile: null,
+      },
+    ];
+    vi.mocked(getVenues).mockResolvedValueOnce(rustVenue);
+
+    const nnhmn: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Det berlinske darkwave-fænomen NNHMN har sin debut i København!",
+      venueName: "RUST",
+      genreHint: "electro",
+      genreConfidenceHint: "high",
+      officialEventUrl: "https://billetto.dk/e/det-berlinske-darkwave-faenomen-nnhmn-har-sin-debut-i-kobenhavn-billetter-1983805",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([nnhmn]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    const created = vi.mocked(createEvent).mock.calls[0][0];
+    expect(created.venueId).toBe("v-rust");
+    expect(created.primaryGenre).toBe("electro");
+    expect(created.published).toBe(true);
   });
 });

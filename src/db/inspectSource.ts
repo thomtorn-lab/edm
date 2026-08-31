@@ -2,6 +2,7 @@ import { Client } from "pg";
 import { getSourceHealth, describeSourceHealth } from "@/lib/sourceHealth";
 import { resolveVenue } from "@/lib/normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "@/lib/dedup";
+import { isDiscoveryRowCurrent } from "@/lib/sync";
 import { buildApiKeypairHeader } from "@/lib/adapters/billettoAdapter";
 import { isPastEvent } from "@/lib/datetime";
 import type { Source, Venue } from "@/lib/types";
@@ -17,7 +18,7 @@ import type { Source, Venue } from "@/lib/types";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|db-integrity> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|db-integrity> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -595,6 +596,110 @@ async function modeDiscoveryQueueVenues(client: Client, args: Record<string, str
 }
 
 /**
+ * Read-only "which unresolved venues are actually worth registering right
+ * now" report (unknown-venue visibility work package, 2026-08-31) — across
+ * ALL sources, not scoped to one. Directly answers the operational
+ * question the Billetto activation test kept having to answer by hand:
+ * "which qualifying/review candidates are blocked ONLY by an unresolved
+ * venue, right now, as opposed to a stale row left over from an event the
+ * source no longer returns at all" (real case: High Energy Movement/Rørt —
+ * its discovery_queue row still showed the venue block after the event had
+ * already dropped out of Billetto's live feed).
+ *
+ * A row counts as a genuine venue-onboarding candidate only when it has
+ * real genre evidence (predicted_genre IS NOT NULL — excludes the hundreds
+ * of no-evidence rows that would never publish even with a resolved venue)
+ * AND its own missing_fields already names the venue as the reason
+ * (self-healing on every sync — see src/lib/sync.ts's
+ * buildDiscoveryQueueClassificationPatch). "Current" vs "stale" is derived,
+ * never stored: a row is current only if its own last_seen_at (bumped every
+ * time a sync's fetch matches it again — see src/db/sync.ts) is at or after
+ * its source's last_complete_sync_at (bumped only on a sync whose fetch is
+ * known to have gathered its FULL candidate set — see
+ * SourceAdapter.lastFetchWasComplete). A row with no last_seen_at at all
+ * (pre-migration history) or a source with no last_complete_sync_at yet
+ * (no complete sync recorded since this tracking began) is conservatively
+ * treated as NOT current — never assumed fresh merely because the row
+ * exists. `venue_now_resolves` cross-checks each distinct probable_venue_name
+ * against the REAL, live resolveVenue() and current venues table — a "yes"
+ * here alongside a still-set venue-unresolved missing_fields entry would be
+ * a genuine inconsistency worth flagging, not expected in normal operation.
+ */
+async function modeVenueBlocks(client: Client) {
+  const rows = await client.query(`
+    SELECT
+      dq.id, dq.probable_title, dq.probable_start, dq.probable_venue_name, dq.source_id,
+      dq.predicted_genre, dq.genre_confidence, dq.overall_confidence, dq.source_url,
+      dq.last_seen_at, dq.created_at,
+      s.source_name, s.last_complete_sync_at
+    FROM discovery_queue dq
+    LEFT JOIN sources s ON s.id = dq.source_id
+    WHERE dq.status = 'pending'
+      AND dq.predicted_genre IS NOT NULL
+      AND dq.probable_venue_name IS NOT NULL AND dq.probable_venue_name != ''
+      AND 'venue (unresolved against registry)' = ANY(dq.missing_fields)
+    ORDER BY dq.probable_venue_name, dq.source_id, dq.probable_start
+  `);
+
+  const venueRows = await client.query("SELECT * FROM venues");
+  const venues = venueRows.rows.map(rowToVenue);
+  const now = new Date();
+
+  const current: Record<string, unknown>[] = [];
+  const stale: Record<string, unknown>[] = [];
+
+  for (const r of rows.rows) {
+    const lastSeenAt = r.last_seen_at ? new Date(r.last_seen_at as string) : null;
+    const lastCompleteSyncAt = r.last_complete_sync_at ? new Date(r.last_complete_sync_at as string) : null;
+    const isCurrent = isDiscoveryRowCurrent(lastSeenAt, lastCompleteSyncAt);
+    const probableStart = r.probable_start ? new Date(r.probable_start as string) : null;
+    const resolved = resolveVenue(r.probable_venue_name as string, venues);
+    const entry = {
+      queueId: r.id,
+      venue: r.probable_venue_name,
+      sourceId: r.source_id,
+      sourceName: r.source_name,
+      title: r.probable_title,
+      date: r.probable_start,
+      stillUpcoming: probableStart ? probableStart.getTime() > now.getTime() : null,
+      predictedGenre: r.predicted_genre,
+      genreConfidence: r.genre_confidence,
+      overallConfidence: r.overall_confidence,
+      sourceUrl: r.source_url,
+      lastSeenAt: r.last_seen_at,
+      lastCompleteSyncAt: r.last_complete_sync_at,
+      createdAt: r.created_at,
+      venueNowResolves: resolved ? { id: resolved.id, name: resolved.name } : null,
+    };
+    (isCurrent ? current : stale).push(entry);
+  }
+
+  const groupBy = (list: Record<string, unknown>[]) => {
+    const groups = new Map<string, Record<string, unknown>[]>();
+    for (const e of list) {
+      const key = `${e.venue}|||${e.sourceId}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(e);
+    }
+    return Array.from(groups.values())
+      .map((items) => ({
+        venue: items[0].venue,
+        sourceId: items[0].sourceId,
+        sourceName: items[0].sourceName,
+        blockedEventCount: items.length,
+        events: items.map(({ venue: _v, sourceId: _s, sourceName: _sn, ...rest }) => rest),
+      }))
+      .sort((a, b) => b.blockedEventCount - a.blockedEventCount);
+  };
+
+  section("ACTIVE venue blocks (qualifying/review candidates, venue unresolved, seen in the most recent complete sync)");
+  console.log(JSON.stringify(groupBy(current), null, 2));
+
+  section("STALE venue blocks (same filter, but NOT confirmed present in the most recent complete sync — do not use these to justify venue onboarding)");
+  console.log(JSON.stringify(groupBy(stale), null, 2));
+}
+
+/**
  * Read-only schema/row-count integrity check (migration verification
  * follow-up, 2026-08-24): confirms a migration's actual effect —
  * before/after — without any per-source scoping. Two independent things:
@@ -671,6 +776,7 @@ async function main() {
     venues: modeVenues,
     "venue-events": modeVenueEvents,
     "discovery-queue-venues": modeDiscoveryQueueVenues,
+    "venue-blocks": modeVenueBlocks,
     "db-integrity": modeDbIntegrity,
   };
 
@@ -683,7 +789,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, db-integrity.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, db-integrity.`,
     );
     process.exit(1);
   }
