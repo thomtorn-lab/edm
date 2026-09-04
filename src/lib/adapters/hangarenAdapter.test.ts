@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseHangarenEventsHtml, createHangarenAdapter, HANGAREN_EVENTS_URL, truncateAtBoundary } from "./hangarenAdapter";
+import { effectiveEndInstant } from "../datetime";
 
 /**
  * `hangaren-events.html` is a real, unmodified recording of
@@ -104,60 +105,78 @@ describe("parseHangarenEventsHtml", () => {
   });
 });
 
-describe("known real-source anomaly — KARRUSEL AFTERPARTY end date (public-visibility follow-up, 2026-08-29, recurrence confirmed 2026-09-04)", () => {
+describe("known real-source anomaly — KARRUSEL AFTERPARTY end date, now caught generically (public-visibility follow-up, 2026-08-29; recurrence confirmed and closed 2026-09-04)", () => {
   const events = parseHangarenEventsHtml(FIXTURE_HTML);
 
   // Investigated after a real report that a Fri 28 Aug, 12:00-21:00 event
-  // (same-day, not overnight) was still publicly visible on 29 Aug. Traced
-  // to this exact listing. Root cause is NOT this adapter or the general
-  // archival logic (see datetime.test.ts's matching regression test, which
-  // proves a correctly-stored 12:00-21:00 event archives exactly on time):
-  // Hangaren's own real page markup for this listing states BOTH in its
-  // human-visible date text ("Fri, Aug 28, 2026 12:00 PM" .. "Sat, Aug 29,
-  // 2026 9:00 PM") AND in its Google Calendar export metadata
-  // (dates=20260828T100000Z/20260829T190000Z) the same ~33-hour span — a
-  // real visitor to hangaren.dk/events would see the identical, apparently
-  // mistaken date range. This adapter deliberately prefers the venue's own
-  // gcal export specifically because Squarespace has already computed the
-  // exact UTC instant there (see extractDates's doc comment); that source
-  // of truth being wrong for one listing is a Hangaren-side data-entry
-  // issue, not something a general date-filtering fix can or should paper
-  // over — there is no independent, more-trustworthy signal on the page to
-  // fall back to instead. This test pins the current, faithfully-carried
-  // value so any future change to this file has to consciously decide
-  // whether it's touching this known case, rather than silently drifting.
-  it("faithfully carries through Hangaren's own (anomalous) 33-hour span for the Aug 28 instance — a real source-data issue, not an adapter bug", () => {
+  // (same-day, not overnight) was still publicly visible on 29 Aug, traced
+  // to this exact listing's Google Calendar export metadata
+  // (dates=20260828T100000Z/20260829T190000Z) stating an anomalous ~33-hour
+  // span. Then, on 2026-09-04, the IMMEDIATELY FOLLOWING instance of this
+  // same recurring slot ("TOCCORORO Meilgaarden WE.LL", Sat 29 Aug)
+  // independently exhibited the identical shape — confirming this is a
+  // recurring Hangaren-side data-entry issue on this specific recurring
+  // slot, not a one-off, and that a per-event manual correction alone
+  // doesn't close the ingestion problem for the NEXT occurrence.
+  //
+  // Both instances of the bad listing also carry a distinguishing structural
+  // signature no legitimate Hangaren listing has: their own visible copy
+  // includes a disambiguating "note: the event starts at HH(AM|PM)
+  // (DAY DD.MM)" line whose stated real day is the gcal link's END day, not
+  // its START day — i.e. Hangaren's own source data contradicts itself. See
+  // hasStartDateNoteMismatch in hangarenAdapter.ts. This is deliberately NOT
+  // a duration-based heuristic: real Production data has a genuine ~28h
+  // Hangaren anniversary event and a genuine ~31h Billetto multi-day
+  // festival, both close to or above this ~33h error's own length, so no
+  // fixed duration threshold could separate real from erroneous — see the
+  // event-integrity diagnostic's audit and datetime.test.ts's matching
+  // "hasTrustworthyEndDatetime" suite. The adapter now nulls the untrusted
+  // end automatically instead of carrying it through; the shared no-end-time
+  // fallback (src/lib/datetime.ts) then determines public expiry.
+  it("nulls the untrustworthy end for the Aug 28 Kyle Starkey instance, leaving start untouched", () => {
     const kyleStarkey = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: Kyle Starkey"));
     expect(kyleStarkey).toBeDefined();
-    expect(kyleStarkey!.startDatetime).toBe("2026-08-28T10:00:00.000Z"); // 12:00 CEST, matches the real report exactly
-    expect(kyleStarkey!.endDatetime).toBe("2026-08-29T19:00:00.000Z"); // Hangaren's own stated end, not ours to second-guess
+    expect(kyleStarkey!.startDatetime).toBe("2026-08-28T10:00:00.000Z"); // not second-guessed — see hasStartDateNoteMismatch's doc comment
+    expect(kyleStarkey!.endDatetime).toBeNull();
   });
 
-  // 2026-09-04 event-integrity audit follow-up: the immediately-FOLLOWING
-  // instance of this same recurring slot (Sat 29 Aug, "TOCCORORO Meilgaarden
-  // WE.LL") independently exhibits the identical anomaly shape (start
-  // 10:00Z, end 19:00Z the NEXT day — a ~33h span), confirming this is a
-  // recurring source-side issue on this specific recurring slot, not a
-  // one-off. Both known instances were corrected in Production one row at a
-  // time via the existing manual-override mechanism (see
-  // hangarenEndDatetimeCorrection.ts and
-  // hangarenToccororoEndDatetimeCorrection.ts) — a duration-based runtime
-  // heuristic was deliberately NOT added to datetime.ts's effectiveEndInstant
-  // because real Production data also has a genuine ~31h multi-day festival
-  // only 2 hours shorter than this ~33h error (see the event-integrity
-  // diagnostic's end-time audit), so no fixed duration threshold can safely
-  // tell the two apart.
-  it("faithfully carries through the same anomaly shape for the following Sat 29 Aug instance — confirming this recurs, it is not isolated", () => {
+  it("nulls the untrustworthy end for the following Aug 29 TOCCORORO instance too — the recurrence is caught generically, not by hardcoding this event", () => {
     const toccororo = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: TOCCORORO"));
     expect(toccororo).toBeDefined();
     expect(toccororo!.startDatetime).toBe("2026-08-29T10:00:00.000Z");
-    expect(toccororo!.endDatetime).toBe("2026-08-30T19:00:00.000Z"); // Hangaren's own stated end, not ours to second-guess
+    expect(toccororo!.endDatetime).toBeNull();
   });
 
-  it("the Aug 27 instance of the same recurring slot (the one immediately preceding the first known-bad instance) is correctly same-day", () => {
+  it("a synthetic future occurrence of the same structural defect (different title/dates entirely) is rejected automatically, proving this isn't keyed to a specific event", () => {
+    const syntheticBlock = `<article class="eventlist-event eventlist-event--upcoming">
+      <h1 class="eventlist-title"><a href="/events/fake" class="eventlist-title-link">KARRUSEL AFTERPARTY: Future Artist</a></h1>
+      <a href="http://www.google.com/calendar/event?action=TEMPLATE&text=Future&dates=20271105T100000Z/20271106T190000Z" class="eventlist-meta-export-google">Google Calendar</a>
+      <div class="sqs-html-content"><p><strong>05.11.2027</strong><br><em>note: the event starts at 3AM (SAT 06.11)</em></p></div>
+    </article>`;
+    const synthetic = parseHangarenEventsHtml(syntheticBlock);
+    expect(synthetic).toHaveLength(1);
+    expect(synthetic[0].startDatetime).toBe("2027-11-05T10:00:00.000Z");
+    expect(synthetic[0].endDatetime).toBeNull();
+  });
+
+  it("the effective public-expiry fallback for a nulled-end TOCCORORO instance is the normal 06:00-next-day rule, not the bogus 33h span", () => {
+    const toccororo = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: TOCCORORO"))!;
+    const end = effectiveEndInstant({ startDatetime: toccororo.startDatetime!, endDatetime: toccororo.endDatetime });
+    // Sat 29 Aug 12:00 CEST start -> nightlife day Aug 29 -> fallback 06:00 Aug 30 CEST.
+    expect(end.toISOString()).toBe(new Date("2026-08-30T06:00:00+02:00").toISOString());
+  });
+
+  it("a normal same-day KARRUSEL instance (Aug 27 SKALA, no note present) is left completely untouched", () => {
     const skala = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: SKALA"));
     expect(skala).toBeDefined();
     expect(skala!.startDatetime!.slice(0, 10)).toBe(skala!.endDatetime!.slice(0, 10));
+  });
+
+  it("a legitimate overnight, non-KARRUSEL Hangaren event (crosses midnight, no note present) keeps its real end", () => {
+    const gerdJanson = events.find((e) => e.title.startsWith("Gerd Janson"));
+    expect(gerdJanson).toBeDefined();
+    expect(gerdJanson!.startDatetime).toBe("2026-08-14T18:00:00.000Z");
+    expect(gerdJanson!.endDatetime).toBe("2026-08-15T04:00:00.000Z"); // legitimate 10h overnight span, untouched
   });
 });
 

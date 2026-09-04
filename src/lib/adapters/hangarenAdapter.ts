@@ -1,4 +1,4 @@
-import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
+import { copenhagenWallClockToUtc, getCopenhagenParts, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText, stripBareUrls, truncateAtBoundary } from "./htmlExtraction";
@@ -117,6 +117,47 @@ function extractDates(blockHtml: string): ExtractedDates {
   };
 }
 
+// Source-integrity check (event-integrity follow-up, 2026-09-04): Hangaren's
+// recurring "KARRUSEL AFTERPARTY" listing template has now produced the
+// identical structural defect twice on two separate real occurrences
+// (e-b118e399, then e-7a7308e0, ~33h apart despite being genuine same-night
+// overnight parties) — the Google Calendar export link's own `dates=` param
+// states the listing's END on the calendar day AFTER the party actually
+// closes. Both times, Hangaren's own staff independently added a clarifying
+// prose note to the visible page copy — "note: the event starts at HH(AM|PM)
+// (DAY DD.MM)" — whose stated real start day does NOT match the gcal link's
+// own start day (it matches the gcal link's END day instead, since the doors
+// genuinely open after midnight on that date). This annotation has appeared
+// on exactly these 2 of 19 events in the reference fixture, and 0 of an
+// independently live-fetched 13-event sample — see hangarenAdapter.test.ts's
+// "known real-source anomaly" suite and the task's audit for the full
+// evidence trail. A GLOBAL duration cap was evaluated and rejected: a
+// genuine ~28h Hangaren anniversary event and a genuine ~31h Billetto
+// festival both sit close to or above the ~33h bad-case duration, so no
+// fixed threshold can separate real from erroneous by length alone. This
+// check is deliberately narrow and source-specific instead: it only fires
+// when Hangaren's OWN copy explicitly contradicts its OWN structured date,
+// which is a structural inconsistency regardless of how long the resulting
+// span is.
+const START_NOTE_PATTERN =
+  /note:\s*the event starts at\s*\d{1,2}\s*(?:AM|PM)\s*\([A-Za-z]{3}\s*(\d{1,2})\.(\d{1,2})\)/i;
+
+/**
+ * True when the block's own visible copy states a real start day that
+ * disagrees with the structured/parsed start day — Hangaren's own source
+ * data contradicting itself. When true, the caller should treat the parsed
+ * endDatetime as untrustworthy (this says nothing about which of the two
+ * conflicting dates is "correct", only that the pairing can't be trusted).
+ */
+function hasStartDateNoteMismatch(blockHtml: string, startIso: string): boolean {
+  const match = START_NOTE_PATTERN.exec(blockHtml);
+  if (!match) return false;
+  const noteDay = Number(match[1]);
+  const noteMonth = Number(match[2]);
+  const parsedStart = getCopenhagenParts(new Date(startIso));
+  return noteDay !== parsedStart.day || noteMonth !== parsedStart.month;
+}
+
 function parseGoogleCalUtc(compact: string): Date {
   // YYYYMMDDTHHMMSS -> Date.UTC(...)
   const y = Number(compact.slice(0, 4));
@@ -143,7 +184,15 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
       const permalink = href.split("?")[0];
       const officialEventUrl = permalink.startsWith("http") ? permalink : `${HANGAREN_BASE_URL}${permalink}`;
 
-      const { startDatetime, endDatetime } = extractDates(block);
+      const extractedDates = extractDates(block);
+      const startDatetime = extractedDates.startDatetime;
+      // See hasStartDateNoteMismatch's doc comment: Hangaren's own copy
+      // contradicting its own structured start date means the paired end is
+      // not trustworthy either — null it out and let the shared no-end-time
+      // fallback (src/lib/datetime.ts) determine public expiry instead of
+      // carrying through a self-contradicting source value.
+      const endDatetime =
+        startDatetime && hasStartDateNoteMismatch(block, startDatetime) ? null : extractedDates.endDatetime;
 
       // Whole-block text (not just an attempted "description div" extract —
       // regex can't reliably bound nested divs). "ICS" is the last line of
