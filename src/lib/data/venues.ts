@@ -544,6 +544,70 @@ export const VENUES: Venue[] = [
     shortDescription: null,
     venueProfile: null,
   },
+  // Venue-block activation round (2026-08-31 follow-up): these three venues
+  // each blocked exactly one CURRENT, UPCOMING Billetto candidate whose real
+  // counterfactual quality-gate decision (src/lib/adapters/pipeline.ts's
+  // computeVenueResolvedCounterfactual) was AUTO-PUBLISH — venue resolution
+  // was the ONLY thing blocking each. Unlike the Rört/Råhuset/Henrikgaardens/
+  // KLEIN batch above, this environment has real (though egress-limited)
+  // web access — addresses were independently corroborated via each venue's
+  // own official/municipal site plus at least one independent directory
+  // (Danish CVR business registry, property registry, or Yelp), never
+  // inferred from the Billetto event title alone.
+  {
+    id: "v-lygten-station",
+    slug: "lygten-station",
+    name: "Lygten Station",
+    aliases: [],
+    // Former Copenhagen–Slangerup railway station, now a Københavns
+    // Kommune-run cultural centre. Address confirmed via the municipality's
+    // own kulturogfritidn.kk.dk site and corroborated by Yelp and the
+    // Danish CVR business registry (CVR-nr 64942212). Billetto's own venue
+    // string ("Lygten Station") matches this canonical name exactly.
+    address: "Lygten 2, 2400 København NV",
+    city: "Copenhagen",
+    postalCode: "2400",
+    websiteUrl: null,
+    description: "Former railway station in Nordvest, now a municipal cultural centre hosting concerts, comedy and theatre.",
+    shortDescription: null,
+    venueProfile: null,
+  },
+  {
+    id: "v-copenhill",
+    slug: "copenhill",
+    name: "CopenHill",
+    aliases: [],
+    // Waste-to-energy plant with a rooftop ski slope, hiking trail and
+    // event/bar space (also known as Amager Bakke). Address confirmed via
+    // the venue's own official site (copenhill.dk) and corroborated by
+    // Google Maps and Visit Copenhagen. Billetto's own venue string
+    // ("CopenHill") matches this canonical name exactly.
+    address: "Vindmøllevej 6, 2300 København S",
+    city: "Copenhagen",
+    postalCode: "2300",
+    websiteUrl: "https://www.copenhill.dk/",
+    description: "Waste-to-energy plant topped with a rooftop ski slope, hiking trail and event space on Refshaleøen/Amager.",
+    shortDescription: null,
+    venueProfile: null,
+  },
+  {
+    id: "v-kube",
+    slug: "kube",
+    name: "KU.BE",
+    aliases: [],
+    // Frederiksberg municipality's culture-and-movement house. Address
+    // confirmed via the venue's own official site (kube.frederiksberg.dk)
+    // and corroborated by Yelp and the Danish address/property registries
+    // (dingeo.dk, resights.dk). Billetto's own venue string ("KU.BE")
+    // matches this canonical name exactly.
+    address: "Dirch Passers Allé 4, 2000 Frederiksberg",
+    city: "Copenhagen",
+    postalCode: "2000",
+    websiteUrl: "https://kube.frederiksberg.dk/",
+    description: "Frederiksberg culture and movement house spanning performance, workshop and library spaces across four floors.",
+    shortDescription: null,
+    venueProfile: null,
+  },
 ];
 
 /**
