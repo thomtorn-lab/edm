@@ -20,7 +20,7 @@ import type { HoldReason } from "@/lib/adapters/pipeline";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|db-integrity> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|db-integrity> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -799,6 +799,120 @@ async function modeVenueBlocks(client: Client) {
  * interpolated from free-form input beyond that check) before being
  * substituted into the information_schema query.
  */
+/**
+ * Read-only public-event integrity audit (title contamination + expired-
+ * event-visibility work package, 2026-09-04) — across every PUBLISHED
+ * canonical event, joined to venue/source names. Two independent things,
+ * from the same base query, never mutating anything:
+ *
+ *   1. TITLE CONTAMINATION: flags a title against several deterministic,
+ *      source-agnostic heuristics (unusual length, multiple sentence-ending
+ *      punctuation marks, a known CTA phrase, an embedded URL) — never a
+ *      guess at what the "real" title should be, just which stored titles
+ *      look like they swallowed description/body copy. Every flagged
+ *      event's real source title/description/link text still has to be
+ *      independently re-derived from the actual source (this mode only
+ *      says WHICH events to look at, not what's wrong with each one).
+ *   2. END-TIME DATA QUALITY: reports, per source, how many published
+ *      events carry a real end_datetime vs. rely on the no-end-time
+ *      fallback (src/lib/datetime.ts's effectiveEndInstant), plus flags any
+ *      end_datetime that is structurally suspicious (before its own
+ *      start_datetime, or absurdly far after it — more than 18h, longer
+ *      than any real Copenhagen club night) so those can be treated as
+ *      untrustworthy rather than taken at face value.
+ *
+ * `--title=<substring>` narrows to events whose title contains the given
+ * (case-insensitive) substring — used to pull up the exact reference cases
+ * this work package started from without dumping the entire table.
+ */
+async function modeEventIntegrity(client: Client, args: Record<string, string | boolean>) {
+  const titleFilter = typeof args.title === "string" ? args.title : null;
+  const rows = await client.query(
+    `SELECT e.id, e.slug, e.title, e.description, e.start_datetime, e.end_datetime,
+            e.published, e.official_event_url, e.canonical_source_id,
+            v.name AS venue_name, s.source_name
+     FROM events e
+     LEFT JOIN venues v ON v.id = e.venue_id
+     LEFT JOIN sources s ON s.id = e.canonical_source_id
+     WHERE e.published = true
+     ${titleFilter ? "AND e.title ILIKE $1" : ""}
+     ORDER BY e.start_datetime`,
+    titleFilter ? [`%${titleFilter}%`] : [],
+  );
+
+  const CTA_PATTERNS = /\b(view event|read more|learn more|buy tickets?|get tickets?|book now|find out more|see more)\b/i;
+  const SENTENCE_END_RE = /[.!?]/g;
+
+  function titleFlags(title: string): string[] {
+    const flags: string[] = [];
+    if (title.length > 100) flags.push(`unusually_long(${title.length}_chars)`);
+    const sentenceEnders = (title.match(SENTENCE_END_RE) ?? []).length;
+    if (sentenceEnders >= 2) flags.push(`multiple_sentence_terminators(${sentenceEnders})`);
+    if (CTA_PATTERNS.test(title)) flags.push(`cta_text("${title.match(CTA_PATTERNS)![0]}")`);
+    if (/https?:\/\//i.test(title)) flags.push("embedded_url");
+    if (/\.\.\.| — |…/.test(title) && title.length > 60) flags.push("ellipsis_or_dash_with_length");
+    return flags;
+  }
+
+  const titleFlagged: Record<string, unknown>[] = [];
+  const endTimeRows: Record<string, unknown>[] = [];
+  const sourceBreakdown = new Map<string, { withEnd: number; withoutEnd: number; suspicious: number }>();
+
+  for (const r of rows.rows) {
+    const title = r.title as string;
+    const flags = titleFlags(title);
+    if (flags.length > 0) {
+      titleFlagged.push({
+        id: r.id,
+        slug: r.slug,
+        venue: r.venue_name,
+        source: r.source_name,
+        title,
+        titleLength: title.length,
+        flags,
+        officialEventUrl: r.official_event_url,
+      });
+    }
+
+    const start = r.start_datetime ? new Date(r.start_datetime as string) : null;
+    const end = r.end_datetime ? new Date(r.end_datetime as string) : null;
+    const sourceKey = (r.source_name as string | null) ?? "(no source)";
+    if (!sourceBreakdown.has(sourceKey)) sourceBreakdown.set(sourceKey, { withEnd: 0, withoutEnd: 0, suspicious: 0 });
+    const bucket = sourceBreakdown.get(sourceKey)!;
+
+    let suspicious: string | null = null;
+    if (end && start) {
+      const diffHours = (end.getTime() - start.getTime()) / 3_600_000;
+      if (diffHours < 0) suspicious = `end_before_start(${diffHours.toFixed(1)}h)`;
+      else if (diffHours > 18) suspicious = `end_over_18h_after_start(${diffHours.toFixed(1)}h)`;
+    }
+
+    if (end) bucket.withEnd++;
+    else bucket.withoutEnd++;
+    if (suspicious) bucket.suspicious++;
+
+    endTimeRows.push({
+      id: r.id,
+      title,
+      venue: r.venue_name,
+      source: r.source_name,
+      startDatetime: r.start_datetime,
+      endDatetime: r.end_datetime,
+      hasEndDatetime: end != null,
+      suspicious,
+    });
+  }
+
+  section(`TITLE CONTAMINATION — flagged events (${titleFlagged.length} of ${rows.rows.length} published events inspected)`);
+  console.log(JSON.stringify(titleFlagged, null, 2));
+
+  section(`END-TIME DATA QUALITY — per-source breakdown (${rows.rows.length} published events inspected)`);
+  console.log(JSON.stringify(Array.from(sourceBreakdown.entries()).map(([source, n]) => ({ source, ...n })), null, 2));
+
+  section("END-TIME DATA QUALITY — every inspected event (start/end/suspicious flag)");
+  console.log(JSON.stringify(endTimeRows, null, 2));
+}
+
 const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
 
 async function modeDbIntegrity(client: Client, args: Record<string, string | boolean>) {
@@ -857,6 +971,7 @@ async function main() {
     "venue-events": modeVenueEvents,
     "discovery-queue-venues": modeDiscoveryQueueVenues,
     "venue-blocks": modeVenueBlocks,
+    "event-integrity": modeEventIntegrity,
     "db-integrity": modeDbIntegrity,
   };
 
@@ -869,7 +984,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, db-integrity.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, db-integrity.`,
     );
     process.exit(1);
   }
