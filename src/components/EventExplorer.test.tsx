@@ -575,3 +575,58 @@ describe("EventExplorer — 'All venues' excludes a venue with only past events 
     expect(options).not.toContain("Past Only Venue");
   });
 });
+
+describe("EventExplorer — 'now' stays fresh without a reload (public event integrity work package, 2026-09-04)", () => {
+  afterEach(cleanup);
+
+  // Root cause of 5 real reference cases (KARRUSEL AFTERPARTY, 240 Months
+  // of Riotvan, Sonicfest, Cinna Peyghamy, ALICE TUNES IN) staying visible
+  // past their end: `now` was set exactly once on mount and never again, so
+  // a tab left open past an event's end kept rendering it as upcoming
+  // forever. These tests prove `now` is now kept fresh by both the 1-minute
+  // interval and the visibilitychange listener — see EventExplorer.tsx.
+  it("an event disappears once its end passes, on its own, via the periodic interval refresh — no reload, no prop change", () => {
+    const event = { ...makeEvent("2026-08-01T20:00:00.000Z"), endDatetime: "2026-08-01T22:00:00.000Z" };
+    vi.setSystemTime(new Date("2026-08-01T21:00:00.000Z"));
+    render(<EventExplorer events={[event]} serverNow="2026-08-01T21:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(screen.queryByText(event.title)).not.toBeNull();
+
+    act(() => {
+      vi.setSystemTime(new Date("2026-08-01T22:01:00.000Z")); // past the stored end
+      vi.advanceTimersByTime(60_000); // one interval tick
+    });
+
+    expect(screen.queryByText(event.title)).toBeNull();
+  });
+
+  it("an event disappears immediately on tab refocus (visibilitychange), even before the next interval tick", () => {
+    const event = { ...makeEvent("2026-08-01T20:00:00.000Z"), endDatetime: "2026-08-01T22:00:00.000Z" };
+    vi.setSystemTime(new Date("2026-08-01T21:00:00.000Z"));
+    render(<EventExplorer events={[event]} serverNow="2026-08-01T21:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(screen.queryByText(event.title)).not.toBeNull();
+
+    act(() => {
+      vi.setSystemTime(new Date("2026-08-01T22:01:00.000Z"));
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(screen.queryByText(event.title)).toBeNull();
+  });
+
+  it("an event that has NOT yet ended survives an interval tick (no false-positive removal)", () => {
+    const event = { ...makeEvent("2026-08-01T20:00:00.000Z"), endDatetime: "2026-08-01T22:00:00.000Z" };
+    vi.setSystemTime(new Date("2026-08-01T21:00:00.000Z"));
+    render(<EventExplorer events={[event]} serverNow="2026-08-01T21:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    act(() => {
+      vi.setSystemTime(new Date("2026-08-01T21:30:00.000Z")); // still before end
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.queryByText(event.title)).not.toBeNull();
+  });
+});

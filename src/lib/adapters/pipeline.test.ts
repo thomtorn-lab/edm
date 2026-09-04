@@ -73,6 +73,27 @@ describe("runIngestionPipeline", () => {
     expect(result.resolvedVenueId).toBeNull();
     expect(result.decision).toBe("hold");
   });
+
+  // Public event-integrity audit (2026-09-04): title sanitization is applied
+  // exactly once, here, by mutating the candidate object in place — every
+  // downstream consumer (src/db/sync.ts's create/patch writes, discovery-
+  // queue insert) reads raw.title from this SAME object afterwards, so this
+  // proves the fix actually reaches storage rather than only existing as an
+  // unused helper. See sanitizeExtractedTitle in htmlExtraction.ts.
+  it("sanitizes a contaminated title in place, before it's used for dedup or storage", () => {
+    const candidate = raw({
+      title: "Endurance One last Hangaren session in 2026, do not miss out — grab your presale tickets. View Event →",
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).not.toContain("View Event");
+    expect(candidate.title.startsWith("Endurance")).toBe(true);
+  });
+
+  it("leaves an already-clean title byte-for-byte unchanged", () => {
+    const candidate = raw({ title: "Endurance" });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).toBe("Endurance");
+  });
 });
 
 describe("source-aware relevance evidence (data-quality Workstream A — a generalist venue's broad category tag is never conclusive on its own)", () => {

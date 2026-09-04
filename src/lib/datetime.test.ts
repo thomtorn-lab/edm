@@ -5,6 +5,7 @@ import {
   crossesMidnight,
   effectiveEndInstant,
   groupByMonth,
+  hasTrustworthyEndDatetime,
   isEventInProgress,
   isNextWeekend,
   isPastEvent,
@@ -212,6 +213,88 @@ describe("archival / lifecycle", () => {
     // The next day, it must never still read as current — this is exactly
     // the state a visitor checking the site "on 29 August" would observe.
     expect(isPastEvent(event, new Date("2026-08-29T12:00:00+02:00"))).toBe(true);
+  });
+});
+
+describe("public event integrity — visibility regression suite (2026-09-04 title contamination + expired-event work package)", () => {
+  it("is visible before its start time (no-end event)", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T23:00:00+02:00", endDatetime: null };
+    expect(isPastEvent(event, new Date("2026-08-15T22:00:00+02:00"))).toBe(false);
+  });
+
+  it("no-end event stays visible right up to the fallback 06:00 cutoff", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T23:00:00+02:00", endDatetime: null };
+    expect(isPastEvent(event, new Date("2026-08-16T05:59:00+02:00"))).toBe(false);
+  });
+
+  it("no-end event is hidden exactly at, and after, the fallback 06:00 cutoff", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T23:00:00+02:00", endDatetime: null };
+    expect(isPastEvent(event, new Date("2026-08-16T06:00:00+02:00"))).toBe(true);
+    expect(isPastEvent(event, new Date("2026-08-16T09:00:00+02:00"))).toBe(true);
+  });
+
+  it("an overnight no-end event stays visible after local midnight, right up to its fallback cutoff", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T22:00:00+02:00", endDatetime: null };
+    expect(isPastEvent(event, new Date("2026-08-16T00:30:00+02:00"))).toBe(false); // just after midnight
+    expect(isPastEvent(event, new Date("2026-08-16T05:00:00+02:00"))).toBe(false); // still before 06:00 cutoff
+  });
+
+  // DST: Denmark's clocks go back one hour at 03:00 CEST -> 02:00 CET on the
+  // last Sunday of October (2026-10-25). An event starting the evening
+  // before, with no explicit end, must still fall back to 06:00 LOCAL time
+  // the next day — not 06:00 minus/plus an hour — proving the fallback goes
+  // through the DST-safe copenhagenWallClockToUtc conversion rather than a
+  // naive fixed-duration offset.
+  it("no-end fallback lands on 06:00 local time even across the autumn DST transition", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-10-24T23:00:00+02:00", endDatetime: null }; // Sat evening, CEST
+    const end = effectiveEndInstant(event);
+    // 2026-10-25 06:00 is already CET (UTC+1) — the clocks fall back overnight.
+    expect(end.toISOString()).toBe(new Date("2026-10-25T06:00:00+01:00").toISOString());
+    expect(isPastEvent(event, new Date("2026-10-25T05:59:00+01:00"))).toBe(false);
+    expect(isPastEvent(event, new Date("2026-10-25T06:00:00+01:00"))).toBe(true);
+  });
+
+  it("no-end fallback lands on 06:00 local time across the spring-forward DST transition too", () => {
+    // 2027-03-28 is the last Sunday of March 2027 — clocks spring forward
+    // 02:00 CET -> 03:00 CEST overnight.
+    const event: NightlifeEvent = { startDatetime: "2027-03-27T23:00:00+01:00", endDatetime: null };
+    const end = effectiveEndInstant(event);
+    expect(end.toISOString()).toBe(new Date("2027-03-28T06:00:00+02:00").toISOString());
+  });
+});
+
+describe("hasTrustworthyEndDatetime / untrustworthy explicit end times", () => {
+  it("trusts a normal explicit end after start", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: "2026-08-15T23:00:00+02:00" };
+    expect(hasTrustworthyEndDatetime(event)).toBe(true);
+  });
+
+  it("distrusts an end time at or before its own start time, falling back to the no-end rule instead", () => {
+    const sameInstant: NightlifeEvent = { startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: "2026-08-15T20:00:00+02:00" };
+    const beforeStart: NightlifeEvent = { startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: "2026-08-15T18:00:00+02:00" };
+    expect(hasTrustworthyEndDatetime(sameInstant)).toBe(false);
+    expect(hasTrustworthyEndDatetime(beforeStart)).toBe(false);
+    // Both fall back exactly like a null endDatetime would.
+    const fallback = effectiveEndInstant({ startDatetime: sameInstant.startDatetime, endDatetime: null });
+    expect(effectiveEndInstant(sameInstant).toISOString()).toBe(fallback.toISOString());
+    expect(effectiveEndInstant(beforeStart).toISOString()).toBe(fallback.toISOString());
+  });
+
+  // Real Production data (event-integrity diagnostic, 2026-09-04): a
+  // genuine ~31h Billetto multi-day festival ("EleKtro Universal: Mini
+  // Festival 9.-10. oktober") and a genuine but erroneous ~33h Hangaren
+  // single-night listing ("KARRUSEL AFTERPARTY: TOCCORORO", corrected via
+  // one-time canonical data cleanup, not a runtime rule — see
+  // hangarenToccororoEndDatetimeCorrection.ts) sit only 2 hours apart in
+  // duration. This test locks in the deliberate design decision: duration
+  // alone, however long, is never treated as untrustworthy — only a
+  // logically-impossible end (<= start) is. A duration-based cap was
+  // evaluated and rejected specifically because it cannot separate these
+  // two real, legitimate-vs-erroneous cases.
+  it("trusts a long-but-plausible explicit end (e.g. a genuine multi-day festival) no matter how long, as long as it's after start", () => {
+    const festival: NightlifeEvent = { startDatetime: "2026-10-09T22:00:00+02:00", endDatetime: "2026-10-11T05:00:00+02:00" }; // 31h
+    expect(hasTrustworthyEndDatetime(festival)).toBe(true);
+    expect(effectiveEndInstant(festival).toISOString()).toBe(new Date("2026-10-11T05:00:00+02:00").toISOString());
   });
 });
 

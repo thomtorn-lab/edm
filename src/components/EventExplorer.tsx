@@ -109,10 +109,46 @@ export default function EventExplorer({
   // mounted, so Tonight/Weekend filtering matches the visitor's actual
   // clock rather than the server's, without ever passing through an
   // "unknown" state in between.
+  //
+  // It's then kept fresh for the lifetime of the tab: a page opened before
+  // an event's end (or its no-end-time fallback cutoff) and left open past
+  // it must still remove that event without a reload. A 1-minute interval
+  // covers the common case; the visibilitychange listener catches the
+  // common case of a tab backgrounded overnight and revisited — it fires
+  // immediately on refocus rather than waiting up to a minute.
+  //
+  // The refresh only actually calls setNow (triggering a re-render) when it
+  // would change at least one event's past/upcoming status — returning the
+  // SAME `now` reference otherwise, which React treats as a no-op update
+  // (bails out without re-rendering). This isn't just an optimization: a
+  // `now` tick that changes nothing observable still produces new
+  // `upcoming`/`filtered`/`groups` array references on every render (they're
+  // freshly filtered/sorted), which tears down and recreates the month-nav
+  // IntersectionObserver below — and that teardown's own safety-net cleanup
+  // unconditionally releases the tap-to-scroll pin (isProgrammaticScrollRef),
+  // so an unconditional tick could cancel an in-progress tap-scroll for no
+  // reason. Skipping genuinely no-op ticks avoids that entirely.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date());
-  }, []);
+
+    function refreshIfChanged() {
+      setNow((current) => {
+        const next = new Date();
+        const changed = events.some((e) => isPastEvent(e, current) !== isPastEvent(e, next));
+        return changed ? next : current;
+      });
+    }
+    const interval = window.setInterval(refreshIfChanged, 60_000);
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") refreshIfChanged();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [events]);
 
   // Lock background scroll while the mobile filters sheet is open.
   useEffect(() => {

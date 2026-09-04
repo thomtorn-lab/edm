@@ -16,6 +16,7 @@ import {
   type RelevanceLevel,
 } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
+import { sanitizeExtractedTitle } from "./htmlExtraction";
 import type { RawCandidateEvent } from "./types";
 
 /**
@@ -243,6 +244,16 @@ function computeDecision(
 }
 
 export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOptions): PipelineResult {
+  // TITLE SANITIZATION (public event-integrity audit, 2026-09-04): every
+  // source's title passes through here exactly once, before anything else
+  // reads it — dedup matching, genre relevance text, and every DB write
+  // path (src/db/sync.ts's create/patch, discovery-queue insert) all read
+  // `raw.title` downstream of this same call on the same object, so
+  // mutating it in place here is the single generalized choke point rather
+  // than a change repeated per adapter or per write site. See
+  // sanitizeExtractedTitle's own doc comment for what this guards against.
+  if (raw.title) raw.title = sanitizeExtractedTitle(raw.title);
+
   // VALIDATION
   const missingFields: string[] = [];
   if (!raw.title?.trim()) missingFields.push("title");

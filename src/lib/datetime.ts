@@ -176,12 +176,26 @@ export function isNextWeekend(event: NightlifeEvent, now: Date): boolean {
 }
 
 /**
+ * An explicit endDatetime is trusted unless it's logically impossible (at or
+ * before its own startDatetime) — that's the one signal that's always wrong
+ * regardless of event shape. A duration cap was considered and rejected: real
+ * Production data has a genuine ~31h multi-day festival and a genuine (but
+ * erroneous) ~33h single-night listing only 2h apart in duration, so no fixed
+ * threshold can separate them without misclassifying one. See event-integrity
+ * diagnostic mode and SOURCE_ONBOARDING.md-adjacent history for the audit.
+ */
+export function hasTrustworthyEndDatetime(event: NightlifeEvent): boolean {
+  if (!event.endDatetime) return false;
+  return new Date(event.endDatetime).getTime() > new Date(event.startDatetime).getTime();
+}
+
+/**
  * The instant an event is considered over for archival purposes. Falls back
- * to 06:00 on the day following its nightlife day when no explicit end time
- * is known, since Copenhagen club nights routinely run to that hour.
+ * to 06:00 on the day following its nightlife day when no trustworthy end
+ * time is known, since Copenhagen club nights routinely run to that hour.
  */
 export function effectiveEndInstant(event: NightlifeEvent): Date {
-  if (event.endDatetime) return new Date(event.endDatetime);
+  if (hasTrustworthyEndDatetime(event)) return new Date(event.endDatetime as string);
   const start = new Date(event.startDatetime);
   const key = nightlifeDateKey(start);
   const nextDay = addDaysToDateKey(key, 1);

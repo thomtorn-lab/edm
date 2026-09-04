@@ -104,7 +104,7 @@ describe("parseHangarenEventsHtml", () => {
   });
 });
 
-describe("known real-source anomaly — KARRUSEL AFTERPARTY end date (public-visibility follow-up, 2026-08-29)", () => {
+describe("known real-source anomaly — KARRUSEL AFTERPARTY end date (public-visibility follow-up, 2026-08-29, recurrence confirmed 2026-09-04)", () => {
   const events = parseHangarenEventsHtml(FIXTURE_HTML);
 
   // Investigated after a real report that a Fri 28 Aug, 12:00-21:00 event
@@ -121,10 +121,7 @@ describe("known real-source anomaly — KARRUSEL AFTERPARTY end date (public-vis
   // gcal export specifically because Squarespace has already computed the
   // exact UTC instant there (see extractDates's doc comment); that source
   // of truth being wrong for one listing is a Hangaren-side data-entry
-  // issue (evidently introduced when this recurring "Karrusel Afterparty"
-  // slot was duplicated to create the Aug 28/29 instances — the immediately
-  // preceding Aug 27 instance, effy-z4wea, has a correct same-day 6-hour
-  // span), not something a general date-filtering fix can or should paper
+  // issue, not something a general date-filtering fix can or should paper
   // over — there is no independent, more-trustworthy signal on the page to
   // fall back to instead. This test pins the current, faithfully-carried
   // value so any future change to this file has to consciously decide
@@ -136,7 +133,28 @@ describe("known real-source anomaly — KARRUSEL AFTERPARTY end date (public-vis
     expect(kyleStarkey!.endDatetime).toBe("2026-08-29T19:00:00.000Z"); // Hangaren's own stated end, not ours to second-guess
   });
 
-  it("the immediately-preceding Aug 27 instance of the same recurring slot is correctly same-day, confirming this is an isolated listing issue, not a systemic one", () => {
+  // 2026-09-04 event-integrity audit follow-up: the immediately-FOLLOWING
+  // instance of this same recurring slot (Sat 29 Aug, "TOCCORORO Meilgaarden
+  // WE.LL") independently exhibits the identical anomaly shape (start
+  // 10:00Z, end 19:00Z the NEXT day — a ~33h span), confirming this is a
+  // recurring source-side issue on this specific recurring slot, not a
+  // one-off. Both known instances were corrected in Production one row at a
+  // time via the existing manual-override mechanism (see
+  // hangarenEndDatetimeCorrection.ts and
+  // hangarenToccororoEndDatetimeCorrection.ts) — a duration-based runtime
+  // heuristic was deliberately NOT added to datetime.ts's effectiveEndInstant
+  // because real Production data also has a genuine ~31h multi-day festival
+  // only 2 hours shorter than this ~33h error (see the event-integrity
+  // diagnostic's end-time audit), so no fixed duration threshold can safely
+  // tell the two apart.
+  it("faithfully carries through the same anomaly shape for the following Sat 29 Aug instance — confirming this recurs, it is not isolated", () => {
+    const toccororo = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: TOCCORORO"));
+    expect(toccororo).toBeDefined();
+    expect(toccororo!.startDatetime).toBe("2026-08-29T10:00:00.000Z");
+    expect(toccororo!.endDatetime).toBe("2026-08-30T19:00:00.000Z"); // Hangaren's own stated end, not ours to second-guess
+  });
+
+  it("the Aug 27 instance of the same recurring slot (the one immediately preceding the first known-bad instance) is correctly same-day", () => {
     const skala = events.find((e) => e.title.startsWith("KARRUSEL AFTERPARTY: SKALA"));
     expect(skala).toBeDefined();
     expect(skala!.startDatetime!.slice(0, 10)).toBe(skala!.endDatetime!.slice(0, 10));

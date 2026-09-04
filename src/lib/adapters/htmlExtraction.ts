@@ -96,6 +96,40 @@ export function truncateAtBoundary(text: string, maxLength: number): string {
   return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trim();
 }
 
+// A short, curated set of call-to-action phrases/glyphs that legitimately
+// belong to card "read more" buttons, never to an event's actual name — if
+// one of these appears anywhere in an extracted title, everything from it
+// onward is description/navigation copy that leaked in, not the title.
+const TITLE_CTA_MARKER =
+  /\b(view event|read more|learn more|buy tickets?|get tickets?|more info(?:rmation)?|find out more|see (?:more|details)|click here)\b|[→»›]|->/i;
+
+/**
+ * Public event-integrity audit (2026-09-04): a title-extraction regex that
+ * only bounds itself on nested HTML tags (e.g. Hangaren's `[^<]*` capture —
+ * see hangarenAdapter.ts) has no defense against a future template change
+ * that concatenates plain description/CTA text into the same element with
+ * no tag boundary between them. No such contamination was found in any
+ * currently-published event (see event-integrity diagnostic mode's full
+ * audit — 0 of 114), but the failure mode this guards is real given how
+ * these regexes are shaped, so it's closed at the single shared point every
+ * source's title passes through on its way to canonical storage
+ * (runIngestionPipeline) rather than adapter-by-adapter. Two independent,
+ * source-agnostic passes: strip anything from a recognizable CTA marker
+ * onward, then hard-cap length at a boundary well above any real observed
+ * title (the longest currently-published title is 124 chars) so a title
+ * with no CTA marker but still-runaway length can't reach storage either.
+ */
+export function sanitizeExtractedTitle(title: string, maxLength = 200): string {
+  const ctaMatch = TITLE_CTA_MARKER.exec(title);
+  if (!ctaMatch) return truncateAtBoundary(title, maxLength);
+  // Only the CTA-stripped boundary gets its trailing separator cleaned up —
+  // an ordinary title with no CTA match is never touched by this trim, so a
+  // legitimate title that itself ends in punctuation (e.g. an abbreviation)
+  // can't be altered by this pass.
+  const withoutCta = title.slice(0, ctaMatch.index).replace(/[\s:;,.–—-]+$/, "").trim();
+  return truncateAtBoundary(withoutCta || title.trim(), maxLength);
+}
+
 // Product decision (editorial-description follow-up, Pumpehuset): a
 // Danish-only description is not shown publicly rather than displaying
 // non-English prose, since Electronic CPH is English-language with no
