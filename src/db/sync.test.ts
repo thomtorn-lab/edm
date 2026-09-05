@@ -479,6 +479,74 @@ describe("trusted-electronic sources — a complete Hangaren/Culture Box candida
   });
 });
 
+describe("Source-level autoPublish gate (KultuNaut discovery-only implementation, 2026-09-05) — sourceAutoPublishAllowed in ./sync", () => {
+  const rahusetVenues: Venue[] = [
+    {
+      id: "v-rahuset",
+      slug: "rahuset",
+      name: "Råhuset",
+      aliases: [],
+      address: "",
+      city: "Copenhagen",
+      postalCode: "",
+      websiteUrl: null,
+      description: "",
+      shortDescription: null,
+      venueProfile: null,
+    },
+  ];
+
+  it("an A-tier KultuNaut candidate (resolved venue, high-confidence genre, no duplicate — exactly what would auto_publish for a Poolen/Hangaren/Billetto candidate) is NEVER published: createEvent is never called, and it lands in the Discovery Queue at overallConfidence 'high' instead of a real 'auto_publish' write — proves src/lib/data/sources.ts's src-kultunaut autoPublish:false registration is actually enforced, not just declared metadata", async () => {
+    const kultunautCandidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-kultunaut",
+      title: "Techno Night at Råhuset",
+      description: "A night of driving techno.",
+      artists: ["DJ Example"],
+      venueName: "Råhuset",
+      officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=99999999",
+      genreHint: "techno",
+      genreConfidenceHint: "high",
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce(rahusetVenues);
+
+    const adapter = fakeAdapter(() => Promise.resolve([kultunautCandidate]));
+    const result = await runSourceSync("src-kultunaut", "KultuNaut", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(0);
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(call.overallConfidence).toBe("high");
+    expect(call.sourceId).toBe("src-kultunaut");
+  });
+
+  it("a genuinely non-qualifying KultuNaut candidate (negative-relevance hold, e.g. a real non-electronic false-positive category listing — the audit's own real Gloryhammer/Clawfinger metal-tagged-Club/DJ examples) is still never queued at all — the source-level gate above only ever holds BACK an auto-publish-quality candidate, it never creates a new reason to queue noise that the shared pipeline itself already rejects", async () => {
+    const nonElectronic: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-kultunaut",
+      title: "Punk Rock Night",
+      description: "A night of loud punk rock.",
+      relevanceText: "A night of loud punk rock, no electronic acts on the bill.",
+      artists: ["The Bootlegs"],
+      venueName: "Råhuset",
+      officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=99999998",
+      genreHint: null,
+      genreConfidenceHint: null,
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce(rahusetVenues);
+
+    const adapter = fakeAdapter(() => Promise.resolve([nonElectronic]));
+    const result = await runSourceSync("src-kultunaut", "KultuNaut", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+});
+
 describe("Discovery Queue notification batching (safety correction — notifications must not serialize the per-candidate DB write path)", () => {
   function unclearBilletto(id: string, title: string): RawCandidateEvent {
     return {
