@@ -1,0 +1,71 @@
+name: Sync KultuNaut
+
+# Scheduling entry point for the KultuNaut ingestion adapter
+# (src/lib/adapters/kultunautAdapter.ts). Calls the deployed app's
+# POST /api/sync/kultunaut on a fixed schedule, matching
+# src/lib/data/sources.ts's `syncFrequency` for src-kultunaut.
+#
+# Same structure/safety model as sync-hangaren.yml and friends — see
+# README.md's "Scheduling" section. This source is discovery-only
+# (autoPublish: false, enforced in src/db/sync.ts): every sync here can
+# only ever create Discovery Queue rows, never a published event, no
+# matter what the shared pipeline itself would otherwise decide — see
+# kultunautAdapter.ts's own module doc comment for the full audit trail.
+#
+# SYNC_BASE_URL / SYNC_TRIGGER_TOKEN / VERCEL_AUTOMATION_BYPASS_SECRET are
+# shared repository-level secrets/variable already configured for the other
+# sync-*.yml workflows. Cron offset (:35) doesn't collide with Hangaren
+# (:00), ALICE (:05), Poolen (:15), Gravity (:20), Culture Box (:30),
+# Billetto (:45) or Pumpehuset (:50).
+
+on:
+  schedule:
+    - cron: "35 */6 * * *"
+  workflow_dispatch: {} # manual re-trigger, e.g. to retry after a fix
+
+concurrency:
+  group: sync-kultunaut
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger KultuNaut sync
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set."
+            exit 1
+          fi
+          if [ -z "${SYNC_TRIGGER_TOKEN}" ]; then
+            echo "::error::Repository secret SYNC_TRIGGER_TOKEN is not set."
+            exit 1
+          fi
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is not set."
+            exit 1
+          fi
+
+          http_code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 120 \
+            -o /tmp/sync-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/kultunaut")
+
+          echo "HTTP status: ${http_code}"
+          echo "Response:"
+          cat /tmp/sync-response.json
+          echo
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::KultuNaut sync returned HTTP ${http_code} — see response body above."
+            exit 1
+          fi
