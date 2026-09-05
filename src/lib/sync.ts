@@ -3,8 +3,9 @@ import type { ConfidenceLevel } from "./types";
 import type { GenreSlug } from "./taxonomy";
 import { getCopenhagenParts } from "./datetime";
 import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
-import type { PublishDecision } from "./classification";
+import { resolveByCanonicalPriority, type PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
+import { getSourceById } from "./data/sources";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -26,6 +27,10 @@ export interface SyncTargetEvent {
   residentAdvisorUrl: string | null;
   imageUrl: string | null;
   primaryGenre: GenreSlug | null;
+  /** Whichever source this event currently treats as canonical — used only
+   *  to weigh officialEventUrl merge precedence (see buildSyncPatch); not
+   *  otherwise touched by this module. */
+  canonicalSourceId: string | null;
   overriddenFields: string[];
   soldOut: boolean;
   cancelled: boolean;
@@ -73,7 +78,34 @@ export function buildSyncPatch(
     patch.venueId = resolved.resolvedVenueId;
   }
   if (raw.officialEventUrl && raw.officialEventUrl !== existing.officialEventUrl) {
-    patch.officialEventUrl = raw.officialEventUrl;
+    // Multi-source merge precedence (event-link-role follow-up, 2026-09-05
+    // — spec section 32's canonical-priority resolution, resolveByCanonicalPriority,
+    // wired in for the first time): a lower-authority source (e.g. a
+    // ticketing marketplace) must never silently overwrite an
+    // officialEventUrl a higher-authority source (a genuine official venue/
+    // promoter) already established for this event. The SAME source
+    // updating/correcting its own previously-supplied value is always
+    // allowed (not a cross-source conflict at all — e.g. a venue genuinely
+    // changing its own event page URL). Only applies the priority check
+    // when both the incoming and existing sourceType are actually
+    // resolvable — an event with no resolvable existing canonicalSourceId
+    // (e.g. admin-added) or an unrecognized source has no contradicting
+    // evidence to weigh, so the prior permissive "always take the fresh
+    // value" behavior is kept for that case.
+    const sameSource = existing.canonicalSourceId != null && existing.canonicalSourceId === raw.sourceId;
+    let keepIncoming = true;
+    if (!sameSource) {
+      const incomingSourceType = getSourceById(raw.sourceId)?.sourceType;
+      const existingSourceType = existing.canonicalSourceId ? getSourceById(existing.canonicalSourceId)?.sourceType : undefined;
+      if (incomingSourceType && existingSourceType) {
+        keepIncoming =
+          resolveByCanonicalPriority([
+            { sourceType: existingSourceType, value: "existing" as const },
+            { sourceType: incomingSourceType, value: "incoming" as const },
+          ])?.value === "incoming";
+      }
+    }
+    if (keepIncoming) patch.officialEventUrl = raw.officialEventUrl;
   }
   if (raw.ticketUrl && raw.ticketUrl !== existing.ticketUrl) patch.ticketUrl = raw.ticketUrl;
   if (raw.facebookUrl && raw.facebookUrl !== existing.facebookUrl) patch.facebookUrl = raw.facebookUrl;

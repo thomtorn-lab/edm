@@ -20,7 +20,7 @@ import type { HoldReason } from "@/lib/adapters/pipeline";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|db-integrity> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|link-role-audit|db-integrity> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -913,6 +913,114 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
   console.log(JSON.stringify(endTimeRows, null, 2));
 }
 
+/**
+ * Event-link role audit (event-link-role-classification work package,
+ * 2026-09-05 — Zoumer reference case). Mirrors src/lib/links.ts's own
+ * officialUrlRole() classification (event's canonicalSourceId's
+ * source_type: official-venue/official-promoter -> keep "Official event";
+ * ticketing -> "Tickets"; specialist-aggregator/general-aggregator/social ->
+ * "Source"; no resolvable source -> unchanged/"Official event") so this
+ * diagnostic reports exactly what the public site now renders, not a
+ * separate judgment call. Read-only — never writes; see this file's header
+ * comment for the shared withReadOnlyTx safety guarantee every mode uses.
+ */
+async function modeLinkRoleAudit(client: Client, args: Record<string, string | boolean>) {
+  const titleFilter = typeof args.title === "string" ? args.title : null;
+  const rows = await client.query(
+    `SELECT e.id, e.title, e.official_event_url, e.ticket_url, e.resident_advisor_url,
+            e.canonical_source_id, s.source_name, s.source_type,
+            v.name AS venue_name
+     FROM events e
+     LEFT JOIN venues v ON v.id = e.venue_id
+     LEFT JOIN sources s ON s.id = e.canonical_source_id
+     WHERE e.published = true
+     ${titleFilter ? "AND e.title ILIKE $1" : ""}
+     ORDER BY e.start_datetime`,
+    titleFilter ? [`%${titleFilter}%`] : [],
+  );
+
+  function roleForSourceType(sourceType: string | null): "official" | "tickets" | "unknown" {
+    if (!sourceType) return "official"; // no resolvable source (e.g. admin-added) — unchanged, matches links.ts
+    if (sourceType === "ticketing") return "tickets";
+    if (sourceType === "official-venue" || sourceType === "official-promoter") return "official";
+    return "unknown";
+  }
+
+  function normalize(url: string | null): string | null {
+    if (!url) return null;
+    try {
+      const u = new URL(url);
+      u.searchParams.forEach((_, key) => {
+        if (/^utm_/i.test(key)) u.searchParams.delete(key);
+      });
+      return `${u.origin}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+    } catch {
+      return url.trim();
+    }
+  }
+
+  const flagged: Record<string, unknown>[] = [];
+  const noUsableLink: Record<string, unknown>[] = [];
+  let sameUrlCount = 0;
+  let sameUrlMismatchCount = 0;
+
+  for (const r of rows.rows) {
+    const officialUrl = r.official_event_url as string | null;
+    const ticketUrl = r.ticket_url as string | null;
+    const sourceType = r.source_type as string | null;
+    const officialNorm = normalize(officialUrl);
+    const ticketNorm = normalize(ticketUrl);
+    const sameDestination = officialNorm !== null && officialNorm === ticketNorm;
+    const role = officialUrl ? roleForSourceType(sourceType) : null;
+    const renderedLabelToday = officialUrl ? (role === "tickets" ? "Tickets" : role === "unknown" ? "Source" : "Official event") : null;
+    // "Historically rendered as" reconstructs what the OLD (pre-fix)
+    // insertion-order dedup would have shown, for comparison purposes only.
+    const historicallyRendered = officialUrl ? "Official event" : ticketUrl ? "Tickets" : null;
+
+    if (sameDestination) {
+      sameUrlCount++;
+      if (renderedLabelToday !== historicallyRendered) sameUrlMismatchCount++;
+    }
+    if (!officialUrl && !ticketUrl && !r.resident_advisor_url) {
+      noUsableLink.push({ id: r.id, title: r.title, venue: r.venue_name, source: r.source_name });
+    }
+    if (sameDestination && role !== "official") {
+      flagged.push({
+        id: r.id,
+        title: r.title,
+        venue: r.venue_name,
+        source: r.source_name,
+        sourceType,
+        officialEventUrl: officialUrl,
+        ticketUrl,
+        renderedLabelToday,
+        historicallyRenderedAsOfficialEvent: historicallyRendered === "Official event",
+        trueFunctionalRole: role,
+      });
+    }
+  }
+
+  section(`LINK-ROLE AUDIT — same official/ticket destination, now correctly relabeled (${flagged.length} of ${rows.rows.length} published events inspected)`);
+  console.log(JSON.stringify(flagged, null, 2));
+
+  section("LINK-ROLE AUDIT — summary");
+  console.log(
+    JSON.stringify(
+      {
+        totalInspected: rows.rows.length,
+        officialAndTicketSameDestination: sameUrlCount,
+        ofThoseRelabeledAwayFromOfficialEvent: sameUrlMismatchCount,
+        eventsWithNoUsableLink: noUsableLink.length,
+      },
+      null,
+      2,
+    ),
+  );
+
+  section(`LINK-ROLE AUDIT — events with no usable public link (${noUsableLink.length})`);
+  console.log(JSON.stringify(noUsableLink, null, 2));
+}
+
 const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
 
 async function modeDbIntegrity(client: Client, args: Record<string, string | boolean>) {
@@ -972,6 +1080,7 @@ async function main() {
     "discovery-queue-venues": modeDiscoveryQueueVenues,
     "venue-blocks": modeVenueBlocks,
     "event-integrity": modeEventIntegrity,
+    "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
   };
 
@@ -984,7 +1093,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, db-integrity.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, link-role-audit, db-integrity.`,
     );
     process.exit(1);
   }

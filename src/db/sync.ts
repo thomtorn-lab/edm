@@ -281,6 +281,7 @@ async function runSourceSyncLocked(
           residentAdvisorUrl: existing.residentAdvisorUrl,
           imageUrl: existing.imageUrl,
           primaryGenre: existing.primaryGenre,
+          canonicalSourceId: existing.canonicalSourceId,
           overriddenFields: existing.overriddenFields,
           soldOut: existing.soldOut,
           cancelled: existing.cancelled,

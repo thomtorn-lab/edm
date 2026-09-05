@@ -81,6 +81,106 @@ describe("getExternalLinks — ticket CTA label", () => {
   });
 });
 
+describe("getExternalLinks — event-link role classification (Zoumer reference case, 2026-09-05)", () => {
+  // Real Production defect: Billetto's own event page is simultaneously its
+  // "official" record and the ticket-purchase page from THAT source's own
+  // point of view, so some write paths stored the identical URL in both
+  // officialEventUrl and ticketUrl. The OLD dedup-by-insertion-order logic
+  // always kept "Official event" (checked first) and silently dropped
+  // "Tickets" — for Zoumer (canonicalSourceId "src-billetto", sourceType
+  // "ticketing") that meant a pure ticketing destination was mislabeled as
+  // a genuine first-party record. The role must come from the event's own
+  // canonical source's sourceType (src/lib/data/sources.ts — already-
+  // modeled, structural evidence), never from which field happened to hold
+  // the URL, and never from hardcoding this one event/domain.
+
+  it("1. ticket URL only -> TICKETS only", () => {
+    const links = getExternalLinks(event({ ticketUrl: "https://ra.co/events/1" }));
+    expect(links).toEqual([{ label: "Tickets", href: "https://ra.co/events/1", primary: false }]);
+  });
+
+  it("2. official event URL only (genuine first-party source) -> OFFICIAL EVENT only", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://www.hangaren.dk/events/kander", canonicalSourceId: "src-hangaren" }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://www.hangaren.dk/events/kander", primary: true }]);
+  });
+
+  it("3. distinct official + ticket URLs -> both", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/kander",
+        ticketUrl: "https://ra.co/events/2461529",
+        canonicalSourceId: "src-hangaren",
+      }),
+    );
+    expect(links).toEqual([
+      { label: "Official event", href: "https://www.hangaren.dk/events/kander", primary: true },
+      { label: "Tickets", href: "https://ra.co/events/2461529", primary: false },
+    ]);
+  });
+
+  it("4. identical normalized official + ticket URLs -> one correctly-classified link only, never both labels", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://billetto.dk/e/zoumer-billetter-1926030?utm_campaign=websites",
+        ticketUrl: "https://billetto.dk/e/zoumer-billetter-1926030?utm_source=other",
+        canonicalSourceId: "src-billetto",
+      }),
+    );
+    expect(links).toHaveLength(1);
+    expect(links[0].label).toBe("Tickets");
+  });
+
+  it("5. source/discovery URL with no verified first-party or ticketing role -> not mislabeled as either", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://ra.co/copenhagen/events", canonicalSourceId: "src-ra-copenhagen" }),
+    );
+    expect(links).toEqual([{ label: "Source", href: "https://ra.co/copenhagen/events", primary: true }]);
+  });
+
+  it("6. Zoumer reference case -> TICKETS for the Billetto link, not Official event", () => {
+    const zoumerUrl = "https://billetto.dk/e/zoumer-billetter-1926030?utm_campaign=websites&utm_content=DK+7354292";
+    const links = getExternalLinks(
+      event({ officialEventUrl: zoumerUrl, ticketUrl: zoumerUrl, canonicalSourceId: "src-billetto" }),
+    );
+    expect(links).toHaveLength(1);
+    expect(links[0]).toEqual({ label: "Tickets", href: zoumerUrl, primary: true });
+    expect(links.some((l) => l.label === "Official event")).toBe(false);
+  });
+
+  it("7. venue first-party page + Billetto ticket page (distinct URLs, multi-source) -> OFFICIAL EVENT + TICKETS", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/some-show",
+        ticketUrl: "https://billetto.dk/e/some-show-billetter-1",
+        canonicalSourceId: "src-hangaren",
+      }),
+    );
+    expect(links).toEqual([
+      { label: "Official event", href: "https://www.hangaren.dk/events/some-show", primary: true },
+      { label: "Tickets", href: "https://billetto.dk/e/some-show-billetter-1", primary: false },
+    ]);
+  });
+
+  it("9. malformed/ambiguous URL -> safe behavior (no throw, link still shown)", () => {
+    expect(() => getExternalLinks(event({ officialEventUrl: "not a url", canonicalSourceId: "src-billetto" }))).not.toThrow();
+    const links = getExternalLinks(event({ officialEventUrl: "not a url", canonicalSourceId: "src-billetto" }));
+    expect(links).toHaveLength(1);
+    expect(links[0].href).toBe("not a url");
+  });
+
+  it("10. an admin-added event (no canonicalSourceId) keeps 'Official event' — a human already vouched for it", () => {
+    const links = getExternalLinks(event({ officialEventUrl: "https://example.com/real-page", canonicalSourceId: null }));
+    expect(links[0]).toEqual({ label: "Official event", href: "https://example.com/real-page", primary: true });
+  });
+
+  it("an unresolvable canonicalSourceId doesn't downgrade what's already stored", () => {
+    const links = getExternalLinks(event({ officialEventUrl: "https://example.com/x", canonicalSourceId: "src-does-not-exist" }));
+    expect(links[0].label).toBe("Official event");
+  });
+});
+
 describe("FREE admission CTA", () => {
   it("requires positive free-admission evidence (priceFrom === 0) — missing price data alone is never FREE", () => {
     expect(isFreeAdmission(event({ priceFrom: null }))).toBe(false);

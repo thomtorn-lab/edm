@@ -52,6 +52,7 @@ function target(overrides: Partial<SyncTargetEvent> = {}): SyncTargetEvent {
     residentAdvisorUrl: "https://ra.co/events/2461529",
     imageUrl: "https://images.squarespace-cdn.com/kander.png",
     primaryGenre: "techno",
+    canonicalSourceId: "src-hangaren",
     overriddenFields: [],
     soldOut: false,
     cancelled: false,
@@ -159,6 +160,40 @@ describe("buildSyncPatch", () => {
     const renamed = raw({ title: "Kander (rescheduled)" });
     const { patch } = buildSyncPatch(renamed, resolved, target({ overriddenFields: ["title"] }));
     expect(patch.title).toBe("Kander (rescheduled)");
+  });
+
+  describe("officialEventUrl multi-source merge precedence (event-link-role follow-up, 2026-09-05)", () => {
+    // src-hangaren is sourceType "official-venue" (a genuine first-party
+    // page); src-billetto is "ticketing" (never a first-party record — see
+    // src/lib/links.ts's officialUrlRole). A lower-authority source must
+    // never silently overwrite a higher-authority source's officialEventUrl.
+    it("8. a later ticketing-source sync does not downgrade an existing official-venue-sourced officialEventUrl", () => {
+      const existing = target({ canonicalSourceId: "src-hangaren", officialEventUrl: "https://www.hangaren.dk/events/kander" });
+      const fromBilletto = raw({ sourceId: "src-billetto", officialEventUrl: "https://billetto.dk/e/kander-billetter-1" });
+      const { patch } = buildSyncPatch(fromBilletto, resolved, existing);
+      expect(patch.officialEventUrl).toBeUndefined();
+    });
+
+    it("a higher-or-equal-authority source's update IS still applied (not a permanent freeze)", () => {
+      const existing = target({ canonicalSourceId: "src-billetto", officialEventUrl: "https://billetto.dk/e/old-url-1" });
+      const fromHangaren = raw({ sourceId: "src-hangaren", officialEventUrl: "https://www.hangaren.dk/events/new-page" });
+      const { patch } = buildSyncPatch(fromHangaren, resolved, existing);
+      expect(patch.officialEventUrl).toBe("https://www.hangaren.dk/events/new-page");
+    });
+
+    it("the SAME source correcting its own previously-supplied officialEventUrl is always applied — not a cross-source conflict", () => {
+      const existing = target({ canonicalSourceId: "src-hangaren", officialEventUrl: "https://www.hangaren.dk/events/old-slug" });
+      const fromSameSource = raw({ sourceId: "src-hangaren", officialEventUrl: "https://www.hangaren.dk/events/new-slug" });
+      const { patch } = buildSyncPatch(fromSameSource, resolved, existing);
+      expect(patch.officialEventUrl).toBe("https://www.hangaren.dk/events/new-slug");
+    });
+
+    it("no existing canonicalSourceId (e.g. admin-added event) — no contradicting evidence, so the fresh value is still taken", () => {
+      const existing = target({ canonicalSourceId: null, officialEventUrl: "https://example.com/admin-added" });
+      const fromBilletto = raw({ sourceId: "src-billetto", officialEventUrl: "https://billetto.dk/e/some-event-1" });
+      const { patch } = buildSyncPatch(fromBilletto, resolved, existing);
+      expect(patch.officialEventUrl).toBe("https://billetto.dk/e/some-event-1");
+    });
   });
 
   it("does not null out a known end time when the source omits it on this pass", () => {
