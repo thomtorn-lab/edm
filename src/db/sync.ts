@@ -468,6 +468,7 @@ async function runSourceSyncLocked(
             genre: result.genre,
             genreConfidence: result.genreConfidence,
             decision: result.decision,
+            sourceAutoPublishAllowed,
             resolvedVenueId: result.resolvedVenueId,
             duplicateOfEventId: result.duplicateOfEventId,
             duplicateConfidence: result.duplicateConfidence,

@@ -401,6 +401,47 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).toEqual({});
   });
 
+  describe("REGRESSION (KultuNaut's first live Production sync, 2026-09-05): an auto-publish-quality candidate from a discovery-only source (autoPublish:false) must keep overallConfidence 'high' on a re-sync, not silently downgrade to 'low'", () => {
+    // Real bug found live: 'Elements - halloween Night 2026' and 'Teletech
+    // Copenhagen' both inserted at overallConfidence "high" (db/sync.ts's own
+    // insert-path ternary), then flipped to "low" on the immediate second
+    // sync — this function's own decision->confidence rule predated
+    // KultuNaut and only knew "review_queue"/"hold", because decision
+    // "auto_publish" reaching an EXISTING pending row was believed
+    // impossible for every source before KultuNaut.
+    it("decision 'auto_publish' + sourceAutoPublishAllowed:false stays 'high' on a re-sync", () => {
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "psytrance", genreConfidence: "high", decision: "auto_publish", sourceAutoPublishAllowed: false },
+        pendingDiscoveryTarget({ predictedGenre: "psytrance", genreConfidence: "high", overallConfidence: "high" }),
+      );
+      expect(patch).toEqual({});
+    });
+
+    it("a first-ever patch onto a row that was somehow stored as 'medium'/'low' self-heals to 'high' once sourceAutoPublishAllowed:false + decision 'auto_publish' is known", () => {
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "auto_publish", sourceAutoPublishAllowed: false },
+        pendingDiscoveryTarget({ predictedGenre: "techno", genreConfidence: "high", overallConfidence: "low" }),
+      );
+      expect(patch).toEqual({ overallConfidence: "high" });
+    });
+
+    it("sourceAutoPublishAllowed:true (every source before KultuNaut) with decision 'auto_publish' falls through to 'low' — this branch is structurally unreachable in production for those sources (they publish directly and never leave a pending row), but the rule itself must not be KultuNaut-hardcoded", () => {
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "auto_publish", sourceAutoPublishAllowed: true },
+        pendingDiscoveryTarget({ predictedGenre: "techno", genreConfidence: "high", overallConfidence: "high" }),
+      );
+      expect(patch).toEqual({ overallConfidence: "low" });
+    });
+
+    it("omitting sourceAutoPublishAllowed (every pre-existing call site/test) is unaffected — those never pass decision 'auto_publish' in the first place", () => {
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" },
+        pendingDiscoveryTarget({ predictedGenre: "psytrance", genreConfidence: "medium", overallConfidence: "medium" }),
+      );
+      expect(patch).toEqual({});
+    });
+  });
+
   it("a transient lookup failure (fresh genre unresolved) never clears a previously-resolved genre", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
       { genre: null, genreConfidence: "low", decision: "hold" },
@@ -543,25 +584,36 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).not.toHaveProperty("predictedGenre");
   });
 
-  it("no candidate can move to auto_publish solely because of this fix — the patch never contains a status field, and overallConfidence has no 'high' branch to fall into", () => {
-    // In real usage `fresh.decision` is always "review_queue" or "hold" (an
-    // "auto_publish" candidate is created as an event directly by a different
-    // code path in src/db/sync.ts and never reaches this function at all —
-    // see this function's own doc comment). Even if a caller mistakenly
-    // passed "auto_publish" here, the recompute rule
-    // (`decision === "review_queue" ? "medium" : "low"`) has only two
-    // possible outputs — there is no code path that can ever produce "high",
-    // and the returned patch shape can never include a status/published key.
+  it("no candidate can ever move to ACTUALLY being published solely because of this fix — the patch never contains a status/published field, regardless of decision or sourceAutoPublishAllowed", () => {
+    // UPDATED (KultuNaut first-sync bug fix, 2026-09-05): this test used to
+    // also assert overallConfidence could never become "high" for a
+    // decision:"auto_publish" candidate — that assumption was WRONG (see
+    // buildDiscoveryQueueClassificationPatch's own doc comment for the real
+    // regression it caused) and has been corrected: "high" is now the
+    // correct output for a discovery-only source's auto-publish-quality
+    // candidate. What remains permanently true, and is what this test now
+    // actually guards, is the one real safety invariant: this function's
+    // return shape can NEVER include a status/published key — recomputing
+    // overallConfidence's LABEL is never the same thing as actually
+    // publishing anything (that write path is entirely separate, gated by
+    // db/sync.ts's own `if` branch, never reachable from here).
     const row = pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" });
-    const patch = buildDiscoveryQueueClassificationPatch(
-      { genre: "techno", genreConfidence: "high", decision: "auto_publish" },
+    const blockedPatch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "high", decision: "auto_publish", sourceAutoPublishAllowed: false },
       row,
     );
-    expect(patch.overallConfidence).not.toBe("high");
-    expect(["low", "medium", undefined]).toContain(patch.overallConfidence);
-    expect(patch).not.toHaveProperty("status");
-    expect(patch).not.toHaveProperty("published");
-    expect(Object.keys(patch).every((k) => ["predictedGenre", "genreConfidence", "overallConfidence"].includes(k))).toBe(true);
+    expect(blockedPatch.overallConfidence).toBe("high"); // correct now — see comment above
+    expect(blockedPatch).not.toHaveProperty("status");
+    expect(blockedPatch).not.toHaveProperty("published");
+    expect(Object.keys(blockedPatch).every((k) => ["predictedGenre", "genreConfidence", "overallConfidence"].includes(k))).toBe(true);
+
+    const allowedPatch = buildDiscoveryQueueClassificationPatch(
+      { genre: "techno", genreConfidence: "high", decision: "auto_publish", sourceAutoPublishAllowed: true },
+      row, // row.overallConfidence is already "low" — recompute agrees, so the patch omits the field (idempotent no-op), never "high"
+    );
+    expect(allowedPatch.overallConfidence).not.toBe("high");
+    expect(allowedPatch).not.toHaveProperty("status");
+    expect(allowedPatch).not.toHaveProperty("published");
   });
 
   // ---- Regression coverage: closing the remaining stale overallConfidence
@@ -755,13 +807,14 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).not.toHaveProperty("suspectedDuplicateOfEventId");
   });
 
-  it("candidates that genuinely become auto_publish remain governed entirely by the pre-existing behavior — this fix adds no new path to a status/published field even when venue/dedup fields are also present", () => {
+  it("a genuinely auto-publish-quality candidate from a discovery-only source, with venue/dedup fields also present, still never gets a status/published field — only overallConfidence's label reflects the auto-publish-quality evidence (KultuNaut first-sync bug fix, 2026-09-05 — see the REGRESSION block above for the full story)", () => {
     const row = pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" });
     const patch = buildDiscoveryQueueClassificationPatch(
       {
         genre: "techno",
         genreConfidence: "high",
         decision: "auto_publish",
+        sourceAutoPublishAllowed: false,
         resolvedVenueId: "v-hangaren",
         duplicateOfEventId: null,
         duplicateConfidence: "none",
@@ -770,7 +823,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     );
     expect(patch).not.toHaveProperty("status");
     expect(patch).not.toHaveProperty("published");
-    expect(patch.overallConfidence).not.toBe("high");
+    expect(patch.overallConfidence).toBe("high");
   });
 });
 

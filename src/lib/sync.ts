@@ -269,14 +269,36 @@ export interface DiscoveryQueueClassification {
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
   /**
-   * The full pipeline's decision for this fresh classification. At the one
-   * call site (src/db/sync.ts's existingPending branch) this is always
-   * "review_queue" or "hold" — an "auto_publish" candidate is handled by a
-   * different branch entirely and never reaches this function. Used only to
-   * keep overallConfidence in sync with genreConfidence below; never widens
-   * what this function is allowed to change (see the function's own doc).
+   * The full pipeline's decision for this fresh classification. For every
+   * source with autoPublish:true (every source before KultuNaut), this is
+   * always "review_queue" or "hold" at the one call site (src/db/sync.ts's
+   * existingPending branch) — an "auto_publish" candidate there is handled
+   * by a different branch entirely and never reaches this function. A
+   * discovery-only source (autoPublish:false, e.g. KultuNaut) breaks that
+   * assumption: db/sync.ts's own source-level gate routes even a pipeline
+   * "auto_publish" decision to the Discovery Queue, so a SECOND sync of the
+   * same auto-publish-quality candidate reaches this function with decision
+   * "auto_publish" — see sourceAutoPublishAllowed below for how that's kept
+   * consistent with the insert path's own overallConfidence rule.
    */
   decision: PublishDecision;
+  /**
+   * Whether this source's own registration (src/lib/data/sources.ts) allows
+   * auto-publish (bug fix, first Production KultuNaut sync, 2026-09-05):
+   * without this, a re-sync of an auto-publish-quality candidate from a
+   * discovery-only source silently downgraded overallConfidence from "high"
+   * (set once at insert time by db/sync.ts's own three-way ternary) to "low"
+   * (this function's old two-way rule, written when "auto_publish" reaching
+   * here was believed impossible) — confirmed live: "Elements - halloween
+   * Night 2026" and "Teletech Copenhagen" both flipped high->low on
+   * KultuNaut's second sync. Optional and defaults to false (the
+   * conservative "assume blocked, surface as high" reading) purely so every
+   * pre-existing test call site — which never uses decision:"auto_publish"
+   * in the first place — keeps compiling unchanged; in production this
+   * always comes from the SAME sourceAutoPublishAllowed the insert path
+   * itself already computes (src/db/sync.ts).
+   */
+  sourceAutoPublishAllowed?: boolean;
   /**
    * This run's fresh venue-resolution/dedup results (stale discovery-queue
    * self-healing, 2026-08-25) — optional so every pre-existing call site
@@ -332,12 +354,18 @@ export interface DiscoveryQueueClassificationPatch {
  * enrichment kept showing "low" overall confidence forever, even once its own
  * genreConfidence field correctly said "medium" (confirmed against 6 live
  * Culture Box rows). overallConfidence is now recomputed alongside the genre
- * patch using the exact same rule the original insert used (decision
- * "review_queue" -> "medium", "hold" -> "low"), and only included when it
- * actually differs from what's stored — the same idempotency guarantee every
- * other field here already has. Does not touch the auto-publish threshold,
- * the genre evidence hierarchy, or dedup, and — since "auto_publish" never
- * reaches this function — can never move a candidate to auto_publish.
+ * patch using the exact same three-way rule the original insert used
+ * (decision "auto_publish" but blocked by source policy -> "high",
+ * "review_queue" -> "medium", otherwise -> "low" — see
+ * DiscoveryQueueClassification.sourceAutoPublishAllowed's own doc comment
+ * for the real KultuNaut regression this generalization fixes), and only
+ * included when it actually differs from what's stored — the same
+ * idempotency guarantee every other field here already has. Does not touch
+ * the auto-publish threshold, the genre evidence hierarchy, or dedup — it
+ * can never move a candidate to ACTUALLY being auto-published (that write
+ * path is entirely separate, see db/sync.ts's own `if` branch above this
+ * function's call site); only its DISPLAYED overallConfidence label can
+ * now correctly reflect an auto-publish-quality candidate.
  *
  * overallConfidence is checked independently of whether predictedGenre
  * itself changed (second bug fix, same diagnosis): a row whose genre was
@@ -373,7 +401,12 @@ export function buildDiscoveryQueueClassificationPatch(
     patch.genreConfidence = fresh.genreConfidence;
   }
 
-  const freshOverallConfidence: ConfidenceLevel = fresh.decision === "review_queue" ? "medium" : "low";
+  const freshOverallConfidence: ConfidenceLevel =
+    fresh.decision === "auto_publish" && !fresh.sourceAutoPublishAllowed
+      ? "high"
+      : fresh.decision === "review_queue"
+        ? "medium"
+        : "low";
   if (freshOverallConfidence !== existing.overallConfidence) {
     patch.overallConfidence = freshOverallConfidence;
   }
