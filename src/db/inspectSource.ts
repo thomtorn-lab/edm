@@ -333,6 +333,39 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
   );
 }
 
+/**
+ * Decodes a fetch Response body using the ACTUAL charset it was served
+ * with, rather than `res.text()`'s blind UTF-8 assumption. Real bug found
+ * capturing KultuNaut fixtures (2026-09-05): that site serves
+ * `Content-Type: text/html` with no charset param, but its bytes are
+ * iso-8859-1 — every non-ASCII byte (æøå etc.) is a value invalid as a
+ * lone UTF-8 sequence, so `res.text()` silently replaces each one with
+ * U+FFFD, permanently destroying the character (not recoverable by
+ * re-decoding afterward, unlike ordinary mojibake). This diagnostic tool
+ * exists precisely to capture byte-accurate real pages for fixture/DIAGNOSE
+ * use, so it must get the charset right for ANY future source, not just
+ * this one: prefer the header's declared charset, fall back to sniffing a
+ * `<meta charset>`/`<meta http-equiv=Content-Type ... charset=...>` tag
+ * (read via iso-8859-1, which is ASCII-safe for the tag's own characters
+ * regardless of the body's real encoding), and only default to utf-8 if
+ * neither is present.
+ */
+async function decodeResponseBody(res: Response): Promise<string> {
+  const buffer = new Uint8Array(await res.arrayBuffer());
+  const contentType = res.headers.get("content-type") ?? "";
+  const headerCharset = contentType.match(/charset=([^;]+)/i)?.[1]?.trim().toLowerCase();
+  let charset = headerCharset || null;
+  if (!charset) {
+    const head = new TextDecoder("iso-8859-1").decode(buffer.slice(0, 4096));
+    charset = head.match(/<meta[^>]+charset=["']?([a-z0-9_-]+)/i)?.[1]?.toLowerCase() ?? "utf-8";
+  }
+  try {
+    return new TextDecoder(charset, { fatal: false }).decode(buffer);
+  } catch {
+    return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+  }
+}
+
 async function modeReachability(_client: Client, args: Record<string, string | boolean>) {
   const endpoint = typeof args.endpoint === "string" ? args.endpoint : null;
   if (!endpoint) throw new Error("reachability requires --endpoint=<https url>");
@@ -362,7 +395,7 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   // in this project cannot reach external hosts at all) without a fresh
   // one-off diagnostic workflow per source. Never used for anything but a
   // plain GET against a public https:// URL — no credentials, no DB.
-  const bodyText = await res.text();
+  const bodyText = await decodeResponseBody(res);
   console.log(`body length: ${bodyText.length} chars`);
   const saveBodyPath = typeof args["save-body"] === "string" ? args["save-body"] : null;
   const printFull = args["print-full-body"] === true;
@@ -424,7 +457,7 @@ async function modeReachability(_client: Client, args: Record<string, string | b
       // way to see actual Billetto categorization/description payloads) can
       // be captured without a one-off diagnostic script. Never prints or
       // saves anything credential-related — only the response body.
-      const authBodyText = await authRes.text();
+      const authBodyText = await decodeResponseBody(authRes);
       console.log(`Authenticated body length: ${authBodyText.length} chars`);
       if (saveBodyPath) {
         const { writeFileSync, mkdirSync } = await import("node:fs");

@@ -132,6 +132,16 @@ const NON_ELECTRONIC_CATEGORY_SIGNALS: RegExp[] = [
   /vandring(?:er)?\b/i,
   /\bsoundbath\b/i,
   /\bmindful\s+cuddling\b/i,
+  // KultuNaut source audit (2026-08-25, reviewed and ported into current
+  // Production 2026-09-05): "musikforedrag" (Danish "music lecture") — real
+  // evidence "Depeche Modes Violator - musikforedrag", a talk about an
+  // album's production, not a performance, despite its own description
+  // text being dense with "elektronisk"/"elektroniske" describing the
+  // band's sound (e.g. "Nu skal sangen omsættes til et elektronisk
+  // univers") — exactly the kind of case where genre-word density alone
+  // would wrongly signal relevance. Source-agnostic: any future source
+  // returning a lecture/talk format benefits, not just KultuNaut.
+  /\bmusikforedrag\b/i,
 ];
 
 /**

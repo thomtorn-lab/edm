@@ -136,7 +136,12 @@ export const VENUES: Venue[] = [
     id: "v-basement",
     slug: "basement",
     name: "Basement",
-    aliases: ["Basement CPH", "Basement Vesterbro"],
+    // "Basement Bar" added 2026-09-05 (KultuNaut source audit): a real,
+    // genuine alternate name for this venue (address Enghavevej 42 matches
+    // exactly), not specific to any one source — added to the shared
+    // registry so any current or future source using this name resolves
+    // correctly, same as every other alias here.
+    aliases: ["Basement CPH", "Basement Vesterbro", "Basement Bar"],
     address: "Enghavevej 42, 1674 København V",
     city: "Copenhagen",
     postalCode: "1674",

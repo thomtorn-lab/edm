@@ -7,6 +7,7 @@ import { createBillettoAdapter, BILLETTO_SOURCE_ID } from "@/lib/adapters/billet
 import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pumpehusetAdapter";
 import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter";
 import { createGravityAdapter, GRAVITY_SOURCE_ID } from "@/lib/adapters/gravityAdapter";
+import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
@@ -23,6 +24,12 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   pumpehuset: { sourceId: PUMPEHUSET_SOURCE_ID, displayName: "Pumpehuset", create: createPumpehusetAdapter },
   alice: { sourceId: ALICE_SOURCE_ID, displayName: "ALICE", create: createAliceAdapter },
   gravity: { sourceId: GRAVITY_SOURCE_ID, displayName: "Gravity Copenhagen", create: createGravityAdapter },
+  // Discovery only — src/db/sync.ts's own autoPublish gate (read from
+  // src/lib/data/sources.ts's src-kultunaut registration) prevents this
+  // source from ever auto-publishing, regardless of what the shared
+  // pipeline would otherwise decide. See kultunautAdapter.ts's module doc
+  // comment for the full audit trail behind this decision.
+  kultunaut: { sourceId: KULTUNAUT_SOURCE_ID, displayName: "KultuNaut", create: createKultunautAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {

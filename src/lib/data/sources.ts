@@ -424,6 +424,52 @@ export const SOURCES: Source[] = [
       "Phase 1 diagnosis COMPLETE (2026-08-20, Electronic CPH ingestion task), four live GitHub Actions passes (sandbox network egress cannot reach billetto.dk at all — every request ran from a real runner). Passes 1-2: secrets missing, then present but rejected (401 Invalid credentials); ruled out wrong-host (api.billetto.com is Billetto's ReadMe.io docs portal, not a live API — billetto.dk is the real host, per the task brief). After the user re-verified the key pair, auth succeeded. SCHEMA (GET /api/v3/public/events, Api-Keypair header, after-cursor pagination confirmed working): each event has id, title, description, url/branded_url (carries utm_* tracking params — normalizeUrl in dedup.ts already strips these), image_link, availability, organiser{id,name}, minimum_price{amount_in_cents,currency}, startdate/enddate (ISO UTC), headliners{data:[{name,...}]} (artist lineup), categorization{category,subcategory,type,+_localized}, location{location_name,address_line,city,postal_code,country,country_code,region,subregion,coordinates{lat,lng}}. No explicit soldout/cancelled field beyond `availability`(bool) and `state`(e.g. \"published\"); no last-modified timestamp field observed. COPENHAGEN FILTER: q=/search=/keyword=/term=/query=/name= are ALL ignored server-side (identical results regardless of query text — no free-text search on this endpoint, so any future title-based overlap lookup must paginate + filter client-side, not rely on a search param). city=/region=/subregion= DO filter server-side: city=Copenhagen (English) is narrow (7/100), city=København is broad but auto-matches postal-suffix variants (K/S/V/N), region=Hovedstaden is TOO BROAD (pulls in Bornholm, Helsingør, Hillerød — the whole Capital Region, ~50km+ out) and must not be used alone. subregion=Byen%20København is the best precise match (Copenhagen city proper) and its result set's cities are exactly København + Frederiksberg — matching this codebase's own Venue.city union type (\"Copenhagen\" | \"Frederiksberg\") almost exactly; recommended: subregion=Byen København as the primary API filter, plus a conservative client-side check that location.city starts with \"København\" or is \"Frederiksberg\" (belt-and-suspenders per the task brief's fallback guidance). ELECTRONIC CLASSIFICATION: category=music is a real, working filter; its own subcategory taxonomy (evidence source A, official-source-metadata, highest tier per classification.ts) includes explicit techno, house, electro, edm_electronic and trance — direct, deterministic, no keyword guessing needed. CAUTION found live: subcategory=hardcore is ambiguous — the one Copenhagen hardcore-tagged event pulled in this pass (\"KÆMPE MOSHPIT VOL. 11\" @ UnderWerket) is hardcore PUNK, not hardcore techno; hardcore must never be trusted as electronic evidence without title/description corroboration (source B/C fallback), exactly the false-positive risk the task brief warned about. disco is similarly borderline (funk/retro framing common) — treat as medium confidence, not auto-publish tier. SAMPLE: 337 nationwide category=music events fully paginated (4 pages, reached natural end) plus ~500 additional unfiltered/city-filtered/search-probe events across earlier passes. QUALIFYING Copenhagen electronic examples found live: \"Infected Mushroom – 30th Anniversary Tour\" (Poolen, subcategory=trance, organiser=\"EDM Copenhagen\", headliner=\"Infected Mushroom\", 2026-10-03), \"Dance x Sauna\" and \"KLUB Rört\" (Rört, subcategory=house), \"EleKtro Universal: Mini Festival\" (subcategory=techno). CORRECTLY REJECTED non-electronic examples: \"Mellem Os Sagt\" (storytelling night), \"Saunagus\" (mobile sauna wellness), and the moshpit/hardcore-punk event above despite its music/hardcore tag. OVERLAP RESULTS: Poolen's \"Infected Mushroom\" — CONFIRMED live on Billetto (event id 1879852, url billetto.dk/e/infected-mushroom-30th-anniversary-tour-billetter-1879852). Reasoned against the real dedup.ts logic (no DB access this session, so not run against live Production rows): Poolen's own adapter (poolenAdapter.ts) populates ticketUrl from the venue's own ticket link, which for a Billetto-ticketed show IS this exact Billetto URL — normalizeUrl() already strips Billetto's utm_* params, so sharedUniqueUrl() would match cleanly on that ticketUrl/officialEventUrl pair, both resolve to the same venueId, headliners overlap (\"Infected Mushroom\" on both sides) so conflictingHeadliners is false -> assessDuplicate returns confidence \"high\" -> decideDuplicateAction \"auto_merge_if_safe\": this candidate would correctly attach to the existing event, not create a duplicate, PROVIDED Production's stored Poolen record's ticketUrl is in fact this Billetto link (needs a real DB read to fully confirm — flagged as the one unverified assumption). Hangaren's \"Arcanum Collective: POSSESSED\" — NOT found: absent from the full 337-event nationwide category=music feed by title or organiser name. Either not currently Billetto-ticketed, already occurred/removed from the public feed, or listed under a non-music category (none of the other categories seen — business, community, hobbies, health_wellness, performing_arts, sports, travel, auto_boat, lifestyle, school — plausibly fit a club night). Not a dedup-model failure; simply no live candidate exists to test against right now.",
   },
 
+  // ---- KultuNaut: national culture-guide aggregator, DISCOVERY ONLY ----
+  {
+    id: "src-kultunaut",
+    sourceName: "KultuNaut — Elektronisk / Club-DJ (Kbh. og Frederiksberg)",
+    sourceType: "general-aggregator",
+    baseUrl: "https://www.kultunaut.dk/",
+    // Discovery only, deliberately no "ingestion" role and no "link" role —
+    // this source never auto-publishes and its own page must never render
+    // as "Official event" (the existing generalized link-role model in
+    // src/lib/links.ts already guarantees that from sourceType alone:
+    // general-aggregator resolves to "Source", never "official" — see
+    // links.ts's officialUrlRole()).
+    roles: ["discovery"],
+    // Real, working adapter (src/lib/adapters/kultunautAdapter.ts) — built
+    // from real fixtures captured 2026-09-05 (technical surface unchanged
+    // from the original 2026-08-25 evaluation).
+    adapter: "kultunaut-html",
+    trustLevel: "medium",
+    // NEVER true — this is the entire point of this source's registration.
+    // See the full audit (2026-09-05, "COMPLETE KULTUNAUT AUDIT" +
+    // "CLOSE KULTUNAUT DECISION" tasks) for why: only 4 of 14 A-tier and 8
+    // of 17 B-tier candidates were genuinely new once checked event-by-
+    // event against Production's real canonical events and Discovery
+    // Queue (18 were exact duplicates already covered elsewhere, 1 already
+    // pending); KultuNaut's own genre tag was proven unreliable (real false
+    // positives: Gloryhammer/Clawfinger metal bands tagged "Club/DJ", a
+    // Depeche Mode lecture tagged "Elektronisk"); and the site's legal/
+    // reuse terms were never located or reviewed (robots.txt permits the
+    // paths this adapter uses, but that is crawl permission, not a
+    // confirmed reuse license). src/db/sync.ts enforces this flag directly
+    // (sourceAutoPublishAllowed) — a candidate the shared pipeline would
+    // otherwise auto-publish is routed to Discovery Queue instead, at
+    // "high" overallConfidence so it surfaces as a priority review item
+    // rather than being lost among low-confidence noise.
+    autoPublish: false,
+    syncFrequency: "every 6h",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Registered 2026-09-05 following a two-part audit: (1) FULL/COMPLETE KULTUNAUT AUDIT — exhaustive pagination of both genre listings (38 Elektronisk + 24 Club/DJ = 62 unique current events, zero cross-category duplicates, zero already-past rows exposed), full-text detail-page classification of every plausible A/B candidate, and exact event-by-event dedup verification against Production's real canonical events, Discovery Queue, and 12 targeted title searches — final numbers: 14 A-tier, 17 B-tier, 15 C-tier, 16 D-tier; of the 31 A/B candidates, 18 were exact canonical duplicates (Poolen: EleKtro Universal is actually src-billetto's; Paul Van Dyk, Benny Benassi, Nico Moreno, Intercell, Teletech, WonderWorld Christmas, Kevin de Vries & Massano, Kløbb Ka2, Kind mod Kind all match src-poolen/src-pumpehuset canonical rows exactly; Chapter II/Possessed matches src-hangaren's 'Arcanum Collective: POSSESSED'; GLØD i mørket and Final Descent: Nyx match src-billetto/src-alice canonical rows), 1 already Discovery-Queue-pending (Jasho Club, src-poolen), and only 4 A-tier (Electro Werkz, Electro Shock Therapy, Karrusel 2027, Elements – Halloween Night) + 8 B-tier (Slayyyter, Mærk. Bemærk., Back to 2000s, DJ Aligator HEAVEN/HELL, NITE, Mannings children, &ME and Adam Port) were genuinely new. (2) CLOSE KULTUNAUT DECISION + VEGA FIX — resolved the 3 remaining unresolved events (all confirmed genuinely incremental, 0 unresolved A/B left) and fixed a real, generalized venue-resolution risk the audit surfaced independently of KultuNaut itself: v-vega-ideal-bar's registry `name` field was the bare 'VEGA', which resolveVenue()'s exact-match semantics meant any source (not just KultuNaut) supplying literal 'VEGA' text would silently resolve to the Ideal Bar room specifically — fixed by renaming that row to 'VEGA (Ideal Bar)' (verified live in Production, no existing event was actually misattributed). FINAL DECISION: KultuNaut is a discovery/review source only, never a second ingestion backbone — real, disclosed value (4 confirmed incremental A-tier, 8 confirmed incremental B-tier), but a materially higher duplicate burden (18/32 exact duplicates) and weaker technical/legal profile (HTML scrape, iso-8859-1 charset handling, unresolved reuse terms) than src-billetto's stable, already-integrated JSON API justify discovery-only registration, never autoPublish.",
+  },
+
   // ---- Eventbrite: supplemental discovery only ----
   {
     id: "src-eventbrite",

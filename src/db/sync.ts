@@ -17,7 +17,7 @@ import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
-import { isTrustedElectronicSource } from "@/lib/data/sources";
+import { isTrustedElectronicSource, getSourceById } from "@/lib/data/sources";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
 import {
   buildDiscoveryQueueClassificationPatch,
@@ -185,6 +185,26 @@ async function runSourceSyncLocked(
   // product-routing property, not a DB read (see isTrustedElectronicSource's
   // own doc comment for why this is deliberately not a Production column).
   const trustedElectronicSource = isTrustedElectronicSource(sourceId);
+  // Source-level auto-publish gate (KultuNaut discovery-only implementation,
+  // 2026-09-05): src/lib/data/sources.ts's Source.autoPublish field existed
+  // before this fix but was NEVER actually enforced anywhere in the write
+  // path below — every source with a working adapter that ever reached
+  // pipeline decision "auto_publish" was published directly regardless of
+  // its own registration's autoPublish value. This was harmless until now
+  // because every source with adapter !== null already had autoPublish:
+  // true (Poolen, Pumpehuset, Hangaren, Culture Box, ALICE, Gravity,
+  // Billetto) — every autoPublish:false row in the registry (src-klub-
+  // werkstatt, src-bolsjefabrikken, the RA/allevents/Eventbrite/Facebook
+  // rows) has adapter: null and so never reaches this function at all.
+  // KultuNaut is the first source to combine a real, working adapter with
+  // autoPublish: false, per its own audit's final decision (discovery/
+  // review only — see kultunautAdapter.ts's module doc comment) — so this
+  // gate is what actually makes that decision real rather than aspirational
+  // metadata. Generalized, not KultuNaut-specific: it reads the SAME static
+  // registry field every other source already carries, and defaults to
+  // `false` (never publish) if a source id somehow isn't found in the
+  // registry at all, rather than defaulting open.
+  const sourceAutoPublishAllowed = getSourceById(sourceId)?.autoPublish ?? false;
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
   const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
@@ -376,7 +396,13 @@ async function runSourceSyncLocked(
       // canonical event this candidate matches (the `if (match)` branch
       // above) is unaffected and still correctly updates to cancelled via
       // buildSyncPatch.
-      if (result.decision === "auto_publish" && result.resolvedVenueId && raw.startDatetime && raw.cancelledHint !== true) {
+      if (
+        result.decision === "auto_publish" &&
+        sourceAutoPublishAllowed &&
+        result.resolvedVenueId &&
+        raw.startDatetime &&
+        raw.cancelledHint !== true
+      ) {
         const eventId = `e-${randomUUID().slice(0, 8)}`;
         const slug = `${(raw.title || "event").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${eventId}`;
         await createEvent(
@@ -504,7 +530,19 @@ async function runSourceSyncLocked(
         genreConfidence: result.genreConfidence,
         suspectedDuplicateOfEventId: result.duplicateOfEventId,
         missingFields: result.missingFields,
-        overallConfidence: result.decision === "review_queue" ? "medium" : "low",
+        // A candidate the pipeline itself would have auto-published, held
+        // back only by this source's own autoPublish:false registration
+        // (see sourceAutoPublishAllowed above), is real auto-publish-quality
+        // evidence — surfaced as "high" confidence so it sorts to the top of
+        // a discovery-only source's review queue, distinct from a genuine
+        // "review_queue" decision (real but incomplete evidence, "medium")
+        // or a "hold" (weakest evidence, "low").
+        overallConfidence:
+          result.decision === "auto_publish" && !sourceAutoPublishAllowed
+            ? "high"
+            : result.decision === "review_queue"
+              ? "medium"
+              : "low",
         lastSeenAt: seenAt,
         venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
         venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason ?? null,
