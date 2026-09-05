@@ -96,6 +96,55 @@ describe("parseHangarenEventsHtml", () => {
     }
   });
 
+  it("stops lineup extraction at the first implausible line instead of sweeping bio/ticket prose and the page's own 'View Event' button into artists (real Production defect, e-33b3d36f 'Endurance', found 2026-09-05)", () => {
+    // Reproduces the REAL contamination found live in Production: the
+    // canonical `title` was always clean ("Endurance"), but `artists` — a
+    // sibling field displayed immediately after the title as the lineup
+    // preview (see EventRow.tsx/events/[slug]/page.tsx) — had swallowed
+    // several full bio/ticket-info paragraphs plus the literal button text
+    // "View Event →", because LINEUP_STOP only recognizes a fixed set of
+    // ALL-CAPS headers and this listing's copy moves straight from the real
+    // lineup into free-text prose with no such header. What looked like
+    // "title contamination" in a screenshot was actually this field being
+    // concatenated onto the title for display — canonical title itself was
+    // never touched. The exact prose below is the real stored data, not a
+    // guess.
+    const block = `<article class="eventlist-event eventlist-event--upcoming">
+      <h1 class="eventlist-title"><a href="/events/endurance" class="eventlist-title-link">Endurance</a></h1>
+      <a href="http://www.google.com/calendar/event?action=TEMPLATE&text=Endurance&dates=20260905T140000Z/20260906T060000Z" class="eventlist-meta-export-google">Google Calendar</a>
+      <div class="sqs-html-content" data-sqsp-text-block-content>
+        <p>LINE-UP:<br>Lucy Headburn<br>Scano<br>DJ NAH CARE<br>Matriark<br>Nesa Azadikah<br>Peachlyfe<br>Ezy<br>Bella Sarris<br>Black Lutheran</p>
+        <p>We're saving one of the strongest lineups for last. Bella Sarris joins us after years of shaping dancefloors across the world with her unmistakable energy behind the decks, while Nesa Azadikhah brings the depth and spirit of Tehran's underground scene.</p>
+        <p>Together with our favourite local selectors, we're in for another day-into-night Endurance.</p>
+        <p>One last Hangaren session in 2026.</p>
+        <p>Come early. Stay late. 16:00 - Sunday 08:00. 100 pre sale tickets are up via Resident Advisor, the rest will be sold at the door - a pre-sale ticket allows you to skip the queue.</p>
+        <p>Please note that there will be selection at the door, a pre sale ticket does not automatically grant access to the party, if you are denied entry, you will be refunded at the door &lt;3</p>
+        <p>presale tickets</p>
+      </div>
+      <a href="/events/endurance" class="eventlist-button sqs-editable-button sqs-button-element--primary">
+        View Event &#8594;
+      </a>
+    </article>`;
+    const [endurance] = parseHangarenEventsHtml(block);
+    expect(endurance).toBeDefined();
+    expect(endurance.title).toBe("Endurance");
+    expect(endurance.artists).toEqual([
+      "Lucy Headburn",
+      "Scano",
+      "DJ NAH CARE",
+      "Matriark",
+      "Nesa Azadikah",
+      "Peachlyfe",
+      "Ezy",
+      "Bella Sarris",
+      "Black Lutheran",
+    ]);
+    for (const artist of endurance.artists) {
+      expect(artist.length).toBeLessThanOrEqual(70);
+      expect(artist.toLowerCase()).not.toContain("view event");
+    }
+  });
+
   it("never throws on the whole batch even though individual events vary wildly in structure", () => {
     for (const e of events) {
       expect(e.title.length).toBeGreaterThan(0);

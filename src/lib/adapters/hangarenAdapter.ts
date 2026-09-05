@@ -36,6 +36,40 @@ const HANGAREN_VENUE_NAME = "Hangaren";
 const LINEUP_START = /LINE[- ]?UP:?\s*$/i;
 const LINEUP_STOP = /^(TICKETS?|ENTRANCE|INFO|WARDROBE|LOCKERS?|THIS IS HOW WE PARTY|VJ LINE[- ]?UP|PLEASE READ|SUNDAY PSY|H[AÅ]NGAREN)\b/i;
 
+// Public event-integrity follow-up (2026-09-05): a real "Endurance" listing's
+// canonical `artists` array was found contaminated with full bio/ticket-info
+// paragraphs and the page's own "View Event →" button label — not a title
+// bug (the title itself was always clean), but this array then gets
+// displayed immediately after the title as the lineup preview (EventRow.tsx,
+// events/[slug]/page.tsx), which is exactly what was reported as "title
+// contamination". Root cause: LINEUP_STOP only recognizes a fixed set of
+// ALL-CAPS section headers; this listing's copy moves from the real lineup
+// straight into free-text prose that never starts with one of those
+// headers, so extraction ran to the end of the block, sweeping up
+// everything after it — including the trailing button text.
+//
+// Fix: a lineup line must itself look like a plausible artist/act name, or
+// collection stops right there (not just skips that one line — prose is
+// contiguous, so once it starts, everything after it until a real STOP
+// keyword is prose too). Threshold is evidence-based, not guessed: across
+// every currently-published Hangaren event, the longest genuine single-line
+// artist/act entry is 36 chars ("Mira (Kater, MiZi MuZiK, Kiosk I.D.)"); the
+// shortest contaminated entry is 91 chars — a wide, clean gap. The sentence-
+// boundary and "view event" checks are an additional safety net for a short
+// stray line (e.g. a brief prose fragment, or the button label itself)
+// landing before any long paragraph does.
+const LINEUP_LINE_MAX_LENGTH = 70;
+const LINEUP_LINE_NON_ARTIST_MARKER = /view event/i;
+const LINEUP_LINE_SENTENCE_BOUNDARY = /[.!?]\s+[A-ZÆØÅ]/;
+
+function isImplausibleLineupLine(line: string): boolean {
+  return (
+    line.length > LINEUP_LINE_MAX_LENGTH ||
+    LINEUP_LINE_NON_ARTIST_MARKER.test(line) ||
+    LINEUP_LINE_SENTENCE_BOUNDARY.test(line)
+  );
+}
+
 /**
  * Best-effort lineup extraction from the event's own description text (not
  * a title guess). Handles the several Unicode "styled" heading variants
@@ -61,8 +95,13 @@ function extractLineup(lines: string[]): { artists: string[]; lineupStartIdx: nu
     // A lineup line sometimes carries the artist's own SoundCloud/Instagram
     // link inline (e.g. "Kromagon: https://soundcloud.com/aragon -") — the
     // raw URL itself must never surface as part of the stored artist name.
+    // Plausibility is checked AFTER stripping, not on the raw line: a real
+    // artist entry with a long embedded URL can easily exceed the length
+    // cap before cleanup while being a perfectly ordinary short name after.
     const cleaned = stripBareUrls(line.replace(/\s*[-–—:]\s*$/, "").trim());
-    if (cleaned) artists.push(cleaned);
+    if (!cleaned) continue;
+    if (isImplausibleLineupLine(cleaned)) break;
+    artists.push(cleaned);
   }
   return { artists, lineupStartIdx: startIdx };
 }
