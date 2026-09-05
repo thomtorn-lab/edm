@@ -212,14 +212,41 @@ async function modeDiscoveryQueue(client: Client, args: Record<string, string | 
   );
   console.log(JSON.stringify(grouped.rows, null, 2));
 
+  // Freshness/event-time context (KultuNaut discovery-queue-triage work
+  // package, 2026-09-05) — the source's own lastCompleteSyncAt, needed to
+  // classify each row current-vs-stale below via the exact same
+  // isDiscoveryRowCurrent function modeVenueBlocks already uses, never a
+  // hand-rolled timestamp comparison.
+  const srcRow = await client.query("SELECT last_complete_sync_at FROM sources WHERE id = $1", [sourceId]);
+  const lastCompleteSyncAt = srcRow.rows[0]?.last_complete_sync_at ? new Date(srcRow.rows[0].last_complete_sync_at as string) : null;
+  const now = new Date();
+
   section(`discovery_queue for ${sourceId}: most recent ${limit} rows`);
   const rows = await client.query(
-    `SELECT id, probable_title, probable_start, probable_venue_name, status, predicted_genre, genre_confidence, overall_confidence,
-            suspected_duplicate_of_event_id, missing_fields, source_url, created_at
+    `SELECT id, probable_title, probable_start, probable_end, probable_venue_name, probable_ticket_url, status, predicted_genre,
+            genre_confidence, overall_confidence, suspected_duplicate_of_event_id, missing_fields, source_url, last_seen_at, created_at
      FROM discovery_queue WHERE source_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [sourceId, limit],
   );
-  console.log(JSON.stringify(rows.rows, null, 2));
+  // Per-row freshness (current vs. stale upstream) and event-time (upcoming
+  // vs. past) — same two dimensions, same underlying functions, as
+  // modeVenueBlocks' own ACTIVE/STALE/CURRENT_BUT_PAST buckets, but reported
+  // per-row here for a full single-source audit rather than bucketed across
+  // every source's venue-only blockers. Never conflated with each other or
+  // with the pipeline's own decision — purely additive context alongside
+  // every field this mode already printed.
+  const enriched = rows.rows.map((r) => {
+    const lastSeenAt = r.last_seen_at ? new Date(r.last_seen_at as string) : null;
+    const probableStart = r.probable_start as string | null;
+    const isPast = probableStart ? isPastEvent({ startDatetime: probableStart, endDatetime: r.probable_end as string | null }, now) : null;
+    return {
+      ...r,
+      isCurrentUpstream: isDiscoveryRowCurrent(lastSeenAt, lastCompleteSyncAt),
+      isPastEvent: isPast,
+      isUpcoming: probableStart ? !isPast : null,
+    };
+  });
+  console.log(JSON.stringify(enriched, null, 2));
 }
 
 async function modeSourceLinks(client: Client, args: Record<string, string | boolean>) {
