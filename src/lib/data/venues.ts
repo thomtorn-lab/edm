@@ -293,9 +293,28 @@ export const VENUES: Venue[] = [
       "UnderWerket is a volunteer-run venue in Valby aimed at young organisers, offering rooms, sound equipment and organisational support for self-run events rather than operating as a commercial club. Alongside concerts and youth-organised gatherings, the space regularly hosts electronic and techno nights, including noise and experimental programming from independent local promoters. Its basement setting and community-support model give it a different character from Copenhagen's commercial club venues — events are typically organised by the young promoters themselves rather than booked in by the venue. UnderWerket's role in the city's electronic scene is smaller-scale and more grassroots than the larger clubs, functioning as an entry point for new organisers putting on their first electronic events.",
   },
   {
+    // KultuNaut audit follow-up (2026-09-05): this row's `name` was
+    // previously the bare "VEGA" — even though its own description/profile
+    // text below already correctly scoped it to the basement club room, not
+    // VEGA's main concert halls. Because resolveVenue() (src/lib/normalize.ts)
+    // does exact normalized-name matching, that bare name meant ANY future
+    // source supplying literal "VEGA" (KultuNaut's own event pages do — see
+    // ArrNr 20004550/19768459/etc — but this generalizes to any source, not
+    // just KultuNaut) would silently resolve to this Ideal-Bar-specific
+    // venue, even for a genuine Store VEGA arena show. No `aliases` entry was
+    // ever bare "VEGA" either — this was purely the `name` field overclaiming
+    // the whole building. Renamed to "VEGA (Ideal Bar)", already the exact
+    // string this repo's own venueCreation.test.ts expected
+    // (`slugifyVenueName("VEGA (Ideal Bar)")`) before this fix — the seed
+    // data had simply never been updated to match. Deliberately NOT adding
+    // separate "Store VEGA"/"Lille VEGA" rows: no currently-registered source
+    // supplies text specific enough to justify them, and inventing venue
+    // rows without real event evidence isn't the goal here — a bare "VEGA"
+    // string now correctly resolves to nothing (manual review) rather than
+    // silently attaching to this specific room.
     id: "v-vega-ideal-bar",
     slug: "vega-ideal-bar",
-    name: "VEGA",
+    name: "VEGA (Ideal Bar)",
     aliases: ["Ideal Bar", "Vega Ideal Bar", "Lille VEGA Ideal Bar", "VEGA (Ideal Bar)"],
     address: "Enghavevej 40, 1674 København V",
     city: "Copenhagen",

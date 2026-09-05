@@ -21,6 +21,43 @@ describe("venue normalization", () => {
   });
 });
 
+describe("VEGA room disambiguation (KultuNaut audit follow-up, 2026-09-05)", () => {
+  // Real correctness risk found during the KultuNaut source audit: VEGA is a
+  // multi-room building (Store VEGA, Lille VEGA, and the basement Ideal Bar
+  // club room), but the only registered VEGA row is Ideal-Bar-specific
+  // (v-vega-ideal-bar). resolveVenue() does exact normalized-name matching
+  // (never fuzzy), so a source's own generic "VEGA" string must not silently
+  // attach to that one specific room — it should remain unresolved for
+  // manual review until real evidence justifies a dedicated parent-VEGA row.
+  // This is a general venue-model property, independent of any one source.
+
+  it("explicit 'Ideal Bar' resolves to the Ideal Bar room", () => {
+    expect(resolveVenue("Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
+    expect(resolveVenue("Vega Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
+    expect(resolveVenue("VEGA (Ideal Bar)", VENUES)?.id).toBe("v-vega-ideal-bar");
+  });
+
+  it("bare 'VEGA' does NOT resolve to the Ideal Bar room — no legitimate parent VEGA venue is registered, so it must remain unresolved for manual review, not silently misattached to one specific room", () => {
+    expect(resolveVenue("VEGA", VENUES)).toBeUndefined();
+    expect(resolveVenue("vega", VENUES)).toBeUndefined();
+  });
+
+  it("'Store VEGA' does not collide with the Ideal Bar room (no such alias exists, and none should be invented without real event evidence)", () => {
+    expect(resolveVenue("Store VEGA", VENUES)).toBeUndefined();
+  });
+
+  it("bare 'Lille VEGA' (without the Ideal Bar qualifier) does not collide with the Ideal Bar room — only the full 'Lille VEGA Ideal Bar' string is a real, evidenced alias", () => {
+    expect(resolveVenue("Lille VEGA", VENUES)).toBeUndefined();
+    expect(resolveVenue("Lille VEGA Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
+  });
+
+  it("the Ideal Bar venue's own display name no longer overclaims the whole VEGA building", () => {
+    const idealBar = VENUES.find((v) => v.id === "v-vega-ideal-bar");
+    expect(idealBar?.name).toBe("VEGA (Ideal Bar)");
+    expect(idealBar?.name).not.toBe("VEGA");
+  });
+});
+
 describe("artist normalization", () => {
   it("treats case and formatting variants as the same artist", () => {
     expect(artistNamesMatch("DJ NAME", "Dj Name")).toBe(true);
