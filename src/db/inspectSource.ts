@@ -5,6 +5,10 @@ import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate 
 import { isDiscoveryRowCurrent, classifyVenueBlock } from "@/lib/sync";
 import { buildApiKeypairHeader } from "@/lib/adapters/billettoAdapter";
 import { isPastEvent } from "@/lib/datetime";
+import { isTrustedElectronicSource } from "@/lib/data/sources";
+import { runIngestionPipeline } from "@/lib/adapters/pipeline";
+import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
+import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
@@ -20,7 +24,7 @@ import type { HoldReason } from "@/lib/adapters/pipeline";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|link-role-audit|db-integrity> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|link-role-audit|db-integrity|adapter-dry-run> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -331,6 +335,107 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
       2,
     ),
   );
+}
+
+/**
+ * Adapter dry-run registry (KultuNaut discovery-only implementation,
+ * 2026-09-05) — deliberately a small, local map rather than importing
+ * src/app/api/sync/[source]/route.ts's own ADAPTERS: that file is a Next.js
+ * route module (imports NextRequest/NextResponse), and this script runs
+ * standalone under plain Node/tsx — keeping the two registries separate
+ * avoids coupling a diagnostic script's behavior to Next's route-module
+ * resolution. Extend this map (one line) for any future in-code adapter
+ * that needs a pre-merge dry run — same shape as route.ts's own map.
+ */
+const DRY_RUN_ADAPTERS: Record<string, () => SourceAdapter> = {
+  [KULTUNAUT_SOURCE_ID]: createKultunautAdapter,
+};
+
+/**
+ * Pre-merge production-readiness check (source onboarding factory,
+ * KultuNaut discovery-only implementation, 2026-09-05 — SOURCE_ONBOARDING.md's
+ * VALIDATE step, read-only variant): runs a real adapter's fetchCandidates()
+ * against the LIVE source (genuine network fetch, same as `reachability`
+ * mode) and the shared ingestion pipeline against the LIVE database's real
+ * venues/existing-events (read-only — see withReadOnlyTx), but NEVER calls
+ * createEvent/insertDiscoveryItem or any other write path. This is
+ * deliberately NOT the same thing as validate-source.yml's `run_live_sync`
+ * phase, which performs a REAL sync (real writes) against a Preview
+ * deployment — this mode exists for exactly the case where a source must be
+ * proven safe against current live data BEFORE it's registered/merged at
+ * all (so no Preview deployment carrying the new adapter can exist yet).
+ */
+async function modeAdapterDryRun(client: Client, args: Record<string, string | boolean>) {
+  const sourceId = requireSource(args);
+  const createAdapter = DRY_RUN_ADAPTERS[sourceId];
+  if (!createAdapter) {
+    throw new Error(`adapter-dry-run has no registered adapter for "${sourceId}". Known: ${Object.keys(DRY_RUN_ADAPTERS).join(", ")}`);
+  }
+
+  section(`Adapter dry run (READ-ONLY, no writes): ${sourceId}`);
+  const trustedElectronicSource = isTrustedElectronicSource(sourceId);
+
+  const venueRows = await client.query("SELECT * FROM venues");
+  const venues = venueRows.rows.map(rowToVenue);
+
+  const eventRows = await client.query(
+    `SELECT id, title, artists, venue_id, start_datetime, canonical_source_id, official_event_url, ticket_url, resident_advisor_url
+     FROM events`,
+  );
+  const existingEvents = eventRows.rows.map((r) => ({
+    id: r.id as string,
+    title: r.title as string,
+    artists: r.artists as string[],
+    venueId: r.venue_id as string | null,
+    startDatetime: new Date(r.start_datetime as string).toISOString(),
+    sourceId: r.canonical_source_id as string | null,
+    officialEventUrl: r.official_event_url as string | null,
+    ticketUrl: r.ticket_url as string | null,
+    residentAdvisorUrl: r.resident_advisor_url as string | null,
+  }));
+  console.log(`Existing events loaded (read-only, for dedup comparison): ${existingEvents.length}`);
+
+  const adapter = createAdapter();
+  const startedAt = Date.now();
+  const candidates = await adapter.fetchCandidates();
+  const fetchMs = Date.now() - startedAt;
+  const complete = adapter.lastFetchWasComplete?.() ?? true;
+
+  const arrIds = new Set(candidates.map((c) => c.sourceUrl));
+  console.log(`Candidates fetched: ${candidates.length} (unique sourceUrl: ${arrIds.size}) in ${fetchMs}ms — lastFetchWasComplete: ${complete}`);
+
+  const decisions: Record<string, number> = {};
+  const holdReasons: Record<string, number> = {};
+  const unresolvedVenues = new Map<string, number>();
+  const duplicates: { title: string; confidence: string; matchedTitle: string }[] = [];
+  const autoPublishQuality: { title: string; venue: string | null; genre: string | null }[] = [];
+
+  for (const raw of candidates) {
+    const result = runIngestionPipeline(raw, { venues, existingEvents, trustedElectronicSource });
+    decisions[result.decision] = (decisions[result.decision] ?? 0) + 1;
+    if (result.holdReason) holdReasons[result.holdReason] = (holdReasons[result.holdReason] ?? 0) + 1;
+    if (raw.venueName && !result.resolvedVenueId) {
+      unresolvedVenues.set(raw.venueName, (unresolvedVenues.get(raw.venueName) ?? 0) + 1);
+    }
+    if (result.duplicateOfEventId) {
+      const matched = existingEvents.find((e) => e.id === result.duplicateOfEventId);
+      duplicates.push({ title: raw.title, confidence: result.duplicateConfidence, matchedTitle: matched?.title ?? "(unknown)" });
+    }
+    if (result.decision === "auto_publish") {
+      autoPublishQuality.push({ title: raw.title, venue: raw.venueName, genre: result.genre });
+    }
+  }
+
+  section("Decision breakdown (pipeline-level — NOT what would actually be written; see source's own autoPublish policy)");
+  console.log(JSON.stringify(decisions, null, 2));
+  section("Hold reasons");
+  console.log(JSON.stringify(holdReasons, null, 2));
+  section(`Auto-publish-quality candidates (${autoPublishQuality.length}) — held to Discovery Queue only if this source's autoPublish is false`);
+  console.log(JSON.stringify(autoPublishQuality, null, 2));
+  section(`Duplicate matches against real existing events (${duplicates.length})`);
+  console.log(JSON.stringify(duplicates, null, 2));
+  section(`Unresolved venues (${unresolvedVenues.size} distinct)`);
+  console.log(JSON.stringify([...unresolvedVenues.entries()].map(([venue, count]) => ({ venue, count })), null, 2));
 }
 
 /**
@@ -1115,6 +1220,7 @@ async function main() {
     "event-integrity": modeEventIntegrity,
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
+    "adapter-dry-run": modeAdapterDryRun,
   };
 
   if (mode === "reachability") {
@@ -1126,7 +1232,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, link-role-audit, db-integrity.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, link-role-audit, db-integrity, adapter-dry-run.`,
     );
     process.exit(1);
   }

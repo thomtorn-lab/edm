@@ -101,7 +101,16 @@ attempts, and even then, present a fix attempt and open question — not a bare 
 
 - **`.github/workflows/inspect-source.yml`** — one permanent, parameterized, read-only diagnostic
   workflow. Modes: `inventory`, `health`, `discovery-queue`, `source-links`, `lock-status`,
-  `dedup-simulate`, `reachability`, `snapshot`. Replaces the old pattern of hand-writing a new
+  `dedup-simulate`, `reachability`, `snapshot`, `venues`, `venue-events`, `discovery-queue-venues`,
+  `venue-blocks`, `event-integrity`, `link-role-audit`, `db-integrity`, `adapter-dry-run`.
+  `adapter-dry-run` is the read-only pre-merge production-readiness check (VALIDATE step, live-data
+  variant that never writes): it runs a real, already-implemented-but-not-yet-merged adapter's
+  `fetchCandidates()` against the actual live source plus the shared pipeline against the real
+  database's live venues/existing-events, and reports decision/dedup/venue-resolution breakdowns —
+  without ever calling `createEvent`/`insertDiscoveryItem`. Use this (never a one-off script) when a
+  source must be proven safe against current live data before it's registered/merged at all, i.e.
+  before any Preview deployment can carry its adapter for `validate-source.yml`'s own
+  `run_live_sync` phase to exercise. Replaces the old pattern of hand-writing a new
   one-off workflow (`verify-db-readonly.yml`, `verify-discogs-reachability.yml`,
   `monitor-source-health.yml`'s bespoke inline script) every time something needed inspecting.
   Wraps `src/db/inspectSource.ts`, which does the actual work and can also be run locally:

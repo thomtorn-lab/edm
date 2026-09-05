@@ -47,6 +47,7 @@ on:
           - event-integrity
           - link-role-audit
           - db-integrity
+          - adapter-dry-run
       source_id:
         description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks/event-integrity/link-role-audit with no source scoping; must match src-[a-z0-9-]+)'
         required: false
