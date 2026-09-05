@@ -1,6 +1,6 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
-import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
@@ -283,6 +283,15 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
   const specificGenre = fullDescriptionText ? deterministicGenreFromText(fullDescriptionText) : null;
   const genericElectronic = !specificGenre && /\belectronic(s|a)?\b/i.test(fullDescriptionText);
   const genreHint: GenreSlug | null = specificGenre ?? (genericElectronic ? "electronic-other" : null);
+  // Gap 4D (KultuNaut publish work package, 2026-09-05): a bare, uncorroborated
+  // keyword match ("Live experimental electronics" — four words, one hit) must
+  // not earn the same top evidence tier as a richly-evidenced match (a second
+  // distinct genre-family hit, or explicit dance/club-context corroboration —
+  // see hasRichGenreEvidence's own doc comment). Generalized in the shared
+  // mapping module, not specific to this source: any adapter treating its own
+  // first-party description text as "official-description" tier has the same
+  // exposure.
+  const hasRichEvidence = fullDescriptionText ? hasRichGenreEvidence(fullDescriptionText) : false;
 
   return {
     sourceId: KULTUNAUT_SOURCE_ID,
@@ -307,7 +316,9 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
     imageUrl,
     priceFrom: null, // no reliable dedicated price field exists — see module doc comment
     genreHint,
-    genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
+    genreConfidenceHint: genreHint
+      ? genreConfidenceForEvidence(hasRichEvidence ? "official-description" : "deterministic-mapping")
+      : null,
   };
 }
 

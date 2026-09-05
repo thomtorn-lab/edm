@@ -142,6 +142,27 @@ const NON_ELECTRONIC_CATEGORY_SIGNALS: RegExp[] = [
   // would wrongly signal relevance. Source-agnostic: any future source
   // returning a lecture/talk format benefits, not just KultuNaut.
   /\bmusikforedrag\b/i,
+  // Gap 4C, generalized (KultuNaut publish work package, 2026-09-05): a
+  // strong, explicit genre keyword (drum & bass, techno, house, trance...)
+  // inside an event whose own PRIMARY FORMAT is not a club/music-performance
+  // format at all must not, on its own, earn the same relevance as that same
+  // keyword inside a genuine club night. Real evidence: Mærk. Bemærk.'s own
+  // description resolves a direct, first-party "drum and bass" match, but
+  // the event itself is a gallery vernissage/exhibition opening — the genre
+  // mention describes music PLAYED AT an art opening, not the opening's own
+  // identity. Deliberately the same narrow, distinctive-phrase discipline as
+  // every other entry in this list (never a bare word an genuinely electronic
+  // event could mention in passing): exhibition/vernissage/gallery-opening,
+  // lecture, workshop, and performance-art formats, source-agnostic and not
+  // specific to any one event.
+  /\bvernissage\b/i,
+  /\bfernisering\b/i,
+  /\bgalleriåbning\b/i,
+  /\bkunstudstilling\b/i,
+  /\budstillingsåbning\b/i,
+  /\bforedrag\b/i,
+  /\bworkshop\b/i,
+  /\bperformance[\s-]?kunst\b/i,
 ];
 
 /**

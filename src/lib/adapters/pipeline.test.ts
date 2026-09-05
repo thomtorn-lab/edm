@@ -982,3 +982,60 @@ describe("venueResolvedCounterfactual (venue-block visibility precision fix, fol
     expect(enriched.venueResolvedCounterfactual).toEqual({ decision: "review_queue", holdReason: null });
   });
 });
+
+describe("KultuNaut publish work package (2026-09-05) — generalized relevance-gap regression suite", () => {
+  it("gap 4C: downgrades from auto-publish to review when a strong, direct genre match sits inside a gallery vernissage, not a club night (real Mærk. Bemærk. evidence)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: "drum-and-bass",
+        genreConfidenceHint: "high",
+        title: "Mærk. Bemærk.",
+        description: "En vernissage på det nye galleri, med drum and bass fra en lokal DJ i baggrunden.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("drum-and-bass");
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("gap 4C does not touch the identical genre match when the same event is a genuine club night", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: "drum-and-bass",
+        genreConfidenceHint: "high",
+        title: "Teletech Copenhagen",
+        description: "A club night of drum and bass at Poolen, straight to the dancefloor all night.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("preserves the core rule: an Electro Werkz-type event stays qualifying (review, not held/rejected) when one lineup act's rock crossover is mentioned alongside a strong, repeated electro/dancefloor identity", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: "electro",
+        genreConfidenceHint: "high",
+        title: "Electro Werkz",
+        description:
+          "The ultimate dancefloor experience — dancing all night to electro all evening. One support act brings a rock crossover set before the main room takes over.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).not.toBe("hold");
+  });
+
+  it("preserves the core rule: a mixed Jersey club / jungle / baile funk / dancehall club night is never hard-rejected by a false non-electronic signal (real Jasho Club evidence)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: null,
+        genreConfidenceHint: null,
+        title: "Jasho Club // Poolen Outside",
+        description:
+          "An open-air party on the soundsystem, blending jersey club, jungle, baile funk and dancehall on the outdoor floor.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.holdReason).not.toBe("negative_relevance");
+  });
+});

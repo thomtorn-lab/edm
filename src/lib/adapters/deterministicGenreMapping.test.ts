@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, hasRichGenreEvidence, refineGenreFromText } from "./deterministicGenreMapping";
 
 describe("deterministicGenreFromText", () => {
   it("maps the standalone word 'psy' to psytrance", () => {
@@ -86,6 +86,86 @@ describe("deterministicGenreFromText", () => {
         " Paco Amoroso's new album blends trap, rock and experimental pop influences.";
       expect(deterministicGenreFromText(longUnrelatedText)).toBeNull();
     });
+  });
+});
+
+describe("gap 4A: influence/style qualifiers affect confidence, never whether a genre resolves at all (KultuNaut publish work package, 2026-09-05)", () => {
+  it("still matches a direct 'house event' claim (positive control)", () => {
+    expect(deterministicGenreFromText("Welcome to our house event, all night long")).toBe("house");
+    expect(hasRichGenreEvidence("Welcome to our house event, all night long, straight to the dancefloor")).toBe(true);
+  });
+
+  it("'house-inspired pop' still resolves a genre (real regression guard: Demi Riquísimo's own Culture Box bio — 'acid, italo house inspired sonic palette' — is the artist's ONLY genre evidence and must not be discarded), but does not count as rich/direct evidence on its own", () => {
+    expect(deterministicGenreFromText("A night of house-inspired pop from the local scene")).toBe("house");
+    expect(hasRichGenreEvidence("A night of house-inspired pop from the local scene")).toBe(false);
+    expect(hasRichGenreEvidence("his standout acid, italo house inspired sonic palette")).toBe(false);
+  });
+
+  it("'influenced by house' / 'inspiration from house' / 'elements of house' are not rich/direct evidence either", () => {
+    expect(hasRichGenreEvidence("Her sound is influenced by house and disco")).toBe(false);
+    expect(hasRichGenreEvidence("Drawing inspiration from house music of the 90s")).toBe(false);
+    expect(hasRichGenreEvidence("A pop show with elements of house woven in")).toBe(false);
+  });
+
+  it("a direct genre elsewhere in the same text still counts as rich evidence even when an influence qualifier is also present", () => {
+    expect(deterministicGenreFromText("House-inspired pop opens, followed by a full techno set on the dancefloor")).toBe("techno");
+    expect(hasRichGenreEvidence("House-inspired pop opens, followed by a full techno set on the dancefloor")).toBe(true);
+  });
+});
+
+describe("gap 4B: genre words inside a historical/eclectic style list affect confidence, never whether a genre resolves at all (KultuNaut publish work package, 2026-09-05)", () => {
+  it("a genre named only inside a 'has moved between...' historical list still resolves (real Næb-type evidence) but is not rich/direct evidence of the current event", () => {
+    const text = "Over the years the duo has moved between synthpop, krautrock, big beat, house, reggae and more.";
+    expect(deterministicGenreFromText(text)).toBe("house");
+    expect(hasRichGenreEvidence(text)).toBe(false);
+  });
+
+  it("a direct, present-tense genre assertion elsewhere in the same text still counts as rich evidence", () => {
+    const text =
+      "The duo has moved between synthpop, krautrock, big beat and reggae across their career. Tonight is a pure techno set on the dancefloor.";
+    expect(deterministicGenreFromText(text)).toBe("techno");
+    expect(hasRichGenreEvidence(text)).toBe(true);
+  });
+});
+
+describe("gap 4E: format terms containing a genre word (KultuNaut publish work package, 2026-09-05)", () => {
+  it("does not read 'silent disco' as the disco genre", () => {
+    expect(deterministicGenreFromText("Join our silent disco on the rooftop, three channels of music")).toBeNull();
+  });
+
+  it("still detects a genuine disco event", () => {
+    expect(deterministicGenreFromText("A night of classic disco and boogie")).toBe("disco");
+  });
+});
+
+describe("hasRichGenreEvidence (gap 4D, KultuNaut publish work package, 2026-09-05)", () => {
+  it("is false for a minimal, uncorroborated fragment (the real 'Live experimental electronics' KultuNaut evidence)", () => {
+    expect(hasRichGenreEvidence("Live experimental electronics")).toBe(false);
+  });
+
+  it("is true for rich, explicit psytrance + dancefloor-context evidence", () => {
+    expect(
+      hasRichGenreEvidence("A full night of psytrance across two rooms, all killer no filler, straight to the dancefloor until sunrise."),
+    ).toBe(true);
+  });
+
+  it("is true when two distinct genre families are both named, even without dance-context corroboration", () => {
+    expect(hasRichGenreEvidence("A double bill spanning techno and drum and bass.")).toBe(true);
+  });
+
+  it("is false for a single bare specific-genre mention with no corroboration", () => {
+    expect(hasRichGenreEvidence("A house track played once during the set.")).toBe(false);
+  });
+
+  it("is true for a single specific genre corroborated by explicit club/dancefloor language", () => {
+    expect(hasRichGenreEvidence("Tech house all night on the dancefloor at our club night.")).toBe(true);
+  });
+
+  it("stays false for an Electro Werkz-type event with one crossover act named alongside otherwise-electronic evidence when that evidence is itself minimal", () => {
+    // Regression guard: a single named act's rock crossover must not itself
+    // manufacture richness — richness is about the EVENT's own genre/context
+    // density, never about how many acts are named.
+    expect(hasRichGenreEvidence("Electro night, one act.")).toBe(false);
   });
 });
 

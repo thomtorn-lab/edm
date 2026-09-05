@@ -371,4 +371,15 @@ describe("hasNonElectronicCategorySignal (data-quality Workstream, Billetto queu
     expect(hasNonElectronicCategorySignal("Depeche Modes Violator - musikforedrag")).toBe(true);
     expect(hasNonElectronicCategorySignal("Nu skal sangen omsættes til et elektronisk univers.")).toBe(false);
   });
+
+  it("gap 4C (KultuNaut publish work package, 2026-09-05): flags exhibition/vernissage/lecture/workshop/performance-art formats even when a strong genre word appears in the same text (real Mærk. Bemærk. evidence: an explicit 'drum and bass' mention inside a gallery vernissage)", () => {
+    expect(hasNonElectronicCategorySignal("Mærk. Bemærk. — vernissage med drum and bass i baggrunden")).toBe(true);
+    expect(hasNonElectronicCategorySignal("Fernisering på ny kunstudstilling, med techno fra en lokal DJ")).toBe(true);
+    expect(hasNonElectronicCategorySignal("Foredrag om house-musikkens historie")).toBe(true);
+    expect(hasNonElectronicCategorySignal("Vinyl workshop med fokus på techno-produktion")).toBe(true);
+  });
+
+  it("gap 4C does not flag an ordinary club night with none of these format words", () => {
+    expect(hasNonElectronicCategorySignal("Teletech Copenhagen — a night of techno at Poolen")).toBe(false);
+  });
 });
