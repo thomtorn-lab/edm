@@ -298,29 +298,63 @@ export const VENUES: Venue[] = [
       "UnderWerket is a volunteer-run venue in Valby aimed at young organisers, offering rooms, sound equipment and organisational support for self-run events rather than operating as a commercial club. Alongside concerts and youth-organised gatherings, the space regularly hosts electronic and techno nights, including noise and experimental programming from independent local promoters. Its basement setting and community-support model give it a different character from Copenhagen's commercial club venues — events are typically organised by the young promoters themselves rather than booked in by the venue. UnderWerket's role in the city's electronic scene is smaller-scale and more grassroots than the larger clubs, functioning as an entry point for new organisers putting on their first electronic events.",
   },
   {
-    // KultuNaut audit follow-up (2026-09-05): this row's `name` was
-    // previously the bare "VEGA" — even though its own description/profile
-    // text below already correctly scoped it to the basement club room, not
-    // VEGA's main concert halls. Because resolveVenue() (src/lib/normalize.ts)
-    // does exact normalized-name matching, that bare name meant ANY future
-    // source supplying literal "VEGA" (KultuNaut's own event pages do — see
-    // ArrNr 20004550/19768459/etc — but this generalizes to any source, not
-    // just KultuNaut) would silently resolve to this Ideal-Bar-specific
-    // venue, even for a genuine Store VEGA arena show. No `aliases` entry was
-    // ever bare "VEGA" either — this was purely the `name` field overclaiming
-    // the whole building. Renamed to "VEGA (Ideal Bar)", already the exact
-    // string this repo's own venueCreation.test.ts expected
-    // (`slugifyVenueName("VEGA (Ideal Bar)")`) before this fix — the seed
-    // data had simply never been updated to match. Deliberately NOT adding
-    // separate "Store VEGA"/"Lille VEGA" rows: no currently-registered source
-    // supplies text specific enough to justify them, and inventing venue
-    // rows without real event evidence isn't the goal here — a bare "VEGA"
-    // string now correctly resolves to nothing (manual review) rather than
-    // silently attaching to this specific room.
+    // VEGA venue model cleanup (2026-09-06): the intended structure is VEGA
+    // as a parent venue/complex with two concert-hall ROOMS — Store VEGA and
+    // Lille VEGA — resolving to this same parent id, exactly the way a
+    // source's raw room-qualified string is expected to behave; Ideal Bar
+    // (below) is a genuinely separate, standalone venue, never a room under
+    // VEGA. Real evidence for this split: KultuNaut supplies bare "VEGA" for
+    // Store VEGA arena shows (11 real pending rows, e.g. ArrNr 19411901),
+    // and Billetto has supplied "Lille Vega" for at least one real event.
+    // "Store VEGA" and "Lille VEGA" are listed as ALIASES here rather than
+    // separate venue rows — the same generalized pattern this codebase
+    // already uses for a known sub-area of an existing venue (see
+    // PROTECTED_SUB_VENUE_NAMES in src/lib/venueCreation.ts: Byhaven is
+    // Pumpehuset's own pop-up area, Black Box/Red Box are Culture Box's two
+    // rooms — neither ever becomes its own venue row; Culture Box's rooms in
+    // particular are consolidated at the ADAPTER level into one canonical
+    // event per night, with room-separated lineup content kept in that
+    // event's own `description`, never a structural room/parent field —
+    // there is no separate "room" column anywhere in the schema to reuse).
+    // Because resolveVenue() (src/lib/normalize.ts) is exact
+    // normalized-name-or-alias matching only (never fuzzy or substring), a
+    // bare "VEGA" now resolves to THIS parent row and nowhere else — in
+    // particular, never to Ideal Bar below, whose own aliases deliberately
+    // never include bare "VEGA" — and "Store VEGA"/"Lille VEGA" resolve to
+    // this same parent, with which specific room preserved only in the raw
+    // `probableVenueName` a Discovery Queue row already keeps (no new
+    // "room" field is invented here, matching Culture Box's own precedent
+    // of never persisting room identity past ingestion).
+    id: "v-vega",
+    slug: "vega",
+    name: "VEGA",
+    aliases: ["Store VEGA", "Lille VEGA"],
+    address: "Enghavevej 40, 1674 København V",
+    city: "Copenhagen",
+    postalCode: "1674",
+    websiteUrl: "https://vega.dk/",
+    description:
+      "One of Copenhagen's best-known concert venues, built around two main halls — Store VEGA and Lille VEGA — hosting touring bands and larger concerts across genres.",
+    shortDescription:
+      "Landmark concert-hall complex built around two main rooms, Store VEGA and Lille VEGA, hosting touring bands and larger concerts across genres; electronic bookings are occasional rather than the norm.",
+    venueProfile:
+      "VEGA is one of Copenhagen's best-known concert venues, occupying a landmark 1950s trade-union assembly building in Vesterbro. Its programme is built around two main halls — Store VEGA, the larger of the two, and Lille VEGA, the smaller mid-size room — both primarily booked for touring bands and concerts spanning genres rather than dedicated club programming. Electronic acts do play VEGA's main stages from time to time, but genuinely electronic-defining nights are the exception on these two halls rather than the rule; VEGA's own dedicated, consistently electronic room is Ideal Bar, its separate basement club (see below) — a distinct venue in its own right, not a room under VEGA. VEGA's scale and reputation make it one of Copenhagen's primary destinations for larger-capacity touring shows, with Store VEGA and Lille VEGA together covering most of that programme.",
+  },
+  {
+    // See the VEGA entry above for the full parent/room model this venue is
+    // deliberately NOT part of: Ideal Bar is VEGA's basement club room, but
+    // it is registered as its own fully standalone venue (own id/slug),
+    // never a room resolving to the VEGA parent above. A bare "VEGA" string
+    // must never resolve here — none of this row's aliases are bare "VEGA"
+    // or a Store/Lille VEGA variant. The former "Lille VEGA Ideal Bar" alias
+    // was removed (2026-09-06): under the corrected model, "Lille VEGA" on
+    // its own belongs to the VEGA parent above, and no real source has ever
+    // supplied the compound "Lille VEGA Ideal Bar" string — keeping it would
+    // have reintroduced exactly the conflation this cleanup fixes.
     id: "v-vega-ideal-bar",
     slug: "vega-ideal-bar",
     name: "VEGA (Ideal Bar)",
-    aliases: ["Ideal Bar", "Vega Ideal Bar", "Lille VEGA Ideal Bar", "VEGA (Ideal Bar)"],
+    aliases: ["Ideal Bar", "Vega Ideal Bar", "VEGA (Ideal Bar)"],
     address: "Enghavevej 40, 1674 København V",
     city: "Copenhagen",
     postalCode: "1674",

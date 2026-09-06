@@ -158,20 +158,21 @@ describe("guessArtistsFromTitle", () => {
 });
 
 describe("Venue resolution (Section 7 of the discovery-only implementation task) — generalized resolver only, no KultuNaut-specific mappings", () => {
-  it("a bare 'VEGA' with no qualifier stays UNRESOLVED (VEGA venue-resolution risk fix, 2026-09-05) — never silently attaches to the Ideal Bar registry row", () => {
-    expect(resolveVenue("VEGA", VENUES)).toBeUndefined();
+  it("a bare 'VEGA' with no qualifier resolves to the VEGA parent venue (VEGA venue model cleanup, 2026-09-06) — never silently attaches to the Ideal Bar registry row", () => {
+    expect(resolveVenue("VEGA", VENUES)?.id).toBe("v-vega");
+    expect(resolveVenue("VEGA", VENUES)?.id).not.toBe("v-vega-ideal-bar");
   });
 
-  it("'Ideal Bar' resolves to VEGA (Ideal Bar)", () => {
+  it("'Ideal Bar' resolves to VEGA (Ideal Bar), the separate standalone venue — not the VEGA parent", () => {
     expect(resolveVenue("Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
   });
 
-  it("'Store VEGA' stays unresolved — no such registry row exists", () => {
-    expect(resolveVenue("Store VEGA", VENUES)).toBeUndefined();
+  it("'Store VEGA' resolves to the VEGA parent venue", () => {
+    expect(resolveVenue("Store VEGA", VENUES)?.id).toBe("v-vega");
   });
 
-  it("'Lille VEGA' (without 'Ideal Bar') stays unresolved — no such registry row exists", () => {
-    expect(resolveVenue("Lille VEGA", VENUES)).toBeUndefined();
+  it("'Lille VEGA' (without 'Ideal Bar') resolves to the VEGA parent venue, not Ideal Bar", () => {
+    expect(resolveVenue("Lille VEGA", VENUES)?.id).toBe("v-vega");
   });
 
   it("'Basement Bar' resolves to the existing Basement registry entry (v-basement) via the shared alias added 2026-09-05, not a KultuNaut-specific mapping", () => {
@@ -231,13 +232,14 @@ describe("end-to-end pipeline: A/B/C/D audit discipline mapped into safe ingesti
     expect(result.resolvedVenueId).toBe("v-tap1");
   });
 
-  it("B-tier: a real review-tier candidate (DJ Aligator: The Final Reptile Rave, ArrNr 19411899, bare 'VEGA' venue text) never auto-publishes and never reaches negative_relevance-skip either — it lands as an ordinary hold/incomplete_data candidate, which src/db/sync.ts still queues (never silently dropped, never falsely elevated)", () => {
+  it("B-tier: a real review-tier candidate (DJ Aligator: The Final Reptile Rave, ArrNr 19411899, bare 'VEGA' venue text) never auto-publishes and never reaches negative_relevance-skip either — it lands as an ordinary hold candidate, which src/db/sync.ts still queues (never silently dropped, never falsely elevated). Since the VEGA venue model cleanup (2026-09-06), bare 'VEGA' now correctly resolves to the VEGA parent venue (never Ideal Bar) — the missing-venue reason this row used to hold for no longer applies; it now holds on genuine lack of genre evidence instead, which is itself authoritative (see pipeline.ts's HoldReason doc comment), not an incomplete-data gap.", () => {
     const c = candidate("19411899");
     expect(c.venueName).toBe("VEGA"); // real page text — bare, no qualifier
     const result = runIngestionPipeline(c, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
-    expect(result.resolvedVenueId).toBeNull(); // VEGA venue-resolution risk fix: bare "VEGA" never resolves
+    expect(result.resolvedVenueId).toBe("v-vega"); // VEGA venue model cleanup: bare "VEGA" now resolves to the parent
     expect(result.decision).toBe("hold");
-    expect(result.holdReason).not.toBe("negative_relevance"); // real evidence gives no non-electronic signal — this is an incomplete-data hold, not a rejection
+    expect(result.holdReason).toBe("no_genre_evidence"); // full record + real evidence text, genuinely no genre signal
+    expect(result.holdReason).not.toBe("negative_relevance"); // real evidence gives no non-electronic signal either
   });
 
   it("C-tier: a real non-electronic false positive (Depeche Modes Violator - musikforedrag, ArrNr 20097798 — a listening lecture, not a concert) resolves to hold/negative_relevance — the genuine evidence-based rejection tier, which src/db/sync.ts's own skip-on-negative_relevance branch means never even reaches the Discovery Queue as noise", () => {

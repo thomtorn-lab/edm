@@ -283,6 +283,20 @@ export async function updateVenuePostalCode(venueId: string, newPostalCode: stri
 }
 
 /**
+ * Replaces a venue's full aliases array (VEGA venue model cleanup,
+ * 2026-09-06) — a narrow sibling to updateVenueAddress/updateVenuePostalCode
+ * for the same reason: venues.ts changes never reach an already-seeded
+ * Production database on their own. Replaces the whole array rather than
+ * add/remove-one, matching how the array is always specified in venues.ts.
+ * Never touches name/address/identity fields.
+ */
+export async function updateVenueAliases(venueId: string, newAliases: string[]) {
+  const [existing] = await db.select().from(venues).where(eq(venues.id, venueId)).limit(1);
+  if (!existing) throw new Error(`Venue ${venueId} not found`);
+  await db.update(venues).set({ aliases: newAliases, updatedAt: new Date() }).where(eq(venues.id, venueId));
+}
+
+/**
  * Sets a venue's editorial copy fields (venue coverage expansion, 2026-08-29)
  * — used when a venue is promoted to curated `/venues` and needs the
  * factual description/shortDescription/venueProfile the guide's own
