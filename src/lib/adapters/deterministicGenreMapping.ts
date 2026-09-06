@@ -110,44 +110,67 @@ function stripConfidenceOnlySpans(text: string): string {
  *  to resolve a genre (that stays each adapter's own decision). */
 const GENERIC_ELECTRONIC_MENTION_RE = /\belectronic(s|a)?\b/i;
 
+// Plural-tolerant: a real regression (Teletech Copenhagen, KultuNaut publish
+// work package, 2026-09-05) found "club nights"/"underground clubs" — the
+// genuinely common plural phrasing of exactly this same corroboration —
+// silently failing to match here because \b sits right after the singular
+// noun. Every noun form below now accepts an optional trailing "s".
 const DANCE_CLUB_CONTEXT_RE =
-  /\b(?:dance\s?floor|club\s?night|nightclub|rave|clubbing|dansegulv(?:et)?|klubnat|open[\s-]?air\s+party|soundsystem|sound\s+system|dj\s+set)\b/i;
+  /\b(?:dance\s?floors?|club\s?nights?|nightclubs?|raves?|clubbing|underground\s+clubs?|dansegulv(?:et)?|klubnat(?:ter)?|open[\s-]?air\s+part(?:y|ies)|soundsystems?|sound\s+systems?|dj\s+sets?)\b/i;
+
+/**
+ * Counts every KEYWORD_MAP match in `text` (not just distinct genre
+ * families) — deliberately permissive about double-counting an overlapping
+ * pair like "hard techno" also matching the bare "techno" pattern, since the
+ * failure mode this guards against (Section 5: don't turn a legitimate EDM
+ * event into a false negative) is far costlier than the failure mode a
+ * slightly generous count risks.
+ */
+function countGenreMentions(text: string): number {
+  let count = 0;
+  for (const [pattern] of KEYWORD_MAP) {
+    const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    let match: RegExpExecArray | null;
+    while ((match = global.exec(text))) {
+      count++;
+      if (match.index === global.lastIndex) global.lastIndex++; // guard against a zero-length match looping forever
+    }
+  }
+  return count;
+}
 
 /**
  * Gap 4D: a generalized evidence-STRENGTH distinction, not a raw
- * character-count floor. A genre signal counts as "rich" only when it
- * SURVIVES stripConfidenceOnlySpans (i.e. it is a direct assertion, not
- * merely an influence qualifier or a historical/eclectic style list — gaps
- * 4A/4B) AND is either corroborated by a SECOND, distinct direct genre-family
- * hit or an explicit dance/club-context phrase (dancefloor, club night,
- * rave, dansegulv, soundsystem, DJ set...). A single, isolated genre/
- * electronic-context keyword hit with no such corroboration ("Live
- * experimental electronics" — four words, one bare mention) is NOT rich,
- * the same as a long description whose only genre mention is exactly as
- * isolated. Callers (adapters that, like kultunautAdapter.ts, treat their
- * own first-party description text as "official-description"-tier
- * evidence) use this to decide whether a deterministic match earns that top
- * tier or the ordinary "deterministic-mapping" tier instead — it never
- * changes whether a genre resolves at all, only how much confidence that
- * resolution deserves.
+ * character-count floor — a SEMANTIC evidence count instead: how many
+ * genre-relevant mentions survive stripConfidenceOnlySpans (i.e. are direct
+ * assertions, not merely an influence qualifier or a historical/eclectic
+ * style list — gaps 4A/4B), whether that's the SAME genre repeated across
+ * several real, substantive sentences (real regression guard: Teletech
+ * Copenhagen's own bio says "techno" three separate times — "hardhitting
+ * techno night", "a techno movement", "the international techno scene" —
+ * genuinely rich, corroborated evidence despite naming only one genre
+ * family) or two DIFFERENT genre families named once each. Either two such
+ * mentions, or one mention plus an explicit dance/club-context phrase
+ * (dancefloor, club night(s), rave(s), dansegulv, soundsystem, DJ set...),
+ * counts as rich. A single, isolated genre/electronic-context keyword hit
+ * with no such corroboration ("Live experimental electronics" — four words,
+ * one bare mention) is NOT rich. Callers (adapters that, like
+ * kultunautAdapter.ts, treat their own first-party description text as
+ * "official-description"-tier evidence) use this to decide whether a
+ * deterministic match earns that top tier or the ordinary
+ * "deterministic-mapping" tier instead — it never changes whether a genre
+ * resolves at all, only how much confidence that resolution deserves.
  */
 export function hasRichGenreEvidence(text: string): boolean {
   const lightlyCleaned = lightlyCleanText(text);
   const directlyCleaned = stripConfidenceOnlySpans(lightlyCleaned);
 
-  const lightGenres = new Set<GenreSlug>();
-  for (const [pattern, genre] of KEYWORD_MAP) {
-    if (pattern.test(lightlyCleaned)) lightGenres.add(genre);
-  }
-  const directGenres = new Set<GenreSlug>();
-  for (const [pattern, genre] of KEYWORD_MAP) {
-    if (pattern.test(directlyCleaned)) directGenres.add(genre);
-  }
-  const hasGenericElectronicMention = lightGenres.size === 0 && GENERIC_ELECTRONIC_MENTION_RE.test(directlyCleaned);
-  const directSignalCount = directGenres.size > 0 ? directGenres.size : hasGenericElectronicMention ? 1 : 0;
+  const directMentionCount = countGenreMentions(directlyCleaned);
+  const hasGenericElectronicMention = directMentionCount === 0 && GENERIC_ELECTRONIC_MENTION_RE.test(directlyCleaned);
+  const signalCount = directMentionCount > 0 ? directMentionCount : hasGenericElectronicMention ? 1 : 0;
 
-  if (directSignalCount >= 2) return true;
-  if (directSignalCount === 1 && DANCE_CLUB_CONTEXT_RE.test(directlyCleaned)) return true;
+  if (signalCount >= 2) return true;
+  if (signalCount === 1 && DANCE_CLUB_CONTEXT_RE.test(directlyCleaned)) return true;
   return false;
 }
 

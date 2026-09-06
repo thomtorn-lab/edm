@@ -167,6 +167,17 @@ describe("hasRichGenreEvidence (gap 4D, KultuNaut publish work package, 2026-09-
     // density, never about how many acts are named.
     expect(hasRichGenreEvidence("Electro night, one act.")).toBe(false);
   });
+
+  it("is true when the SAME genre is named several times across genuinely substantive sentences, not just a different genre family (real Teletech Copenhagen regression: 'hardhitting techno night' / 'a techno movement' / 'the international techno scene' — three separate mentions, one genre)", () => {
+    const teletechBio =
+      "Teletech are back with a super hardhitting techno night at Poolen. Founded in Manchester, Teletech is a techno movement that has grown from intimate club nights into globally recognized events. Teletech has earned a reputation as one of the wildest and most respected events in the international techno scene.";
+    expect(hasRichGenreEvidence(teletechBio)).toBe(true);
+  });
+
+  it("recognizes plural club/rave/soundsystem phrasing as dance-context corroboration, not just the singular form", () => {
+    expect(hasRichGenreEvidence("A house set played across a run of underground club nights.")).toBe(true);
+    expect(hasRichGenreEvidence("Techno played through a proper soundsystem at open-air parties all summer.")).toBe(true);
+  });
 });
 
 describe("refineGenreFromText (genre precision, Workstream B)", () => {
