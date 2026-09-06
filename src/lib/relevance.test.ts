@@ -5,6 +5,7 @@ import {
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
   hasNonElectronicCategorySignal,
+  countNonElectronicGenreFamilies,
 } from "./relevance";
 
 describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
@@ -392,5 +393,83 @@ describe("hasNonElectronicCategorySignal (data-quality Workstream, Billetto queu
 
   it("gap 4C does not flag an ordinary club night with none of these format words", () => {
     expect(hasNonElectronicCategorySignal("Teletech Copenhagen — a night of techno at Poolen")).toBe(false);
+  });
+});
+
+describe("round 3 quality audit, 2026-09-06 — new non-electronic signals from real ALICE evidence", () => {
+  it("flags flamenco (real evidence: Yerai Cortés ES — 'one of flamenco's brightest new stars', 'a leading figure in a new era of flamenco')", () => {
+    expect(hasNonElectronicGenreSignal("Yerai Cortés has established himself as one of the most distinctive voices of flamenco's new generation.")).toBe(true);
+  });
+
+  it("flags 'Música Popular Brasileira'/'(MPB)' as a category-style bypass signal, same as the existing Kammermusikforeningen entry (real evidence: Bruno Berle BR — 'is gently expanding the boundaries of Música Popular Brasileira (MPB)')", () => {
+    expect(hasNonElectronicCategorySignal("the composer is gently expanding the boundaries of Música Popular Brasileira (MPB) — the influential movement that emerged in the 1960s.")).toBe(true);
+    expect(hasNonElectronicCategorySignal("A night of Música Popular Brasileira at ALICE.")).toBe(true);
+  });
+
+  it("flags the English 'chamber music' spelling alongside the existing Danish 'kammermusik' entry (real evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg's own bio — 'Drawing on jazz, chamber music, ambient and free improvisation')", () => {
+    expect(hasNonElectronicCategorySignal("Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language.")).toBe(true);
+  });
+
+  it("does not flag an ordinary electronic-event title with none of these new signals", () => {
+    expect(hasNonElectronicGenreSignal("Dengue Dengue Dengue — a night of techno")).toBe(false);
+    expect(hasNonElectronicCategorySignal("A night of house and disco at Culture Box")).toBe(false);
+  });
+});
+
+describe("countNonElectronicGenreFamilies (round 3 quality audit, 2026-09-06)", () => {
+  it("counts each DISTINCT non-electronic genre family once, not every raw occurrence (real evidence: Nubiyan Twist UK — 'genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music')", () => {
+    // jazz, hip hop, reggae are recognized families here (afrobeat/dancehall/soul
+    // aren't in the fixed NON_ELECTRONIC_GENRE_SIGNALS list — the count only
+    // reflects patterns this module actually recognizes).
+    const count = countNonElectronicGenreFamilies(
+      "Nubiyan Twist deliver an energetic fusion of jazz, funk and soul. Their genre-blending sound draws on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music.",
+    );
+    expect(count).toBeGreaterThanOrEqual(3);
+  });
+
+  it("counts a single repeated family only once (real evidence: Mikael Simpson's genuine indierock crossover, a single contradiction, must stay at 1)", () => {
+    const count = countNonElectronicGenreFamilies(
+      "Med elektroniske, knitrende beats og stemningsfuld indierock leverer Simpson forunderlige dansk lyrik. En stemningsfuld indierock-aften.",
+    );
+    expect(count).toBe(1);
+  });
+
+  it("returns 0 for text with no non-electronic genre signal at all", () => {
+    expect(countNonElectronicGenreFamilies("A night of techno and house at Culture Box.")).toBe(0);
+  });
+
+  it("masks a known artist's own name first, same as hasNonElectronicGenreSignal", () => {
+    expect(countNonElectronicGenreFamilies("Brock brings his signature electronic sound to the club.", ["Brock"])).toBe(0);
+  });
+});
+
+describe("assessRelevance — hasBroadNonElectronicGenreMix (round 3 quality audit, 2026-09-06)", () => {
+  const baseInput = {
+    genre: "electronic-other",
+    hasExplicitElectronicAssertion: true,
+    hasTrustedElectronicTicketing: false,
+    hasCorroboratingArtistGenreEvidence: false,
+    hasPopOrRnbSignal: false,
+  };
+
+  it("downgrades a one-strong-signal contradiction to 'none' when the mix flag is set, same as an explicit scene/genre identity claim would", () => {
+    expect(
+      assessRelevance({
+        ...baseInput,
+        hasNonElectronicGenreSignal: true,
+        hasExplicitNonElectronicIdentityAssertion: false,
+        hasBroadNonElectronicGenreMix: true,
+      }),
+    ).toBe("none");
+  });
+
+  it("stays 'weak' for a one-strong-signal contradiction when the mix flag is false/absent (unaffected — the existing single-word-crossover tolerance, e.g. Mikael Simpson, is preserved)", () => {
+    expect(
+      assessRelevance({
+        ...baseInput,
+        hasNonElectronicGenreSignal: true,
+        hasExplicitNonElectronicIdentityAssertion: false,
+      }),
+    ).toBe("weak");
   });
 });

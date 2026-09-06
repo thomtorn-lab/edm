@@ -83,6 +83,16 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
   // needs its own pattern covering "postpunk"/"post-punk"/"post punk".
   /\bgoth(?:ic)?\b/i,
   /\bpost[\s-]?punk\b/i,
+  // Admin Discovery Queue cleanup quality audit, 2026-09-06 — real ALICE
+  // evidence: Yerai Cortés's own bio is a solo flamenco-guitar concert
+  // ("one of flamenco's brightest new stars", "a leading figure in a new
+  // era of flamenco", "modern flamenco of the very highest calibre"); its
+  // ONLY "electronic" mention names a DIFFERENT collaborator ("electronic
+  // musician Floating Points") he has worked with, never the event's own
+  // sound. A distinctive, unambiguous genre word (no realistic artist-name
+  // or influence-comparison collision risk), same category as the existing
+  // jazz/folk/reggae/ska entries above.
+  /\bflamenco\b/i,
 ];
 
 /**
@@ -135,6 +145,15 @@ const NON_ELECTRONIC_CATEGORY_SIGNALS: RegExp[] = [
   /\bwine\s+(?:festival|tasting)\b/i,
   /\blopp(?:e|er)(?:marked|linda)?\b/i,
   /\bkammermusik\w*/i,
+  // English equivalent of the Danish "kammermusik" entry above (admin
+  // Discovery Queue cleanup quality audit, 2026-09-06 — real ALICE
+  // evidence, an English-language listing page: Daniel Sommer / Arve
+  // Henriksen / Johannes Lundberg's own bio names "jazz, chamber music,
+  // ambient and free improvisation" as the trio's actual identity). ALICE
+  // publishes bilingual (Danish/English) pages, so a category this list
+  // already recognizes in Danish needs its English spelling too — not a
+  // new category, the same one in the other language this source uses.
+  /\bchamber\s+music\b/i,
   /\b(?:guided\s+)?(?:bike|walking)\s+tour\b/i,
   // No leading \b: Danish freely compounds without a separator
   // ("byvandring" = "by" + "vandring", one word, real Production evidence)
@@ -152,6 +171,20 @@ const NON_ELECTRONIC_CATEGORY_SIGNALS: RegExp[] = [
   // would wrongly signal relevance. Source-agnostic: any future source
   // returning a lecture/talk format benefits, not just KultuNaut.
   /\bmusikforedrag\b/i,
+  // Admin Discovery Queue cleanup quality audit, 2026-09-06 — real ALICE
+  // evidence: Bruno Berle's own bio explicitly self-identifies as "Música
+  // Popular Brasileira (MPB)" ("the composer... is gently expanding the
+  // boundaries of Música Popular Brasileira (MPB)"), with its only
+  // "electronic" evidence being one incidental adjective ("subtle
+  // electronic textures") describing production texture, not the event's
+  // own genre identity. Like "Kammermusikforeningen" above, this is a
+  // capitalized, genre-identifying proper-noun-shaped phrase that the
+  // comparison-cue/proper-noun suppressions built for single common genre
+  // words (guarding against a coincidence like "Daft Punk") would wrongly
+  // swallow — it belongs in this bypass list for the same reason, even
+  // though "MPB" is a genre label rather than a non-music category.
+  /\bmúsica\s+popular\s+brasileira\b/i,
+  /\(mpb\)/i,
   // Gap 4C, generalized (KultuNaut publish work package, 2026-09-05): a
   // strong, explicit genre keyword (drum & bass, techno, house, trance...)
   // inside an event whose own PRIMARY FORMAT is not a club/music-performance
@@ -333,6 +366,47 @@ export function hasNonElectronicGenreSignal(text: string, knownArtists: string[]
 }
 
 /**
+ * Counts how many DISTINCT non-electronic genre FAMILIES (not raw
+ * occurrences — the same family named three times still counts once) have
+ * at least one genuine, non-suppressed match — same suppression pipeline as
+ * hasNonElectronicGenreSignal, just tallied instead of short-circuited.
+ *
+ * Admin Discovery Queue cleanup quality audit, 2026-09-06: a bio naming
+ * several DIFFERENT non-electronic genres is a materially stronger
+ * contradiction than one isolated word, even without an explicit "X scene"
+ * identity claim — real evidence: Nubiyan Twist's own bio says their
+ * "genre-blending sound draw[s] on jazz, hip hop, afrobeat, dancehall, soul,
+ * reggae and electronic music" (six non-electronic families named against
+ * one incidental "electronic music" mention at the tail of that same list;
+ * an "afrojazz ensemble" of saxophone/trumpet/percussion, not a DJ/club
+ * night). See assessRelevance's use of this count for how it's applied —
+ * deliberately does NOT lower the bar for a single-family contradiction
+ * (that stays exactly as tolerant as before: real crossovers like
+ * kultunaut's Mikael Simpson, whose only contradiction is "indierock," are
+ * unaffected).
+ */
+export function countNonElectronicGenreFamilies(text: string, knownArtists: string[] = []): number {
+  const masked = maskKnownArtistNames(text, knownArtists);
+  let families = 0;
+  for (const pattern of NON_ELECTRONIC_GENRE_SIGNALS) {
+    const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    let match: RegExpExecArray | null;
+    while ((match = global.exec(masked))) {
+      const precedingWindow = masked.slice(Math.max(0, match.index - 40), match.index);
+      if (COMPARISON_CUE_RE.test(precedingWindow)) continue;
+      const sentenceStart = precedingSentenceStart(masked, match.index);
+      if (HISTORICAL_CREDIT_CUE_RE.test(masked.slice(sentenceStart, match.index))) continue;
+      if (isLikelyProperNounMidSentence(masked.slice(0, match.index), match[0])) continue;
+      const matchEnd = match.index + match[0].length;
+      if (NAMED_OTHER_EVENT_RE.test(masked.slice(matchEnd, matchEnd + 30))) continue;
+      families++;
+      break; // one genuine match is enough to count this family; move to the next pattern
+    }
+  }
+  return families;
+}
+
+/**
  * Pop/R&B genre words (Final EDM Relevance Rule, 2026-08-30 — see
  * assessRelevance's header comment for how this is actually used). Kept
  * OUT of NON_ELECTRONIC_GENRE_SIGNALS deliberately: unlike metal/rock/jazz/
@@ -473,6 +547,13 @@ export interface RelevanceEvidenceInput {
    *  hasNonElectronicGenreSignal; see assessRelevance's header comment for
    *  the graduated rule this actually drives. */
   hasPopOrRnbSignal: boolean;
+  /** The non-electronic contradiction spans several DIFFERENT genre
+   *  families (see countNonElectronicGenreFamilies), not just one isolated
+   *  word — treated the same as an explicit scene/genre identity claim
+   *  (admin Discovery Queue cleanup quality audit, 2026-09-06). Optional,
+   *  defaults to false so every existing caller/test is unaffected unless
+   *  it opts in. Ignored when hasNonElectronicGenreSignal is false. */
+  hasBroadNonElectronicGenreMix?: boolean;
 }
 
 /**
@@ -537,7 +618,7 @@ export function assessRelevance(input: RelevanceEvidenceInput): RelevanceLevel {
 
   if (input.hasNonElectronicGenreSignal) {
     if (strongSignalCount === 0) return "none";
-    if (input.hasExplicitNonElectronicIdentityAssertion && strongSignalCount === 1) return "none";
+    if ((input.hasExplicitNonElectronicIdentityAssertion || input.hasBroadNonElectronicGenreMix) && strongSignalCount === 1) return "none";
     return "weak";
   }
   if (strongSignalCount > 0) return "strong";

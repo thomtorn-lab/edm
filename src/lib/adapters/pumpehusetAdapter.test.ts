@@ -109,10 +109,28 @@ describe("extractEventDateAndTime — real detail-page fixtures", () => {
 });
 
 describe("extractGenreTags — real detail-page fixture (multi-genre completeness fix)", () => {
-  it("reads every /program?genre=... tag a real detail page links, not just the listing's single primary genre (Shrek Rave: Pop, Indie, Elektronisk)", () => {
+  // Admin Discovery Queue cleanup quality audit, 2026-09-06 — corrected: the
+  // fixture's "Indie" and "Elektronisk" tags were never Shrek Rave's own —
+  // real evidence (both the fixture's own `dataLayer.push({'event':
+  // 'Genre', 'genreName': 'Pop'})` line AND its own single tag button, both
+  // well before the `related-events` marker) shows Shrek Rave's own tag is
+  // "Pop" alone; "Indie" belongs to a related "twilight-rave" suggestion and
+  // "Elektronisk" to a related "byhaven-sonicfest-2" suggestion, further
+  // down the SAME page — a real, live MNEK/The EPIC Drag Show bug (both
+  // similarly credited with a related suggestion's "Elektronisk" tag) traced
+  // back to this same fixture's original, unscoped read.
+  it("reads only the tags an event's own detail page states for ITSELF, not a related-event suggestion elsewhere on the same page (Shrek Rave's own tag is just Pop; Indie/Elektronisk belong to two different suggested events further down)", () => {
     const tags = extractGenreTags(SHREK_RAVE_DETAIL_HTML);
+    expect(tags).toEqual(["Pop"]);
+  });
+
+  it("still reads every genre tag a real detail page links when they all sit before the related-events marker (multi-tag completeness, unaffected by the scoping fix)", () => {
+    const html =
+      '<a href="/program?genre=Pop">Pop</a><a href="/program?genre=Indie">Indie</a><a href="/program?genre=Elektronisk">Elektronisk</a><div class="related-events default-grid"><a href="/program?genre=Rock">Rock</a></div>';
+    const tags = extractGenreTags(html);
     expect(tags).toEqual(expect.arrayContaining(["Pop", "Indie", "Elektronisk"]));
-    expect(tags.length).toBe(3); // deduplicated — the fixture links "Pop" twice
+    expect(tags).not.toContain("Rock");
+    expect(tags.length).toBe(3);
   });
 
   it("returns an empty array when a page has no genre tag links", () => {
@@ -368,13 +386,24 @@ describe("createPumpehusetAdapter", () => {
   });
 });
 
-describe("createPumpehusetAdapter — multi-genre completeness fix (Shrek Rave, first-party source completeness audit 2026-08-30)", () => {
-  it("discovers a real event whose listing genre isn't Elektronisk by confirming the tag on its own detail page (Shrek Rave, listed genre 'Pop')", async () => {
+describe("createPumpehusetAdapter — multi-genre completeness fix (Shrek Rave, first-party source completeness audit 2026-08-30; corrected admin Discovery Queue cleanup quality audit, 2026-09-06)", () => {
+  // Corrected: Shrek Rave's own detail page — its `dataLayer.push({'event':
+  // 'Genre', 'genreName': 'Pop'})` line and its own single tag button, both
+  // well before the page's `related-events` suggestions — never actually
+  // confirms Elektronisk; that tag belonged to a different, merely-suggested
+  // event ("byhaven-sonicfest-2") on the same page (see extractGenreTags's
+  // doc comment — the same real bug that credited MNEK and The EPIC Drag
+  // Show with an unrelated suggested event's tag). This event genuinely
+  // isn't Elektronisk-confirmed, so this discovery-only, Elektronisk-scoped
+  // adapter correctly excludes it, per its own documented "drop unconfirmed"
+  // design (see fetchAllConcerts's doc comment) — it never silently
+  // guesses.
+  it("does not discover an event whose own detail page confirms a different genre (Pop), even when an unrelated suggested event elsewhere on the same page happens to be tagged Elektronisk (Shrek Rave)", async () => {
     const concertsJson = JSON.stringify([
       {
         title: "Shrek Rave",
         link: "https://pumpehuset.dk/koncerter/shrek-rave/",
-        genre: "Pop", // real, live listing value — Pop is the primary GTM genre, not Elektronisk
+        genre: "Pop", // real, live listing value
       },
     ]);
     const fetchImpl = async (url: string | URL) => {
@@ -391,17 +420,7 @@ describe("createPumpehusetAdapter — multi-genre completeness fix (Shrek Rave, 
     const adapter = createPumpehusetAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const results = await adapter.fetchCandidates();
 
-    expect(results.length).toBe(1);
-    const shrekRave = results[0];
-    expect(shrekRave.title).toBe("Shrek Rave");
-    expect(shrekRave.startDatetime).toBe("2026-08-28T19:00:00.000Z"); // 21:00 CEST (UTC+2), "Showet starter"
-    // Confirmed electronic-relevant from the detail page's own real tag list
-    // (Pop, Indie, Elektronisk — see extractGenreTags), not the listing's
-    // single misleading "Pop" field. No specific subgenre keyword appears in
-    // this event's title/description, so it lands at the same
-    // official-source-metadata floor as any other Elektronisk-tagged show.
-    expect(shrekRave.genreHint).toBe("electronic-other");
-    expect(shrekRave.genreConfidenceHint).toBe("high");
+    expect(results.length).toBe(0);
   });
 
   it("drops a candidate whose detail page never confirms Elektronisk either — the fix does not flood non-electronic shows into the pipeline", async () => {

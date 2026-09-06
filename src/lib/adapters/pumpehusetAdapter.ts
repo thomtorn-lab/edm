@@ -163,12 +163,31 @@ export function extractEventDateAndTime(detailHtml: string): { dateKey: DateKey;
  * parsePumpehusetConcertsJson's doc comment). Returns the tags exactly as
  * the site states them (e.g. "Elektronisk"), deduplicated; an empty array
  * when the page carries none (never guessed).
+ *
+ * Admin Discovery Queue cleanup quality audit, 2026-09-06 — real bug found
+ * on live pages: every detail page ALSO renders a "... Må vi foreslå"
+ * ("may we suggest") related-events carousel further down the same HTML
+ * document, each suggested event carrying its OWN `/program?genre=<Tag>`
+ * button — e.g. MNEK's and The EPIC Drag Show's own pages both suggest
+ * "Icona Pop", tagged Elektronisk. The regex below used to scan the WHOLE
+ * page, so an event whose own real tag is "Pop" (both MNEK's and The EPIC
+ * Drag Show's own `dataLayer.push({'event': 'Genre', 'genreName': 'Pop'})`
+ * confirms this) was wrongly credited with "Elektronisk" purely because a
+ * DIFFERENT, unrelated suggested event elsewhere on the same page happened
+ * to carry that tag. Every observed page wraps that carousel in
+ * `<div class="related-events ...">` — truncating the scan there before
+ * matching keeps the legitimate multi-tag case (Shrek Rave: Pop, Indie,
+ * Elektronisk, all inside the event's own tag list, well before that marker)
+ * while dropping tags that only ever belonged to a different, merely-
+ * recommended event.
  */
 export function extractGenreTags(detailHtml: string): string[] {
+  const relatedEventsIndex = detailHtml.indexOf('class="related-events');
+  const ownSectionHtml = relatedEventsIndex === -1 ? detailHtml : detailHtml.slice(0, relatedEventsIndex);
   const tags = new Set<string>();
   const re = /\/program\?genre=([^"'&\s]+)/g;
   let match: RegExpExecArray | null;
-  while ((match = re.exec(detailHtml))) {
+  while ((match = re.exec(ownSectionHtml))) {
     const tag = decodeURIComponent(match[1]).trim();
     if (tag) tags.add(tag);
   }

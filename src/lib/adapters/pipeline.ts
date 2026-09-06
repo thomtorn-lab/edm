@@ -12,6 +12,7 @@ import {
   hasNonElectronicGenreSignal,
   hasNonElectronicCategorySignal,
   hasPopOrRnbSignal,
+  countNonElectronicGenreFamilies,
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
@@ -466,6 +467,13 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
     hasCorroboratingArtistGenreEvidence: false, // no enrichment has run yet at this stage — see applyEnrichedGenre
     hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, normalizedArtists),
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06: real evidence
+    // (Nubiyan Twist UK — "jazz, hip hop, afrobeat, dancehall, soul, reggae
+    // and electronic music", six non-electronic families against one
+    // incidental mention) showed a single-word contradiction being treated
+    // the same as an overwhelming multi-genre one — see
+    // countNonElectronicGenreFamilies's own doc comment.
+    hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, normalizedArtists) >= 3,
   });
   const { decision, holdReason } = computeDecision(
     missingFields,
@@ -592,6 +600,7 @@ export function applyEnrichedGenre(
       hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
       hasCorroboratingArtistGenreEvidence: genre === GENERIC_ELECTRONIC_GENRE,
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
+      hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
     });
     // hasEvidenceText's true/false distinction only matters inside
     // computeDecision's genre==null branch (see hasCoreRecordFields there) —
@@ -651,6 +660,7 @@ export function applyEnrichedGenre(
       hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
       hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
+      hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
     });
     // Same placeholder reasoning as CASE A above: `finalGenre` is always
     // non-null here (this branch only runs when result.genre was already

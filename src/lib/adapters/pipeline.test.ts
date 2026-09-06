@@ -434,6 +434,109 @@ describe("relevance check reaches medium-confidence (review_queue) candidates to
   });
 });
 
+describe("generalized relevance fixes for real Needs Review false positives (round 3 quality audit, 2026-09-06)", () => {
+  // Real live ALICE evidence (fetched via the read-only reachability
+  // diagnostic against the actual current pages) showed the fix above was
+  // NOT sufficient on its own: several rows still landed in review_queue
+  // with relevance "weak" even though a human reading the same bio would
+  // never call them EDM candidates. Each test below quotes the real text
+  // that exposed the gap.
+
+  it("holds a bossa nova/MPB artist whose only 'electronic' evidence is one incidental production adjective (real ALICE evidence: Bruno Berle BR's own bio explicitly self-identifies as 'Música Popular Brasileira (MPB)', with 'subtle electronic textures' as the sole electronic mention)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Bruno Berle BR",
+        description:
+          "With a voice of pure gold and a featherlight, deeply sensitive take on samba and bossa nova, Bruno Berle has emerged as one of the leading names in a new wave of Brazilian artists. Alongside names such as Bala Desejo, Zé Ibarra and Ana Frango Elétrico, the composer, singer and multi-instrumentalist is gently expanding the boundaries of Música Popular Brasileira (MPB) — the influential movement that emerged in the 1960s, blending traditional Brazilian genres like samba and bossa nova with pop, jazz and rock. His music effortlessly weaves together indie pop and subtle electronic textures.",
+        artists: ["Bruno Berle"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("holds a flamenco guitarist whose only 'electronic' mention names a DIFFERENT collaborator, never the event's own sound (real ALICE evidence: Yerai Cortés ES — 'collaborating with contemporary artists such as icon C. Tangana, pop star Judeline, and electronic musician Floating Points')", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Yerai Cortés ES",
+        description:
+          "With his masterful guitar playing, Yerai Cortés has established himself as one of the most distinctive voices of flamenco's new generation. He has performed with many of flamenco's great masters while also collaborating with contemporary artists such as icon C. Tangana, pop star Judeline, and electronic musician Floating Points. His playing is elegant, expressive, and profoundly moving.",
+        artists: ["Yerai Cortés"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("holds a nine-piece afrojazz/funk/soul ensemble whose bio names six non-electronic genre families against one incidental 'electronic music' mention tacked onto the end of that list (real ALICE evidence: Nubiyan Twist UK — 'genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music')", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Nubiyan Twist UK",
+        description:
+          "Nubiyan Twist deliver an energetic fusion of jazz, funk and soul that is nearly impossible to stand still to. Nubiyan Twist was formed in 2011 at Leeds College of Music, where they developed their expansive, genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music. The nine-piece ensemble spans saxophone, trumpet, vocals and percussion.",
+        artists: ["Nubiyan Twist"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  // KNOWN RESIDUAL GAP, deliberately left unfixed this round (documented,
+  // not silently dropped): a first attempt at fixing this exact case —
+  // gating a specific-genre match's "strong signal" status on
+  // deterministicGenreMapping.ts's hasRichGenreEvidence (a bare, single
+  // "ambient" keyword isn't "rich") — real-evidence-tested clean here, but
+  // caused two confirmed regressions in already-established, separately
+  // audited behavior (Mærk. Bemærk.'s vernissage-context gap 4C case
+  // dropping from "review_queue" to "hold"; Tinie Tempah's empty-body
+  // metadata-only-hint case dropping from "auto_publish" to "review_queue")
+  // — see this file's git history for the reverted attempt. Fixing this
+  // properly needs the fix to distinguish a GENRE contradiction (jazz here)
+  // from a CATEGORY/format contradiction (vernissage) and to exempt
+  // metadata-only hints with no real body text, which is a larger, riskier
+  // change than this round's effort/regression budget allows — reported to
+  // the user as a known gap rather than risking a broader regression.
+  it("still review-queues (does not yet hold) a jazz/chamber-ensemble show whose only specific-genre match is a bare, non-rich 'ambient' keyword — documents the known gap above (real ALICE evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Daniel Sommer / Arve Henriksen / Johannes Lundberg: Sounds & Sequences",
+        description:
+          "Sounds & Sequences brings together three distinctive voices from the Nordic improvised music scene. Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language where acoustic instruments and electronics open up new sonic possibilities. Arve Henriksen's trumpet, voice and electronics, Johannes Lundberg's double bass and Daniel Sommer's drumming move between simple melodies, open improvisation and rhythmic passages.",
+        artists: ["Daniel Sommer", "Arve Henriksen", "Johannes Lundberg"],
+        genreHint: null,
+        genreConfidenceHint: null,
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("ambient-experimental");
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("still review-queues a genuine ambient-electronic artist with a REPEATED, explicit first-party 'electronic music' self-description (regression: richness-gating must not over-tighten a real case — real ALICE evidence, Beverly Glenn-Copeland CA: 'a singular sonic universe where folk, electronic music, and spiritual traditions merge' ... 'folk, meditative electronics, and spiritual reflection meet in compositions of otherworldly beauty')", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Beverly Glenn-Copeland CA",
+        description:
+          "Glenn-Copeland has created a singular sonic universe where folk, electronic music, and spiritual traditions merge into deeply human stories of community, care, and hope. He has over the decades built a unique body of work where folk, meditative electronics, and spiritual reflection meet in compositions of otherworldly beauty, achieving iconic status within ambient and experimental music communities around the world.",
+        artists: ["Beverly Glenn-Copeland"],
+        genreHint: null,
+        genreConfidenceHint: null,
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("review_queue");
+  });
+});
+
 describe("moved/rescheduled first-party events (data-quality Workstream C)", () => {
   const existingSameSource: ExistingEventForDedup = {
     id: "e-tonser-old",
