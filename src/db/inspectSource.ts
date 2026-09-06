@@ -492,9 +492,34 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   // the existing autoPublishQuality bucket's shape rather than adding a
   // one-off script, since any future source audit needs the same thing.
   const reviewQueueCandidates: { title: string; venue: string | null; genre: string | null; genreConfidence: string; relevance: string; duplicateOfEventId: string | null }[] = [];
+  // Round 3 part 3 (human-verdict reconciliation, 2026-09-06): a title
+  // filter that dumps the FULL evidence text (description, artists, hints)
+  // plus the pipeline's verdict for every matching candidate, regardless of
+  // its decision bucket — the review-queue/hold summaries above only ever
+  // show title+genre+relevance, never the actual source text a human
+  // verdict has to be checked against. Extending this permanent diagnostic
+  // rather than writing a one-off script, per AGENTS.md/SOURCE_ONBOARDING.md.
+  const titleFilter = typeof args.title === "string" && args.title.length > 0 ? args.title.toLowerCase() : null;
+  const matchAllTitles = titleFilter === "*";
+  const evidenceDetail: Record<string, unknown>[] = [];
 
   for (const raw of candidates) {
     const result = runIngestionPipeline(raw, { venues, existingEvents, trustedElectronicSource });
+    if (titleFilter && (matchAllTitles || raw.title.toLowerCase().includes(titleFilter))) {
+      evidenceDetail.push({
+        title: raw.title,
+        venue: raw.venueName,
+        artists: raw.artists,
+        genreHint: raw.genreHint,
+        genreConfidenceHint: raw.genreConfidenceHint,
+        description: raw.description,
+        decision: result.decision,
+        holdReason: result.holdReason,
+        genre: result.genre,
+        genreConfidence: result.genreConfidence,
+        relevance: result.relevance,
+      });
+    }
     decisions[result.decision] = (decisions[result.decision] ?? 0) + 1;
     if (result.holdReason) holdReasons[result.holdReason] = (holdReasons[result.holdReason] ?? 0) + 1;
     if (raw.venueName && !result.resolvedVenueId) {
@@ -531,6 +556,10 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   console.log(JSON.stringify(duplicates, null, 2));
   section(`Unresolved venues (${unresolvedVenues.size} distinct)`);
   console.log(JSON.stringify([...unresolvedVenues.entries()].map(([venue, count]) => ({ venue, count })), null, 2));
+  if (titleFilter) {
+    section(`Evidence detail for --title="${args.title}" (${evidenceDetail.length} matches) — full source text + verdict, any decision bucket`);
+    console.log(JSON.stringify(evidenceDetail, null, 2));
+  }
 }
 
 /**
