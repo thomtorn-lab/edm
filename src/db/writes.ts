@@ -499,7 +499,13 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
 export async function applyDiscoveryClassificationUpdate(
   queueId: string,
   patch: {
-    predictedGenre?: GenreSlug;
+    /** May be explicitly null (generalized discovery-queue genre self-heal,
+     *  2026-09-06) to clear a stale predictedGenre once a fresh
+     *  classification authoritatively finds none — see
+     *  src/lib/sync.ts::buildDiscoveryQueueClassificationPatch. Omitting the
+     *  key entirely (undefined) still means "don't touch it", exactly as
+     *  before; only an explicit `null` clears the column. */
+    predictedGenre?: GenreSlug | null;
     genreConfidence?: ConfidenceLevel;
     overallConfidence?: ConfidenceLevel;
     missingFields?: string[];

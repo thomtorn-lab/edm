@@ -247,12 +247,17 @@ describe("end-to-end pipeline: A/B/C/D audit discipline mapped into safe ingesti
     expect(result.holdReason).toBe("negative_relevance");
   });
 
-  it("D-tier: a real boilerplate-only detail page (Glayden (FI), ArrNr 20180997) carries no usable genre evidence at all — resolves to hold/incomplete_data, never guessed into a positive genre", () => {
+  it("D-tier: a real boilerplate-only detail page (Glayden (FI), ArrNr 20180997) carries no usable genre evidence at all — resolves to hold/no_genre_evidence (real, complete evidence text was evaluated and genuinely contains none), never guessed into a positive genre", () => {
     const c = candidate("20180997");
     const result = runIngestionPipeline(c, { venues: VENUES, existingEvents: [], trustedElectronicSource: false });
     expect(result.genre).toBeNull();
     expect(result.decision).toBe("hold");
-    expect(result.holdReason).toBe("incomplete_data");
+    // Generalized discovery-queue genre self-heal, 2026-09-06: this
+    // fixture's own description text is real and non-empty (wheelchair-
+    // access/companion-ticket boilerplate) but genuinely carries no genre
+    // signal — an AUTHORITATIVE null, not a fetch/parse failure. See
+    // pipeline.ts's HoldReason doc comment for the distinction.
+    expect(result.holdReason).toBe("no_genre_evidence");
   });
 });
 

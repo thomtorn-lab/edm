@@ -322,10 +322,25 @@ export interface DiscoveryQueueClassification {
    */
   venueResolvedDecision?: PublishDecision | null;
   venueResolvedHoldReason?: HoldReason;
+  /**
+   * This run's own hold reason (generalized discovery-queue genre self-heal,
+   * 2026-09-06) — distinct from venueResolvedHoldReason above (that's the
+   * COUNTERFACTUAL's reason; this is the real one). Only ever consulted by
+   * buildDiscoveryQueueClassificationPatch when `genre` is null, to tell an
+   * AUTHORITATIVE null (holdReason "no_genre_evidence" — real evidence text
+   * evaluated, genuinely nothing there) apart from an UNRELIABLE one (any
+   * other reason, including omitted/undefined) — see that function's own
+   * doc comment. Optional and defaults to null so every pre-existing call
+   * site (which never had a reason to set this) keeps compiling and
+   * behaving exactly as before: omitting it is indistinguishable from a
+   * genuine "incomplete_data" run, which is the same conservative freeze
+   * this function has always applied to a null genre.
+   */
+  holdReason?: HoldReason;
 }
 
 export interface DiscoveryQueueClassificationPatch {
-  predictedGenre?: GenreSlug;
+  predictedGenre?: GenreSlug | null;
   genreConfidence?: ConfidenceLevel;
   overallConfidence?: ConfidenceLevel;
   missingFields?: string[];
@@ -373,11 +388,31 @@ export interface DiscoveryQueueClassificationPatch {
  * first overallConfidence-recompute fix shipped — but whose
  * overallConfidence was never itself recomputed must still self-heal on a
  * plain re-sync, not only when the genre value also happens to move on that
- * same run. Both checks share the same top guards (non-pending, admin
- * override, and — critically — a transient lookup failure this run,
- * `!fresh.genre`, which must freeze the ENTIRE row, overallConfidence
- * included, exactly as before: a blip must never make an already-correct
- * row look stale).
+ * same run.
+ *
+ * AUTHORITATIVE NULL vs UNRELIABLE NULL (generalized discovery-queue genre
+ * self-heal, 2026-09-06 — follow-up to the KultuNaut relevance-gap fixes).
+ * A fresh classification with no genre can mean two genuinely different
+ * things: the pipeline evaluated the candidate's full, current evidence
+ * text this run and legitimately concluded no genre applies (`holdReason`
+ * "no_genre_evidence" — see pipeline.ts's HoldReason/computeDecision), or
+ * the pipeline simply didn't have enough to go on this run — a missing
+ * required field, no evidence text at all, a transient per-record fetch/
+ * parse gap (`holdReason` "incomplete_data" or omitted). Only the first is
+ * safe to act on: it clears a stale predictedGenre/genreConfidence and lets
+ * every derived field (overallConfidence, the venue-resolved counterfactual)
+ * recompute from the new, accurate "no genre" state, exactly like any other
+ * genre change. Every other shape of "genre came back null" keeps the
+ * pre-existing freeze of the ENTIRE row — a blip must never make an
+ * already-correct row look stale. Real evidence this distinction matters:
+ * "Silent Disco Fest" — after the gap-4E format-term fix, "silent disco" is
+ * correctly no longer read as the disco genre, and the row has no other
+ * genre evidence, so its stale disco/high classification must clear; its
+ * venue ("Folkehuset Absalon") separately fails to resolve against the
+ * registry, but venue resolution is deliberately NOT part of what makes a
+ * null genre authoritative (see hasCoreRecordFields in computeDecision), so
+ * this row still self-heals even though it remains venue-blocked. Do not
+ * hardcode any one event or source — every source reaches this same check.
  */
 export function buildDiscoveryQueueClassificationPatch(
   fresh: DiscoveryQueueClassification,
@@ -385,7 +420,8 @@ export function buildDiscoveryQueueClassificationPatch(
 ): DiscoveryQueueClassificationPatch {
   if (existing.status !== "pending") return {};
   if (existing.overriddenFields.includes("predictedGenre")) return {};
-  if (!fresh.genre) return {};
+  const freshGenreIsAuthoritative = fresh.genre != null || fresh.holdReason === "no_genre_evidence";
+  if (!freshGenreIsAuthoritative) return {};
 
   const patch: DiscoveryQueueClassificationPatch = {};
   if (fresh.genre !== existing.predictedGenre) {
@@ -464,9 +500,10 @@ export function buildDiscoveryQueueClassificationPatch(
   // appeared or cleared), or go back to null (venue itself resolved this
   // run, so the "if venue resolved" question stops being applicable —
   // missingFields' own self-heal already reflects that same fact). Only
-  // reached when `fresh.genre` is truthy (the shared early-return guards
-  // above already froze the entire row otherwise), matching every other
-  // field this function refreshes.
+  // reached when the shared early-return guards above didn't already
+  // freeze the entire row — i.e. `fresh.genre` is non-null OR this run's
+  // null genre is itself authoritative (see freshGenreIsAuthoritative
+  // above) — matching every other field this function refreshes.
   if (
     fresh.venueResolvedDecision !== undefined &&
     (fresh.venueResolvedDecision !== existing.venueResolvedDecision ||
