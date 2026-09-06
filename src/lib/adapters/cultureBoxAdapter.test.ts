@@ -449,6 +449,7 @@ describe("pipeline integration — real Culture Box candidates through runIngest
       artists: ["SOPHIE VAN HAYDEN", "RELINQUO", "SEVERIN", "NO CELEBRITY"],
       venueId: "v-culture-box",
       startDatetime: consolidated.startDatetime!,
+      adminUnpublished: false,
     };
     const existingRedBox: ExistingEventForDedup = {
       id: "e-existing-red-box",
@@ -456,6 +457,7 @@ describe("pipeline integration — real Culture Box candidates through runIngest
       artists: ["ROZGU", "HERMANN BRAVO"],
       venueId: "v-culture-box",
       startDatetime: consolidated.startDatetime!,
+      adminUnpublished: false,
     };
     const result = runIngestionPipeline(consolidated, { venues: VENUES, existingEvents: [existingBlackBox, existingRedBox] });
     // The merged candidate's artist list is a strict superset of each

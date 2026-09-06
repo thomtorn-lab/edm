@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
+import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createEvent, insertDiscoveryItem } from "@/db/writes";
 import { notifyDiscoveryQueueInsert } from "@/lib/discoveryNotification";
@@ -80,13 +80,14 @@ export async function POST(request: NextRequest) {
     genreConfidenceHint: null,
   };
 
-  const [venues, publishedEvents] = await Promise.all([getVenues(), getPublishedEventsWithVenue()]);
-  const existing = publishedEvents.map((e) => ({
+  const [venues, allEvents] = await Promise.all([getVenues(), getAllEventsAdmin()]);
+  const existing = allEvents.map((e) => ({
     id: e.id,
     title: e.title,
     artists: e.artists,
     venueId: e.venueId,
     startDatetime: e.startDatetime,
+    adminUnpublished: e.adminUnpublishReason != null,
   }));
 
   const result = runIngestionPipeline(raw, { venues, existingEvents: existing });

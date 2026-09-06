@@ -290,6 +290,7 @@ describe("Known-duplicate candidates absorb correctly against a realistic existi
       officialEventUrl: "https://poolen.dk/da/koncerter/paul-van-dyk/",
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
     const best = findBestDuplicateMatch(
       { title: c.title, artists: c.artists, venueId: "v-poolen", startDatetime: c.startDatetime!, sourceId: KULTUNAUT_SOURCE_ID, officialEventUrl: c.officialEventUrl, ticketUrl: c.ticketUrl, residentAdvisorUrl: null },
@@ -311,6 +312,7 @@ describe("Known-duplicate candidates absorb correctly against a realistic existi
       officialEventUrl: "https://www.hangaren.dk/events/chapter-ii-possessed",
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
     const best = findBestDuplicateMatch(
       { title: c.title, artists: c.artists, venueId: "v-hangaren", startDatetime: c.startDatetime!, sourceId: KULTUNAUT_SOURCE_ID, officialEventUrl: c.officialEventUrl, ticketUrl: c.ticketUrl, residentAdvisorUrl: null },
@@ -332,6 +334,7 @@ describe("Known-duplicate candidates absorb correctly against a realistic existi
       officialEventUrl: "https://pumpehuset.dk/event/klobb-ka2",
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
     const best = findBestDuplicateMatch(
       { title: c.title, artists: c.artists, venueId: "v-pumpehuset", startDatetime: c.startDatetime!, sourceId: KULTUNAUT_SOURCE_ID, officialEventUrl: c.officialEventUrl, ticketUrl: c.ticketUrl, residentAdvisorUrl: null },
@@ -353,6 +356,7 @@ describe("Known-duplicate candidates absorb correctly against a realistic existi
       officialEventUrl: "https://poolen.dk/da/koncerter/paul-van-dyk/",
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
     const best = findBestDuplicateMatch(
       { title: c.title, artists: c.artists, venueId: "v-tap1", startDatetime: c.startDatetime!, sourceId: KULTUNAUT_SOURCE_ID, officialEventUrl: c.officialEventUrl, ticketUrl: c.ticketUrl, residentAdvisorUrl: null },

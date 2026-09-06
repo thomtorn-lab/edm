@@ -59,6 +59,8 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     dateChanged: false,
     timeChanged: false,
     published: true,
+    adminUnpublishReason: null,
+    adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",
@@ -92,16 +94,103 @@ describe("EventManager — post-save button state (admin/manual-event work packa
     expect(screen.getByRole("button", { name: /Save/ })).toBeTruthy();
   });
 
-  it("re-enables Hide/Unhide after use, and it works a second time in the same session", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+  it("re-enables Unpublish/confirm after use, and it works a second time in the same session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<EventManager events={[makeEvent()]} venues={VENUES} />);
 
-    const hideButton = screen.getByRole("button", { name: "Hide" }) as HTMLButtonElement;
-    fireEvent.click(hideButton);
-    await vi.waitFor(() => expect(hideButton.disabled).toBe(false));
-    fireEvent.click(hideButton); // second use — would be permanently disabled before this fix
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    const confirmButton = screen.getByRole("button", { name: "Confirm unpublish" }) as HTMLButtonElement;
+    fireEvent.click(confirmButton);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    // Confirmation panel closes and the Unpublish button reappears once the
+    // request settles — proves busy/confirmingUnpublish were both reset.
+    const reopenButton = await screen.findByRole("button", { name: "Unpublish" });
+
+    // Re-open the confirmation panel and confirm a second time — would be
+    // permanently disabled/stuck before this fix.
+    fireEvent.click(reopenButton);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unpublish" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("EventManager — admin unpublish + Publish Again (admin unpublish/cancellation safety, 2026-09-06)", () => {
+  afterEach(cleanup);
+
+  it("clicking Unpublish opens a reason-selection confirmation before anything is sent", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    expect(screen.getByRole("combobox", { name: "Reason" })).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Cancel dismisses the confirmation without calling the API", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("combobox", { name: "Reason" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Confirm unpublish posts the selected reason to /unpublish", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "cancelled" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unpublish" }));
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/e-1/unpublish",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "cancelled" }) }),
+      ),
+    );
+  });
+
+  it("shows UNPUBLISHED BY ADMIN with the reason for an admin-unpublished event, and offers Publish again instead of Unpublish", () => {
+    render(
+      <EventManager
+        events={[makeEvent({ published: false, adminUnpublishReason: "cancelled", adminUnpublishedAt: "2026-09-06T00:00:00.000Z" })]}
+        venues={VENUES}
+      />,
+    );
+
+    expect(screen.getByText(/Unpublished by admin.*cancelled/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Publish again" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Unpublish" })).toBeNull();
+  });
+
+  it("Publish again clears the admin override via /publish", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <EventManager
+        events={[makeEvent({ published: false, adminUnpublishReason: "cancelled", adminUnpublishedAt: "2026-09-06T00:00:00.000Z" })]}
+        venues={VENUES}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish again" }));
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/admin/events/e-1/publish", expect.objectContaining({ method: "POST" })),
+    );
+  });
+
+  it("an ordinary (non-admin) unpublished event still shows [hidden] and offers Publish again, with no admin-unpublished label", () => {
+    render(<EventManager events={[makeEvent({ published: false })]} venues={VENUES} />);
+
+    expect(screen.getByText("[hidden]")).toBeTruthy();
+    expect(screen.queryByText(/Unpublished by admin/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Publish again" })).toBeTruthy();
   });
 });
 

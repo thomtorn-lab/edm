@@ -1157,6 +1157,12 @@ describe("decidePublishedEventSyncAction (data-quality Workstream A follow-up â€
     ).toBe("no_change");
   });
 
+  it("admin-unpublished + AUTO -> stays unpublished (admin unpublish/cancellation safety, 2026-09-06) â€” a fresh 'auto_publish' quality-gate verdict for an admin-unpublished event (e.g. the source later stops saying 'cancelled') must never flip it back live on its own; !current.published short-circuits before manualOverride/holdReason are even consulted, exactly as for any other already-unpublished event", () => {
+    expect(
+      decidePublishedEventSyncAction({ published: false, manualOverride: true }, { decision: "auto_publish", holdReason: null }),
+    ).toBe("no_change");
+  });
+
   it("source failure / incomplete candidate -> no unpublish (HOLD via 'incomplete_data', e.g. a per-event detail-page fetch that failed just this cycle, must never be read as evidence the event fails inclusion)", () => {
     expect(
       decidePublishedEventSyncAction({ published: true, manualOverride: false }, { decision: "hold", holdReason: "incomplete_data" }),
