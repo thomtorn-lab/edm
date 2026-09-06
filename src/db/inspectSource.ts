@@ -466,6 +466,14 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   const unresolvedVenues = new Map<string, number>();
   const duplicates: { title: string; confidence: string; matchedTitle: string }[] = [];
   const autoPublishQuality: { title: string; venue: string | null; genre: string | null }[] = [];
+  // Admin Discovery Queue cleanup quality audit, 2026-09-06: the aggregate
+  // decision/hold-reason counts above tell you HOW MANY review_queue
+  // candidates a source produced, but not WHICH ones or why — exactly what a
+  // Needs Review quality audit needs to check per row (title, genre,
+  // relevance verdict, duplicate flag) against real live data. Generalizing
+  // the existing autoPublishQuality bucket's shape rather than adding a
+  // one-off script, since any future source audit needs the same thing.
+  const reviewQueueCandidates: { title: string; venue: string | null; genre: string | null; genreConfidence: string; relevance: string; duplicateOfEventId: string | null }[] = [];
 
   for (const raw of candidates) {
     const result = runIngestionPipeline(raw, { venues, existingEvents, trustedElectronicSource });
@@ -481,6 +489,16 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
     if (result.decision === "auto_publish") {
       autoPublishQuality.push({ title: raw.title, venue: raw.venueName, genre: result.genre });
     }
+    if (result.decision === "review_queue") {
+      reviewQueueCandidates.push({
+        title: raw.title,
+        venue: raw.venueName,
+        genre: result.genre,
+        genreConfidence: result.genreConfidence,
+        relevance: result.relevance,
+        duplicateOfEventId: result.duplicateOfEventId,
+      });
+    }
   }
 
   section("Decision breakdown (pipeline-level — NOT what would actually be written; see source's own autoPublish policy)");
@@ -489,6 +507,8 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   console.log(JSON.stringify(holdReasons, null, 2));
   section(`Auto-publish-quality candidates (${autoPublishQuality.length}) — held to Discovery Queue only if this source's autoPublish is false`);
   console.log(JSON.stringify(autoPublishQuality, null, 2));
+  section(`Review-queue candidates (${reviewQueueCandidates.length}) — the actual Needs Review titles this source would produce under current code`);
+  console.log(JSON.stringify(reviewQueueCandidates, null, 2));
   section(`Duplicate matches against real existing events (${duplicates.length})`);
   console.log(JSON.stringify(duplicates, null, 2));
   section(`Unresolved venues (${unresolvedVenues.size} distinct)`);
