@@ -1010,19 +1010,24 @@ async function modeVenueBlocks(client: Client) {
  *
  * `--title=<substring>` narrows to events whose title contains the given
  * (case-insensitive) substring — used to pull up the exact reference cases
- * this work package started from without dumping the entire table.
+ * this work package started from without dumping the entire table. A
+ * title-scoped lookup also includes unpublished events (admin unpublish/
+ * cancellation safety, 2026-09-06 — an admin verifying a specific event by
+ * name wants to see it regardless of published state); the default
+ * no-filter scan stays published-only, matching its original purpose of
+ * auditing what the public site actually shows.
  */
 async function modeEventIntegrity(client: Client, args: Record<string, string | boolean>) {
   const titleFilter = typeof args.title === "string" ? args.title : null;
   const rows = await client.query(
     `SELECT e.id, e.slug, e.title, e.description, e.start_datetime, e.end_datetime,
-            e.published, e.official_event_url, e.canonical_source_id,
+            e.published, e.admin_unpublish_reason, e.admin_unpublished_at,
+            e.official_event_url, e.canonical_source_id,
             v.name AS venue_name, s.source_name
      FROM events e
      LEFT JOIN venues v ON v.id = e.venue_id
      LEFT JOIN sources s ON s.id = e.canonical_source_id
-     WHERE e.published = true
-     ${titleFilter ? "AND e.title ILIKE $1" : ""}
+     ${titleFilter ? "WHERE e.title ILIKE $1" : "WHERE e.published = true"}
      ORDER BY e.start_datetime`,
     titleFilter ? [`%${titleFilter}%`] : [],
   );
@@ -1087,6 +1092,9 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
       endDatetime: r.end_datetime,
       hasEndDatetime: end != null,
       suspicious,
+      published: r.published,
+      adminUnpublishReason: r.admin_unpublish_reason,
+      adminUnpublishedAt: r.admin_unpublished_at,
     });
   }
 
@@ -1098,6 +1106,21 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
 
   section("END-TIME DATA QUALITY — every inspected event (start/end/suspicious flag)");
   console.log(JSON.stringify(endTimeRows, null, 2));
+
+  // Provenance for a title-scoped lookup (admin unpublish/cancellation
+  // safety, 2026-09-06) — cheap to add once the row set is already this
+  // small, and answers "does source_event_links still exist for this
+  // event" without a separate mode/round trip.
+  if (titleFilter) {
+    for (const r of rows.rows) {
+      const links = await client.query(
+        "SELECT source_id, role, source_url, first_seen_at FROM source_event_links WHERE event_id = $1 ORDER BY first_seen_at",
+        [r.id],
+      );
+      section(`source_event_links for ${r.id} (${r.title})`);
+      console.log(JSON.stringify(links.rows, null, 2));
+    }
+  }
 }
 
 /**
