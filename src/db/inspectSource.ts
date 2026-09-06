@@ -8,6 +8,7 @@ import { isPastEvent } from "@/lib/datetime";
 import { isTrustedElectronicSource } from "@/lib/data/sources";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
+import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -397,6 +398,13 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
  */
 const DRY_RUN_ADAPTERS: Record<string, () => SourceAdapter> = {
   [KULTUNAUT_SOURCE_ID]: createKultunautAdapter,
+  // Admin Discovery Queue cleanup quality audit, 2026-09-06: registered so
+  // the relevance-pipeline fix (computeDecision now also consulting
+  // assessRelevance for a "review_queue" decision, not just "auto_publish")
+  // could be validated against ALICE's real live candidate set — the
+  // source most of the audit's flagged Needs Review rows came from —
+  // without any live sync/write.
+  [ALICE_SOURCE_ID]: createAliceAdapter,
 };
 
 /**

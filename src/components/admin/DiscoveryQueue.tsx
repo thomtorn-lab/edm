@@ -182,10 +182,18 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       )}
       <p className="mt-1 text-xs text-text-tertiary">
         Genre: {item.predictedGenre ? `${getGenre(item.predictedGenre).label} (${item.genreConfidence})` : "unresolved"}
-        {item.suspectedDuplicateOfEventId && ` · possible duplicate of ${item.suspectedDuplicateOfEventId}`}
       </p>
       {item.missingFields.length > 0 && (
         <p className="mt-1 text-xs text-status-warn">Missing: {item.missingFields.join(", ")}</p>
+      )}
+      {item.suspectedDuplicateOfEventId && (
+        <p className="mt-1 rounded border border-status-warn/50 bg-status-warn/10 px-2 py-1 text-xs font-semibold text-status-warn">
+          ⚠ Possible duplicate of{" "}
+          <a href={`/admin#event-${item.suspectedDuplicateOfEventId}`} className="underline decoration-dotted underline-offset-2">
+            event {item.suspectedDuplicateOfEventId}
+          </a>
+          {" "}— resolve via Merge below before publishing as a new event.
+        </p>
       )}
 
       {editing ? (
@@ -266,8 +274,13 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
               <option key={v.id} value={v.id}>{v.name}</option>
             ))}
           </select>
+          {item.suspectedDuplicateOfEventId && (
+            <button type="button" disabled={busy} onClick={handleMerge} className="rounded border border-status-warn bg-status-warn/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-status-warn hover:bg-status-warn/20 disabled:opacity-50">
+              Merge into {item.suspectedDuplicateOfEventId}
+            </button>
+          )}
           <button type="button" disabled={busy} onClick={handlePublish} className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50">
-            Publish
+            {item.suspectedDuplicateOfEventId ? "Publish as new anyway" : "Publish"}
           </button>
           <button type="button" disabled={busy} onClick={() => setEditing(true)} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
             Edit
@@ -275,11 +288,6 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
           <button type="button" disabled={busy} onClick={handleIgnore} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
             Ignore
           </button>
-          {item.suspectedDuplicateOfEventId && (
-            <button type="button" disabled={busy} onClick={handleMerge} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
-              Merge into {item.suspectedDuplicateOfEventId}
-            </button>
-          )}
           {!creatingVenue && (
             <button
               type="button"

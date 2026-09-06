@@ -45,7 +45,17 @@ const NON_ELECTRONIC_GENRE_SIGNALS: RegExp[] = [
   /\b(?:death|black|thrash|doom|sludge|heavy)[\s-]?metal\b/i,
   /\bmetalcore\b/i,
   /\bpunk\b/i,
-  /\brock\b/i,
+  // \w* prefix (not a bare \brock\b) so a Danish-style compound genre word
+  // with no separating space — real evidence: kultunaut's Mikael Simpson
+  // description, "elektroniske, knitrende beats og stemningsfuld
+  // indierock" — is still caught, the same ASCII-word-boundary compounding
+  // gap already documented for "postpunk" below and for Danish
+  // "øl"/"byvandring" in NON_ELECTRONIC_CATEGORY_SIGNALS. Deliberately a
+  // fixed, generalizable "<anything>rock" shape, not an "indierock"-
+  // specific pattern — masking (maskKnownArtistNames, applied before this
+  // list is ever tested) already prevents an artist whose own name happens
+  // to end in "rock" from colliding with it.
+  /\b\w*rock\b/i,
   /\bjazz\b/i,
   /\bfolk\b/i,
   /\breggae\b/i,

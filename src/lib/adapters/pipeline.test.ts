@@ -361,6 +361,79 @@ describe("source-aware relevance evidence (data-quality Workstream A — a gener
   });
 });
 
+describe("relevance check reaches medium-confidence (review_queue) candidates too (admin Discovery Queue cleanup quality audit, 2026-09-06)", () => {
+  // Real gap found auditing the admin Needs Review tab: computeDecision only
+  // ever consulted assessRelevance's verdict when evaluateQualityGate had
+  // already picked "auto_publish" (genreConfidence "high"). A genreConfidence
+  // "medium" candidate — the deterministic-mapping/bare-keyword tier every
+  // adapter's own genericElectronic fallback and kultunautAdapter's
+  // non-"rich" match land on — went straight to "review_queue" with its
+  // relevance verdict computed but never looked at: a real, one-sided
+  // non-electronic identity in the event's own text, with no offsetting
+  // electronic evidence at all, sailed into the human review queue exactly
+  // the same as a genuinely ambiguous crossover candidate would.
+
+  it("holds, rather than review-queues, a medium-confidence generic-electronic candidate whose own text carries a one-sided non-electronic signal with no offsetting evidence", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Support Act Night",
+        description: "A DJ-led electronic warm-up, followed by the headline act — a well-known local jazz trio.",
+        artists: [],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("still review-queues a genuinely weak-but-real medium-confidence generic-electronic candidate with no contradicting signal at all (regression: the fix must not make the gate stricter for real ambiguous cases)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Friday Club Night",
+        description: "Doors at 11pm, resident DJs all night, electronic sounds until close.",
+        artists: [],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("still review-queues (never over-corrects to hold) a medium-confidence SPECIFIC-subgenre candidate with no contradicting signal (Kenton Slash Demon-type real case)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Kenton Slash Demon",
+        description: "A night of driving house music.",
+        artists: ["Kenton Slash Demon"],
+        genreHint: "house",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("house");
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("still review-queues a genuine electronic/indie-rock crossover with real corroboration on the electronic side too (real KultuNaut evidence, Mikael Simpson: 'vender ... tilbage til det elektroniske lydlandskab ... elektroniske, knitrende beats og stemningsfuld indierock' — a genuine mixed bill, not a one-sided false positive, so this correctly stays a human's call rather than auto-holding)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Mikael Simpson",
+        description:
+          "Med sit live-setup vender Mikael Simpson nu tilbage til det elektroniske lydlandskab, som mange kender og elsker fra hans pladeudgivelser. Med elektroniske, knitrende beats og stemningsfuld indierock leverer Simpson forunderlige dansk lyrik.",
+        artists: ["Mikael Simpson"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.relevance).toBe("weak");
+    expect(result.decision).toBe("review_queue");
+  });
+});
+
 describe("moved/rescheduled first-party events (data-quality Workstream C)", () => {
   const existingSameSource: ExistingEventForDedup = {
     id: "e-tonser-old",

@@ -240,6 +240,33 @@ describe("DiscoveryQueue — normal existing-venue publication unchanged", () =>
   });
 });
 
+describe("DiscoveryQueue — suspected-duplicate review (admin Discovery Queue cleanup quality audit, 2026-09-06 — a suspected duplicate must never look like an ordinary publish candidate)", () => {
+  afterEach(cleanup);
+
+  it("shows a visible duplicate warning linking the suspected canonical event, and offers Merge as the primary action ahead of Publish", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<DiscoveryQueue items={[makeItem({ suspectedDuplicateOfEventId: "e-4c727907" })]} venues={VENUES} />);
+
+    expect(screen.getByText(/Possible duplicate of/)).toBeTruthy();
+    const link = screen.getByRole("link", { name: /event e-4c727907/ }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/admin#event-e-4c727907");
+
+    const mergeButton = screen.getByRole("button", { name: "Merge into e-4c727907" });
+    const publishButton = screen.getByRole("button", { name: "Publish as new anyway" });
+    // Merge appears before Publish in document order — the primary action for a suspected duplicate.
+    expect(mergeButton.compareDocumentPosition(publishButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the plain 'Publish' label and no duplicate warning when there is no suspected duplicate", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<DiscoveryQueue items={[makeItem({ suspectedDuplicateOfEventId: null })]} venues={VENUES} />);
+
+    expect(screen.queryByText(/Possible duplicate of/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Publish" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Merge into/ })).toBeNull();
+  });
+});
+
 describe("DiscoveryQueue — post-save button state (admin/manual-event work package, 2026-08-24)", () => {
   afterEach(cleanup);
 

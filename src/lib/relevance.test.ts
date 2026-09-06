@@ -77,6 +77,17 @@ describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
   it("still flags a genuinely capitalized sentence-initial genre reference (capitalization alone is not the signal — mid-sentence position is what matters)", () => {
     expect(hasNonElectronicGenreSignal("Grime is the sound running through the whole night.")).toBe(true);
   });
+
+  it("flags 'rock' compounded without a separating space, the same Danish-style compounding gap already fixed for 'postpunk' (admin Discovery Queue cleanup quality audit, 2026-09-06 — real KultuNaut evidence: Mikael Simpson's own description names 'stemningsfuld indierock')", () => {
+    expect(hasNonElectronicGenreSignal("Med elektroniske beats og stemningsfuld indierock leverer Simpson forunderlige dansk lyrik.")).toBe(true);
+    expect(hasNonElectronicGenreSignal("A night of pure poprock energy.")).toBe(true);
+    // Bare, space-separated "rock" already worked before this fix — still does.
+    expect(hasNonElectronicGenreSignal("A blend of indie rock and electronic textures.")).toBe(true);
+  });
+
+  it("does not let the compound-'rock' pattern collide with an event's own listed artist name (masking still applies)", () => {
+    expect(hasNonElectronicGenreSignal("Brock brings his signature electronic sound to the club.", ["Brock"])).toBe(false);
+  });
 });
 
 describe("hasNonElectronicGenreSignal — goth/postpunk (Final EDM Relevance Rule follow-up, 2026-08-30)", () => {
