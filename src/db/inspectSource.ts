@@ -224,7 +224,8 @@ async function modeDiscoveryQueue(client: Client, args: Record<string, string | 
   section(`discovery_queue for ${sourceId}: most recent ${limit} rows`);
   const rows = await client.query(
     `SELECT id, probable_title, probable_start, probable_end, probable_venue_name, probable_ticket_url, status, predicted_genre,
-            genre_confidence, overall_confidence, suspected_duplicate_of_event_id, missing_fields, source_url, last_seen_at, created_at
+            genre_confidence, overall_confidence, venue_resolved_decision, venue_resolved_hold_reason,
+            suspected_duplicate_of_event_id, missing_fields, source_url, last_seen_at, created_at
      FROM discovery_queue WHERE source_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [sourceId, limit],
   );
