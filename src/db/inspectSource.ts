@@ -121,6 +121,7 @@ function rowToVenue(r: Record<string, unknown>): Venue {
     slug: r.slug as string,
     name: r.name as string,
     aliases: r.aliases as string[],
+    rooms: (r.rooms as Venue["rooms"]) ?? [],
     address: r.address as string,
     city: r.city as Venue["city"],
     postalCode: r.postal_code as string,
@@ -223,7 +224,7 @@ async function modeDiscoveryQueue(client: Client, args: Record<string, string | 
 
   section(`discovery_queue for ${sourceId}: most recent ${limit} rows`);
   const rows = await client.query(
-    `SELECT id, probable_title, probable_start, probable_end, probable_venue_name, probable_ticket_url, status, predicted_genre,
+    `SELECT id, probable_title, probable_start, probable_end, probable_venue_name, probable_sub_venue, probable_ticket_url, status, predicted_genre,
             genre_confidence, overall_confidence, venue_resolved_decision, venue_resolved_hold_reason,
             suspected_duplicate_of_event_id, missing_fields, source_url, last_seen_at, created_at
      FROM discovery_queue WHERE source_id = $1 ORDER BY created_at DESC LIMIT $2`,
@@ -310,7 +311,7 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
   const resolvedVenue = venueName ? resolveVenue(venueName, venues) : undefined;
 
   const eventRows = await client.query(
-    `SELECT id, title, artists, venue_id, start_datetime, canonical_source_id, official_event_url, ticket_url, resident_advisor_url
+    `SELECT id, title, artists, venue_id, sub_venue, start_datetime, canonical_source_id, official_event_url, ticket_url, resident_advisor_url
      FROM events`,
   );
   const existing = eventRows.rows.map((r) => ({
@@ -318,6 +319,7 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
     title: r.title as string,
     artists: r.artists as string[],
     venueId: r.venue_id as string | null,
+    subVenue: r.sub_venue as string | null,
     startDatetime: new Date(r.start_datetime as string).toISOString(),
     sourceId: r.canonical_source_id as string | null,
     officialEventUrl: r.official_event_url as string | null,
@@ -325,10 +327,18 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
     residentAdvisorUrl: r.resident_advisor_url as string | null,
   }));
 
+  // Optional --subvenue override lets a dry-run prove the structural
+  // subVenue-conflict veto (generalized sub-venue model, 2026-09-06) even
+  // when the given --venue text resolves to a bare parent (e.g. proving a
+  // "Store VEGA" candidate against an existing "Lille VEGA" row without
+  // needing a real pending candidate naming the room verbatim).
+  const subVenueOverride = typeof args.subvenue === "string" ? args.subvenue : null;
+
   const candidate: DuplicateCandidate = {
     title,
     artists,
-    venueId: resolvedVenue?.id ?? null,
+    venueId: resolvedVenue?.venue.id ?? null,
+    subVenue: subVenueOverride ?? resolvedVenue?.subVenue ?? null,
     startDatetime: new Date(startDatetime).toISOString(),
     sourceId,
     officialEventUrl,
@@ -337,7 +347,15 @@ async function modeDedupSimulate(client: Client, args: Record<string, string | b
   };
 
   section(`Dedup simulation for candidate "${title}" (${sourceId})`);
-  console.log(`Resolved venue: ${resolvedVenue ? `${resolvedVenue.name} (${resolvedVenue.id})` : venueName ? `UNRESOLVED ("${venueName}" not in venues registry)` : "(none given)"}`);
+  console.log(
+    `Resolved venue: ${
+      resolvedVenue
+        ? `${resolvedVenue.venue.name} (${resolvedVenue.venue.id})${resolvedVenue.subVenue ? `, room: ${resolvedVenue.subVenue}` : ""}`
+        : venueName
+          ? `UNRESOLVED ("${venueName}" not in venues registry)`
+          : "(none given)"
+    }`,
+  );
   console.log(`Existing events checked: ${existing.length}`);
 
   const best = findBestDuplicateMatch(candidate, existing);
@@ -677,7 +695,7 @@ async function modeSnapshot(client: Client, args: Record<string, string | boolea
 /** Read-only venue registry dump — id, name, address, content fields (and alias/city/postal) — optionally filtered to one venue id. */
 async function modeVenues(client: Client, args: Record<string, string | boolean>) {
   const venueId = typeof args.venue === "string" ? args.venue : null;
-  const cols = "id, slug, name, aliases, address, city, postal_code, website_url, description, short_description, venue_profile, updated_at";
+  const cols = "id, slug, name, aliases, rooms, address, city, postal_code, website_url, description, short_description, venue_profile, updated_at";
   section(venueId ? `Venue: ${venueId}` : "All venues");
   const rows = venueId
     ? (await client.query(`SELECT ${cols} FROM venues WHERE id = $1`, [venueId])).rows
@@ -698,12 +716,12 @@ async function modeVenues(client: Client, args: Record<string, string | boolean>
 async function modeVenueEvents(client: Client, _args: Record<string, string | boolean>) {
   section("Venues x events cross-tab");
   const venueRows = await client.query(
-    "SELECT id, slug, name, address, website_url FROM venues ORDER BY name",
+    "SELECT id, slug, name, address, website_url, rooms FROM venues ORDER BY name",
   );
   const now = new Date();
   for (const v of venueRows.rows) {
     const evRows = await client.query(
-      `SELECT id, title, start_datetime, end_datetime, published, canonical_source_id
+      `SELECT id, title, sub_venue, start_datetime, end_datetime, published, canonical_source_id
        FROM events WHERE venue_id = $1 ORDER BY start_datetime`,
       [v.id],
     );
@@ -719,11 +737,13 @@ async function modeVenueEvents(client: Client, _args: Record<string, string | bo
           name: v.name,
           address: v.address,
           websiteUrl: v.website_url,
+          // Generalized sub-venue model, 2026-09-06 — this venue's configured rooms, if any.
+          rooms: v.rooms,
           totalEvents: evRows.rows.length,
           publishedEvents: published.length,
           upcomingPublishedEvents: upcoming.length,
           upcomingSourceIds: Array.from(new Set(upcoming.map((r) => r.canonical_source_id).filter(Boolean))),
-          upcomingExamples: upcoming.slice(0, 3).map((r) => ({ title: r.title, start: new Date(r.start_datetime as string).toISOString() })),
+          upcomingExamples: upcoming.slice(0, 3).map((r) => ({ title: r.title, subVenue: r.sub_venue, start: new Date(r.start_datetime as string).toISOString() })),
         },
         null,
         2,
@@ -744,10 +764,10 @@ async function modeDiscoveryQueueVenues(client: Client, args: Record<string, str
   const limit = typeof args.limit === "string" ? Number(args.limit) : 40;
   section("discovery_queue: pending rows grouped by probable_venue_name (all sources)");
   const grouped = await client.query(
-    `SELECT probable_venue_name, source_id, count(*)::int AS n
+    `SELECT probable_venue_name, probable_sub_venue, source_id, count(*)::int AS n
      FROM discovery_queue
      WHERE status = 'pending' AND probable_venue_name IS NOT NULL AND probable_venue_name != ''
-     GROUP BY probable_venue_name, source_id
+     GROUP BY probable_venue_name, probable_sub_venue, source_id
      ORDER BY n DESC
      LIMIT $1`,
     [limit],
@@ -890,7 +910,7 @@ async function modeVenueBlocks(client: Client) {
       lastSeenAt: r.last_seen_at,
       lastCompleteSyncAt: r.last_complete_sync_at,
       createdAt: r.created_at,
-      venueNowResolves: resolved ? { id: resolved.id, name: resolved.name } : null,
+      venueNowResolves: resolved ? { id: resolved.venue.id, name: resolved.venue.name, subVenue: resolved.subVenue } : null,
       counterfactualDecision: venueResolvedDecision,
     };
 

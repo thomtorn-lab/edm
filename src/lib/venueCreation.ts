@@ -72,7 +72,7 @@ export function planVenueCreation(
   options: { confirmed?: boolean } = {},
 ): VenueCreationPlan {
   const existing = resolveVenue(input.name, existingVenues);
-  if (existing) return { kind: "existing", venue: existing };
+  if (existing) return { kind: "existing", venue: existing.venue };
 
   if (isProtectedSubVenueName(input.name) && !options.confirmed) {
     return {

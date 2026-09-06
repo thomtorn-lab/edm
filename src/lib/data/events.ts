@@ -61,6 +61,7 @@ function mkEvent(input: SeedEventInput): EventRecord {
     endDatetime: input.end ?? null,
     timezone: "Europe/Copenhagen",
     venueId: input.venueId,
+    subVenue: null,
     primaryGenre: input.primaryGenre,
     subgenres: input.subgenres ?? [input.primaryGenre],
     genreConfidence: input.genreConfidence ?? "high",

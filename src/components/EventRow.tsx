@@ -15,7 +15,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
   const isFree = showFreeCta(event);
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
-  const subVenue = subVenueLabel(event.title, event.venue.name);
+  const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
   const calendarInput = {

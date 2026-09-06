@@ -52,6 +52,7 @@ function makeItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueIt
     probableTicketUrl: null,
     probableFree: false,
     probableVenueName: "Suporama",
+    probableSubVenue: null,
     sourceName: "src-ra-copenhagen",
     sourceUrl: "https://ra.co/events/1",
     sourceId: null,

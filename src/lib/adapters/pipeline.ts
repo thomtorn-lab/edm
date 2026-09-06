@@ -84,6 +84,8 @@ export interface PipelineResult {
   holdReason: HoldReason;
   missingFields: string[];
   resolvedVenueId: string | null;
+  /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06) — see Venue.rooms/VenueRoom. Null when not applicable/unknown. */
+  resolvedSubVenue: string | null;
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
@@ -353,7 +355,8 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
       {
         title: raw.title,
         artists: normalizedArtists,
-        venueId: resolvedVenue?.id ?? null,
+        venueId: resolvedVenue?.venue.id ?? null,
+        subVenue: resolvedVenue?.subVenue ?? null,
         startDatetime: raw.startDatetime,
         sourceId: raw.sourceId,
         officialEventUrl: raw.officialEventUrl,
@@ -376,7 +379,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
         {
           title: raw.title,
           artists: normalizedArtists,
-          venueId: resolvedVenue?.id ?? null,
+          venueId: resolvedVenue?.venue.id ?? null,
           startDatetime: raw.startDatetime,
           description: raw.description,
           officialEventUrl: raw.officialEventUrl,
@@ -414,7 +417,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   });
   const { decision, holdReason } = computeDecision(
     missingFields,
-    resolvedVenue?.id ?? null,
+    resolvedVenue?.venue.id ?? null,
     genre,
     genreConfidence,
     duplicateConfidence,
@@ -439,7 +442,8 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     decision,
     holdReason,
     missingFields,
-    resolvedVenueId: resolvedVenue?.id ?? null,
+    resolvedVenueId: resolvedVenue?.venue.id ?? null,
+    resolvedSubVenue: resolvedVenue?.subVenue ?? null,
     normalizedArtists,
     genre,
     genreConfidence,

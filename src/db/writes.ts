@@ -175,6 +175,8 @@ interface NewEventInput {
   startDatetime: Date;
   endDatetime: Date | null;
   venueId: string;
+  /** Which room/stage of venueId this event is at (generalized sub-venue model, 2026-09-06). Null when not applicable/unknown. */
+  subVenue: string | null;
   primaryGenre: GenreSlug;
   subgenres: GenreSlug[];
   genreConfidence: ConfidenceLevel;
@@ -297,6 +299,20 @@ export async function updateVenueAliases(venueId: string, newAliases: string[]) 
 }
 
 /**
+ * Replaces a venue's full rooms array (generalized sub-venue model,
+ * 2026-09-06) — a narrow sibling to updateVenueAliases for the same reason:
+ * venues.ts changes never reach an already-seeded Production database on
+ * their own. Replaces the whole array rather than add/remove-one, matching
+ * how the array is always specified in venues.ts. Never touches
+ * name/address/identity/aliases fields.
+ */
+export async function updateVenueRooms(venueId: string, newRooms: { name: string; aliases?: string[] }[]) {
+  const [existing] = await db.select().from(venues).where(eq(venues.id, venueId)).limit(1);
+  if (!existing) throw new Error(`Venue ${venueId} not found`);
+  await db.update(venues).set({ rooms: newRooms, updatedAt: new Date() }).where(eq(venues.id, venueId));
+}
+
+/**
  * Sets a venue's editorial copy fields (venue coverage expansion, 2026-08-29)
  * — used when a venue is promoted to curated `/venues` and needs the
  * factual description/shortDescription/venueProfile the guide's own
@@ -381,6 +397,10 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       startDatetime: item.probableStart,
       endDatetime: item.probableEnd,
       venueId: resolvedVenueId,
+      // Carried straight from the Discovery Queue row (generalized sub-venue
+      // model, 2026-09-06) — same pattern as every other probable* -> event
+      // field here.
+      subVenue: item.probableSubVenue,
       primaryGenre: (item.predictedGenre as GenreSlug) ?? "electronic-other",
       // Must stay in lockstep with primaryGenre's own fallback — see the
       // matching comment in db/sync.ts's auto-publish branch.
@@ -524,6 +544,17 @@ export async function applyDiscoveryClassificationUpdate(
     overallConfidence?: ConfidenceLevel;
     missingFields?: string[];
     suspectedDuplicateOfEventId?: string;
+    /**
+     * Which room the raw venue text resolved to (generalized sub-venue
+     * model, 2026-09-06) — may be explicitly null to clear a stale room once
+     * a fresh, successful venue resolution says there isn't one. Omitting
+     * the key entirely still means "don't touch it" — see
+     * src/lib/sync.ts::buildDiscoveryQueueClassificationPatch's own guard
+     * (only ever included when this run's venue resolution actually
+     * succeeded, so a transient resolution miss never erases a
+     * previously-known room).
+     */
+    probableSubVenue?: string | null;
     /** Source-freshness bump (unknown-venue visibility work package,
      *  2026-08-31) — see discoveryQueue.lastSeenAt's own doc comment.
      *  Always passed by src/db/sync.ts whenever this row's own candidate was
@@ -576,6 +607,8 @@ export async function insertDiscoveryItem(item: {
   probableTicketUrl?: string | null;
   probableFree?: boolean;
   probableVenueName: string | null;
+  /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06). Null when not applicable/unknown. */
+  probableSubVenue?: string | null;
   sourceName: string;
   sourceUrl: string;
   /** Registered source (e.g. "src-hangaren") this candidate came from, so
@@ -629,6 +662,7 @@ export async function findDuplicateEventId(
     title: string;
     artists: string[];
     venueId: string | null;
+    subVenue?: string | null;
     startDatetime: string;
     sourceId?: string | null;
     officialEventUrl?: string | null;
@@ -643,6 +677,7 @@ export async function findDuplicateEventId(
       title: row.title,
       artists: row.artists,
       venueId: row.venueId,
+      subVenue: row.subVenue,
       startDatetime: row.startDatetime.toISOString(),
       sourceId: row.canonicalSourceId,
       officialEventUrl: row.officialEventUrl,

@@ -158,25 +158,29 @@ describe("guessArtistsFromTitle", () => {
 });
 
 describe("Venue resolution (Section 7 of the discovery-only implementation task) — generalized resolver only, no KultuNaut-specific mappings", () => {
-  it("a bare 'VEGA' with no qualifier resolves to the VEGA parent venue (VEGA venue model cleanup, 2026-09-06) — never silently attaches to the Ideal Bar registry row", () => {
-    expect(resolveVenue("VEGA", VENUES)?.id).toBe("v-vega");
-    expect(resolveVenue("VEGA", VENUES)?.id).not.toBe("v-vega-ideal-bar");
+  it("a bare 'VEGA' with no qualifier resolves to the VEGA parent venue with no room (VEGA venue model cleanup, 2026-09-06; generalized sub-venue model follow-up, 2026-09-06) — never silently attaches to the Ideal Bar registry row", () => {
+    expect(resolveVenue("VEGA", VENUES)?.venue.id).toBe("v-vega");
+    expect(resolveVenue("VEGA", VENUES)?.subVenue).toBeNull();
+    expect(resolveVenue("VEGA", VENUES)?.venue.id).not.toBe("v-vega-ideal-bar");
   });
 
-  it("'Ideal Bar' resolves to VEGA (Ideal Bar), the separate standalone venue — not the VEGA parent", () => {
-    expect(resolveVenue("Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
+  it("'Ideal Bar' resolves to VEGA (Ideal Bar), the separate standalone venue — not the VEGA parent, no room", () => {
+    expect(resolveVenue("Ideal Bar", VENUES)?.venue.id).toBe("v-vega-ideal-bar");
+    expect(resolveVenue("Ideal Bar", VENUES)?.subVenue).toBeNull();
   });
 
-  it("'Store VEGA' resolves to the VEGA parent venue", () => {
-    expect(resolveVenue("Store VEGA", VENUES)?.id).toBe("v-vega");
+  it("'Store VEGA' resolves to the VEGA parent venue AS ITS OWN ROOM (generalized sub-venue model, 2026-09-06) — room identity is no longer discarded on resolution", () => {
+    expect(resolveVenue("Store VEGA", VENUES)?.venue.id).toBe("v-vega");
+    expect(resolveVenue("Store VEGA", VENUES)?.subVenue).toBe("Store VEGA");
   });
 
-  it("'Lille VEGA' (without 'Ideal Bar') resolves to the VEGA parent venue, not Ideal Bar", () => {
-    expect(resolveVenue("Lille VEGA", VENUES)?.id).toBe("v-vega");
+  it("'Lille VEGA' (without 'Ideal Bar') resolves to the VEGA parent venue AS ITS OWN ROOM, not Ideal Bar", () => {
+    expect(resolveVenue("Lille VEGA", VENUES)?.venue.id).toBe("v-vega");
+    expect(resolveVenue("Lille VEGA", VENUES)?.subVenue).toBe("Lille VEGA");
   });
 
   it("'Basement Bar' resolves to the existing Basement registry entry (v-basement) via the shared alias added 2026-09-05, not a KultuNaut-specific mapping", () => {
-    expect(resolveVenue("Basement Bar", VENUES)?.id).toBe("v-basement");
+    expect(resolveVenue("Basement Bar", VENUES)?.venue.id).toBe("v-basement");
   });
 });
 

@@ -1,5 +1,5 @@
 import { dateKeysEqual, nightlifeDateKey } from "./datetime";
-import { normalizeArtistName } from "./normalize";
+import { normalizeArtistName, normalizeVenueName } from "./normalize";
 
 /**
  * Evidence-based fuzzy duplicate detection across sources (spec sections 36,
@@ -24,6 +24,13 @@ export interface DuplicateCandidate {
   artists: string[];
   venueId: string | null;
   startDatetime: string;
+  /**
+   * Which room/stage of venueId this candidate is at (generalized sub-venue
+   * model, 2026-09-06), e.g. "Store VEGA" — null/omitted when unknown or not
+   * applicable. Generalized for any venue with rooms configured, not
+   * VEGA-specific — see assessDuplicate's subVenueConflict veto below.
+   */
+  subVenue?: string | null;
   /** Registered source id (e.g. "src-hangaren"), when known. Absent for legacy/admin-pasted candidates. */
   sourceId?: string | null;
   officialEventUrl?: string | null;
@@ -37,6 +44,8 @@ export interface DuplicateAssessment {
   artistOverlap: number;
   sameVenue: boolean;
   sameNight: boolean;
+  /** Both sides name the SAME known room — a positive compatibility signal (never a veto on its own). */
+  sameSubVenue: boolean;
   reasons: string[];
 }
 
@@ -170,6 +179,28 @@ function roomIdentityConflict(a: DuplicateCandidate, b: DuplicateCandidate): boo
 }
 
 /**
+ * True when both candidates name a KNOWN room at the same venue and those
+ * rooms DIFFER — the structural counterpart of roomIdentityConflict above,
+ * generalized for any venue with rooms configured (see Venue.rooms), not
+ * VEGA- or Culture-Box-specific. A hard veto, same tier as
+ * roomIdentityConflict: two candidates naming different known rooms are
+ * different events even if parent venue/date/title look similar (required
+ * semantics, generalized sub-venue model, 2026-09-06). Deliberately NEVER
+ * fires when either side's subVenue is null/unknown — missing room
+ * information from one source is not evidence of a different event; that
+ * case falls through to the normal remaining dedup signals unchanged.
+ */
+function subVenueConflict(a: DuplicateCandidate, b: DuplicateCandidate): boolean {
+  if (!a.subVenue || !b.subVenue) return false;
+  return normalizeVenueName(a.subVenue) !== normalizeVenueName(b.subVenue);
+}
+
+function sameKnownSubVenue(a: DuplicateCandidate, b: DuplicateCandidate): boolean {
+  if (!a.subVenue || !b.subVenue) return false;
+  return normalizeVenueName(a.subVenue) === normalizeVenueName(b.subVenue);
+}
+
+/**
  * A shared, essentially-unique identifier: any of the three URL fields on
  * one side exactly equals (after normalization) any of the three URL fields
  * on the other — deliberately cross-field, since a future aggregator's own
@@ -199,7 +230,8 @@ export function assessDuplicate(a: DuplicateCandidate, b: DuplicateCandidate): D
   const sameNight = sameNightlifeDate(a.startDatetime, b.startDatetime);
   const tSim = titleSimilarity(a.title, b.title);
   const aOverlap = artistOverlap(a.artists, b.artists);
-  const base = { titleSimilarity: tSim, artistOverlap: aOverlap, sameVenue, sameNight };
+  const sameSubVenue = sameKnownSubVenue(a, b);
+  const base = { titleSimilarity: tSim, artistOverlap: aOverlap, sameVenue, sameNight, sameSubVenue };
 
   // Different night is an absolute veto — same date/time is required
   // evidence, never sufficient evidence, so the inverse (different date)
@@ -218,6 +250,21 @@ export function assessDuplicate(a: DuplicateCandidate, b: DuplicateCandidate): D
       ...base,
       confidence: "none",
       reasons: ["same base event URL but different room anchor (e.g. #black-box vs #red-box) — different events sharing a night"],
+    };
+  }
+
+  // Structural room conflict (generalized sub-venue model, 2026-09-06): both
+  // sides name a KNOWN room at the same parent venue and those rooms differ
+  // (e.g. VEGA's "Store VEGA" vs "Lille VEGA") — a hard veto on the same
+  // tier as roomIdentityConflict above, required so two genuinely different
+  // room events are never auto-merged merely because parent venue/date/title
+  // look similar. A null/unknown subVenue on either side never triggers
+  // this — missing room information is not evidence of a different event.
+  if (subVenueConflict(a, b)) {
+    return {
+      ...base,
+      confidence: "none",
+      reasons: [`different known rooms at the same venue ("${a.subVenue}" vs "${b.subVenue}") — different events sharing a venue`],
     };
   }
 

@@ -33,6 +33,21 @@ export const venues = pgTable("venues", {
   shortDescription: text("short_description"),
   /** ~100-170 words for the venue's own detail page — genuinely more than the short description, not a restatement of it. */
   venueProfile: text("venue_profile"),
+  /**
+   * Optional rooms/stages of a parent venue/complex (generalized sub-venue
+   * model, 2026-09-06 — VEGA venue model cleanup follow-up). A room is
+   * matched by resolveVenue() the same exact-normalized-match way an alias
+   * is, but resolving to a room additionally reports which room via
+   * VenueResolution.subVenue instead of collapsing into the parent with no
+   * trace (the gap the earlier alias-only VEGA fix left open). Deliberately
+   * NOT a separate venue row or a parentVenueId relationship — a room is not
+   * an independent venue identity (see PROTECTED_SUB_VENUE_NAMES in
+   * src/lib/venueCreation.ts), and every existing venue defaults to `[]`
+   * (no behavior change for Culture Box/Pumpehuset, whose room concepts stay
+   * exactly as they are — adapter-authored title/description text, not this
+   * field — until a separate, later migration decision).
+   */
+  rooms: jsonb("rooms").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -84,6 +99,15 @@ export const events = pgTable("events", {
   endDatetime: timestamp("end_datetime", { withTimezone: true }),
   timezone: text("timezone").notNull().default("Europe/Copenhagen"),
   venueId: text("venue_id").notNull().references(() => venues.id),
+  /**
+   * Which room/stage of a parent venue/complex this event is at (generalized
+   * sub-venue model, 2026-09-06), e.g. "Store VEGA" — null when the venue has
+   * no rooms configured, or when a room-having venue's raw source text named
+   * no specific room (bare "VEGA"). Structural, never folded into `title` —
+   * see src/lib/eventPresentation.ts's subVenueLabel() for how it's
+   * displayed. Nullable/additive; no backfill for historical events.
+   */
+  subVenue: text("sub_venue"),
   primaryGenre: text("primary_genre").notNull(),
   subgenres: text("subgenres").array().notNull().default([]),
   genreConfidence: text("genre_confidence").notNull().default("medium"),
@@ -146,6 +170,18 @@ export const discoveryQueue = pgTable("discovery_queue", {
   probableTicketUrl: text("probable_ticket_url"),
   probableFree: boolean("probable_free").notNull().default(false),
   probableVenueName: text("probable_venue_name"),
+  /**
+   * Companion to probableVenueName (generalized sub-venue model, 2026-09-06)
+   * — which room/stage the raw venue text resolved to, e.g. "Store VEGA",
+   * or null when the venue has no rooms configured or none was named. Self-
+   * heals on every sync alongside venue resolution (see
+   * src/lib/sync.ts::buildDiscoveryQueueClassificationPatch), but only when
+   * this run's venue resolution actually succeeded — a transient resolution
+   * miss never erases a previously-known room. Carried onto the created
+   * event's `subVenue` by publishDiscoveryItem, exactly like
+   * probableTicketUrl -> ticketUrl.
+   */
+  probableSubVenue: text("probable_sub_venue"),
   sourceName: text("source_name").notNull(),
   sourceUrl: text("source_url").notNull(),
   /**

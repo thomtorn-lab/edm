@@ -71,6 +71,13 @@
       "when": 1788200807542,
       "tag": "0009_venue_resolved_counterfactual",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788390000000,
+      "tag": "0010_venue_room_model",
+      "breakpoints": true
     }
   ]
 }

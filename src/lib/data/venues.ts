@@ -298,37 +298,45 @@ export const VENUES: Venue[] = [
       "UnderWerket is a volunteer-run venue in Valby aimed at young organisers, offering rooms, sound equipment and organisational support for self-run events rather than operating as a commercial club. Alongside concerts and youth-organised gatherings, the space regularly hosts electronic and techno nights, including noise and experimental programming from independent local promoters. Its basement setting and community-support model give it a different character from Copenhagen's commercial club venues — events are typically organised by the young promoters themselves rather than booked in by the venue. UnderWerket's role in the city's electronic scene is smaller-scale and more grassroots than the larger clubs, functioning as an entry point for new organisers putting on their first electronic events.",
   },
   {
-    // VEGA venue model cleanup (2026-09-06): the intended structure is VEGA
-    // as a parent venue/complex with two concert-hall ROOMS — Store VEGA and
-    // Lille VEGA — resolving to this same parent id, exactly the way a
-    // source's raw room-qualified string is expected to behave; Ideal Bar
-    // (below) is a genuinely separate, standalone venue, never a room under
-    // VEGA. Real evidence for this split: KultuNaut supplies bare "VEGA" for
-    // Store VEGA arena shows (11 real pending rows, e.g. ArrNr 19411901),
-    // and Billetto has supplied "Lille Vega" for at least one real event.
-    // "Store VEGA" and "Lille VEGA" are listed as ALIASES here rather than
-    // separate venue rows — the same generalized pattern this codebase
-    // already uses for a known sub-area of an existing venue (see
-    // PROTECTED_SUB_VENUE_NAMES in src/lib/venueCreation.ts: Byhaven is
-    // Pumpehuset's own pop-up area, Black Box/Red Box are Culture Box's two
-    // rooms — neither ever becomes its own venue row; Culture Box's rooms in
-    // particular are consolidated at the ADAPTER level into one canonical
-    // event per night, with room-separated lineup content kept in that
-    // event's own `description`, never a structural room/parent field —
-    // there is no separate "room" column anywhere in the schema to reuse).
-    // Because resolveVenue() (src/lib/normalize.ts) is exact
-    // normalized-name-or-alias matching only (never fuzzy or substring), a
-    // bare "VEGA" now resolves to THIS parent row and nowhere else — in
-    // particular, never to Ideal Bar below, whose own aliases deliberately
-    // never include bare "VEGA" — and "Store VEGA"/"Lille VEGA" resolve to
-    // this same parent, with which specific room preserved only in the raw
-    // `probableVenueName` a Discovery Queue row already keeps (no new
-    // "room" field is invented here, matching Culture Box's own precedent
-    // of never persisting room identity past ingestion).
+    // VEGA venue model cleanup (2026-09-06), corrected by the generalized
+    // sub-venue model follow-up (2026-09-06): VEGA is a parent venue/complex
+    // with two concert-hall ROOMS — Store VEGA and Lille VEGA — resolving to
+    // this same parent id; Ideal Bar (below) is a genuinely separate,
+    // standalone venue, never a room under VEGA. Real evidence for this
+    // split: KultuNaut supplies bare "VEGA" for Store VEGA arena shows (11
+    // real pending rows, e.g. ArrNr 19411901), and Billetto has supplied
+    // "Lille Vega" for at least one real event.
+    //
+    // An EARLIER version of this fix listed "Store VEGA"/"Lille VEGA" as
+    // plain ALIASES — that was found to lose which room an event was
+    // actually at (a plain alias collapses into this venue's id with no
+    // further trace once resolved, unlike Culture Box's own room handling,
+    // which keeps room-separated lineup content in each event's own
+    // `description`). They are now `rooms` instead (see below): matched by
+    // resolveVenue() with the exact same exact-normalized-match discipline
+    // as an alias, but reporting which room via VenueResolution.subVenue,
+    // persisted onto the event's own `subVenue` field (src/db/schema.ts) and
+    // used for structural dedup (Venue.rooms/VenueRoom, src/lib/types.ts) —
+    // never folded into the canonical title. Because resolveVenue() checks a
+    // venue's own name/aliases before any venue's rooms, a bare "VEGA" still
+    // resolves to THIS parent row (subVenue: null) and never to Ideal Bar
+    // below, whose own aliases deliberately never include bare "VEGA".
     id: "v-vega",
     slug: "vega",
     name: "VEGA",
-    aliases: ["Store VEGA", "Lille VEGA"],
+    // Store VEGA / Lille VEGA are ROOMS of this parent, not plain aliases
+    // (generalized sub-venue model, 2026-09-06 — VEGA venue model cleanup
+    // follow-up): a plain alias collapses a raw string into this venue's id
+    // with no further trace, which is exactly right for a genuine alternate
+    // spelling of VEGA itself but loses which of the two halls an event was
+    // actually at. `rooms` uses the SAME exact-normalized-match discipline
+    // resolveVenue() already applies to aliases, but additionally reports
+    // which room via VenueResolution.subVenue — persisted onto the event's
+    // own `subVenue` field and used for structural dedup (two candidates
+    // naming different known rooms are never auto-merged) and display
+    // (never folded into the canonical title).
+    aliases: [],
+    rooms: [{ name: "Store VEGA" }, { name: "Lille VEGA" }],
     address: "Enghavevej 40, 1674 København V",
     city: "Copenhagen",
     postalCode: "1674",

@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
         startDatetime: new Date(raw.startDatetime),
         endDatetime: raw.endDatetime ? new Date(raw.endDatetime) : null,
         venueId: result.resolvedVenueId,
+        subVenue: result.resolvedSubVenue,
         primaryGenre: result.genre ?? "electronic-other",
         subgenres: result.genre ? [result.genre] : [],
         genreConfidence: result.genreConfidence,

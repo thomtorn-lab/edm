@@ -41,6 +41,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     endDatetime: null,
     timezone: "Europe/Copenhagen",
     venueId: "v-culture-box",
+    subVenue: null,
     primaryGenre: "techno",
     subgenres: ["techno"],
     genreConfidence: "high",

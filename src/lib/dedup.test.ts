@@ -230,3 +230,78 @@ describe("evidence-based model regression coverage", () => {
     expect(assessDuplicate(a, b).confidence).toBe("none");
   });
 });
+
+describe("subVenue dedup semantics (generalized sub-venue model, 2026-09-06) — generalized for any venue with rooms configured, not VEGA-specific", () => {
+  const NIGHT = "2026-09-19T23:30:00+02:00";
+
+  it("A. same known subVenue is a positive compatibility signal — normal title/date/venue dedup logic still applies (strong match -> high)", () => {
+    const a = { title: "Solar Flare", artists: ["KASST", "MRK."], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const b = { title: "Solar Flare", artists: ["KASST", "MRK."], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const result = assessDuplicate(a, b);
+    expect(result.sameSubVenue).toBe(true);
+    expect(result.confidence).toBe("high");
+  });
+
+  it("A2. same known subVenue alone (weak title/lineup evidence) still isn't sufficient on its own — same guardrails as sameVenue", () => {
+    const a = { title: "Some Night", artists: [] as string[], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const b = { title: "Different Night", artists: [] as string[], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const result = assessDuplicate(a, b);
+    expect(result.sameSubVenue).toBe(true);
+    expect(result.confidence).toBe("none");
+  });
+
+  it("B. different known subVenues at the same parent venue is a hard veto — never auto-merged even with a strong title/lineup match", () => {
+    const a = { title: "Solar Flare", artists: ["KASST", "MRK."], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const b = { title: "Solar Flare", artists: ["KASST", "MRK."], venueId: "v-vega", subVenue: "Lille VEGA", startDatetime: NIGHT };
+    const result = assessDuplicate(a, b);
+    expect(result.confidence).toBe("none");
+    expect(result.reasons[0]).toMatch(/different known rooms/);
+  });
+
+  it("B2. the room-conflict veto outranks even a shared unique URL (same tier as the existing roomIdentityConflict veto)", () => {
+    const a = {
+      title: "Solar Flare",
+      artists: ["KASST"],
+      venueId: "v-vega",
+      subVenue: "Store VEGA",
+      startDatetime: NIGHT,
+      officialEventUrl: "https://vega.dk/event/123",
+    };
+    const b = {
+      title: "Solar Flare",
+      artists: ["KASST"],
+      venueId: "v-vega",
+      subVenue: "Lille VEGA",
+      startDatetime: NIGHT,
+      officialEventUrl: "https://vega.dk/event/123",
+    };
+    expect(assessDuplicate(a, b).confidence).toBe("none");
+  });
+
+  it("C. known vs unknown subVenue is NOT automatically treated as different — normal remaining dedup signals still apply (strong match -> high)", () => {
+    const a = { title: "Solar Flare", artists: ["KASST", "MRK."], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const b = { title: "Solar Flare", artists: ["KASST", "MRK."], venueId: "v-vega", subVenue: null, startDatetime: NIGHT };
+    const result = assessDuplicate(a, b);
+    expect(result.confidence).toBe("high");
+  });
+
+  it("C2. known vs unknown subVenue with only weak evidence still falls through to normal 'not enough evidence' handling, not a veto", () => {
+    const a = { title: "Some Night", artists: [] as string[], venueId: "v-vega", subVenue: "Store VEGA", startDatetime: NIGHT };
+    const b = { title: "Different Night", artists: [] as string[], venueId: "v-vega", subVenue: null, startDatetime: NIGHT };
+    const result = assessDuplicate(a, b);
+    expect(result.confidence).toBe("none");
+    expect(result.reasons[0]).not.toMatch(/different known rooms/);
+  });
+
+  it("D. both unknown subVenue leaves existing dedup behavior completely unchanged", () => {
+    const a = { title: "Fast Forward", artists: ["ROTOR", "HALVDAN"], venueId: "v-hangaren", startDatetime: "2026-08-15T23:59:00+02:00" };
+    const b = { title: "Fast Forward @ Hangaren", artists: ["ROTOR", "HALVDAN", "GRIT."], venueId: "v-hangaren", startDatetime: "2026-08-15T23:30:00+02:00" };
+    expect(assessDuplicate(a, b).confidence).toBe("high");
+  });
+
+  it("unrelated venues (no subVenue at all) are unaffected by this feature", () => {
+    const a = { title: "Kasst", artists: ["KASST", "MRK."], venueId: "v-culture-box", startDatetime: NIGHT };
+    const b = { title: "Kasst", artists: ["KASST", "MRK.", "SILT"], venueId: "v-culture-box", startDatetime: NIGHT };
+    expect(assessDuplicate(a, b).confidence).toBe("high");
+  });
+});

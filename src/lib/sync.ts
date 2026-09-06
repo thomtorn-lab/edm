@@ -19,6 +19,8 @@ export interface SyncTargetEvent {
   description: string | null;
   artists: string[];
   venueId: string | null;
+  /** Which room/stage of venueId this event is at (generalized sub-venue model, 2026-09-06). */
+  subVenue: string | null;
   startDatetime: string;
   endDatetime: string | null;
   officialEventUrl: string | null;
@@ -39,6 +41,15 @@ export interface SyncTargetEvent {
 
 export interface ResolvedCandidate {
   resolvedVenueId: string | null;
+  /**
+   * Which room the raw venue text resolved to this run (generalized
+   * sub-venue model, 2026-09-06) — optional so every pre-existing call site
+   * (which never had a room concept) keeps compiling and behaving exactly as
+   * before: omitting it means "nothing to say about the room this run,"
+   * never touching `subVenue`. In production this always comes straight
+   * from the SAME runIngestionPipeline result resolvedVenueId already does.
+   */
+  resolvedSubVenue?: string | null;
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
@@ -76,6 +87,17 @@ export function buildSyncPatch(
   }
   if (resolved.resolvedVenueId && resolved.resolvedVenueId !== existing.venueId) {
     patch.venueId = resolved.resolvedVenueId;
+  }
+  // Room self-heal (generalized sub-venue model, 2026-09-06): only trusted
+  // when the venue itself actually resolved THIS run (same guard as
+  // venueId's own patch above) — a transient resolution miss must never
+  // erase a previously-known room. Once trusted, can move in either
+  // direction (including back to null), unlike venueId's own one-way "only
+  // ever add" behavior, since a room correction is itself authoritative
+  // evidence the moment resolution succeeds (do not preserve stale room
+  // state forever once current complete evidence changes it).
+  if (resolved.resolvedVenueId && resolved.resolvedSubVenue !== undefined && resolved.resolvedSubVenue !== existing.subVenue) {
+    patch.subVenue = resolved.resolvedSubVenue;
   }
   if (raw.officialEventUrl && raw.officialEventUrl !== existing.officialEventUrl) {
     // Multi-source merge precedence (event-link-role follow-up, 2026-09-05
@@ -252,6 +274,8 @@ export interface DiscoveryQueueTarget {
   /** Currently stored missing_fields, so a fresh venue resolution can prove
    *  one specific entry no longer applies (see buildDiscoveryQueueClassificationPatch). */
   missingFields: string[];
+  /** Currently stored probable_sub_venue (generalized sub-venue model, 2026-09-06), so a fresh resolution can detect it moved. */
+  probableSubVenue: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -310,6 +334,8 @@ export interface DiscoveryQueueClassification {
    * do — see src/db/sync.ts's existingPending branch.
    */
   resolvedVenueId?: string | null;
+  /** This run's fresh room resolution (generalized sub-venue model, 2026-09-06) — see ResolvedCandidate.resolvedSubVenue's own doc comment for the same optional-for-backward-compat reasoning. */
+  resolvedSubVenue?: string | null;
   duplicateOfEventId?: string | null;
   duplicateConfidence?: DuplicateConfidence;
   /**
@@ -345,6 +371,8 @@ export interface DiscoveryQueueClassificationPatch {
   overallConfidence?: ConfidenceLevel;
   missingFields?: string[];
   suspectedDuplicateOfEventId?: string;
+  /** See DiscoveryQueueClassification.resolvedSubVenue / applyDiscoveryClassificationUpdate's own doc comment for the self-heal semantics this carries. */
+  probableSubVenue?: string | null;
   venueResolvedDecision?: PublishDecision | null;
   venueResolvedHoldReason?: HoldReason;
 }
@@ -496,6 +524,20 @@ export function buildDiscoveryQueueClassificationPatch(
   if (!existing.overriddenFields.includes("probableVenueName") && fresh.resolvedVenueId != null) {
     if (existing.missingFields.includes("venue (unresolved against registry)")) {
       patch.missingFields = existing.missingFields.filter((f) => f !== "venue (unresolved against registry)");
+    }
+    // ROOM SELF-HEAL (generalized sub-venue model, 2026-09-06). Same guard as
+    // the missingFields self-heal directly above (only reached once this
+    // run's venue resolution actually succeeded — fresh.resolvedVenueId !=
+    // null) for the exact same safety reason: a transient resolution miss
+    // must never erase a previously-known room. Once trusted, moves in
+    // EITHER direction (including clearing a stale room to null) — unlike
+    // missingFields' one-way "only ever remove the unresolved flag" rule —
+    // because a room is itself authoritative the moment resolution succeeds
+    // this run; do not preserve stale room state forever once current
+    // complete evidence changes it (e.g. a source correcting its own raw
+    // venue text from bare "VEGA" to "Store VEGA", or vice versa).
+    if (fresh.resolvedSubVenue !== undefined && fresh.resolvedSubVenue !== existing.probableSubVenue) {
+      patch.probableSubVenue = fresh.resolvedSubVenue;
     }
   }
 
