@@ -54,6 +54,7 @@ export function sourceRowToRecord(row: SourceRow): Source {
     eventsFound: row.eventsFound,
     eventsUpdated: row.eventsUpdated,
     integrationNote: row.integrationNote,
+    lastCompleteSyncAt: row.lastCompleteSyncAt?.toISOString() ?? null,
   };
 }
 
@@ -119,6 +120,10 @@ export function discoveryRowToRecord(row: DiscoveryQueueRow): DiscoveryQueueItem
     missingFields: row.missingFields,
     overallConfidence: row.overallConfidence as ConfidenceLevel,
     status: row.status as DiscoveryQueueStatus,
+    holdReason: row.holdReason as DiscoveryQueueItem["holdReason"],
+    lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    venueResolvedDecision: row.venueResolvedDecision as DiscoveryQueueItem["venueResolvedDecision"],
+    venueResolvedHoldReason: row.venueResolvedHoldReason as DiscoveryQueueItem["venueResolvedHoldReason"],
   };
 }
 

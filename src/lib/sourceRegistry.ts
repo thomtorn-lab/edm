@@ -9,7 +9,7 @@ import type { Source } from "./types";
 
 type SourceStaticFields = Omit<
   Source,
-  "lastSuccessfulSync" | "lastAttemptedSync" | "lastError" | "eventsFound" | "eventsUpdated"
+  "lastSuccessfulSync" | "lastAttemptedSync" | "lastError" | "eventsFound" | "eventsUpdated" | "lastCompleteSyncAt"
 >;
 
 export interface ProductionSourceRow {
@@ -20,6 +20,7 @@ export interface ProductionSourceRow {
     lastError: null;
     eventsFound: 0;
     eventsUpdated: 0;
+    lastCompleteSyncAt: null;
   };
   /** Fields to write on a re-run (ON CONFLICT). Deliberately excludes every
    *  health field, so re-running the bootstrap never resets a source's real
@@ -39,7 +40,7 @@ export interface ProductionSourceRow {
  */
 export function toProductionSourceRow(fixture: Source): ProductionSourceRow {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- discarded on purpose, this is the strip
-  const { lastSuccessfulSync, lastAttemptedSync, lastError, eventsFound, eventsUpdated, ...staticFields } = fixture;
+  const { lastSuccessfulSync, lastAttemptedSync, lastError, eventsFound, eventsUpdated, lastCompleteSyncAt, ...staticFields } = fixture;
   return {
     insertRow: {
       ...staticFields,
@@ -48,6 +49,7 @@ export function toProductionSourceRow(fixture: Source): ProductionSourceRow {
       lastError: null,
       eventsFound: 0,
       eventsUpdated: 0,
+      lastCompleteSyncAt: null,
     },
     updateSet: staticFields,
   };

@@ -20,6 +20,7 @@ function baseSource(overrides: Partial<Source> = {}): Source {
     eventsFound: 10,
     eventsUpdated: 1,
     integrationNote: "",
+    lastCompleteSyncAt: null,
     ...overrides,
   };
 }

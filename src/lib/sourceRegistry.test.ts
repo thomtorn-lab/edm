@@ -29,6 +29,7 @@ function sourceFixture(overrides: Partial<Source> = {}): Source {
     eventsFound: 42,
     eventsUpdated: 7,
     integrationNote: "test",
+    lastCompleteSyncAt: "2026-08-13T07:00:00+02:00",
     ...overrides,
   };
 }
@@ -41,6 +42,7 @@ describe("toProductionSourceRow", () => {
     expect(insertRow.lastError).toBeNull();
     expect(insertRow.eventsFound).toBe(0);
     expect(insertRow.eventsUpdated).toBe(0);
+    expect(insertRow.lastCompleteSyncAt).toBeNull();
   });
 
   it("preserves all static configuration fields on insert", () => {
@@ -66,6 +68,7 @@ describe("toProductionSourceRow", () => {
     expect(updateSet).not.toHaveProperty("lastError");
     expect(updateSet).not.toHaveProperty("eventsFound");
     expect(updateSet).not.toHaveProperty("eventsUpdated");
+    expect(updateSet).not.toHaveProperty("lastCompleteSyncAt");
   });
 
   it("holds for every real source in the registry, not just a synthetic fixture", () => {

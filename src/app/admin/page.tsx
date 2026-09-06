@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { getAllEventsAdmin, getDiscoveryQueue, getSources, getVenues } from "@/lib/queries";
+import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getSources, getVenues } from "@/lib/queries";
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
+import { buildPublishedQueueRows, deriveAdminUnpublishedRows, groupAdminQueueRows } from "@/lib/adminQueue";
 import AddEventFromUrl from "@/components/admin/AddEventFromUrl";
-import DiscoveryQueue from "@/components/admin/DiscoveryQueue";
+import AdminQueueTabs from "@/components/admin/AdminQueueTabs";
 import EventManager from "@/components/admin/EventManager";
 
 export const metadata: Metadata = {
@@ -31,12 +32,22 @@ const HEALTH_COLOR: Record<string, string> = {
 
 export default async function AdminPage() {
   const now = new Date();
-  const [sources, discoveryQueue, venues, allEvents] = await Promise.all([
+  const [sources, discoveryQueueRows, venues, allEvents] = await Promise.all([
     getSources(),
-    getDiscoveryQueue("pending"),
+    getDiscoveryQueueForAdmin(),
     getVenues(),
     getAllEventsAdmin(),
   ]);
+
+  const pendingItems = discoveryQueueRows.filter((item) => item.status === "pending");
+  const publishedItems = discoveryQueueRows.filter((item) => item.status === "published" || item.status === "merged");
+  const sourceLastCompleteSync = new Map(sources.map((s) => [s.id, s.lastCompleteSyncAt]));
+  const venuesById = new Map(venues.map((v) => [v.id, v]));
+  const sourcesById = new Map(sources.map((s) => [s.id, s]));
+
+  const adminQueueGroups = groupAdminQueueRows(pendingItems, sourceLastCompleteSync, now);
+  const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
+  const adminUnpublishedRows = deriveAdminUnpublishedRows(allEvents, venuesById, sourcesById);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -61,10 +72,12 @@ export default async function AdminPage() {
       <section id="discovery-queue" className="mt-12">
         <h2 className="text-sm font-semibold text-text-primary">Discovery queue</h2>
         <p className="mt-1 text-xs text-text-secondary">
-          Medium/low-confidence imports awaiting a human decision (spec section 35).
+          Needs review is the default: only candidates a human can actually act on right now — evidence
+          gathered, not stale, not blocked by anything else. Everything else stays one tab away, never deleted
+          (admin Discovery Queue cleanup, 2026-09-06).
         </p>
         <div className="mt-3">
-          <DiscoveryQueue items={discoveryQueue} venues={venues} />
+          <AdminQueueTabs groups={adminQueueGroups} published={publishedRows} adminUnpublished={adminUnpublishedRows} venues={venues} />
         </div>
       </section>
 

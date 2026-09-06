@@ -63,6 +63,10 @@ function makeItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueIt
     missingFields: ["venue (unresolved against registry)"],
     overallConfidence: "medium",
     status: "pending",
+    holdReason: null,
+    lastSeenAt: null,
+    venueResolvedDecision: null,
+    venueResolvedHoldReason: null,
     ...overrides,
   };
 }

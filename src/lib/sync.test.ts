@@ -390,6 +390,7 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     suspectedDuplicateOfEventId: null,
     venueResolvedDecision: null,
     venueResolvedHoldReason: null,
+    holdReason: null,
     ...overrides,
   };
 }
@@ -907,6 +908,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
         overallConfidence: "low",
         venueResolvedDecision: "hold",
         venueResolvedHoldReason: "no_genre_evidence",
+        holdReason: "no_genre_evidence",
       });
     });
 
@@ -947,7 +949,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
         { genre: null, genreConfidence: "low", decision: "hold", holdReason: "negative_relevance" },
         row,
       );
-      expect(patch).toEqual({ predictedGenre: null, genreConfidence: "low", overallConfidence: "low" });
+      expect(patch).toEqual({ predictedGenre: null, genreConfidence: "low", overallConfidence: "low", holdReason: "negative_relevance" });
     });
 
     it("negative_relevance self-heal also recomputes the venue-resolved counterfactual consistently, exactly like no_genre_evidence — no leftover auto_publish/review counterfactual based on the cleared genre", () => {
@@ -975,6 +977,7 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
         overallConfidence: "low",
         venueResolvedDecision: "hold",
         venueResolvedHoldReason: "negative_relevance",
+        holdReason: "negative_relevance",
       });
     });
 

@@ -275,6 +275,24 @@ export const discoveryQueue = pgTable("discovery_queue", {
    * NULL whenever venueResolvedDecision is null or not "hold".
    */
   venueResolvedHoldReason: text("venue_resolved_hold_reason"),
+  /**
+   * The REAL (non-counterfactual) pipeline holdReason for this row's most
+   * recent classification (admin Discovery Queue cleanup/actionable views,
+   * 2026-09-06) — "incomplete_data" | "low_confidence" | "negative_relevance"
+   * | "no_genre_evidence", or NULL when the fresh decision isn't "hold" at
+   * all (review_queue/auto_publish) or for a row not yet re-synced since
+   * this column existed (deliberately never backfilled — see
+   * venueResolvedDecision's own doc comment for why). Distinct from
+   * venueResolvedHoldReason, which answers "why would the venue-fixed
+   * counterfactual still hold" — this answers "why does the row ACTUALLY
+   * hold right now", the fact src/lib/adminQueue.ts::classifyAdminQueueRow
+   * needs to tell REJECTED (negative_relevance) apart from INSUFFICIENT
+   * EVIDENCE (every other hold reason) without re-deriving relevance/
+   * quality-gate logic in the UI. Self-heals on every sync alongside
+   * overallConfidence (see buildDiscoveryQueueClassificationPatch) — purely
+   * derived diagnostic state, never something an admin edits.
+   */
+  holdReason: text("hold_reason"),
 });
 
 /**

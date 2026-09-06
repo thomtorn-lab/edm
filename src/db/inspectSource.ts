@@ -12,6 +12,7 @@ import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
+import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -24,7 +25,7 @@ import type { HoldReason } from "@/lib/adapters/pipeline";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|link-role-audit|db-integrity|adapter-dry-run> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -112,6 +113,7 @@ function rowToSource(r: Record<string, unknown>): Source {
     eventsFound: r.events_found as number,
     eventsUpdated: r.events_updated as number,
     integrationNote: r.integration_note as string,
+    lastCompleteSyncAt: r.last_complete_sync_at ? new Date(r.last_complete_sync_at as string).toISOString() : null,
   };
 }
 
@@ -967,6 +969,99 @@ async function modeVenueBlocks(client: Client) {
 }
 
 /**
+ * Read-only classification audit of the whole admin Discovery Queue (admin
+ * Discovery Queue cleanup/actionable views, 2026-09-06) — the live BEFORE
+ * (Section 10) and AFTER (Section 16) numbers this task's acceptance test
+ * needs, run against real Production data rather than approximated from a
+ * fixture. Runs the SAME classifyAdminQueueRow the admin UI itself uses
+ * (src/lib/adminQueue.ts) against every "pending" row, so this audit can
+ * never disagree with what an admin actually sees — no parallel
+ * classification logic reimplemented here.
+ *
+ * BEFORE == the old default admin view's row count: every "pending" row,
+ * unfiltered (that's literally what getDiscoveryQueue("pending") returned
+ * before this task). AFTER == the same pending rows split into the 5 tabs,
+ * plus published/merged and admin-unpublished counts alongside them so the
+ * whole picture prints in one run.
+ */
+async function modeAdminQueueAudit(client: Client) {
+  const rows = await client.query(`
+    SELECT
+      dq.id, dq.probable_title, dq.probable_start, dq.probable_end, dq.missing_fields,
+      dq.overall_confidence, dq.hold_reason, dq.venue_resolved_decision, dq.last_seen_at,
+      dq.status, dq.source_id, s.last_complete_sync_at
+    FROM discovery_queue dq
+    LEFT JOIN sources s ON s.id = dq.source_id
+    WHERE dq.status IN ('pending', 'published', 'merged')
+    ORDER BY dq.created_at DESC
+  `);
+  const now = new Date();
+
+  const pending = rows.rows.filter((r) => r.status === "pending");
+  const published = rows.rows.filter((r) => r.status === "published");
+  const merged = rows.rows.filter((r) => r.status === "merged");
+
+  const groups: Record<AdminQueueCategory, Record<string, unknown>[]> = {
+    needs_review: [],
+    venue_blocked: [],
+    insufficient: [],
+    rejected: [],
+    past_stale: [],
+  };
+  for (const r of pending) {
+    const lastCompleteSyncAt = r.last_complete_sync_at ? new Date(r.last_complete_sync_at as string).toISOString() : null;
+    const category = classifyAdminQueueRow(
+      {
+        overallConfidence: r.overall_confidence,
+        holdReason: r.hold_reason as HoldReason,
+        venueResolvedDecision: r.venue_resolved_decision as PublishDecision | null,
+        missingFields: (r.missing_fields as string[]) ?? [],
+        probableStart: r.probable_start ? new Date(r.probable_start as string).toISOString() : null,
+        probableEnd: r.probable_end ? new Date(r.probable_end as string).toISOString() : null,
+        lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at as string).toISOString() : null,
+      },
+      { lastCompleteSyncAt, now },
+    );
+    groups[category].push({ id: r.id, title: r.probable_title, sourceId: r.source_id });
+  }
+
+  const adminUnpublished = await client.query(
+    "SELECT id, title, admin_unpublish_reason, admin_unpublished_at FROM events WHERE admin_unpublish_reason IS NOT NULL ORDER BY admin_unpublished_at DESC",
+  );
+
+  section("BEFORE — old default admin view (every pending row, unfiltered)");
+  console.log(JSON.stringify({ totalPendingRows: pending.length }, null, 2));
+
+  section("AFTER — 7-tab breakdown");
+  console.log(
+    JSON.stringify(
+      {
+        needs_review: groups.needs_review.length,
+        venue_blocked: groups.venue_blocked.length,
+        insufficient: groups.insufficient.length,
+        rejected: groups.rejected.length,
+        past_stale: groups.past_stale.length,
+        published: published.length,
+        merged: merged.length,
+        published_tab_total: published.length + merged.length,
+        admin_unpublished: adminUnpublished.rows.length,
+        sumOfPendingTabs: Object.values(groups).reduce((n, g) => n + g.length, 0),
+      },
+      null,
+      2,
+    ),
+  );
+
+  for (const category of Object.keys(groups) as AdminQueueCategory[]) {
+    section(`${ADMIN_QUEUE_CATEGORY_LABELS[category]} (${groups[category].length}) — exact rows`);
+    console.log(JSON.stringify(groups[category], null, 2));
+  }
+
+  section(`Unpublished by admin (${adminUnpublished.rows.length}) — exact rows`);
+  console.log(JSON.stringify(adminUnpublished.rows, null, 2));
+}
+
+/**
  * Read-only schema/row-count integrity check (migration verification
  * follow-up, 2026-08-24): confirms a migration's actual effect —
  * before/after — without any per-source scoping. Two independent things:
@@ -1272,7 +1367,7 @@ async function main() {
   const mode = args.mode;
   if (typeof mode !== "string") {
     console.error(
-      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity> is required.",
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit> is required.",
     );
     process.exit(1);
   }
@@ -1293,6 +1388,7 @@ async function main() {
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
     "adapter-dry-run": modeAdapterDryRun,
+    "admin-queue-audit": modeAdminQueueAudit,
   };
 
   if (mode === "reachability") {
@@ -1304,7 +1400,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, link-role-audit, db-integrity, adapter-dry-run.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit.`,
     );
     process.exit(1);
   }
