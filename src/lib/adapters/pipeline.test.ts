@@ -74,6 +74,72 @@ describe("runIngestionPipeline", () => {
     expect(result.decision).toBe("hold");
   });
 
+  describe("resolvedSubVenue (generalized sub-venue model, 2026-09-06)", () => {
+    it("is null for a venue with no rooms configured (existing behavior, e.g. Culture Box)", () => {
+      const result = runIngestionPipeline(raw({ venueName: "Culture Box" }), { venues: VENUES, existingEvents: [] });
+      expect(result.resolvedVenueId).toBe("v-culture-box");
+      expect(result.resolvedSubVenue).toBeNull();
+    });
+
+    it("is null when the raw venue text names the parent itself with no room (bare 'VEGA')", () => {
+      const result = runIngestionPipeline(raw({ venueName: "VEGA" }), { venues: VENUES, existingEvents: [] });
+      expect(result.resolvedVenueId).toBe("v-vega");
+      expect(result.resolvedSubVenue).toBeNull();
+    });
+
+    it("reports the room when the raw venue text names one ('Store VEGA')", () => {
+      const result = runIngestionPipeline(raw({ venueName: "Store VEGA" }), { venues: VENUES, existingEvents: [] });
+      expect(result.resolvedVenueId).toBe("v-vega");
+      expect(result.resolvedSubVenue).toBe("Store VEGA");
+    });
+
+    it("reports the other room distinctly ('Lille VEGA')", () => {
+      const result = runIngestionPipeline(raw({ venueName: "Lille VEGA" }), { venues: VENUES, existingEvents: [] });
+      expect(result.resolvedVenueId).toBe("v-vega");
+      expect(result.resolvedSubVenue).toBe("Lille VEGA");
+    });
+
+    it("threads subVenue into dedup: a Store VEGA candidate is NOT auto-merged against an existing Lille VEGA event, even with an otherwise strong match", () => {
+      const existing: ExistingEventForDedup[] = [
+        {
+          id: "e-lille-vega-night",
+          title: "Solar Flare",
+          artists: ["KASST", "MRK."],
+          venueId: "v-vega",
+          subVenue: "Lille VEGA",
+          startDatetime: "2026-08-14T23:30:00+02:00",
+        },
+      ];
+      const result = runIngestionPipeline(
+        raw({ venueName: "Store VEGA", title: "Solar Flare", artists: ["KASST", "MRK."] }),
+        { venues: VENUES, existingEvents: existing },
+      );
+      expect(result.resolvedSubVenue).toBe("Store VEGA");
+      expect(result.duplicateOfEventId).toBeNull();
+      expect(result.duplicateConfidence).toBe("none");
+    });
+
+    it("threads subVenue into dedup: a Store VEGA candidate IS still eligible for normal dedup evaluation against an existing bare-VEGA (subVenue null) event", () => {
+      const existing: ExistingEventForDedup[] = [
+        {
+          id: "e-vega-night",
+          title: "Solar Flare",
+          artists: ["KASST", "MRK."],
+          venueId: "v-vega",
+          subVenue: null,
+          startDatetime: "2026-08-14T23:30:00+02:00",
+        },
+      ];
+      const result = runIngestionPipeline(
+        raw({ venueName: "Store VEGA", title: "Solar Flare", artists: ["KASST", "MRK."] }),
+        { venues: VENUES, existingEvents: existing },
+      );
+      expect(result.resolvedSubVenue).toBe("Store VEGA");
+      expect(result.duplicateOfEventId).toBe("e-vega-night");
+      expect(result.duplicateConfidence).toBe("high");
+    });
+  });
+
   // Public event-integrity audit (2026-09-04): title sanitization is applied
   // exactly once, here, by mutating the candidate object in place — every
   // downstream consumer (src/db/sync.ts's create/patch writes, discovery-

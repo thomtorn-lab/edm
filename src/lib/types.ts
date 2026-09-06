@@ -45,12 +45,29 @@ export interface Source {
   integrationNote: string;
 }
 
+/**
+ * A room/stage of a parent venue/complex (generalized sub-venue model,
+ * 2026-09-06 — VEGA venue model cleanup follow-up). Matched by resolveVenue()
+ * the same exact-normalized-match way an alias is, but resolving to a room
+ * additionally reports which one via VenueResolution.subVenue rather than
+ * collapsing into the parent with no trace. Deliberately not a separate
+ * venue identity — see PROTECTED_SUB_VENUE_NAMES in src/lib/venueCreation.ts.
+ */
+export interface VenueRoom {
+  /** Raw source text identifying this room, e.g. "Store VEGA". */
+  name: string;
+  /** Optional alternate raw strings that also mean this same room. */
+  aliases?: string[];
+}
+
 export interface Venue {
   id: string;
   slug: string;
   name: string;
   /** Alternate names/spellings that should resolve to this venue. */
   aliases: string[];
+  /** Optional rooms/stages of this venue/complex — see VenueRoom above. Defaults to none. */
+  rooms?: VenueRoom[];
   address: string;
   city: "Copenhagen" | "Frederiksberg";
   postalCode: string;
@@ -60,6 +77,13 @@ export interface Venue {
   shortDescription: string | null;
   /** ~100-170 words for the venue's own detail page. Falls back to `description` when unset. */
   venueProfile: string | null;
+}
+
+/** Result of resolving a raw venue string against the registry — see src/lib/normalize.ts::resolveVenue. */
+export interface VenueResolution {
+  venue: Venue;
+  /** Which room the raw text named, or null when the venue has no rooms configured or none was named. */
+  subVenue: string | null;
 }
 
 export interface Artist {
@@ -86,6 +110,8 @@ export interface EventRecord {
   endDatetime: string | null; // ISO 8601 with UTC offset
   timezone: "Europe/Copenhagen";
   venueId: string;
+  /** Which room/stage of venueId this event is at (generalized sub-venue model, 2026-09-06) — see Venue.rooms/VenueRoom. Null when not applicable/unknown. */
+  subVenue: string | null;
   primaryGenre: GenreSlug;
   subgenres: GenreSlug[];
   genreConfidence: ConfidenceLevel;
@@ -160,6 +186,8 @@ export interface DiscoveryQueueItem {
   probableTicketUrl: string | null;
   probableFree: boolean;
   probableVenueName: string | null;
+  /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06) — see src/db/schema.ts's column comment. */
+  probableSubVenue: string | null;
   sourceName: string;
   sourceUrl: string;
   sourceId: string | null;

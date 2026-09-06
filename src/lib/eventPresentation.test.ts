@@ -131,3 +131,35 @@ describe("subVenueLabel — Byhaven detail-page context", () => {
     expect(subVenueLabel("Black Box: NEW YEAR TECHNO SPECIAL", "Culture Box")).toBeNull();
   });
 });
+
+describe("subVenueLabel — structural subVenue field (generalized sub-venue model, 2026-09-06)", () => {
+  it("returns the structural subVenue when present — VEGA room displayed without any title-text convention", () => {
+    expect(subVenueLabel("Solar Flare", "VEGA", "Store VEGA")).toBe("Store VEGA");
+    expect(subVenueLabel("Solar Flare", "VEGA", "Lille VEGA")).toBe("Lille VEGA");
+  });
+
+  it("bare VEGA (no room) has no subVenue label", () => {
+    expect(subVenueLabel("Solar Flare", "VEGA", null)).toBeNull();
+    expect(subVenueLabel("Solar Flare", "VEGA")).toBeNull();
+  });
+
+  it("Ideal Bar (a standalone venue, never a room under VEGA) has no subVenue label", () => {
+    expect(subVenueLabel("Solar Flare", "VEGA (Ideal Bar)", null)).toBeNull();
+  });
+
+  it("the structural field always wins over the title-text heuristic when both could apply", () => {
+    expect(subVenueLabel("Byhaven: Love.Rave", "Pumpehuset", "Some Structural Room")).toBe("Some Structural Room");
+  });
+
+  it("omitting the structural field entirely falls back to the existing Byhaven/Culture Box behavior unchanged", () => {
+    expect(subVenueLabel("Byhaven: Love.Rave", "Pumpehuset")).toBe("Byhaven");
+    expect(subVenueLabel("Black Box: NEW YEAR TECHNO SPECIAL", "Culture Box")).toBeNull();
+  });
+
+  it("canonical title is never rewritten to include the room — cleanEventTitle is untouched by this field", () => {
+    // subVenueLabel is purely additive display; cleanEventTitle (the ONLY
+    // function allowed to touch the rendered title) has no third parameter
+    // and never reads event.subVenue at all.
+    expect(subVenueLabel("Solar Flare", "VEGA", "Store VEGA")).not.toContain(":");
+  });
+});

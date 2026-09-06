@@ -1,4 +1,4 @@
-import type { Venue } from "./types";
+import type { Venue, VenueResolution } from "./types";
 
 /**
  * Venue and artist normalization (spec sections 37-38). Keeps matching
@@ -16,12 +16,28 @@ export function normalizeVenueName(name: string): string {
     .trim();
 }
 
-export function resolveVenue(rawName: string, venues: Venue[]): Venue | undefined {
+/**
+ * Resolves a raw venue string to a venue and, when applicable, which room of
+ * that venue (generalized sub-venue model, 2026-09-06 — VEGA venue model
+ * cleanup follow-up). A venue's own name/aliases are checked first (existing
+ * behavior, unchanged) — only when none of those match does a second pass
+ * check the venue's `rooms` list, so a room name can never shadow the parent
+ * venue's own identity. Same exact-normalized-match discipline as before at
+ * both steps — never fuzzy/substring.
+ */
+export function resolveVenue(rawName: string, venues: Venue[]): VenueResolution | undefined {
   const target = normalizeVenueName(rawName);
-  return venues.find((v) => {
-    if (normalizeVenueName(v.name) === target) return true;
-    return v.aliases.some((alias) => normalizeVenueName(alias) === target);
-  });
+  for (const v of venues) {
+    if (normalizeVenueName(v.name) === target) return { venue: v, subVenue: null };
+    if (v.aliases.some((alias) => normalizeVenueName(alias) === target)) return { venue: v, subVenue: null };
+  }
+  for (const v of venues) {
+    for (const room of v.rooms ?? []) {
+      if (normalizeVenueName(room.name) === target) return { venue: v, subVenue: room.name };
+      if (room.aliases?.some((alias) => normalizeVenueName(alias) === target)) return { venue: v, subVenue: room.name };
+    }
+  }
+  return undefined;
 }
 
 /**

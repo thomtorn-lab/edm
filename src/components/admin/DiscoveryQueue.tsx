@@ -36,7 +36,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
 
   const [venuesLocal, setVenuesLocal] = useState(venues);
   const guessedVenue = item.probableVenueName ? resolveVenue(item.probableVenueName, venuesLocal) : undefined;
-  const [venueId, setVenueId] = useState(guessedVenue?.id ?? "");
+  const [venueId, setVenueId] = useState(guessedVenue?.venue.id ?? "");
 
   const [title, setTitle] = useState(item.probableTitle);
   const [startLocal, setStartLocal] = useState(item.probableStart ? toLocalInput(item.probableStart) : "");
@@ -174,7 +174,8 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
         </span>
       </div>
       <p className="mt-1 text-xs text-text-secondary">
-        {item.probableVenueName ?? "Venue unresolved"} · source: {item.sourceName}
+        {item.probableVenueName ?? "Venue unresolved"}
+        {item.probableSubVenue ? ` (${item.probableSubVenue})` : ""} · source: {item.sourceName}
       </p>
       {item.detectedLineup.length > 0 && (
         <p className="mt-1 text-xs text-text-tertiary">Lineup: {item.detectedLineup.join(", ")}</p>
@@ -311,7 +312,8 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
             />
             {liveExistingMatch && (
               <p className="mt-1 text-[11px] text-status-warn">
-                Matches existing venue &ldquo;{liveExistingMatch.name}&rdquo; — select it from the dropdown above instead of creating a new one.
+                Matches existing venue &ldquo;{liveExistingMatch.venue.name}&rdquo;
+                {liveExistingMatch.subVenue ? ` (room: ${liveExistingMatch.subVenue})` : ""} — select it from the dropdown above instead of creating a new one.
               </p>
             )}
             {!liveExistingMatch && liveProtectedName && (

@@ -95,6 +95,9 @@ on:
       dedup_venue:
         description: "Candidate venue name (dedup-simulate mode only)"
         required: false
+      dedup_subvenue:
+        description: "Candidate room/sub-venue override, e.g. \"Store VEGA\" (dedup-simulate mode only, generalized sub-venue model) — overrides whatever dedup_venue itself would resolve to, so a room-conflict scenario can be proven without needing dedup_venue to literally be the room's own raw string."
+        required: false
       dedup_start:
         description: "Candidate start datetime, ISO 8601 (dedup-simulate mode only)"
         required: false
@@ -165,6 +168,7 @@ jobs:
           [ -n "${{ inputs.dedup_title }}" ] && args+=(--title="${{ inputs.dedup_title }}")
           [ -n "${{ inputs.dedup_artists }}" ] && args+=(--artists="${{ inputs.dedup_artists }}")
           [ -n "${{ inputs.dedup_venue }}" ] && args+=(--venue="${{ inputs.dedup_venue }}")
+          [ -n "${{ inputs.dedup_subvenue }}" ] && args+=(--subvenue="${{ inputs.dedup_subvenue }}")
           [ -n "${{ inputs.dedup_start }}" ] && args+=(--start="${{ inputs.dedup_start }}")
           [ -n "${{ inputs.dedup_url }}" ] && args+=(--url="${{ inputs.dedup_url }}")
           [ -n "${{ inputs.table }}" ] && args+=(--table="${{ inputs.table }}")

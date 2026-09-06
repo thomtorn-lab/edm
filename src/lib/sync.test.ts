@@ -44,6 +44,7 @@ function target(overrides: Partial<SyncTargetEvent> = {}): SyncTargetEvent {
     description: "Hard Bounce, Schranz and Techno.",
     artists: ["Kander"],
     venueId: "v-hangaren",
+    subVenue: null,
     startDatetime: "2026-08-15T18:00:00.000Z",
     endDatetime: "2026-08-16T04:00:00.000Z",
     officialEventUrl: "https://www.hangaren.dk/events/20268/0815/kander",
@@ -350,6 +351,31 @@ describe("buildSyncPatch", () => {
       expect(safePatch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
     });
   });
+
+  describe("subVenue self-heal (generalized sub-venue model, 2026-09-06)", () => {
+    it("proposes a subVenue patch when venue resolution succeeded and the room changed", () => {
+      const withRoom = { ...resolved, resolvedSubVenue: "Store VEGA" };
+      const { patch } = buildSyncPatch(raw(), withRoom, target({ venueId: "v-hangaren", subVenue: null }));
+      expect(patch.subVenue).toBe("Store VEGA");
+    });
+
+    it("can clear a stale room back to null once resolution succeeds and says there isn't one — authoritative, not one-directional like the missing-venue self-heal", () => {
+      const noRoom = { ...resolved, resolvedSubVenue: null };
+      const { patch } = buildSyncPatch(raw(), noRoom, target({ venueId: "v-hangaren", subVenue: "Store VEGA" }));
+      expect(patch.subVenue).toBeNull();
+    });
+
+    it("never proposes a subVenue patch when venue resolution itself did not succeed this run — a transient miss must never erase a previously-known room", () => {
+      const unresolvedVenue = { ...resolved, resolvedVenueId: null, resolvedSubVenue: null };
+      const { patch } = buildSyncPatch(raw(), unresolvedVenue, target({ venueId: "v-hangaren", subVenue: "Store VEGA" }));
+      expect(patch).not.toHaveProperty("subVenue");
+    });
+
+    it("omitting resolvedSubVenue entirely (pre-existing call sites that never had a room concept) never touches subVenue", () => {
+      const { patch } = buildSyncPatch(raw(), resolved, target({ venueId: "v-hangaren", subVenue: "Store VEGA" }));
+      expect(patch).not.toHaveProperty("subVenue");
+    });
+  });
 });
 
 function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): DiscoveryQueueTarget {
@@ -360,6 +386,7 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     overriddenFields: [],
     overallConfidence: "low",
     missingFields: [],
+    probableSubVenue: null,
     suspectedDuplicateOfEventId: null,
     venueResolvedDecision: null,
     venueResolvedHoldReason: null,
@@ -998,6 +1025,53 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
         row,
       );
       expect(patch.predictedGenre).toBeNull();
+    });
+  });
+
+  describe("probableSubVenue self-heal (generalized sub-venue model, 2026-09-06)", () => {
+    it("sets probableSubVenue when this run's venue resolution succeeded and found a room", () => {
+      const row = pendingDiscoveryTarget({ probableSubVenue: null });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "review_queue", holdReason: null, resolvedVenueId: "v-vega", resolvedSubVenue: "Store VEGA" },
+        row,
+      );
+      expect(patch.probableSubVenue).toBe("Store VEGA");
+    });
+
+    it("clears a stale probableSubVenue back to null once resolution succeeds and says there isn't one — bidirectional, unlike missingFields' one-way self-heal", () => {
+      const row = pendingDiscoveryTarget({ probableSubVenue: "Store VEGA" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "review_queue", holdReason: null, resolvedVenueId: "v-vega", resolvedSubVenue: null },
+        row,
+      );
+      expect(patch.probableSubVenue).toBeNull();
+    });
+
+    it("never touches probableSubVenue when venue resolution did not succeed this run — a transient miss must never erase a previously-known room", () => {
+      const row = pendingDiscoveryTarget({ probableSubVenue: "Store VEGA" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "review_queue", holdReason: null, resolvedVenueId: null, resolvedSubVenue: null },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableSubVenue");
+    });
+
+    it("an admin-overridden probableVenueName blocks the room self-heal too, same guard as the missingFields self-heal", () => {
+      const row = pendingDiscoveryTarget({ probableSubVenue: null, overriddenFields: ["probableVenueName"] });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "review_queue", holdReason: null, resolvedVenueId: "v-vega", resolvedSubVenue: "Store VEGA" },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableSubVenue");
+    });
+
+    it("omitting resolvedSubVenue entirely (pre-existing call sites) never touches probableSubVenue", () => {
+      const row = pendingDiscoveryTarget({ probableSubVenue: "Store VEGA" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "review_queue", holdReason: null, resolvedVenueId: "v-vega" },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableSubVenue");
     });
   });
 });

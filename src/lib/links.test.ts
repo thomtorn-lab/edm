@@ -13,6 +13,7 @@ function event(overrides: Partial<EventRecord> = {}): EventRecord {
     endDatetime: null,
     timezone: "Europe/Copenhagen",
     venueId: "v-hangaren",
+    subVenue: null,
     primaryGenre: "techno",
     subgenres: ["techno"],
     genreConfidence: "high",

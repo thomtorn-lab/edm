@@ -30,6 +30,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     endDatetime: null,
     timezone: "Europe/Copenhagen",
     venueId: VENUE.id,
+    subVenue: null,
     primaryGenre: "drum-and-bass" as GenreSlug,
     subgenres: ["drum-and-bass"] as GenreSlug[],
     genreConfidence: "high",

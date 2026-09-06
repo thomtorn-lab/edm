@@ -97,6 +97,7 @@ function makeEvent(startIso: string): EventWithVenue {
     endDatetime: null,
     timezone: "Europe/Copenhagen",
     venueId: VENUE.id,
+    subVenue: null,
     primaryGenre: "techno" as GenreSlug,
     subgenres: ["techno"] as GenreSlug[],
     genreConfidence: "high",

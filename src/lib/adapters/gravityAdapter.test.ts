@@ -98,7 +98,7 @@ describe("parseGravityEventDetailHtml", () => {
     const candidate = parseGravityEventDetailHtml(CAMELPHAT_HTML, entry);
 
     const resolved = resolveVenue(candidate.venueName!, VENUES);
-    expect(resolved?.id).toBe("v-tap1");
+    expect(resolved?.venue.id).toBe("v-tap1");
   });
 
   it("Armin van Buuren: real venue name resolves against the existing registry to TAP1 (v-tap1), not assumed from the source", () => {
@@ -107,7 +107,7 @@ describe("parseGravityEventDetailHtml", () => {
     const candidate = parseGravityEventDetailHtml(ARMIN_HTML, entry);
 
     const resolved = resolveVenue(candidate.venueName!, VENUES);
-    expect(resolved?.id).toBe("v-tap1");
+    expect(resolved?.venue.id).toBe("v-tap1");
   });
 
   it("I Hate Models: real 'Music: Techno' tag resolves to a high-confidence techno genreHint", () => {

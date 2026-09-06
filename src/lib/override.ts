@@ -14,6 +14,7 @@ export const EDITABLE_EVENT_FIELDS = [
   "startDatetime",
   "endDatetime",
   "venueId",
+  "subVenue",
   "primaryGenre",
   "subgenres",
   "officialEventUrl",

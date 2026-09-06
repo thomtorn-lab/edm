@@ -56,8 +56,19 @@ export function cleanEventTitle(title: string, venueName: string): string {
  * has no equivalent per-event field, so it's derived from the raw
  * (unstripped) title here — evaluated against the same title
  * `cleanEventTitle` was given, before cleaning.
+ *
+ * `subVenue` (generalized sub-venue model, 2026-09-06) is the event's own
+ * structural room field — see src/lib/types.ts's Venue.rooms/EventRecord.subVenue
+ * — and always wins when present: it is real, persisted evidence, never
+ * derived from title text, so it can never be contaminated by an
+ * unrelated title that happens to start with a room-like word the way a
+ * text-prefix heuristic could be. Optional and omittable so every
+ * pre-existing call site (Byhaven/Culture Box, neither of which sets this
+ * structural field) keeps behaving exactly as before, falling back to the
+ * Pumpehuset title-prefix heuristic unchanged.
  */
-export function subVenueLabel(title: string, venueName: string): string | null {
+export function subVenueLabel(title: string, venueName: string, subVenue?: string | null): string | null {
+  if (subVenue) return subVenue;
   if (venueName === "Pumpehuset" && BYHAVEN_PREFIX.test(title)) return "Byhaven";
   return null;
 }
