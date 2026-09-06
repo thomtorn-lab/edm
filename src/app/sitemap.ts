@@ -8,10 +8,15 @@ import { FESTIVALS } from "@/lib/data/festivals";
 // time. A schema change that adds a column selected by events/venues
 // queries (src/lib/queries.ts) must have its migration applied to that
 // same database BEFORE this code deploys, or the build fails here with a
-// real Postgres "column does not exist" error (confirmed live: the
-// generalized sub-venue model's `sub_venue` column, 2026-09-06) — additive
-// migrations are safe to apply ahead of the corresponding code merge for
-// exactly this reason.
+// real Postgres "column does not exist" error (confirmed live twice now:
+// the generalized sub-venue model's `sub_venue` column, 2026-09-06, and the
+// admin-unpublish override's `admin_unpublish_reason`/`admin_unpublished_at`
+// columns, same day) — additive migrations are safe, and necessary, to
+// apply ahead of the corresponding code merge for exactly this reason. Even
+// so, a PR's very first automatic build can still race a same-day migration
+// dispatch that completes moments after that build already started against
+// the old schema — if that happens, the fix is a fresh build once the
+// migration has landed, not a code change here.
 const SITE_URL = "https://electroniccph.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
