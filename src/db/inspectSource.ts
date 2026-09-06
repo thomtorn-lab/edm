@@ -425,7 +425,7 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   const venues = venueRows.rows.map(rowToVenue);
 
   const eventRows = await client.query(
-    `SELECT id, title, artists, venue_id, start_datetime, canonical_source_id, official_event_url, ticket_url, resident_advisor_url
+    `SELECT id, title, artists, venue_id, start_datetime, canonical_source_id, official_event_url, ticket_url, resident_advisor_url, admin_unpublish_reason
      FROM events`,
   );
   const existingEvents = eventRows.rows.map((r) => ({
@@ -438,6 +438,7 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
     officialEventUrl: r.official_event_url as string | null,
     ticketUrl: r.ticket_url as string | null,
     residentAdvisorUrl: r.resident_advisor_url as string | null,
+    adminUnpublished: r.admin_unpublish_reason != null,
   }));
   console.log(`Existing events loaded (read-only, for dedup comparison): ${existingEvents.length}`);
 

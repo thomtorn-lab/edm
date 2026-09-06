@@ -616,6 +616,7 @@ describe("Billetto candidates through the shared dedup model", () => {
       officialEventUrl: "https://poolen.dk/da/koncerter/infected-mushroom/",
       ticketUrl: "https://billetto.dk/e/infected-mushroom-30th-anniversary-tour-billetter-1879852?utm_source=organiser&utm_medium=share&utm_campaign=copy_link&utm_content=1",
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
 
     expect(normalizeUrl(existingPoolenRecord.ticketUrl)).toBe(normalizeUrl(infectedMushroomCandidate.officialEventUrl));
@@ -653,6 +654,7 @@ describe("Billetto candidates through the shared dedup model", () => {
       officialEventUrl: "https://poolen.dk/da/koncerter/some-other-event/",
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
 
     const best = findBestDuplicateMatch(
@@ -690,6 +692,7 @@ describe("Billetto candidates through the shared dedup model", () => {
       officialEventUrl: "https://www.hangaren.dk/events/whatever",
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
 
     const best = findBestDuplicateMatch(

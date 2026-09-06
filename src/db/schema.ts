@@ -134,6 +134,25 @@ export const events = pgTable("events", {
   dateChanged: boolean("date_changed").notNull().default(false),
   timeChanged: boolean("time_changed").notNull().default(false),
   published: boolean("published").notNull().default(true),
+  /**
+   * Persistent admin publication override (admin unpublish/cancellation
+   * safety, 2026-09-06). Non-null means this event was explicitly taken
+   * down by an admin (via adminUnpublishEvent) rather than by an automated
+   * process (e.g. applySyncHoldUnpublish's negative-relevance auto-
+   * unpublish, which never sets this) — the distinction the whole feature
+   * exists to make enforceable: "ADMIN-UNPUBLISHED -> source sync cannot
+   * set published=true". One of "cancelled" | "irrelevant" | "duplicate" |
+   * "incorrect_data" | "other". Cleared (set back to null) only by
+   * adminRepublishEvent ("Publish Again"), which also sets published=true.
+   * Deliberately a separate field from manualOverride/overriddenFields
+   * (the existing generic field-level sync-protection mechanism) — those
+   * answer "which fields has an admin hand-corrected", not "did an admin
+   * specifically decide this event should stay unpublished", and conflating
+   * the two would make an unrelated field edit silently start (or stop)
+   * suppressing publication.
+   */
+  adminUnpublishReason: text("admin_unpublish_reason"),
+  adminUnpublishedAt: timestamp("admin_unpublished_at", { withTimezone: true }),
   manualOverride: boolean("manual_override").notNull().default(false),
   /**
    * Field-level manual-override protection (spec section 46 / user

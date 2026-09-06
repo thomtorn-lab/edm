@@ -46,6 +46,8 @@ function event(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     dateChanged: false,
     timeChanged: false,
     published: true,
+    adminUnpublishReason: null,
+    adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",

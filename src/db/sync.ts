@@ -219,6 +219,7 @@ async function runSourceSyncLocked(
     officialEventUrl: e.officialEventUrl,
     ticketUrl: e.ticketUrl,
     residentAdvisorUrl: e.residentAdvisorUrl,
+    adminUnpublished: e.adminUnpublishReason != null,
   }));
   const existingById = new Map(existingEventRows.map((e) => [e.id, e]));
 

@@ -48,6 +48,8 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     dateChanged: false,
     timeChanged: false,
     published: true,
+    adminUnpublishReason: null,
+    adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",
@@ -315,9 +317,9 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
-  it("cancelled still renders CANCELLED", () => {
+  it("cancelled renders no public badge (admin unpublish/cancellation safety, 2026-09-06) — a cancelled event is taken down entirely via admin unpublish, never shown live with a badge", () => {
     render(<EventRow event={makeEvent({ cancelled: true })} />);
-    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
   });
 
   it("soldOut still renders SOLD OUT", () => {
@@ -330,16 +332,16 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("cancelled + dateChanged shows only CANCELLED — mutually exclusive, cancelled wins", () => {
+  it("cancelled + dateChanged: cancelled contributes no badge, Rescheduled still renders (cancelled no longer suppresses it)", () => {
     render(<EventRow event={makeEvent({ cancelled: true, dateChanged: true, timeChanged: true })} />);
-    expect(screen.getByText("Cancelled")).toBeTruthy();
-    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.getByText("Rescheduled")).toBeTruthy();
   });
 
-  it("cancelled + postponed shows only CANCELLED — mutually exclusive, cancelled wins", () => {
+  it("cancelled + postponed: cancelled contributes no badge, Postponed still renders (cancelled no longer suppresses it)", () => {
     render(<EventRow event={makeEvent({ cancelled: true, postponed: true })} />);
-    expect(screen.getByText("Cancelled")).toBeTruthy();
-    expect(screen.queryByText(/Postponed/i)).toBeNull();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
   it("soldOut + dateChanged shows both SOLD OUT and RESCHEDULED", () => {
@@ -358,11 +360,11 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.queryByText(/Date changed/i)).toBeNull();
   });
 
-  it("CANCELLED uses the existing status-bad red tone, SOLD OUT uses a neutral secondary tone (not amber, not purple)", () => {
-    render(<EventRow event={makeEvent({ cancelled: true, soldOut: true })} />);
-    const cancelled = screen.getByText("Cancelled");
+  it("POSTPONED uses the existing status-bad red tone, SOLD OUT uses a neutral secondary tone (not amber, not purple)", () => {
+    render(<EventRow event={makeEvent({ postponed: true, soldOut: true })} />);
+    const postponed = screen.getByText("Postponed");
     const soldOut = screen.getByText("Sold out");
-    expect(cancelled.className).toContain("text-status-bad");
+    expect(postponed.className).toContain("text-status-bad");
     expect(soldOut.className).not.toContain("text-status-bad");
     expect(soldOut.className).not.toContain("text-status-warn");
     expect(soldOut.className).not.toContain("text-accent");

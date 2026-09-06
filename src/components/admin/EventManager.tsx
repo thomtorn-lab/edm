@@ -3,9 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EventWithVenue } from "@/lib/queries";
-import type { Venue } from "@/lib/types";
+import type { AdminUnpublishReason, Venue } from "@/lib/types";
 import { GENRES } from "@/lib/taxonomy";
 import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
+
+/** UNPUBLISH reasons offered in the admin UI (admin unpublish/cancellation
+ *  safety, 2026-09-06) — must stay in sync with AdminUnpublishReason. */
+const UNPUBLISH_REASONS: { value: AdminUnpublishReason; label: string }[] = [
+  { value: "cancelled", label: "Cancelled" },
+  { value: "irrelevant", label: "Irrelevant" },
+  { value: "duplicate", label: "Duplicate" },
+  { value: "incorrect_data", label: "Incorrect data" },
+  { value: "other", label: "Other" },
+];
 
 export default function EventManager({ events, venues }: { events: EventWithVenue[]; venues: Venue[] }) {
   return (
@@ -38,15 +48,38 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
   const [cancelled, setCancelled] = useState(event.cancelled);
   const [postponed, setPostponed] = useState(event.postponed);
 
-  async function toggleHidden() {
+  const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
+  const [unpublishReason, setUnpublishReason] = useState<AdminUnpublishReason>("cancelled");
+
+  async function confirmUnpublish() {
     setBusy(true);
     setError(null);
     try {
-      const path = event.published ? `/api/admin/events/${event.id}/hide` : `/api/admin/events/${event.id}/unhide`;
-      const res = await fetch(path, { method: "POST" });
+      const res = await fetch(`/api/admin/events/${event.id}/unpublish`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: unpublishReason }),
+      });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        setError(json.error ?? "Action failed.");
+        setError(json.error ?? "Unpublish failed.");
+        return;
+      }
+      setConfirmingUnpublish(false);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function publishAgain() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/events/${event.id}/publish`, { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json.error ?? "Publish failed.");
         return;
       }
       router.refresh();
@@ -115,7 +148,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-text-primary">
-            {!event.published && <span className="mr-1.5 text-status-warn">[hidden]</span>}
+            {!event.published && !event.adminUnpublishReason && <span className="mr-1.5 text-status-warn">[hidden]</span>}
             {event.title}
           </p>
           <p className="text-xs text-text-tertiary">
@@ -126,16 +159,55 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               </span>
             )}
           </p>
+          {event.adminUnpublishReason && (
+            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-status-bad">
+              Unpublished by admin — reason: {UNPUBLISH_REASONS.find((r) => r.value === event.adminUnpublishReason)?.label ?? event.adminUnpublishReason}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-2">
           <button type="button" disabled={busy} onClick={() => setEditing((v) => !v)} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
             {editing ? "Close" : "Edit"}
           </button>
-          <button type="button" disabled={busy} onClick={toggleHidden} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
-            {event.published ? "Hide" : "Unhide"}
-          </button>
+          {event.published ? (
+            <button type="button" disabled={busy} onClick={() => setConfirmingUnpublish(true)} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+              Unpublish
+            </button>
+          ) : (
+            <button type="button" disabled={busy} onClick={publishAgain} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+              Publish again
+            </button>
+          )}
         </div>
       </div>
+
+      {confirmingUnpublish && (
+        <div className="mt-3 space-y-2 rounded border border-status-bad/40 p-3">
+          <Field id={`event-unpublish-reason-${event.id}`} label="Reason">
+            <select
+              id={`event-unpublish-reason-${event.id}`}
+              value={unpublishReason}
+              onChange={(e) => setUnpublishReason(e.target.value as AdminUnpublishReason)}
+              className={inputCls}
+            >
+              {UNPUBLISH_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </Field>
+          <p className="text-xs text-text-tertiary">
+            This removes the event from the public site immediately. It stays in admin and can be published again later.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <button type="button" disabled={busy} onClick={confirmUnpublish} className="rounded border border-status-bad/40 bg-status-bad/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-status-bad hover:bg-status-bad/20 disabled:opacity-50">
+              Confirm unpublish
+            </button>
+            <button type="button" disabled={busy} onClick={() => setConfirmingUnpublish(false)} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="mt-3 space-y-2 rounded border border-border-strong p-3">

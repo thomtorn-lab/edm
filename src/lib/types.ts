@@ -100,6 +100,15 @@ export interface EventSourceRef {
   sourceId: string;
 }
 
+/**
+ * Why an admin explicitly unpublished an event (admin unpublish/
+ * cancellation safety, 2026-09-06). "cancelled" is one of these reasons,
+ * not a separate public display state — a cancelled event disappears from
+ * the public site entirely via published=false, never via a "Cancelled"
+ * badge on an event that's still visible.
+ */
+export type AdminUnpublishReason = "cancelled" | "irrelevant" | "duplicate" | "incorrect_data" | "other";
+
 export interface EventRecord {
   id: string;
   title: string;
@@ -129,6 +138,9 @@ export interface EventRecord {
   dateChanged: boolean;
   timeChanged: boolean;
   published: boolean;
+  /** Non-null means an admin explicitly took this event down — see AdminUnpublishReason and src/db/writes.ts::adminUnpublishEvent. Never set by an automated process. */
+  adminUnpublishReason: AdminUnpublishReason | null;
+  adminUnpublishedAt: string | null;
   manualOverride: boolean;
   /** Field names an admin has hand-corrected — a later sync must never overwrite these (see src/lib/override.ts). */
   overriddenFields: string[];

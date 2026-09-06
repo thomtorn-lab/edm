@@ -47,6 +47,8 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     dateChanged: false,
     timeChanged: false,
     published: true,
+    adminUnpublishReason: null,
+    adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",
@@ -201,9 +203,9 @@ describe("Event detail page — public/internal status separation (event lifecyc
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
-  it("cancelled still renders CANCELLED", async () => {
+  it("cancelled renders no public badge (admin unpublish/cancellation safety, 2026-09-06) — a cancelled event is taken down entirely via admin unpublish, never shown live with a badge", async () => {
     await renderPage(makeEvent({ cancelled: true }));
-    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
   });
 
   it("soldOut still renders SOLD OUT", async () => {
@@ -216,10 +218,10 @@ describe("Event detail page — public/internal status separation (event lifecyc
     expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("cancelled + dateChanged shows only CANCELLED — mutually exclusive, cancelled wins", async () => {
+  it("cancelled + dateChanged: cancelled contributes no badge, Rescheduled still renders (cancelled no longer suppresses it)", async () => {
     await renderPage(makeEvent({ cancelled: true, dateChanged: true, timeChanged: true }));
-    expect(screen.getByText("Cancelled")).toBeTruthy();
-    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
+    expect(screen.queryByText(/Cancelled/i)).toBeNull();
+    expect(screen.getByText("Rescheduled")).toBeTruthy();
   });
 
   it("soldOut + dateChanged shows both SOLD OUT and RESCHEDULED", async () => {

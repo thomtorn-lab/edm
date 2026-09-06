@@ -31,6 +31,8 @@ function event(overrides: Partial<EventRecord> = {}): EventRecord {
     dateChanged: false,
     timeChanged: false,
     published: true,
+    adminUnpublishReason: null,
+    adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",

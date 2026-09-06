@@ -29,6 +29,15 @@ import type { RawCandidateEvent } from "./types";
 
 export interface ExistingEventForDedup extends DuplicateCandidate {
   id: string;
+  /**
+   * Whether an admin explicitly unpublished this existing event (admin
+   * unpublish/cancellation safety, 2026-09-06) — see
+   * src/db/writes.ts::adminUnpublishEvent and computeDecision's own
+   * duplicateIsAdminUnpublished guard, the reason this needs to travel
+   * with every existing-event dedup candidate rather than being looked up
+   * separately after the fact.
+   */
+  adminUnpublished: boolean;
 }
 
 export interface PipelineOptions {
@@ -97,6 +106,8 @@ export interface PipelineResult {
   relevance: RelevanceLevel;
   duplicateOfEventId: string | null;
   duplicateConfidence: "high" | "medium" | "low" | "none";
+  /** Whether duplicateOfEventId (at any confidence tier) points at an admin-unpublished event (admin unpublish/cancellation safety, 2026-09-06) — see computeDecision's own guard. False when duplicateOfEventId is null. */
+  duplicateIsAdminUnpublished: boolean;
   /**
    * What the SAME quality gate (computeDecision below) would decide for this
    * exact candidate if venue resolution were the only thing fixed — every
@@ -143,6 +154,7 @@ function computeVenueResolvedCounterfactual(
   trustedElectronicSource: boolean,
   hasNonElectronicSignal: boolean,
   hasEvidenceText: boolean,
+  duplicateIsAdminUnpublished: boolean,
 ): { decision: PublishDecision; holdReason: HoldReason } | null {
   if (!applicable) return null;
   const counterfactualMissingFields = missingFields.filter((f) => f !== "venue (unresolved against registry)");
@@ -156,6 +168,7 @@ function computeVenueResolvedCounterfactual(
     trustedElectronicSource,
     hasNonElectronicSignal,
     hasEvidenceText,
+    duplicateIsAdminUnpublished,
   );
 }
 
@@ -174,6 +187,7 @@ function computeDecision(
   trustedElectronicSource: boolean,
   hasNonElectronicSignal: boolean,
   hasEvidenceText: boolean,
+  duplicateIsAdminUnpublished: boolean,
 ): { decision: PublishDecision; holdReason: HoldReason } {
   const meetsMinimumFields =
     missingFields.every((f) => f !== "title") &&
@@ -287,6 +301,21 @@ function computeDecision(
     decision = "review_queue";
   } else if (duplicateAction === "review_queue" && decision === "auto_publish") {
     decision = "review_queue";
+  } else if (duplicateIsAdminUnpublished && decision === "auto_publish") {
+    // Admin unpublish safety (2026-09-06): a suspected duplicate of an
+    // event an admin explicitly took down must never auto-publish as a
+    // brand-new row — that would make the same real-world event publicly
+    // visible again, exactly the outcome the override exists to prevent.
+    // Deliberately checked at EVERY confidence tier, including "low" (the
+    // one tier decideDuplicateAction never itself downgrades — a plain
+    // low-confidence duplicate of an ORDINARY event correctly stays
+    // "keep_separate" so two unrelated events don't get needlessly routed
+    // to review, but any confidence tier of overlap with an
+    // admin-unpublished event deserves a human's eyes before republishing,
+    // never a silent auto-create). Routes to review_queue, never hold, so
+    // it surfaces in the Discovery Queue with suspectedDuplicateOfEventId
+    // already pointing at the unpublished event for the admin to see.
+    decision = "review_queue";
   }
   return { decision, holdReason };
 }
@@ -350,6 +379,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // DEDUPLICATION
   let duplicateOfEventId: string | null = null;
   let duplicateConfidence: "high" | "medium" | "low" | "none" = "none";
+  let duplicateIsAdminUnpublished = false;
   if (raw.startDatetime) {
     const best = findBestDuplicateMatch(
       {
@@ -368,6 +398,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     if (best) {
       duplicateOfEventId = best.match.id;
       duplicateConfidence = best.assessment.confidence;
+      duplicateIsAdminUnpublished = best.match.adminUnpublished;
     } else if (raw.sourceId) {
       // MOVED/RESCHEDULED EVENT CHECK (Workstream C): normal dedup found
       // nothing — most commonly because the date genuinely differs, which
@@ -390,6 +421,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
       );
       if (moved) {
         duplicateOfEventId = moved.match.id;
+        duplicateIsAdminUnpublished = moved.match.adminUnpublished;
         // "high" moved-event confidence reuses the exact same auto-attach
         // path a high-confidence duplicate already gets (src/lib/sync.ts's
         // findSyncMatch) — the candidate is treated as an update to the
@@ -425,6 +457,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     options.trustedElectronicSource ?? false,
     nonElectronicSignal,
     hasEvidenceText,
+    duplicateIsAdminUnpublished,
   );
   const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
     resolvedVenue == null && raw.venueName != null,
@@ -436,6 +469,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     options.trustedElectronicSource ?? false,
     nonElectronicSignal,
     hasEvidenceText,
+    duplicateIsAdminUnpublished,
   );
 
   return {
@@ -450,6 +484,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     relevance,
     duplicateOfEventId,
     duplicateConfidence,
+    duplicateIsAdminUnpublished,
     venueResolvedCounterfactual,
   };
 }
@@ -531,6 +566,7 @@ export function applyEnrichedGenre(
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       nonElectronicSignal,
       true,
+      result.duplicateIsAdminUnpublished,
     );
     // Re-derives the counterfactual with the newly-enriched genre (venue-block
     // visibility precision fix) — applicability itself never changes here
@@ -546,6 +582,7 @@ export function applyEnrichedGenre(
       false,
       nonElectronicSignal,
       true,
+      result.duplicateIsAdminUnpublished,
     );
     return { ...result, genre, genreConfidence, decision, holdReason, venueResolvedCounterfactual };
   }
@@ -586,6 +623,7 @@ export function applyEnrichedGenre(
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       nonElectronicSignal,
       true,
+      result.duplicateIsAdminUnpublished,
     );
     // See CASE A's identical comment — applicability carries over unchanged.
     const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
@@ -598,6 +636,7 @@ export function applyEnrichedGenre(
       false,
       nonElectronicSignal,
       true,
+      result.duplicateIsAdminUnpublished,
     );
     return { ...result, genre: finalGenre, genreConfidence: finalGenreConfidence, decision, holdReason, relevance, venueResolvedCounterfactual };
   }

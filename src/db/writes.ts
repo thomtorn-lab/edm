@@ -7,7 +7,7 @@ import { addOverriddenFields, stripOverriddenFields, type EditableEventField } f
 import { assessDuplicate } from "../lib/dedup";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
-import type { ConfidenceLevel, Venue } from "../lib/types";
+import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types";
 import type { GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
@@ -71,6 +71,84 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
 export async function setEventPublished(eventId: string, published: boolean) {
   await applyAdminEventEdit(eventId, { published });
   await writeChangeLog(eventId, "admin", published ? "publish" : "unpublish", ["published"]);
+}
+
+/**
+ * Explicit, reason-tracked admin unpublish (admin unpublish/cancellation
+ * safety, 2026-09-06) — the sanctioned path for the admin UI's UNPUBLISH
+ * action, superseding the bare setEventPublished(id, false) the UI used
+ * before this feature (setEventPublished itself is kept only for the
+ * existing one-time Production correction scripts that already call it —
+ * see tonserCleanup.ts/cultureBoxRoomConsolidation.ts — never delete a
+ * function a historical script still depends on).
+ *
+ * Sets published=false AND stamps adminUnpublishReason/adminUnpublishedAt
+ * — the persistent override every automated publish path (pipeline.ts's
+ * computeDecision, publishDiscoveryItem below) now checks before ever
+ * creating a new published row that might be the same real-world event.
+ * Also sets manualOverride/overriddenFields exactly like any other admin
+ * edit (src/lib/override.ts), so a routine field-level sync patch on this
+ * event is protected too — belt-and-suspenders alongside the dedicated
+ * adminUnpublishReason check, never a substitute for it (manualOverride
+ * alone was never reason-specific — see the schema column's own comment).
+ * Never deletes the event, never touches source_event_links or any other
+ * record.
+ */
+export async function adminUnpublishEvent(eventId: string, reason: AdminUnpublishReason) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  const overriddenFields = addOverriddenFields(existing.overriddenFields, ["published"]);
+  const now = new Date();
+
+  await db
+    .update(events)
+    .set({
+      published: false,
+      adminUnpublishReason: reason,
+      adminUnpublishedAt: now,
+      manualOverride: true,
+      overriddenFields,
+      updatedAt: now,
+      lastChanged: now,
+    })
+    .where(eq(events.id, eventId));
+
+  await writeChangeLog(eventId, "admin", "admin_unpublish", ["published", "adminUnpublishReason"], `reason: ${reason}`);
+}
+
+/**
+ * "Publish Again" — clears the admin-unpublish override and republishes.
+ * Safe to call on an event that was never admin-unpublished (e.g. one
+ * auto-unpublished by applySyncHoldUnpublish, or never unpublished at
+ * all): adminUnpublishReason is simply left/set to null and published set
+ * to true either way, matching the ordinary "Publish"/"Unhide" behavior
+ * those events already had (no admin-override-specific requirement blocks
+ * this path — see EventManager.tsx). Only ever removes "published" from
+ * overriddenFields, keeping any other hand-corrected field's protection
+ * intact; manualOverride is recomputed from whatever remains.
+ */
+export async function adminRepublishEvent(eventId: string) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  const overriddenFields = existing.overriddenFields.filter((f) => f !== "published");
+  const now = new Date();
+
+  await db
+    .update(events)
+    .set({
+      published: true,
+      adminUnpublishReason: null,
+      adminUnpublishedAt: null,
+      manualOverride: overriddenFields.length > 0,
+      overriddenFields,
+      updatedAt: now,
+      lastChanged: now,
+    })
+    .where(eq(events.id, eventId));
+
+  await writeChangeLog(eventId, "admin", "admin_republish", ["published", "adminUnpublishReason"]);
 }
 
 /**
@@ -383,6 +461,23 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
   if (!item) throw new Error(`Discovery item ${queueId} not found`);
   if (item.status !== "pending") throw new Error(`Discovery item ${queueId} already ${item.status}`);
   if (!item.probableStart) throw new Error("Cannot publish without a resolved date/time");
+
+  // Admin unpublish safety (2026-09-06): publishing this item would create
+  // a BRAND NEW event row — if it's a suspected duplicate of an event an
+  // admin already deliberately took down, that new row would make the
+  // same real-world event publicly visible again, defeating the whole
+  // point of the override (see adminUnpublishEvent's own doc comment).
+  // Refuses outright rather than silently publishing; the admin's actual
+  // options are to Merge this item into the existing event, or to use
+  // "Publish Again" on that event if they've genuinely changed their mind.
+  if (item.suspectedDuplicateOfEventId) {
+    const [suspectedDuplicate] = await db.select().from(events).where(eq(events.id, item.suspectedDuplicateOfEventId)).limit(1);
+    if (suspectedDuplicate?.adminUnpublishReason) {
+      throw new Error(
+        `Cannot publish: this looks like a duplicate of an admin-unpublished event ("${suspectedDuplicate.title}", reason: ${suspectedDuplicate.adminUnpublishReason}). Merge this item into it instead, or use "Publish Again" on that event if it should come back.`,
+      );
+    }
+  }
 
   const eventId = `e-${randomUUID().slice(0, 8)}`;
   const slug = `${item.probableTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${eventId}`;

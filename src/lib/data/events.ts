@@ -79,6 +79,8 @@ function mkEvent(input: SeedEventInput): EventRecord {
     dateChanged: input.dateChanged ?? false,
     timeChanged: input.timeChanged ?? false,
     published: input.published ?? true,
+    adminUnpublishReason: null,
+    adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: input.confidence ?? "high",

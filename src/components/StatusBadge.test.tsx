@@ -17,17 +17,16 @@ describe("getEventStatuses", () => {
     expect(getEventStatuses(flags({ timeChanged: true }))).toEqual([]);
   });
 
-  it("cancelled renders", () => {
-    expect(getEventStatuses(flags({ cancelled: true }))).toEqual([{ label: "Cancelled", tone: "bad" }]);
+  it("cancelled produces no public badge (admin unpublish/cancellation safety, 2026-09-06) — a cancelled event is taken down entirely via admin unpublish, never shown live with a badge", () => {
+    expect(getEventStatuses(flags({ cancelled: true }))).toEqual([]);
   });
 
   it("soldOut renders", () => {
     expect(getEventStatuses(flags({ soldOut: true }))).toEqual([{ label: "Sold out", tone: "neutral" }]);
   });
 
-  it("cancelled + soldOut together render both (pre-existing behavior, unaffected by this change)", () => {
+  it("cancelled + soldOut: only Sold out renders, cancelled contributes no badge", () => {
     expect(getEventStatuses(flags({ cancelled: true, soldOut: true }))).toEqual([
-      { label: "Cancelled", tone: "bad" },
       { label: "Sold out", tone: "neutral" },
     ]);
   });
@@ -50,9 +49,9 @@ describe("getEventStatuses", () => {
       ]);
     });
 
-    it("cancelled suppresses Rescheduled — mutually exclusive, cancelled wins", () => {
+    it("cancelled no longer suppresses Rescheduled — cancelled contributes no public badge at all now", () => {
       expect(getEventStatuses(flags({ cancelled: true, dateChanged: true }))).toEqual([
-        { label: "Cancelled", tone: "bad" },
+        { label: "Rescheduled", tone: "neutral" },
       ]);
     });
   });
@@ -69,9 +68,9 @@ describe("getEventStatuses", () => {
       ]);
     });
 
-    it("cancelled suppresses Postponed — mutually exclusive, cancelled wins", () => {
+    it("cancelled no longer suppresses Postponed — cancelled contributes no public badge at all now", () => {
       expect(getEventStatuses(flags({ cancelled: true, postponed: true }))).toEqual([
-        { label: "Cancelled", tone: "bad" },
+        { label: "Postponed", tone: "bad" },
       ]);
     });
 

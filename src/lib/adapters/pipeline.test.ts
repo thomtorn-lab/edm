@@ -60,12 +60,72 @@ describe("runIngestionPipeline", () => {
 
   it("routes a likely duplicate to the review queue instead of auto-publishing", () => {
     const existing: ExistingEventForDedup[] = [
-      { id: "e-existing", title: "Box Standard", artists: ["NAILS", "TEODORA LUX"], venueId: "v-culture-box", startDatetime: "2026-08-14T23:00:00+02:00" },
+      { id: "e-existing", title: "Box Standard", artists: ["NAILS", "TEODORA LUX"], venueId: "v-culture-box", startDatetime: "2026-08-14T23:00:00+02:00", adminUnpublished: false },
     ];
     const result = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: existing });
     expect(result.duplicateOfEventId).toBe("e-existing");
     expect(result.duplicateConfidence).toBe("high");
     expect(result.decision).toBe("review_queue");
+  });
+
+  describe("admin unpublish safety — a suspected duplicate of an admin-unpublished event never auto-publishes (2026-09-06)", () => {
+    it("downgrades what would otherwise be a HIGH-confidence auto-publish to review_queue when the duplicate is admin-unpublished", () => {
+      const existing: ExistingEventForDedup[] = [
+        {
+          id: "e-jasho",
+          title: "Box Standard",
+          artists: ["NAILS", "TEODORA LUX"],
+          venueId: "v-culture-box",
+          startDatetime: "2026-08-14T23:00:00+02:00",
+          adminUnpublished: true,
+        },
+      ];
+      const result = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: existing });
+      expect(result.duplicateOfEventId).toBe("e-jasho");
+      expect(result.duplicateIsAdminUnpublished).toBe(true);
+      expect(result.decision).toBe("review_queue");
+    });
+
+    it("also downgrades a MEDIUM-confidence duplicate match against an admin-unpublished event (not just high) — belt-and-suspenders alongside decideDuplicateAction's own pre-existing medium->review_queue rule", () => {
+      // Partial title overlap, no artist overlap, no shared URL -> "medium",
+      // per src/lib/dedup.ts::assessDuplicate's same-venue/same-night branch.
+      const raw2 = raw({ title: "Box Standard: Late Session", artists: [], officialEventUrl: null, ticketUrl: null });
+      const existing: ExistingEventForDedup[] = [
+        { id: "e-jasho", title: "Box Standard", artists: [], venueId: "v-culture-box", startDatetime: "2026-08-14T23:00:00+02:00", adminUnpublished: true },
+      ];
+      const result = runIngestionPipeline(raw2, { venues: VENUES, existingEvents: existing });
+      expect(result.duplicateConfidence).toBe("medium");
+      expect(result.duplicateIsAdminUnpublished).toBe(true);
+      expect(result.decision).toBe("review_queue");
+    });
+
+    it("duplicateIsAdminUnpublished is false and has no effect when there is no duplicate at all", () => {
+      const result = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: [] });
+      expect(result.duplicateOfEventId).toBeNull();
+      expect(result.duplicateIsAdminUnpublished).toBe(false);
+      expect(result.decision).toBe("auto_publish");
+    });
+
+    it("also downgrades via the moved/rescheduled-event match path (findBestMovedEventMatch), not just the normal dedup path", () => {
+      const existing: ExistingEventForDedup[] = [
+        {
+          id: "e-jasho-moved",
+          title: "Box Standard",
+          artists: ["NAILS", "TEODORA LUX"],
+          venueId: "v-culture-box",
+          startDatetime: "2026-09-01T23:30:00+02:00", // different date -> normal dedup finds nothing, falls to moved-event check
+          sourceId: "src-culture-box",
+          officialEventUrl: "https://culture-box.com/events/example",
+          ticketUrl: null,
+          residentAdvisorUrl: null,
+          adminUnpublished: true,
+        },
+      ];
+      const result = runIngestionPipeline(raw(), { venues: VENUES, existingEvents: existing });
+      expect(result.duplicateOfEventId).toBe("e-jasho-moved");
+      expect(result.duplicateIsAdminUnpublished).toBe(true);
+      expect(result.decision).toBe("review_queue");
+    });
   });
 
   it("does not treat an unresolvable venue name as a pass", () => {
@@ -108,6 +168,7 @@ describe("runIngestionPipeline", () => {
           venueId: "v-vega",
           subVenue: "Lille VEGA",
           startDatetime: "2026-08-14T23:30:00+02:00",
+          adminUnpublished: false,
         },
       ];
       const result = runIngestionPipeline(
@@ -128,6 +189,7 @@ describe("runIngestionPipeline", () => {
           venueId: "v-vega",
           subVenue: null,
           startDatetime: "2026-08-14T23:30:00+02:00",
+          adminUnpublished: false,
         },
       ];
       const result = runIngestionPipeline(
@@ -310,6 +372,7 @@ describe("moved/rescheduled first-party events (data-quality Workstream C)", () 
     officialEventUrl: "https://pumpehuset.dk/koncerter/tonser-2026/",
     ticketUrl: "https://www.ticketmaster.dk/event/tonser-billetter/123456",
     residentAdvisorUrl: null,
+    adminUnpublished: false,
   };
 
   it("attaches a same-source candidate at a new date/URL to the existing published event when it shares a ticket URL (tonser-type regression case) — never leaves a stale canonical alongside its replacement", () => {
@@ -923,6 +986,7 @@ describe("trusted-electronic sources (Section 6 — corrected per explicit produ
       officialEventUrl: hangarenRaw().officialEventUrl,
       ticketUrl: null,
       residentAdvisorUrl: null,
+      adminUnpublished: false,
     };
     const result = runIngestionPipeline(hangarenRaw(), { venues: VENUES, existingEvents: [existing], trustedElectronicSource: true });
     expect(result.decision).not.toBe("auto_publish"); // exact match resolves via findSyncMatch's update path in db/sync.ts, never a second create

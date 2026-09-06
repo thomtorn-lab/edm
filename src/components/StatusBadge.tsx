@@ -18,18 +18,19 @@ interface StatusInfo {
  * date passes it drops out of the public "upcoming" listing entirely (see
  * EventExplorer), so this can never linger as stale clutter.
  *
- * cancelled takes priority over postponed/rescheduled (mutually exclusive —
- * showing both would be confusing/redundant), but NOT over soldOut, which
- * still renders alongside cancelled exactly as it already did before this
- * change.
+ * No "Cancelled" badge here (admin unpublish/cancellation safety,
+ * 2026-09-06): a cancelled event must not remain publicly visible at all —
+ * it's taken down entirely via admin unpublish (published=false,
+ * adminUnpublishReason="cancelled"), never shown live with a badge. Public
+ * pages only ever render already-published events, so `cancelled` itself
+ * carries no public display meaning any more; it's left as internal/
+ * historical metadata (see EventManager.tsx) rather than removed outright.
  */
 export function getEventStatuses(
-  event: Pick<EventRecord, "cancelled" | "soldOut" | "postponed" | "dateChanged">,
+  event: Pick<EventRecord, "soldOut" | "postponed" | "dateChanged">,
 ): StatusInfo[] {
   const statuses: StatusInfo[] = [];
-  if (event.cancelled) {
-    statuses.push({ label: "Cancelled", tone: "bad" });
-  } else if (event.postponed) {
+  if (event.postponed) {
     statuses.push({ label: "Postponed", tone: "bad" });
   } else if (event.dateChanged) {
     statuses.push({ label: "Rescheduled", tone: "neutral" });
