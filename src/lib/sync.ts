@@ -391,28 +391,44 @@ export interface DiscoveryQueueClassificationPatch {
  * same run.
  *
  * AUTHORITATIVE NULL vs UNRELIABLE NULL (generalized discovery-queue genre
- * self-heal, 2026-09-06 — follow-up to the KultuNaut relevance-gap fixes).
+ * self-heal, 2026-09-06 — follow-up to the KultuNaut relevance-gap fixes;
+ * corrected 2026-09-06 to also cover `negative_relevance`, see below).
  * A fresh classification with no genre can mean two genuinely different
  * things: the pipeline evaluated the candidate's full, current evidence
- * text this run and legitimately concluded no genre applies (`holdReason`
- * "no_genre_evidence" — see pipeline.ts's HoldReason/computeDecision), or
- * the pipeline simply didn't have enough to go on this run — a missing
+ * text this run and legitimately concluded no genre applies — either
+ * finding no genre signal at all (`holdReason` "no_genre_evidence") or
+ * finding an explicit non-electronic signal (`holdReason`
+ * "negative_relevance" — see pipeline.ts's HoldReason/computeDecision) —
+ * or the pipeline simply didn't have enough to go on this run: a missing
  * required field, no evidence text at all, a transient per-record fetch/
- * parse gap (`holdReason` "incomplete_data" or omitted). Only the first is
- * safe to act on: it clears a stale predictedGenre/genreConfidence and lets
- * every derived field (overallConfidence, the venue-resolved counterfactual)
- * recompute from the new, accurate "no genre" state, exactly like any other
- * genre change. Every other shape of "genre came back null" keeps the
- * pre-existing freeze of the ENTIRE row — a blip must never make an
- * already-correct row look stale. Real evidence this distinction matters:
- * "Silent Disco Fest" — after the gap-4E format-term fix, "silent disco" is
- * correctly no longer read as the disco genre, and the row has no other
- * genre evidence, so its stale disco/high classification must clear; its
- * venue ("Folkehuset Absalon") separately fails to resolve against the
- * registry, but venue resolution is deliberately NOT part of what makes a
- * null genre authoritative (see hasCoreRecordFields in computeDecision), so
- * this row still self-heals even though it remains venue-blocked. Do not
- * hardcode any one event or source — every source reaches this same check.
+ * parse gap (`holdReason` "incomplete_data" or omitted). Only the first two
+ * are safe to act on: they clear a stale predictedGenre/genreConfidence and
+ * let every derived field (overallConfidence, the venue-resolved
+ * counterfactual) recompute from the new, accurate state, exactly like any
+ * other genre change. Every other shape of "genre came back null" keeps
+ * the pre-existing freeze of the ENTIRE row — a blip must never make an
+ * already-correct row look stale.
+ * `negative_relevance` belongs on the authoritative side, not the
+ * unreliable side: by construction (see computeDecision) it is only ever
+ * set when full evidence text WAS evaluated this run and it contains an
+ * explicit, credible non-electronic signal (a strong genre/event-type
+ * mismatch, or a relevance score of "none") — never a data gap. It is, if
+ * anything, a STRONGER conclusion than "no_genre_evidence" (a positive
+ * rejection, not just an absence of signal). The rest of this codebase
+ * already treats it that way: decidePublishedEventSyncAction unpublishes a
+ * LIVE, already-published canonical event on `holdReason ===
+ * "negative_relevance"` alone. Refusing to clear a stale genre on a
+ * still-*pending* row under the same signal — a strictly smaller, lower-
+ * stakes action — would be inconsistent with that existing precedent.
+ * Real evidence this distinction matters: "Silent Disco Fest" — after the
+ * gap-4E format-term fix, "silent disco" is correctly no longer read as the
+ * disco genre, and the row has no other genre evidence, so its stale
+ * disco/high classification must clear; its venue ("Folkehuset Absalon")
+ * separately fails to resolve against the registry, but venue resolution is
+ * deliberately NOT part of what makes a null genre authoritative (see
+ * hasCoreRecordFields in computeDecision), so this row still self-heals
+ * even though it remains venue-blocked. Do not hardcode any one event or
+ * source — every source reaches this same check.
  */
 export function buildDiscoveryQueueClassificationPatch(
   fresh: DiscoveryQueueClassification,
@@ -420,7 +436,8 @@ export function buildDiscoveryQueueClassificationPatch(
 ): DiscoveryQueueClassificationPatch {
   if (existing.status !== "pending") return {};
   if (existing.overriddenFields.includes("predictedGenre")) return {};
-  const freshGenreIsAuthoritative = fresh.genre != null || fresh.holdReason === "no_genre_evidence";
+  const freshGenreIsAuthoritative =
+    fresh.genre != null || fresh.holdReason === "no_genre_evidence" || fresh.holdReason === "negative_relevance";
   if (!freshGenreIsAuthoritative) return {};
 
   const patch: DiscoveryQueueClassificationPatch = {};
