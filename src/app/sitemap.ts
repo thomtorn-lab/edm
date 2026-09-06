@@ -2,6 +2,16 @@ import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { FESTIVALS } from "@/lib/data/festivals";
 
+// Next.js prerenders this route at BUILD time by default (no `dynamic`
+// export here), so the queries below run against whatever database
+// DATABASE_URL points to during the Vercel build itself — not at request
+// time. A schema change that adds a column selected by events/venues
+// queries (src/lib/queries.ts) must have its migration applied to that
+// same database BEFORE this code deploys, or the build fails here with a
+// real Postgres "column does not exist" error (confirmed live: the
+// generalized sub-venue model's `sub_venue` column, 2026-09-06) — additive
+// migrations are safe to apply ahead of the corresponding code merge for
+// exactly this reason.
 const SITE_URL = "https://electroniccph.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
