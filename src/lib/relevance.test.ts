@@ -517,3 +517,64 @@ describe("hasElectronicsAsInstrumentationOnly (final focused pass, round 3 part 
     expect(hasElectronicsAsInstrumentationOnly("Electronics brings his trumpet and electronics show to the club.", ["Electronics"])).toBe(false);
   });
 });
+
+describe("assessRelevance — hasRichSpecificGenreEvidence in the pop/R&B zone (round 3 part 3, 2026-09-06 — Roya (dk) root cause)", () => {
+  const popBase = {
+    hasExplicitElectronicAssertion: false,
+    hasTrustedElectronicTicketing: false,
+    hasCorroboratingArtistGenreEvidence: false,
+    hasNonElectronicGenreSignal: false,
+    hasExplicitNonElectronicIdentityAssertion: false,
+    hasPopOrRnbSignal: true,
+  };
+
+  it("caps at 'weak' (never 'strong') for a pop act whose only genre evidence is a non-rich '-inspired' mention (real Roya (dk) evidence: 'house-inspireret popmusik... med elektroniske trommer' — no direct claim the show itself is house)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+        hasRichSpecificGenreEvidence: false,
+      }),
+    ).toBe("weak");
+  });
+
+  it("never forces 'none' for the pop/R&B zone, even with zero rich evidence — only ever caps at the generic-category floor (matches assessRelevance's own documented invariant)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+        hasRichSpecificGenreEvidence: false,
+      }),
+    ).not.toBe("none");
+  });
+
+  it("stays 'strong' for a pop/R&B crossover with a RICH, direct specific-genre claim (real MNEK-shape evidence — must not regress the existing precedent)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+        hasRichSpecificGenreEvidence: true,
+      }),
+    ).toBe("strong");
+  });
+
+  it("defaults to treating genre evidence as rich when hasRichSpecificGenreEvidence is omitted (every existing caller/test unaffected)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+      }),
+    ).toBe("strong");
+  });
+
+  it("is completely unaffected outside the pop/R&B zone — a non-rich specific genre still counts as a strong signal when hasPopOrRnbSignal is false (must not repeat the earlier reverted GLOBAL richness-gating regression)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        hasPopOrRnbSignal: false,
+        genre: "drum-and-bass",
+        hasRichSpecificGenreEvidence: false,
+      }),
+    ).toBe("strong");
+  });
+});

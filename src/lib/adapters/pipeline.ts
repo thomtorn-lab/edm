@@ -17,7 +17,7 @@ import {
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
-import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
 import { sanitizeExtractedTitle } from "./htmlExtraction";
 import type { RawCandidateEvent } from "./types";
 
@@ -483,6 +483,15 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     // resolving to "none" — see hasElectronicsAsInstrumentationOnly's own
     // doc comment.
     hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, normalizedArtists),
+    // Round 3 part 3 (2026-09-06): scoped exclusively to the pop/R&B
+    // crossover zone (see assessRelevance's own comment) — real evidence:
+    // Roya (dk)'s bio, "house-inspireret popmusik... med elektroniske
+    // trommer", was reaching "strong"/auto-credible relevance purely from a
+    // non-rich "-inspired" genre mention, the same evidentiary shape the
+    // codebase already documents (deterministicGenreMapping.ts's
+    // INFLUENCE_QUALIFIER_RE) as NOT a direct claim about this event's own
+    // sound.
+    hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
   });
   const { decision, holdReason } = computeDecision(
     missingFields,
@@ -611,6 +620,7 @@ export function applyEnrichedGenre(
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
       hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
       hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, result.normalizedArtists),
+      hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
     });
     // hasEvidenceText's true/false distinction only matters inside
     // computeDecision's genre==null branch (see hasCoreRecordFields there) —
@@ -672,6 +682,7 @@ export function applyEnrichedGenre(
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
       hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
       hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, result.normalizedArtists),
+      hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
     });
     // Same placeholder reasoning as CASE A above: `finalGenre` is always
     // non-null here (this branch only runs when result.genre was already

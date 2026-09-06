@@ -563,6 +563,24 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
     );
     expect(result.decision).toBe("review_queue");
   });
+
+  it("no longer resolves 'strong' relevance for a pop act whose only genre evidence is a non-rich 'house-inspired' qualifier (round 3 part 3, real KultuNaut evidence: Roya (dk) — 'house-inspireret popmusik... med elektroniske trommer', no direct claim the show itself is house; still review-queues, just no longer as an over-confident auto-credible match)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-kultunaut",
+        title: "Roya (dk)",
+        description:
+          "TikTok-virale ROYA vender triumferende tilbage til VEGA. Med deres intime univers af house-inspireret popmusik - spækket med elektroniske trommer og effektfyldte vokaler - har de opnået international berømmelse.",
+        genreHint: "house",
+        genreConfidenceHint: "medium",
+        artists: ["Roya (dk)"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("house");
+    expect(result.relevance).toBe("weak"); // was "strong" before this fix — confirms it now goes through the pop/RnB non-rich cap, not the naive genre-present-alone floor
+    expect(result.decision).toBe("review_queue"); // downgraded from an over-confident match to a genuine human-review case, not silently excluded — see assessRelevance's documented "never forces none on its own" invariant for the pop/R&B zone
+  });
 });
 
 describe("moved/rescheduled first-party events (data-quality Workstream C)", () => {
