@@ -30,6 +30,14 @@ const HOME_HTML = readFileSync(path.join(FIXTURES_DIR, "alice-home.html"), "utf-
 const DENGUE_HTML = readFileSync(path.join(FIXTURES_DIR, "alice-event-dengue-dengue-dengue-pe.html"), "utf-8");
 const AITA_HTML = readFileSync(path.join(FIXTURES_DIR, "alice-event-aita-mon-amour-ma.html"), "utf-8");
 const BEVERLY_HTML = readFileSync(path.join(FIXTURES_DIR, "alice-event-beverly-glenn-copeland-ca.html"), "utf-8");
+// Real, unmodified page (admin Discovery Queue cleanup quality audit,
+// 2026-09-06) — a bossa nova/MPB artist whose bio is long enough that the
+// contradicting evidence (its own "Música Popular Brasileira (MPB)"
+// self-identification) sits past the 800-char boundary `description`
+// truncates to, exposing a real relevanceText gap — see the
+// "relevanceText carries evidence past the description truncation
+// boundary" describe block below.
+const BRUNO_BERLE_HTML = readFileSync(path.join(FIXTURES_DIR, "alice-event-bruno-berle-br.html"), "utf-8");
 
 describe("parseAliceTitle", () => {
   it("splits a single-artist title with a country-code superscript", () => {
@@ -170,6 +178,38 @@ describe("parseAliceEventDetailHtml — genuinely non-electronic-club artist (Be
 
   it("never invents a price when none is stated", () => {
     expect(event.priceFrom).toBeNull();
+  });
+});
+
+describe("parseAliceEventDetailHtml — relevanceText carries evidence past the description truncation boundary (admin Discovery Queue cleanup quality audit, 2026-09-06)", () => {
+  // Real, live bug: `description` is truncated to 800 chars for display,
+  // but Bruno Berle BR's own bio only states its real genre identity
+  // ("Música Popular Brasileira (MPB)") and its only "electronic" mention
+  // ("subtle electronic textures") starting around character ~600-670 —
+  // past truncateAtBoundary's own sentence-boundary cutoff (~586 chars for
+  // this exact bio). Before this fix, relevanceText was never set, so the
+  // pipeline's relevance check silently fell back to the truncated
+  // `description` and never saw that contradicting evidence at all, even
+  // though genreHint itself (correctly) resolved from the full text.
+  const entry: AliceProgramEntry = {
+    title: "Bruno Berle BR",
+    artists: ["Bruno Berle"],
+    detailUrl: "https://alicecph.com/en/event/bruno-berle-br-3/",
+    teaser: "Brazilian shooting star…",
+    imageUrl: "https://alicecph.com/content/uploads/2026/06/Bruno-Berle-2-by-Claudio-Virginio-680x440.jpg",
+    dateText: "Wednesday _16.09.26",
+  };
+  const event = parseAliceEventDetailHtml(BRUNO_BERLE_HTML, entry);
+
+  it("truncates description to 800 chars, cutting it off before the bio's own genre self-identification", () => {
+    expect(event.description!.length).toBeLessThan(700);
+    expect(event.description).not.toContain("Música Popular Brasileira");
+  });
+
+  it("still carries the FULL untruncated bio in relevanceText, including the genre self-identification the truncated description drops", () => {
+    expect(event.relevanceText).toContain("Música Popular Brasileira");
+    expect(event.relevanceText).toContain("subtle electronic textures");
+    expect(event.relevanceText!.length).toBeGreaterThan(event.description!.length);
   });
 });
 
