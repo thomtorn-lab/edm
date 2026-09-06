@@ -468,6 +468,12 @@ async function runSourceSyncLocked(
             genre: result.genre,
             genreConfidence: result.genreConfidence,
             decision: result.decision,
+            // Generalized discovery-queue genre self-heal, 2026-09-06 — lets
+            // buildDiscoveryQueueClassificationPatch tell an authoritative
+            // null genre (holdReason "no_genre_evidence") apart from an
+            // unreliable one, straight from the same pipeline result every
+            // other field here already comes from.
+            holdReason: result.holdReason,
             sourceAutoPublishAllowed,
             resolvedVenueId: result.resolvedVenueId,
             duplicateOfEventId: result.duplicateOfEventId,

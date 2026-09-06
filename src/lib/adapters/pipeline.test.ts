@@ -1039,3 +1039,87 @@ describe("KultuNaut publish work package (2026-09-05) — generalized relevance-
     expect(result.holdReason).not.toBe("negative_relevance");
   });
 });
+
+describe("generalized discovery-queue genre self-heal (2026-09-06) — authoritative vs unreliable null at the pipeline level", () => {
+  it("full record + real evidence text + no genre + no negative signal -> holdReason 'no_genre_evidence' (authoritative)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: null,
+        genreConfidenceHint: null,
+        title: "Wheelchair Access Notice",
+        description: "Please email us in advance if you require wheelchair access. Companion tickets are free with a valid companion card.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBeNull();
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("no_genre_evidence");
+  });
+
+  it("missing title/date (adapter fetch/parse failure) -> holdReason 'incomplete_data' (unreliable), never 'no_genre_evidence'", () => {
+    const result = runIngestionPipeline(
+      raw({ title: "", genreHint: null, genreConfidenceHint: null, description: "Some real body text with no genre in it." }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBeNull();
+    expect(result.holdReason).toBe("incomplete_data");
+  });
+
+  it("no evidence text at all this run (empty description/relevanceText) -> holdReason 'incomplete_data', not 'no_genre_evidence' — a real fetch/parse gap must not look authoritative just because the record's other fields are present", () => {
+    const result = runIngestionPipeline(raw({ genreHint: null, genreConfidenceHint: null, description: "" }), {
+      venues: VENUES,
+      existingEvents: [],
+    });
+    expect(result.genre).toBeNull();
+    expect(result.holdReason).toBe("incomplete_data");
+  });
+
+  it("venue resolution is orthogonal to genre-evidence authority: an unresolved venue name does not downgrade an authoritative null genre back to 'incomplete_data' (real Silent Disco Fest shape — venue 'Folkehuset Absalon' never registers, but the genre text was fully evaluated)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: null,
+        genreConfidenceHint: null,
+        venueName: "Some Totally Unregistered Venue Name",
+        description: "Switch between three different channels with three different DJs, music universes and vibes. Bring your best dancing shoes.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.resolvedVenueId).toBeNull();
+    expect(result.genre).toBeNull();
+    expect(result.holdReason).toBe("no_genre_evidence");
+  });
+
+  it("the venue-resolved counterfactual also reports 'no_genre_evidence' rather than a stale/contradictory pre-fix state, for the same unresolved-venue + authoritative-null-genre shape", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: null,
+        genreConfidenceHint: null,
+        venueName: "Some Totally Unregistered Venue Name",
+        description: "Switch between three different channels with three different DJs, music universes and vibes. Bring your best dancing shoes.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.venueResolvedCounterfactual).toEqual({ decision: "hold", holdReason: "no_genre_evidence" });
+  });
+
+  it("a real negative-relevance signal still wins over 'no_genre_evidence' — the two authoritative reasons are mutually exclusive per candidate", () => {
+    const result = runIngestionPipeline(
+      raw({
+        genreHint: null,
+        genreConfidenceHint: null,
+        description: "A night of pure heavy metal and hardcore punk, no electronic music whatsoever.",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("a genuine disco event with real evidence text keeps resolving 'disco', never regressed by the authoritative-null logic", () => {
+    const result = runIngestionPipeline(
+      raw({ genreHint: null, genreConfidenceHint: null, title: "Boogie Nights", description: "A night of classic disco and boogie." }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("disco");
+    expect(result.holdReason).toBeNull();
+  });
+});

@@ -825,6 +825,150 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).not.toHaveProperty("published");
     expect(patch.overallConfidence).toBe("high");
   });
+
+  describe("AUTHORITATIVE NULL vs UNRELIABLE NULL (generalized discovery-queue genre self-heal, 2026-09-06 — not KultuNaut-specific: every source reaches this same check)", () => {
+    it("existing genre + authoritative same genre: still refreshes overallConfidence/other fields normally, exactly like any non-null-genre re-sync", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "house", genreConfidence: "medium", overallConfidence: "low" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "house", genreConfidence: "medium", decision: "review_queue", holdReason: null },
+        row,
+      );
+      expect(patch).toEqual({ overallConfidence: "medium" });
+    });
+
+    it("existing genre + authoritative different genre: updates normally", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "house", genreConfidence: "medium", overallConfidence: "medium" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "medium", decision: "review_queue", holdReason: null },
+        row,
+      );
+      expect(patch).toEqual({ predictedGenre: "techno", genreConfidence: "medium" });
+    });
+
+    it("existing genre + authoritative null (holdReason 'no_genre_evidence'): the stale genre is cleared", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "disco", genreConfidence: "high", overallConfidence: "high" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" },
+        row,
+      );
+      expect(patch.predictedGenre).toBeNull();
+      expect(patch.genreConfidence).toBe("low");
+    });
+
+    it("authoritative null also recomputes overallConfidence and the venue-resolved counterfactual — no contradictory leftover state (Section 5: predictedGenre null must never sit next to a stale auto-publish/review counterfactual)", () => {
+      const row = pendingDiscoveryTarget({
+        predictedGenre: "disco",
+        genreConfidence: "high",
+        overallConfidence: "high",
+        venueResolvedDecision: "auto_publish",
+        venueResolvedHoldReason: null,
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        {
+          genre: null,
+          genreConfidence: "low",
+          decision: "hold",
+          holdReason: "no_genre_evidence",
+          venueResolvedDecision: "hold",
+          venueResolvedHoldReason: "no_genre_evidence",
+        },
+        row,
+      );
+      expect(patch).toEqual({
+        predictedGenre: null,
+        genreConfidence: "low",
+        overallConfidence: "low",
+        venueResolvedDecision: "hold",
+        venueResolvedHoldReason: "no_genre_evidence",
+      });
+    });
+
+    it("null -> valid genre: classification is added normally regardless of holdReason (genre itself is non-null, so the authority check never even applies)", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: null, overallConfidence: "low" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "psytrance", genreConfidence: "medium", decision: "review_queue", holdReason: null },
+        row,
+      );
+      expect(patch).toEqual({ predictedGenre: "psytrance", genreConfidence: "medium", overallConfidence: "medium" });
+    });
+
+    it("detail-fetch/parse failure producing no genre (holdReason 'incomplete_data'): the existing genre is preserved, exactly like the pre-fix behavior", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "disco", genreConfidence: "high", overallConfidence: "high" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "incomplete_data" },
+        row,
+      );
+      expect(patch).toEqual({});
+    });
+
+    it("holdReason omitted entirely (every pre-existing call site) behaves exactly like 'incomplete_data' — still frozen, never treated as authoritative by accident", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "disco", genreConfidence: "high", overallConfidence: "high" });
+      const patch = buildDiscoveryQueueClassificationPatch({ genre: null, genreConfidence: "low", decision: "hold" }, row);
+      expect(patch).toEqual({});
+    });
+
+    it("holdReason 'low_confidence' or 'negative_relevance' alongside a null genre also stay frozen — only the exact 'no_genre_evidence' reason authorizes a clear", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "disco", genreConfidence: "high", overallConfidence: "high" });
+      expect(
+        buildDiscoveryQueueClassificationPatch({ genre: null, genreConfidence: "low", decision: "hold", holdReason: "low_confidence" }, row),
+      ).toEqual({});
+      expect(
+        buildDiscoveryQueueClassificationPatch(
+          { genre: null, genreConfidence: "low", decision: "hold", holdReason: "negative_relevance" },
+          row,
+        ),
+      ).toEqual({});
+    });
+
+    it("Silent Disco Fest-shaped case: a row previously stored as disco/high self-heals to no genre once the source authoritatively reports none (real reference case — see pipeline.ts's HoldReason doc comment)", () => {
+      const silentDiscoFestRow = pendingDiscoveryTarget({
+        predictedGenre: "disco",
+        genreConfidence: "high",
+        overallConfidence: "low", // venue-blocked in real Production (Folkehuset Absalon unresolved)
+        missingFields: ["venue (unresolved against registry)"],
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" },
+        silentDiscoFestRow,
+      );
+      expect(patch.predictedGenre).toBeNull();
+      expect(patch.genreConfidence).toBe("low");
+      // Venue resolution is a separate, orthogonal blocker — this row stays
+      // venue-blocked (missingFields untouched: fresh.resolvedVenueId isn't
+      // set in this fresh classification) even though its genre self-heals.
+      expect(patch).not.toHaveProperty("missingFields");
+    });
+
+    it("a genuine disco event (authoritative, non-null 'disco' genre) is unaffected by the authoritative-null logic and remains disco", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "disco", genreConfidence: "medium", overallConfidence: "medium" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "disco", genreConfidence: "high", decision: "review_queue", holdReason: null },
+        row,
+      );
+      expect(patch).toEqual({ genreConfidence: "high" });
+    });
+
+    it("nothing to clear: an already-null predictedGenre with an authoritative null classification proposes no genre-field change (idempotent)", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: null, genreConfidence: "low", overallConfidence: "low" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" },
+        row,
+      );
+      expect(patch).not.toHaveProperty("predictedGenre");
+      expect(patch).not.toHaveProperty("genreConfidence");
+    });
+
+    it("this is a generalized fix, not KultuNaut-specific: the same authoritative-null clearing behavior applies with no source identity anywhere in these inputs", () => {
+      // buildDiscoveryQueueClassificationPatch never receives a sourceId at
+      // all — proving structurally that this logic cannot be source-keyed.
+      const row = pendingDiscoveryTarget({ predictedGenre: "house", genreConfidence: "high", overallConfidence: "high" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" },
+        row,
+      );
+      expect(patch.predictedGenre).toBeNull();
+    });
+  });
 });
 
 describe("summarizeWriteErrors", () => {

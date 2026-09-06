@@ -54,15 +54,30 @@ export interface PipelineOptions {
 
 /**
  * WHY a "hold" was reached (data-quality Workstream A follow-up —
- * existing-published-event safety). Only "negative_relevance" represents a
- * genuine evidence-based rejection (full data, high genre confidence, but
- * the event's own text/corroboration says this isn't really electronic) —
- * "incomplete_data" and "low_confidence" mean the pipeline simply didn't
- * have enough to go on this run (e.g. a per-event detail-page fetch failed
- * this cycle), which must never be treated as proof the event fails
- * inclusion. null when the decision isn't "hold" at all.
+ * existing-published-event safety; extended by the generalized discovery-
+ * queue genre self-heal fix, 2026-09-06). "negative_relevance" and
+ * "no_genre_evidence" are the two AUTHORITATIVE reasons — the pipeline had
+ * the candidate's real, current evidence text this run and reached a
+ * complete, reliable conclusion:
+ *   - "negative_relevance": full data, but the event's own text/
+ *     corroboration says this isn't really electronic (a genuine
+ *     evidence-based rejection).
+ *   - "no_genre_evidence": full record (title/date/source-url) and real
+ *     evidence text were both present this run, and the pipeline genuinely
+ *     found no genre keyword and no negative signal either — a complete
+ *     "we looked, there's nothing here" result, not a data gap. Real
+ *     evidence this exists: "Silent Disco Fest" — after the gap-4E
+ *     format-term fix, "silent disco" is correctly no longer read as the
+ *     disco genre, and the event's own text has no other genre evidence.
+ * "incomplete_data" and "low_confidence" remain UNRELIABLE — the pipeline
+ * simply didn't have enough to go on this run (a missing required field,
+ * no evidence text at all this cycle, a transient per-record fetch/parse
+ * gap) — never treated as proof the event fails inclusion, and never
+ * allowed to clear a previously-resolved classification (see
+ * src/lib/sync.ts's buildDiscoveryQueueClassificationPatch). null when the
+ * decision isn't "hold" at all.
  */
-export type HoldReason = "incomplete_data" | "low_confidence" | "negative_relevance" | null;
+export type HoldReason = "incomplete_data" | "low_confidence" | "negative_relevance" | "no_genre_evidence" | null;
 
 export interface PipelineResult {
   decision: PublishDecision;
@@ -125,6 +140,7 @@ function computeVenueResolvedCounterfactual(
   relevance: RelevanceLevel,
   trustedElectronicSource: boolean,
   hasNonElectronicSignal: boolean,
+  hasEvidenceText: boolean,
 ): { decision: PublishDecision; holdReason: HoldReason } | null {
   if (!applicable) return null;
   const counterfactualMissingFields = missingFields.filter((f) => f !== "venue (unresolved against registry)");
@@ -137,6 +153,7 @@ function computeVenueResolvedCounterfactual(
     relevance,
     trustedElectronicSource,
     hasNonElectronicSignal,
+    hasEvidenceText,
   );
 }
 
@@ -154,6 +171,7 @@ function computeDecision(
   relevance: RelevanceLevel,
   trustedElectronicSource: boolean,
   hasNonElectronicSignal: boolean,
+  hasEvidenceText: boolean,
 ): { decision: PublishDecision; holdReason: HoldReason } {
   const meetsMinimumFields =
     missingFields.every((f) => f !== "title") &&
@@ -163,6 +181,19 @@ function computeDecision(
   // A trusted-electronic source (Section 6) IS itself relevance evidence —
   // no genre keyword needs to have matched at all.
   const hasCredibleElectronicRelevance = genre != null || trustedElectronicSource;
+  // Generalized discovery-queue genre self-heal, 2026-09-06 — deliberately
+  // NOT the same as meetsMinimumFields: venue resolution is excluded on
+  // purpose. Whether a venue name matches the registry says nothing about
+  // whether the event's own genre TEXT was fully evaluated this run — a
+  // candidate can have a fully-resolved title/date/source-url and complete
+  // evidence text while its venue independently fails to resolve (real
+  // case: "Silent Disco Fest" @ "Folkehuset Absalon", unregistered). Used
+  // only to decide whether a null genre is authoritative (see below) —
+  // never changes `meetsMinimumFields`/`decision` itself.
+  const hasCoreRecordFields =
+    missingFields.every((f) => f !== "title") &&
+    missingFields.every((f) => f !== "date") &&
+    missingFields.every((f) => f !== "source url");
 
   let decision = evaluateQualityGate({
     hasTitle: missingFields.every((f) => f !== "title"),
@@ -190,10 +221,25 @@ function computeDecision(
     holdReason = "negative_relevance";
     decision = "hold";
   } else if (!meetsMinimumFields || !hasCredibleElectronicRelevance) {
-    // The gate returned "hold" purely because required fields or any genre
-    // at all are missing this run — a data/parser gap, never itself
-    // evidence that the event fails inclusion.
-    holdReason = "incomplete_data";
+    if (genre == null && hasCoreRecordFields && hasEvidenceText) {
+      // AUTHORITATIVE NULL (generalized discovery-queue genre self-heal,
+      // 2026-09-06 — see HoldReason's own doc comment): the core record
+      // and real evidence text were both present this run, and the
+      // pipeline genuinely found no genre and no negative signal either —
+      // a complete, reliable "nothing here" result, not a data gap. Safe
+      // to clear a stale predictedGenre downstream (src/lib/sync.ts's
+      // buildDiscoveryQueueClassificationPatch). Deliberately still
+      // reachable even when venue resolution is the ONLY thing
+      // meetsMinimumFields is failing on (hasCoreRecordFields excludes
+      // it) — an unresolved venue is a separate, orthogonal blocker.
+      holdReason = "no_genre_evidence";
+    } else {
+      // UNRELIABLE — the gate returned "hold" purely because a required
+      // field, or the evidence text itself, is missing this run: a
+      // data/parser gap, never itself evidence that the event fails
+      // inclusion or that a previously-resolved genre was wrong.
+      holdReason = "incomplete_data";
+    }
   } else if (trustedElectronicSource) {
     // Source-level electronic relevance is TRUSTED, full stop (Section 6,
     // corrected per explicit product decision 2026-08-24): for Hangaren/
@@ -272,7 +318,13 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // never be silently dropped before relevance gets to weigh it (see
   // RawCandidateEvent.relevanceText's doc comment for the real incident this
   // fixes).
-  const relevanceText = `${raw.title} ${raw.relevanceText ?? raw.description ?? ""}`;
+  const evidenceBodyText = raw.relevanceText ?? raw.description ?? "";
+  // Whether there was any real body evidence to classify against this run,
+  // independent of the title (generalized discovery-queue genre self-heal,
+  // 2026-09-06) — see computeDecision's hasCoreRecordFields/hasEvidenceText
+  // for how this decides whether a null genre is authoritative.
+  const hasEvidenceText = Boolean(evidenceBodyText.trim());
+  const relevanceText = `${raw.title} ${evidenceBodyText}`;
 
   // GENRE CLASSIFICATION (evidence order: hint from source metadata/description first,
   // deterministic keyword mapping as fallback, otherwise unresolved).
@@ -369,6 +421,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     relevance,
     options.trustedElectronicSource ?? false,
     nonElectronicSignal,
+    hasEvidenceText,
   );
   const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
     resolvedVenue == null && raw.venueName != null,
@@ -379,6 +432,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     relevance,
     options.trustedElectronicSource ?? false,
     nonElectronicSignal,
+    hasEvidenceText,
   );
 
   return {
@@ -457,6 +511,12 @@ export function applyEnrichedGenre(
     const nonElectronicSignal =
       hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
       hasNonElectronicCategorySignal(relevanceText, result.normalizedArtists);
+    // hasEvidenceText's true/false distinction only matters inside
+    // computeDecision's genre==null branch (see hasCoreRecordFields there) —
+    // `genre` here is always the just-enriched, non-null value (this whole
+    // CASE A branch is guarded on `enrichment.genre` being truthy at the
+    // db/sync.ts call site), so that branch is structurally unreachable and
+    // this placeholder `true` is never actually consulted.
     const { decision, holdReason } = computeDecision(
       result.missingFields,
       result.resolvedVenueId,
@@ -466,6 +526,7 @@ export function applyEnrichedGenre(
       "none",
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       nonElectronicSignal,
+      true,
     );
     // Re-derives the counterfactual with the newly-enriched genre (venue-block
     // visibility precision fix) — applicability itself never changes here
@@ -480,6 +541,7 @@ export function applyEnrichedGenre(
       "none",
       false,
       nonElectronicSignal,
+      true,
     );
     return { ...result, genre, genreConfidence, decision, holdReason, venueResolvedCounterfactual };
   }
@@ -506,6 +568,10 @@ export function applyEnrichedGenre(
       hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
     });
+    // Same placeholder reasoning as CASE A above: `finalGenre` is always
+    // non-null here (this branch only runs when result.genre was already
+    // the generic electronic-other floor), so hasEvidenceText is never
+    // actually consulted.
     const { decision, holdReason } = computeDecision(
       result.missingFields,
       result.resolvedVenueId,
@@ -515,6 +581,7 @@ export function applyEnrichedGenre(
       relevance,
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       nonElectronicSignal,
+      true,
     );
     // See CASE A's identical comment — applicability carries over unchanged.
     const venueResolvedCounterfactual = computeVenueResolvedCounterfactual(
@@ -526,6 +593,7 @@ export function applyEnrichedGenre(
       relevance,
       false,
       nonElectronicSignal,
+      true,
     );
     return { ...result, genre: finalGenre, genreConfidence: finalGenreConfidence, decision, holdReason, relevance, venueResolvedCounterfactual };
   }
