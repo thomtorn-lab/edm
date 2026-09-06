@@ -46,6 +46,23 @@ export type EventEditPatch = Partial<Pick<EventInsert, EditableEventField>>;
  * Applies an admin-authored edit: the touched fields are written AND marked
  * as manually overridden, so a later sync (src/lib/sync.ts) can never
  * silently revert them.
+ *
+ * This is the single write funnel every "published" edit reaches —
+ * setEventPublished's own {published} patch, and the generic admin PATCH
+ * route (EDITABLE_EVENT_FIELDS still lists "published", kept for
+ * setEventPublished's own type-constrained call and two historical
+ * one-off scripts that call it directly) both go through here. Admin
+ * unpublish/cancellation safety, 2026-09-06: a plain {published: true}
+ * edit reaching this function must never leave a STALE
+ * adminUnpublishReason behind — that would silently re-expose an
+ * admin-cancelled event on the public site (published=true) while every
+ * other admin-unpublish-aware code path still reads it as unpublished,
+ * a broken, self-contradictory state. Whenever this patch sets
+ * published=true on a row that's still admin-unpublished, this clears the
+ * override in the SAME write, exactly as adminRepublishEvent's own
+ * dedicated "Publish Again" path does — so the invariant "published=true
+ * implies adminUnpublishReason=null" holds regardless of which route
+ * reaches this function.
  */
 export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch) {
   const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
@@ -53,11 +70,13 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
 
   const touchedFields = Object.keys(patch);
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
+  const clearsAdminUnpublish = patch.published === true && existing.adminUnpublishReason != null;
 
   await db
     .update(events)
     .set({
       ...patch,
+      ...(clearsAdminUnpublish ? { adminUnpublishReason: null, adminUnpublishedAt: null } : {}),
       overriddenFields,
       manualOverride: true,
       updatedAt: new Date(),

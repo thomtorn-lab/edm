@@ -41,7 +41,7 @@ vi.mock("./client", () => ({
   },
 }));
 
-const { insertDiscoveryItem, adminUnpublishEvent, adminRepublishEvent, publishDiscoveryItem } = await import("./writes");
+const { insertDiscoveryItem, adminUnpublishEvent, adminRepublishEvent, publishDiscoveryItem, applyAdminEventEdit } = await import("./writes");
 
 const item = {
   id: "dq-abc123",
@@ -202,5 +202,48 @@ describe("publishDiscoveryItem's admin-unpublish duplicate guard (admin unpublis
       // (not calling db.select a second time) is under test here.
     });
     expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("applyAdminEventEdit — generic PATCH bypass safety (admin unpublish/cancellation safety, 2026-09-06)", () => {
+  it("a plain {published: true} edit on an admin-unpublished event clears the stale override in the same write — the exact generic-PATCH bypass this guards against: 'published' stays in EDITABLE_EVENT_FIELDS, so this function is the only enforcement point", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], adminUnpublishReason: "cancelled" }]];
+
+    await applyAdminEventEdit("e-1", { published: true });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.published).toBe(true);
+    expect(patch.adminUnpublishReason).toBeNull();
+    expect(patch.adminUnpublishedAt).toBeNull();
+  });
+
+  it("does not touch adminUnpublishReason for an ordinary field edit unrelated to publication", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], adminUnpublishReason: "cancelled" }]];
+
+    await applyAdminEventEdit("e-1", { title: "Corrected Title" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch).not.toHaveProperty("adminUnpublishReason");
+    expect(patch).not.toHaveProperty("adminUnpublishedAt");
+  });
+
+  it("does not touch adminUnpublishReason when published:true is set on an event that was never admin-unpublished", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], adminUnpublishReason: null }]];
+
+    await applyAdminEventEdit("e-1", { published: true });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch).not.toHaveProperty("adminUnpublishReason");
+    expect(patch).not.toHaveProperty("adminUnpublishedAt");
+  });
+
+  it("does not clear the override on {published: false} — only published:true triggers the clear", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], adminUnpublishReason: "cancelled" }]];
+
+    await applyAdminEventEdit("e-1", { published: false });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.published).toBe(false);
+    expect(patch).not.toHaveProperty("adminUnpublishReason");
   });
 });
