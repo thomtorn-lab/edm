@@ -19,42 +19,69 @@ describe("venue normalization", () => {
     expect(normalizeVenueName("Culture Box!")).toBe("culture box");
     expect(normalizeVenueName("  Culture   Box  ")).toBe("culture box");
   });
+
+  it("Culture Box regression (VEGA venue model cleanup, 2026-09-06): resolver behavior for Culture Box and its rooms is unchanged — Black Box/Red Box still never resolve to any venue (they're handled at the adapter level, consolidated into one Culture Box event per night, never a structural room/parent relationship) while Culture Box itself still resolves normally", () => {
+    expect(resolveVenue("Culture Box", VENUES)?.id).toBe("v-culture-box");
+    expect(resolveVenue("Black Box", VENUES)).toBeUndefined();
+    expect(resolveVenue("Red Box", VENUES)).toBeUndefined();
+  });
 });
 
-describe("VEGA room disambiguation (KultuNaut audit follow-up, 2026-09-05)", () => {
-  // Real correctness risk found during the KultuNaut source audit: VEGA is a
-  // multi-room building (Store VEGA, Lille VEGA, and the basement Ideal Bar
-  // club room), but the only registered VEGA row is Ideal-Bar-specific
-  // (v-vega-ideal-bar). resolveVenue() does exact normalized-name matching
-  // (never fuzzy), so a source's own generic "VEGA" string must not silently
-  // attach to that one specific room — it should remain unresolved for
-  // manual review until real evidence justifies a dedicated parent-VEGA row.
-  // This is a general venue-model property, independent of any one source.
+describe("VEGA parent/room model (venue model cleanup, 2026-09-06)", () => {
+  // VEGA is a parent venue/complex with two concert-hall rooms — Store VEGA
+  // and Lille VEGA — both of which resolve to the SAME parent venue id
+  // (v-vega), exactly like Byhaven/Black Box/Red Box already resolve to
+  // their own parent rather than becoming standalone rows (see
+  // PROTECTED_SUB_VENUE_NAMES in venueCreation.ts). Ideal Bar is a
+  // genuinely separate, standalone venue — never a room under VEGA, and a
+  // bare "VEGA" string must never resolve there. resolveVenue() is exact
+  // normalized-name-or-alias matching only (never fuzzy), so this is a
+  // general venue-model property, independent of any one source.
 
-  it("explicit 'Ideal Bar' resolves to the Ideal Bar room", () => {
+  it("bare 'VEGA' resolves to the VEGA parent venue, not Ideal Bar", () => {
+    expect(resolveVenue("VEGA", VENUES)?.id).toBe("v-vega");
+    expect(resolveVenue("vega", VENUES)?.id).toBe("v-vega");
+  });
+
+  it("'Store VEGA' resolves to the VEGA parent venue", () => {
+    expect(resolveVenue("Store VEGA", VENUES)?.id).toBe("v-vega");
+  });
+
+  it("'Lille VEGA' resolves to the VEGA parent venue, in either casing (real Billetto evidence supplies 'Lille Vega')", () => {
+    expect(resolveVenue("Lille VEGA", VENUES)?.id).toBe("v-vega");
+    expect(resolveVenue("Lille Vega", VENUES)?.id).toBe("v-vega");
+  });
+
+  it("explicit 'Ideal Bar' resolves to the separate, standalone Ideal Bar venue — never the VEGA parent", () => {
     expect(resolveVenue("Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
     expect(resolveVenue("Vega Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
     expect(resolveVenue("VEGA (Ideal Bar)", VENUES)?.id).toBe("v-vega-ideal-bar");
   });
 
-  it("bare 'VEGA' does NOT resolve to the Ideal Bar room — no legitimate parent VEGA venue is registered, so it must remain unresolved for manual review, not silently misattached to one specific room", () => {
-    expect(resolveVenue("VEGA", VENUES)).toBeUndefined();
-    expect(resolveVenue("vega", VENUES)).toBeUndefined();
+  it("never maps bare 'VEGA' (or a Store/Lille VEGA variant) to Ideal Bar", () => {
+    expect(resolveVenue("VEGA", VENUES)?.id).not.toBe("v-vega-ideal-bar");
+    expect(resolveVenue("Store VEGA", VENUES)?.id).not.toBe("v-vega-ideal-bar");
+    expect(resolveVenue("Lille VEGA", VENUES)?.id).not.toBe("v-vega-ideal-bar");
   });
 
-  it("'Store VEGA' does not collide with the Ideal Bar room (no such alias exists, and none should be invented without real event evidence)", () => {
-    expect(resolveVenue("Store VEGA", VENUES)).toBeUndefined();
+  it("the removed 'Lille VEGA Ideal Bar' compound string no longer resolves to Ideal Bar — it was never real source evidence, only a conflation the cleanup removed", () => {
+    expect(resolveVenue("Lille VEGA Ideal Bar", VENUES)).toBeUndefined();
   });
 
-  it("bare 'Lille VEGA' (without the Ideal Bar qualifier) does not collide with the Ideal Bar room — only the full 'Lille VEGA Ideal Bar' string is a real, evidenced alias", () => {
-    expect(resolveVenue("Lille VEGA", VENUES)).toBeUndefined();
-    expect(resolveVenue("Lille VEGA Ideal Bar", VENUES)?.id).toBe("v-vega-ideal-bar");
-  });
-
-  it("the Ideal Bar venue's own display name no longer overclaims the whole VEGA building", () => {
+  it("the Ideal Bar venue's own display name still does not overclaim the whole VEGA building", () => {
     const idealBar = VENUES.find((v) => v.id === "v-vega-ideal-bar");
     expect(idealBar?.name).toBe("VEGA (Ideal Bar)");
     expect(idealBar?.name).not.toBe("VEGA");
+  });
+
+  it("the VEGA parent and Ideal Bar are two distinct venue rows, each still resolving only to itself", () => {
+    const vega = VENUES.find((v) => v.id === "v-vega");
+    const idealBar = VENUES.find((v) => v.id === "v-vega-ideal-bar");
+    expect(vega).toBeDefined();
+    expect(idealBar).toBeDefined();
+    expect(vega?.id).not.toBe(idealBar?.id);
+    expect(resolveVenue("VEGA", VENUES)?.id).toBe(vega?.id);
+    expect(resolveVenue("Ideal Bar", VENUES)?.id).toBe(idealBar?.id);
   });
 });
 
