@@ -907,17 +907,48 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
       expect(patch).toEqual({});
     });
 
-    it("holdReason 'low_confidence' or 'negative_relevance' alongside a null genre also stay frozen — only the exact 'no_genre_evidence' reason authorizes a clear", () => {
+    it("holdReason 'low_confidence' alongside a null genre stays frozen — a confidence gap is never itself authoritative", () => {
       const row = pendingDiscoveryTarget({ predictedGenre: "disco", genreConfidence: "high", overallConfidence: "high" });
       expect(
         buildDiscoveryQueueClassificationPatch({ genre: null, genreConfidence: "low", decision: "hold", holdReason: "low_confidence" }, row),
       ).toEqual({});
-      expect(
-        buildDiscoveryQueueClassificationPatch(
-          { genre: null, genreConfidence: "low", decision: "hold", holdReason: "negative_relevance" },
-          row,
-        ),
-      ).toEqual({});
+    });
+
+    it("holdReason 'negative_relevance' alongside a null genre IS authoritative and clears a stale genre — full evidence text was evaluated and found an explicit non-electronic signal, a stronger conclusion than mere absence of signal (no_genre_evidence); the codebase already trusts this same holdReason enough to unpublish a LIVE published event (decidePublishedEventSyncAction), so freezing a merely-pending row's stale genre under it would be inconsistent", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: "house", genreConfidence: "high", overallConfidence: "high" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "negative_relevance" },
+        row,
+      );
+      expect(patch).toEqual({ predictedGenre: null, genreConfidence: "low", overallConfidence: "low" });
+    });
+
+    it("negative_relevance self-heal also recomputes the venue-resolved counterfactual consistently, exactly like no_genre_evidence — no leftover auto_publish/review counterfactual based on the cleared genre", () => {
+      const row = pendingDiscoveryTarget({
+        predictedGenre: "techno",
+        genreConfidence: "high",
+        overallConfidence: "high",
+        venueResolvedDecision: "auto_publish",
+        venueResolvedHoldReason: null,
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        {
+          genre: null,
+          genreConfidence: "low",
+          decision: "hold",
+          holdReason: "negative_relevance",
+          venueResolvedDecision: "hold",
+          venueResolvedHoldReason: "negative_relevance",
+        },
+        row,
+      );
+      expect(patch).toEqual({
+        predictedGenre: null,
+        genreConfidence: "low",
+        overallConfidence: "low",
+        venueResolvedDecision: "hold",
+        venueResolvedHoldReason: "negative_relevance",
+      });
     });
 
     it("Silent Disco Fest-shaped case: a row previously stored as disco/high self-heals to no genre once the source authoritatively reports none (real reference case — see pipeline.ts's HoldReason doc comment)", () => {
