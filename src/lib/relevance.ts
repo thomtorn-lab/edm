@@ -513,6 +513,52 @@ export function hasExplicitElectronicAssertion(text: string): boolean {
   return EXPLICIT_ELECTRONIC_ASSERTION_RE.test(text);
 }
 
+/**
+ * Admin Discovery Queue cleanup quality audit, 2026-09-06 (final focused
+ * pass, Daniel Sommer root cause) — "electronics" named purely as ONE
+ * INSTRUMENT in an ensemble's own lineup description ("trumpet, voice and
+ * electronics"; "acoustic instruments and electronics") is a statement
+ * about what's on stage, not a genre claim — structurally identical to
+ * naming a synthesizer or drum machine as one instrument among several
+ * acoustic ones. hasExplicitElectronicAssertion above already excludes
+ * this (it requires "electronic music/sound" etc. as a genre phrase,
+ * never a bare "electronics" noun) — this goes one step further: true
+ * only when EVERY "electronic(s)" mention in the whole text sits inside
+ * an instrument-list context (adjacent to a recognized acoustic
+ * instrument noun), meaning the text's entire electronic-adjacent
+ * evidence is instrumentation, never a genre claim anywhere. Real
+ * evidence: Daniel Sommer / Arve Henriksen / Johannes Lundberg's own
+ * bio — "acoustic instruments and electronics open up new sonic
+ * possibilities", "Arve Henriksen's trumpet, voice and electronics".
+ *
+ * Deliberately does NOT globally suppress synth/hardware/electronics
+ * mentions — a genuinely electronic live act that also names its gear
+ * ("Moog, drum machines and electronics") is untouched: the moment even
+ * ONE electronic-root mention sits outside an instrument-list context
+ * (used as a genre/production/sound claim instead), this returns false
+ * for the whole text, same as it would for zero electronic mentions at
+ * all — see assessRelevance's use of this signal for why that matters
+ * (it only ever narrows an EXISTING contradiction, never invents one).
+ */
+// `drums?` deliberately excludes "drum machine(s)" (a negative lookahead,
+// not a word-list entry) — a drum machine is itself electronic hardware,
+// not an acoustic instrument, and must never neutralize a genuine
+// electronic-gear mention the way a real acoustic drum kit would.
+const INSTRUMENT_NOUN_RE =
+  /\b(?:trumpet|guitar|bass|drums?(?!\s+machines?)|piano|violin|cello|saxophone|clarinet|flute|percussion|vocals?|voice|keys|keyboard|trombone|horns?|strings?|acoustic\s+instruments?)\b/i;
+const ELECTRONIC_ROOT_RE = /\belectronics?\b/gi;
+
+export function hasElectronicsAsInstrumentationOnly(text: string, knownArtists: string[] = []): boolean {
+  const masked = maskKnownArtistNames(text, knownArtists);
+  const matches = [...masked.matchAll(ELECTRONIC_ROOT_RE)];
+  if (matches.length === 0) return false;
+  return matches.every((match) => {
+    const start = Math.max(0, match.index - 40);
+    const end = Math.min(masked.length, match.index + match[0].length + 40);
+    return INSTRUMENT_NOUN_RE.test(masked.slice(start, end));
+  });
+}
+
 export interface RelevanceEvidenceInput {
   /** The genre resolved by the deterministic keyword mapper (or an
    *  adapter's own official-metadata hint) against ALL available
@@ -554,6 +600,13 @@ export interface RelevanceEvidenceInput {
    *  defaults to false so every existing caller/test is unaffected unless
    *  it opts in. Ignored when hasNonElectronicGenreSignal is false. */
   hasBroadNonElectronicGenreMix?: boolean;
+  /** The text's only "electronic(s)" evidence is an instrument-list mention
+   *  (see hasElectronicsAsInstrumentationOnly), not a genre claim — treated
+   *  the same as an explicit scene/genre identity claim (admin Discovery
+   *  Queue cleanup quality audit, 2026-09-06, final focused pass). Optional,
+   *  defaults to false so every existing caller/test is unaffected unless
+   *  it opts in. Ignored when hasNonElectronicGenreSignal is false. */
+  hasElectronicsAsInstrumentationOnly?: boolean;
 }
 
 /**
@@ -618,7 +671,11 @@ export function assessRelevance(input: RelevanceEvidenceInput): RelevanceLevel {
 
   if (input.hasNonElectronicGenreSignal) {
     if (strongSignalCount === 0) return "none";
-    if ((input.hasExplicitNonElectronicIdentityAssertion || input.hasBroadNonElectronicGenreMix) && strongSignalCount === 1) return "none";
+    if (
+      (input.hasExplicitNonElectronicIdentityAssertion || input.hasBroadNonElectronicGenreMix || input.hasElectronicsAsInstrumentationOnly) &&
+      strongSignalCount === 1
+    )
+      return "none";
     return "weak";
   }
   if (strongSignalCount > 0) return "strong";

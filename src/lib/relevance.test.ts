@@ -6,6 +6,7 @@ import {
   hasNonElectronicGenreSignal,
   hasNonElectronicCategorySignal,
   countNonElectronicGenreFamilies,
+  hasElectronicsAsInstrumentationOnly,
 } from "./relevance";
 
 describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
@@ -471,5 +472,48 @@ describe("assessRelevance — hasBroadNonElectronicGenreMix (round 3 quality aud
         hasExplicitNonElectronicIdentityAssertion: false,
       }),
     ).toBe("weak");
+  });
+});
+
+describe("hasElectronicsAsInstrumentationOnly (final focused pass, round 3 part 2, 2026-09-06 — Daniel Sommer root cause)", () => {
+  it("is true when every 'electronics' mention sits in an instrument list (real Daniel Sommer/Arve Henriksen/Johannes Lundberg evidence)", () => {
+    expect(
+      hasElectronicsAsInstrumentationOnly(
+        "Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language where acoustic instruments and electronics open up new sonic possibilities. Arve Henriksen's trumpet, voice and electronics, Johannes Lundberg's double bass move between simple melodies.",
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for a simpler 'guitar and electronics' instrument-list shape", () => {
+    expect(hasElectronicsAsInstrumentationOnly("A trio of guitar, drums and electronics playing free improvisation.")).toBe(true);
+  });
+
+  it("is false when there is no 'electronics'/'electronic' mention at all", () => {
+    expect(hasElectronicsAsInstrumentationOnly("A vernissage with drum and bass in the background.")).toBe(false);
+    expect(hasElectronicsAsInstrumentationOnly("")).toBe(false);
+  });
+
+  it("is false when 'electronic' is used as a genre claim, even elsewhere in the same text (must never suppress a genuine electronic assertion)", () => {
+    expect(
+      hasElectronicsAsInstrumentationOnly(
+        "A singular sonic universe where folk, electronic music, and spiritual traditions merge into deeply human stories.",
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for a genuinely electronic live act naming its own hardware/gear, not an acoustic-instrument list (must not globally suppress real electronic live acts)", () => {
+    expect(hasElectronicsAsInstrumentationOnly("A live set of modular synths, drum machines and electronics.")).toBe(false);
+  });
+
+  it("is false when even ONE electronic mention sits outside an instrument-list context, alongside one that does (mixed text — the genre-claim mention must win)", () => {
+    expect(
+      hasElectronicsAsInstrumentationOnly(
+        "Trumpet and electronics open the set, before a full electronic music takeover for the rest of the night.",
+      ),
+    ).toBe(false);
+  });
+
+  it("masks a known artist's own name first, same as the other relevance signals", () => {
+    expect(hasElectronicsAsInstrumentationOnly("Electronics brings his trumpet and electronics show to the club.", ["Electronics"])).toBe(false);
   });
 });

@@ -490,22 +490,18 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
     expect(result.holdReason).toBe("negative_relevance");
   });
 
-  // KNOWN RESIDUAL GAP, deliberately left unfixed this round (documented,
-  // not silently dropped): a first attempt at fixing this exact case —
-  // gating a specific-genre match's "strong signal" status on
-  // deterministicGenreMapping.ts's hasRichGenreEvidence (a bare, single
-  // "ambient" keyword isn't "rich") — real-evidence-tested clean here, but
-  // caused two confirmed regressions in already-established, separately
-  // audited behavior (Mærk. Bemærk.'s vernissage-context gap 4C case
-  // dropping from "review_queue" to "hold"; Tinie Tempah's empty-body
-  // metadata-only-hint case dropping from "auto_publish" to "review_queue")
-  // — see this file's git history for the reverted attempt. Fixing this
-  // properly needs the fix to distinguish a GENRE contradiction (jazz here)
-  // from a CATEGORY/format contradiction (vernissage) and to exempt
-  // metadata-only hints with no real body text, which is a larger, riskier
-  // change than this round's effort/regression budget allows — reported to
-  // the user as a known gap rather than risking a broader regression.
-  it("still review-queues (does not yet hold) a jazz/chamber-ensemble show whose only specific-genre match is a bare, non-rich 'ambient' keyword — documents the known gap above (real ALICE evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg)", () => {
+  // Final focused pass (round 3, part 2, 2026-09-06): the first attempt at
+  // fixing this exact case — gating a specific-genre match's "strong
+  // signal" status on deterministicGenreMapping.ts's hasRichGenreEvidence
+  // (a bare, single "ambient" keyword isn't "rich") — was reverted after it
+  // caused two regressions elsewhere (Mærk. Bemærk.'s vernissage-context
+  // case; Tinie Tempah's metadata-only-hint case — see the two regression
+  // tests immediately below, which prove both stay correct under THIS
+  // fix). The actual, narrower fix: hasElectronicsAsInstrumentationOnly —
+  // "electronics" named only as one instrument among trumpet/voice/bass/
+  // drums is not genre evidence, distinct from a bare "ambient" keyword
+  // match, which is what actually let this row through before.
+  it("holds a jazz/chamber-ensemble show whose only specific-genre match is a bare, non-rich 'ambient' keyword, once 'electronics' is recognized as pure instrumentation (real ALICE evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg)", () => {
     const result = runIngestionPipeline(
       raw({
         title: "Daniel Sommer / Arve Henriksen / Johannes Lundberg: Sounds & Sequences",
@@ -517,8 +513,40 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
       }),
       { venues: VENUES, existingEvents: [] },
     );
-    expect(result.genre).toBe("ambient-experimental");
+    expect(result.genre).toBe("ambient-experimental"); // confirms this test exercises the real mis-mapping, not a different code path
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("regression: still review-queues (never holds) the vernissage-context case — a genuine specific-genre match (drum-and-bass) inside a gallery vernissage, no 'electronics' word at all, so hasElectronicsAsInstrumentationOnly must stay false and not interact with this case (real Mærk. Bemærk. evidence, gap 4C)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-kultunaut",
+        title: "Mærk. Bemærk.",
+        description: "En vernissage på det nye galleri, med drum and bass fra en lokal DJ i baggrunden.",
+        genreHint: "drum-and-bass",
+        genreConfidenceHint: "high",
+        artists: [],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("drum-and-bass");
     expect(result.decision).toBe("review_queue");
+  });
+
+  it("regression: still auto-publishes the metadata-only-hint case — no description/relevanceText at all, so there is nothing for hasElectronicsAsInstrumentationOnly to match (real Tinie Tempah evidence)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Tinie Tempah",
+        description: null,
+        genreHint: "house",
+        genreConfidenceHint: "high",
+        artists: ["Tinie Tempah"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("auto_publish");
   });
 
   it("still review-queues a genuine ambient-electronic artist with a REPEATED, explicit first-party 'electronic music' self-description (regression: richness-gating must not over-tighten a real case — real ALICE evidence, Beverly Glenn-Copeland CA: 'a singular sonic universe where folk, electronic music, and spiritual traditions merge' ... 'folk, meditative electronics, and spiritual reflection meet in compositions of otherworldly beauty')", () => {

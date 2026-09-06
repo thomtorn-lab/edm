@@ -9,6 +9,12 @@ import { isTrustedElectronicSource } from "@/lib/data/sources";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
 import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter";
+import { createBillettoAdapter, BILLETTO_SOURCE_ID } from "@/lib/adapters/billettoAdapter";
+import { createCultureBoxAdapter, CULTURE_BOX_SOURCE_ID } from "@/lib/adapters/cultureBoxAdapter";
+import { createGravityAdapter, GRAVITY_SOURCE_ID } from "@/lib/adapters/gravityAdapter";
+import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangarenAdapter";
+import { createPoolenAdapter, POOLEN_SOURCE_ID } from "@/lib/adapters/poolenAdapter";
+import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pumpehusetAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -405,6 +411,18 @@ const DRY_RUN_ADAPTERS: Record<string, () => SourceAdapter> = {
   // source most of the audit's flagged Needs Review rows came from —
   // without any live sync/write.
   [ALICE_SOURCE_ID]: createAliceAdapter,
+  // Round 3 final focused pass (instrumentation-vs-genre distinction,
+  // 2026-09-06): the user explicitly required verifying this fix against
+  // EVERY active ingestion source, not just the ones it directly touched —
+  // registering the remaining first-party adapters so a full read-only
+  // before/after dry-run comparison is possible across the whole queue,
+  // the same permanent tool every prior source audit already used.
+  [BILLETTO_SOURCE_ID]: createBillettoAdapter,
+  [CULTURE_BOX_SOURCE_ID]: createCultureBoxAdapter,
+  [GRAVITY_SOURCE_ID]: createGravityAdapter,
+  [HANGAREN_SOURCE_ID]: createHangarenAdapter,
+  [POOLEN_SOURCE_ID]: createPoolenAdapter,
+  [PUMPEHUSET_SOURCE_ID]: createPumpehusetAdapter,
 };
 
 /**

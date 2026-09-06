@@ -13,6 +13,7 @@ import {
   hasNonElectronicCategorySignal,
   hasPopOrRnbSignal,
   countNonElectronicGenreFamilies,
+  hasElectronicsAsInstrumentationOnly,
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
@@ -474,6 +475,14 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     // the same as an overwhelming multi-genre one — see
     // countNonElectronicGenreFamilies's own doc comment.
     hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, normalizedArtists) >= 3,
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06, final focused
+    // pass (Daniel Sommer / Arve Henriksen / Johannes Lundberg root cause):
+    // "electronics" named only as an instrument in the ensemble's own
+    // lineup ("trumpet, voice and electronics") must not, on its own, keep
+    // a genuine non-electronic contradiction (jazz/chamber music here) from
+    // resolving to "none" — see hasElectronicsAsInstrumentationOnly's own
+    // doc comment.
+    hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, normalizedArtists),
   });
   const { decision, holdReason } = computeDecision(
     missingFields,
@@ -601,6 +610,7 @@ export function applyEnrichedGenre(
       hasCorroboratingArtistGenreEvidence: genre === GENERIC_ELECTRONIC_GENRE,
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
       hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
+      hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, result.normalizedArtists),
     });
     // hasEvidenceText's true/false distinction only matters inside
     // computeDecision's genre==null branch (see hasCoreRecordFields there) —
@@ -661,6 +671,7 @@ export function applyEnrichedGenre(
       hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
       hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
+      hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, result.normalizedArtists),
     });
     // Same placeholder reasoning as CASE A above: `finalGenre` is always
     // non-null here (this branch only runs when result.genre was already
