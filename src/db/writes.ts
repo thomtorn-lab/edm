@@ -76,7 +76,7 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
     .update(events)
     .set({
       ...patch,
-      ...(clearsAdminUnpublish ? { adminUnpublishReason: null, adminUnpublishedAt: null } : {}),
+      ...(clearsAdminUnpublish ? { adminUnpublishReason: null, adminUnpublishNote: null, adminUnpublishedAt: null } : {}),
       overriddenFields,
       manualOverride: true,
       updatedAt: new Date(),
@@ -113,18 +113,20 @@ export async function setEventPublished(eventId: string, published: boolean) {
  * Never deletes the event, never touches source_event_links or any other
  * record.
  */
-export async function adminUnpublishEvent(eventId: string, reason: AdminUnpublishReason) {
+export async function adminUnpublishEvent(eventId: string, reason: AdminUnpublishReason, note?: string | null) {
   const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!existing) throw new Error(`Event ${eventId} not found`);
 
   const overriddenFields = addOverriddenFields(existing.overriddenFields, ["published"]);
   const now = new Date();
+  const trimmedNote = note?.trim();
 
   await db
     .update(events)
     .set({
       published: false,
       adminUnpublishReason: reason,
+      adminUnpublishNote: trimmedNote ? trimmedNote : null,
       adminUnpublishedAt: now,
       manualOverride: true,
       overriddenFields,
@@ -133,7 +135,13 @@ export async function adminUnpublishEvent(eventId: string, reason: AdminUnpublis
     })
     .where(eq(events.id, eventId));
 
-  await writeChangeLog(eventId, "admin", "admin_unpublish", ["published", "adminUnpublishReason"], `reason: ${reason}`);
+  await writeChangeLog(
+    eventId,
+    "admin",
+    "admin_unpublish",
+    ["published", "adminUnpublishReason"],
+    trimmedNote ? `reason: ${reason}; note: ${trimmedNote}` : `reason: ${reason}`,
+  );
 }
 
 /**
@@ -159,6 +167,7 @@ export async function adminRepublishEvent(eventId: string) {
     .set({
       published: true,
       adminUnpublishReason: null,
+      adminUnpublishNote: null,
       adminUnpublishedAt: null,
       manualOverride: overriddenFields.length > 0,
       overriddenFields,

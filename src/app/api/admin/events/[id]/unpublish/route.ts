@@ -16,11 +16,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const body = await request.json().catch(() => null);
   const reason = body?.reason;
+  const note = body?.note;
   if (typeof reason !== "string" || !VALID_REASONS.includes(reason as AdminUnpublishReason)) {
     return NextResponse.json({ error: `reason must be one of: ${VALID_REASONS.join(", ")}` }, { status: 400 });
   }
+  if (note != null && typeof note !== "string") {
+    return NextResponse.json({ error: "note must be a string when provided" }, { status: 400 });
+  }
   try {
-    await adminUnpublishEvent(id, reason as AdminUnpublishReason);
+    await adminUnpublishEvent(id, reason as AdminUnpublishReason, note);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unpublish failed" }, { status: 400 });

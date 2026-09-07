@@ -50,6 +50,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
 
   const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
   const [unpublishReason, setUnpublishReason] = useState<AdminUnpublishReason>("cancelled");
+  const [unpublishNote, setUnpublishNote] = useState("");
 
   async function confirmUnpublish() {
     setBusy(true);
@@ -58,7 +59,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       const res = await fetch(`/api/admin/events/${event.id}/unpublish`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reason: unpublishReason }),
+        body: JSON.stringify({ reason: unpublishReason, note: unpublishNote.trim() || null }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -66,6 +67,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
         return;
       }
       setConfirmingUnpublish(false);
+      setUnpublishNote("");
       router.refresh();
     } finally {
       setBusy(false);
@@ -160,9 +162,12 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
             )}
           </p>
           {event.adminUnpublishReason && (
-            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-status-bad">
-              Unpublished by admin — reason: {UNPUBLISH_REASONS.find((r) => r.value === event.adminUnpublishReason)?.label ?? event.adminUnpublishReason}
-            </p>
+            <>
+              <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-status-bad">
+                Unpublished by admin — reason: {UNPUBLISH_REASONS.find((r) => r.value === event.adminUnpublishReason)?.label ?? event.adminUnpublishReason}
+              </p>
+              {event.adminUnpublishNote && <p className="mt-0.5 text-xs text-text-secondary">{event.adminUnpublishNote}</p>}
+            </>
           )}
         </div>
         <div className="flex shrink-0 gap-2">
@@ -195,6 +200,16 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               ))}
             </select>
           </Field>
+          <Field id={`event-unpublish-note-${event.id}`} label="Note (optional)">
+            <textarea
+              id={`event-unpublish-note-${event.id}`}
+              value={unpublishNote}
+              onChange={(e) => setUnpublishNote(e.target.value)}
+              rows={2}
+              placeholder="Internal detail, e.g. promoter confirmed by email — never shown publicly."
+              className={inputCls}
+            />
+          </Field>
           <p className="text-xs text-text-tertiary">
             This removes the event from the public site immediately. It stays in admin and can be published again later.
           </p>
@@ -202,7 +217,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
             <button type="button" disabled={busy} onClick={confirmUnpublish} className="rounded border border-status-bad/40 bg-status-bad/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-status-bad hover:bg-status-bad/20 disabled:opacity-50">
               Confirm unpublish
             </button>
-            <button type="button" disabled={busy} onClick={() => setConfirmingUnpublish(false)} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+            <button type="button" disabled={busy} onClick={() => { setConfirmingUnpublish(false); setUnpublishNote(""); }} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
               Cancel
             </button>
           </div>

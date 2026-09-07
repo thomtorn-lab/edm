@@ -116,6 +116,7 @@ function makeEvent(startIso: string): EventWithVenue {
     timeChanged: false,
     published: true,
     adminUnpublishReason: null,
+    adminUnpublishNote: null,
     adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],

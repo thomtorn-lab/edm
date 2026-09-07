@@ -175,6 +175,7 @@ function eventRecord(overrides: Partial<EventRecord> = {}): EventRecord {
     timeChanged: false,
     published: true,
     adminUnpublishReason: null,
+    adminUnpublishNote: null,
     adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
@@ -308,11 +309,20 @@ describe("deriveAdminUnpublishedRows", () => {
         eventId: "e-jasho",
         title: "Jasho Club // Poolen Outside",
         reason: "cancelled",
+        note: null,
         unpublishedAt: "2026-09-06T09:00:00+02:00",
         venueName: "Test Venue",
         sourceName: "Test Source",
       },
     ]);
+  });
+
+  it("carries the optional admin note through, admin-UI-only", () => {
+    const events = [
+      eventRecord({ id: "e-jasho", adminUnpublishReason: "cancelled", adminUnpublishNote: "promoter confirmed by email" }),
+    ];
+    const rows = deriveAdminUnpublishedRows(events, new Map(), new Map());
+    expect(rows[0].note).toBe("promoter confirmed by email");
   });
 
   it("never mixes an ordinary rejected/held discoveryQueue candidate into this list — it only ever reads events.adminUnpublishReason", () => {

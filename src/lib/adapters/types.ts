@@ -78,9 +78,12 @@ export interface RawCandidateEvent {
    * never a guess/inference from prose or from disappearance. A non-null
    * value can go either direction (a previous true can flip back to false),
    * so a source correctly reversing itself — tickets back on sale, a
-   * cancellation retracted — is honored. Only Billetto and Pumpehuset
-   * currently set these (see their own doc comments for exactly what's
-   * trusted and why); every other adapter simply omits them.
+   * cancellation retracted — is honored. Only Billetto (cancelledHint
+   * only — its own `state` field never distinguishes sold-out from simply
+   * unavailable, so soldOutHint always stays null there), Poolen (Danish
+   * "udsolgt"/"aflyst" labels), and Pumpehuset (structured ticket_status)
+   * currently set these (see each adapter's own doc comments for exactly
+   * what's trusted and why); every other adapter simply omits them.
    */
   soldOutHint?: boolean | null;
   cancelledHint?: boolean | null;
