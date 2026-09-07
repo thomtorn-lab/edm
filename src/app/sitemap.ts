@@ -2,21 +2,22 @@ import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { FESTIVALS } from "@/lib/data/festivals";
 
-// Next.js prerenders this route at BUILD time by default (no `dynamic`
-// export here), so the queries below run against whatever database
-// DATABASE_URL points to during the Vercel build itself — not at request
-// time. A schema change that adds a column selected by events/venues
-// queries (src/lib/queries.ts) must have its migration applied to that
-// same database BEFORE this code deploys, or the build fails here with a
-// real Postgres "column does not exist" error (confirmed live twice now:
-// the generalized sub-venue model's `sub_venue` column, 2026-09-06, and the
-// admin-unpublish override's `admin_unpublish_reason`/`admin_unpublished_at`
-// columns, same day) — additive migrations are safe, and necessary, to
-// apply ahead of the corresponding code merge for exactly this reason. Even
-// so, a PR's very first automatic build can still race a same-day migration
-// dispatch that completes moments after that build already started against
-// the old schema — if that happens, the fix is a fresh build once the
-// migration has landed, not a code change here.
+// Forced request-time (build-time DB dependency audit, 2026-09-07): without
+// this, Next.js prerenders this route at BUILD time by default, so the
+// queries below would run against whatever database DATABASE_URL points to
+// during the Vercel build itself — and a schema change that adds a column
+// selected by events/venues queries (src/lib/queries.ts) but not yet
+// migrated onto that same database fails the ENTIRE build with a Postgres
+// "column does not exist" error (this happened three times live: the
+// sub_venue column, the admin_unpublish_reason/admin_unpublished_at
+// columns, and admin_unpublish_note, all 2026-09-06/07). `revalidate = 0`
+// removes this route from the build-time prerender path entirely — the
+// same pattern already used by every other DB-touching route in this app
+// (src/app/page.tsx, venues/page.tsx, venues/[slug]/page.tsx,
+// events/[slug]/page.tsx, admin/page.tsx) — so a lagging migration can only
+// ever 500 a single sitemap request until it lands, never block the build.
+export const revalidate = 0;
+
 const SITE_URL = "https://electroniccph.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
