@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSourceCancellationPolicy } from "./sources";
+import { getSourceCancellationPolicy, SOURCES } from "./sources";
 
 describe("getSourceCancellationPolicy (source-driven cancellation safety, 2026-09-07)", () => {
   it("returns 'trusted' for the three sources whose adapters can set cancelledHint at all today", () => {
@@ -19,5 +19,14 @@ describe("getSourceCancellationPolicy (source-driven cancellation safety, 2026-0
 
   it("returns 'none' for an unknown/unregistered source id — never defaults open", () => {
     expect(getSourceCancellationPolicy("src-does-not-exist")).toBe("none");
+  });
+
+  it("reads real per-source registry metadata (Source.cancellationPolicy), not a hardcoded id list — every one of the 23 registered sources sets it explicitly, and exactly the three cancelledHint-capable sources are 'trusted'", () => {
+    expect(SOURCES.length).toBe(23);
+    for (const s of SOURCES) {
+      expect(s.cancellationPolicy).toBeDefined();
+    }
+    const trusted = SOURCES.filter((s) => s.cancellationPolicy === "trusted").map((s) => s.id).sort();
+    expect(trusted).toEqual(["src-billetto", "src-poolen", "src-pumpehuset"]);
   });
 });

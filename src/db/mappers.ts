@@ -1,4 +1,5 @@
 import type {
+  CancellationPolicy,
   ConfidenceLevel,
   DiscoveryQueueItem,
   DiscoveryQueueStatus,
@@ -46,6 +47,7 @@ export function sourceRowToRecord(row: SourceRow): Source {
     adapter: row.adapter,
     trustLevel: row.trustLevel as ConfidenceLevel,
     autoPublish: row.autoPublish,
+    cancellationPolicy: row.cancellationPolicy as CancellationPolicy,
     syncFrequency: row.syncFrequency,
     active: row.active,
     lastSuccessfulSync: row.lastSuccessfulSync?.toISOString() ?? null,

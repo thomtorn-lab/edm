@@ -112,6 +112,7 @@ function rowToSource(r: Record<string, unknown>): Source {
     adapter: r.adapter as string | null,
     trustLevel: r.trust_level as Source["trustLevel"],
     autoPublish: r.auto_publish as boolean,
+    cancellationPolicy: r.cancellation_policy as Source["cancellationPolicy"],
     syncFrequency: r.sync_frequency as string,
     active: r.active as boolean,
     lastSuccessfulSync: r.last_successful_sync ? new Date(r.last_successful_sync as string).toISOString() : null,

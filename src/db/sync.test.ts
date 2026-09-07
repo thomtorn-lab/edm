@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { discoveryQueue, syncLocks } from "./schema";
+import { db } from "./client";
 import type { RawCandidateEvent, SourceAdapter } from "@/lib/adapters/types";
 import type { Venue } from "@/lib/types";
 import type { EventWithVenue } from "@/lib/queries";
@@ -153,7 +154,14 @@ vi.mock("@/lib/discoveryNotification", () => ({
 const { acquireSyncLock, releaseSyncLock, runSourceSync } = await import("./sync");
 const { getAllEventsAdmin } = await import("@/lib/queries");
 const { getVenues } = await import("@/lib/queries");
-const { insertDiscoveryItem, applySourceSyncPatch, applySyncHoldUnpublish, createEvent } = await import("./writes");
+const {
+  insertDiscoveryItem,
+  applySourceSyncPatch,
+  applySyncHoldUnpublish,
+  applySourceCancellationUnpublish,
+  applySourceCancellationRestore,
+  createEvent,
+} = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
@@ -652,7 +660,7 @@ describe("Discovery Queue notification batching (safety correction — notificat
   });
 });
 
-function existingCultureBoxEvent(): EventWithVenue {
+function existingCultureBoxEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
   return {
     id: "e-already-known",
     title: "Some Other Night",
@@ -708,8 +716,186 @@ function existingCultureBoxEvent(): EventWithVenue {
       shortDescription: null,
       venueProfile: null,
     },
+    ...overrides,
   };
 }
+
+/**
+ * The generic `db.select()` mock at module scope always returns `[]` for
+ * every table — sufficient for every test that never needs the `if (match)`
+ * branch (a candidate matched to an already-known event via
+ * source_event_links). The cross-case follow-up tests below (2026-09-07)
+ * DO need that branch, since they're proving the manualOverride-precision
+ * fix holds for an EXISTING matched event, not just the pure decision
+ * function in isolation. `db.select()` is called exactly twice per sync run
+ * inside one `Promise.all` (sourceEventLinks, then discoveryQueue) — both
+ * calls fire synchronously as the array literal is built, so two chained
+ * `mockImplementationOnce` calls land on the right table in the right order
+ * without needing to inspect the `.from(table)` argument at all.
+ */
+function mockMatchedByUrl(eventId: string, sourceUrl: string) {
+  vi.mocked(db.select)
+    .mockImplementationOnce(
+      () =>
+        ({
+          from: () => ({ where: () => Object.assign(Promise.resolve([{ eventId, sourceUrl }]), { limit: () => Promise.resolve([]) }) }),
+        }) as unknown as ReturnType<typeof db.select>,
+    )
+    .mockImplementationOnce(
+      () =>
+        ({
+          from: () => ({ where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) }) }),
+        }) as unknown as ReturnType<typeof db.select>,
+    );
+}
+
+describe("Source-driven cancellation safety — cross-case follow-up (2026-09-07): manualOverride precision against a real matched existing event", () => {
+  function poolenCancelledCandidate(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return {
+      ...rawCandidate,
+      sourceId: "src-poolen",
+      title: "Wonderworld Christmas",
+      officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+      cancelledHint: true,
+      cancellationEvidence: 'Poolen status badge "Aflyst"',
+      ...overrides,
+    };
+  }
+
+  it("manual Tickets URL override + trusted cancellation -> auto-unpublish still occurs (an unrelated field edit must never block a genuine trusted cancellation)", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-wonderworld",
+        officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+        canonicalSourceId: "src-poolen",
+        overriddenFields: ["ticketUrl"],
+      }),
+    ]);
+    mockMatchedByUrl("e-wonderworld", "https://poolen.dk/da/koncerter/wonderworld-christmas/");
+    const adapter = fakeAdapter(() => Promise.resolve([poolenCancelledCandidate()]));
+
+    await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applySourceCancellationUnpublish).toHaveBeenCalledWith(
+      "e-wonderworld",
+      "src-poolen",
+      'Poolen status badge "Aflyst"',
+    );
+  });
+
+  it("manual Official Event URL override + trusted cancellation -> auto-unpublish still occurs", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-wonderworld",
+        officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+        canonicalSourceId: "src-poolen",
+        overriddenFields: ["officialEventUrl"],
+      }),
+    ]);
+    mockMatchedByUrl("e-wonderworld", "https://poolen.dk/da/koncerter/wonderworld-christmas/");
+    const adapter = fakeAdapter(() => Promise.resolve([poolenCancelledCandidate()]));
+
+    await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applySourceCancellationUnpublish).toHaveBeenCalledTimes(1);
+  });
+
+  it("an explicit admin publication override ('published' in overriddenFields) blocks a trusted cancellation — publication-override semantics respected", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-wonderworld",
+        officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+        canonicalSourceId: "src-poolen",
+        overriddenFields: ["published"],
+      }),
+    ]);
+    mockMatchedByUrl("e-wonderworld", "https://poolen.dk/da/koncerter/wonderworld-christmas/");
+    const adapter = fakeAdapter(() => Promise.resolve([poolenCancelledCandidate()]));
+
+    await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applySourceCancellationUnpublish).not.toHaveBeenCalled();
+  });
+
+  it("Poolen true -> later null: cancellation does NOT auto-clear (no signal is never reinstatement)", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-wonderworld",
+        officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+        canonicalSourceId: "src-poolen",
+        published: false,
+        sourceCancelledBySourceId: "src-poolen",
+      }),
+    ]);
+    mockMatchedByUrl("e-wonderworld", "https://poolen.dk/da/koncerter/wonderworld-christmas/");
+    // Poolen can only ever emit true/null (see poolenAdapter.ts) — never an
+    // explicit false — so the "no longer badged Aflyst" case is
+    // cancelledHint undefined/null, never false.
+    const adapter = fakeAdapter(() => Promise.resolve([poolenCancelledCandidate({ cancelledHint: null, cancellationEvidence: null })]));
+
+    await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applySourceCancellationUnpublish).not.toHaveBeenCalled();
+    expect(applySourceCancellationRestore).not.toHaveBeenCalled();
+  });
+
+  it("Pumpehuset true -> later null: cancellation does NOT auto-clear", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-pumpehuset-cancelled",
+        officialEventUrl: "https://pumpehuset.dk/koncerter/some-show/",
+        canonicalSourceId: "src-pumpehuset",
+        published: false,
+        sourceCancelledBySourceId: "src-pumpehuset",
+      }),
+    ]);
+    mockMatchedByUrl("e-pumpehuset-cancelled", "https://pumpehuset.dk/koncerter/some-show/");
+    const adapter = fakeAdapter(() =>
+      Promise.resolve([
+        {
+          ...rawCandidate,
+          sourceId: "src-pumpehuset",
+          title: "Some Show",
+          officialEventUrl: "https://pumpehuset.dk/koncerter/some-show/",
+          cancelledHint: null,
+        },
+      ]),
+    );
+
+    await runSourceSync("src-pumpehuset", "Pumpehuset", adapter);
+
+    expect(applySourceCancellationUnpublish).not.toHaveBeenCalled();
+    expect(applySourceCancellationRestore).not.toHaveBeenCalled();
+  });
+
+  it("Billetto true -> explicit false: the SAME source's own cancellation may restore, per the approved restoration rule", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-billetto-cancelled",
+        officialEventUrl: "https://billetto.dk/e/some-event-123",
+        canonicalSourceId: "src-billetto",
+        published: false,
+        sourceCancelledBySourceId: "src-billetto",
+      }),
+    ]);
+    mockMatchedByUrl("e-billetto-cancelled", "https://billetto.dk/e/some-event-123");
+    const adapter = fakeAdapter(() =>
+      Promise.resolve([
+        {
+          ...rawCandidate,
+          sourceId: "src-billetto",
+          title: "Some Event",
+          officialEventUrl: "https://billetto.dk/e/some-event-123",
+          cancelledHint: false,
+        },
+      ]),
+    );
+
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(applySourceCancellationRestore).toHaveBeenCalledWith("e-billetto-cancelled", "src-billetto");
+  });
+});
 
 describe("Event lifecycle/status handling (2026-08-28) — source disappearance never implies cancellation", () => {
   it("an existing published event this sync's candidates never mention is never touched — no write of any kind, cancelled included", async () => {

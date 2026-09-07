@@ -372,7 +372,7 @@ async function runSourceSyncLocked(
         const cancellationAction = decideSourceCancellationSyncAction(
           {
             published: currentlyPublished,
-            manualOverride: existing.manualOverride,
+            overriddenFields: existing.overriddenFields,
             adminUnpublishReason: existing.adminUnpublishReason,
             sourceCancelledBySourceId: existing.sourceCancelledBySourceId,
           },

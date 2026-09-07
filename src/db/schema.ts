@@ -61,6 +61,8 @@ export const sources = pgTable("sources", {
   adapter: text("adapter"),
   trustLevel: text("trust_level").notNull(),
   autoPublish: boolean("auto_publish").notNull().default(false),
+  /** See CancellationPolicy in src/lib/types.ts — "none" | "review" | "trusted". Defaults "none": a source has no cancellation authority unless explicitly granted it in the registry. */
+  cancellationPolicy: text("cancellation_policy").notNull().default("none"),
   syncFrequency: text("sync_frequency").notNull(),
   active: boolean("active").notNull().default(true),
   lastSuccessfulSync: timestamp("last_successful_sync", { withTimezone: true }),

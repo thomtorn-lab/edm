@@ -21,6 +21,7 @@ function sourceFixture(overrides: Partial<Source> = {}): Source {
     adapter: "test-adapter",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: "2026-08-13T07:00:00+02:00",
@@ -56,6 +57,7 @@ describe("toProductionSourceRow", () => {
     expect(insertRow.adapter).toBe(fixture.adapter);
     expect(insertRow.trustLevel).toBe(fixture.trustLevel);
     expect(insertRow.autoPublish).toBe(fixture.autoPublish);
+    expect(insertRow.cancellationPolicy).toBe(fixture.cancellationPolicy);
     expect(insertRow.syncFrequency).toBe(fixture.syncFrequency);
     expect(insertRow.active).toBe(fixture.active);
     expect(insertRow.integrationNote).toBe(fixture.integrationNote);

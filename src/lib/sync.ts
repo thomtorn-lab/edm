@@ -774,11 +774,25 @@ export type SourceCancellationSyncAction = "no_change" | "unpublish" | "restore"
  * - `cancelledHint === true` (explicit cancellation):
  *   - already unpublished (either by this same mechanism, by an admin, or
  *     any other reason) -> "no_change", idempotent.
- *   - `current.manualOverride` -> "no_change". Same convention as
- *     decidePublishedEventSyncAction: an admin's own hand-correction on this
- *     event is never silently overridden by an automated sync. Necessarily
- *     covers admin-unpublish too (adminUnpublishEvent always sets
- *     manualOverride) — Section 5's "admin override always wins" precedence.
+ *   - `current.overriddenFields` contains "published" -> "no_change".
+ *     Deliberately NOT the generic `manualOverride` boolean (audited
+ *     2026-09-07, cross-case follow-up): manualOverride is true after ANY
+ *     single hand-corrected field via applyAdminEventEdit — e.g. an admin
+ *     merely fixing a stale Tickets URL sets manualOverride:true with
+ *     overriddenFields:["ticketUrl"], nothing about "published". Gating on
+ *     that generic flag would let an unrelated, purely editorial correction
+ *     silently block a genuine trusted cancellation forever after — wrong
+ *     product semantics (a manual edit to an unrelated field must never
+ *     prevent a trusted explicit cancellation from auto-unpublishing).
+ *     overriddenFields.includes("published") is the precise signal for
+ *     "an admin has explicitly taken a position on THIS event's publication
+ *     state" — set by adminUnpublishEvent, adminOverrideSourceCancellation,
+ *     and any direct {published: ...} edit; cleared by adminRepublishEvent
+ *     ("Publish Again" — deliberately re-opens the event to normal
+ *     sync-driven behavior, cancellation included). Never weakens
+ *     overriddenFields' own per-field sync-protection guarantee
+ *     (stripOverriddenFields) — this only decides what blocks THIS
+ *     cancellation-unpublish decision, a completely separate write path.
  *   - otherwise -> "unpublish".
  * - `cancelledHint === false` (explicit reversal) -> "restore" ONLY when
  *   ALL of: the event is currently unpublished, it was NOT admin-unpublished
@@ -808,7 +822,7 @@ export type SourceCancellationSyncAction = "no_change" | "unpublish" | "restore"
 export function decideSourceCancellationSyncAction(
   current: {
     published: boolean;
-    manualOverride: boolean;
+    overriddenFields: string[];
     adminUnpublishReason: string | null;
     sourceCancelledBySourceId: string | null;
   },
@@ -817,7 +831,7 @@ export function decideSourceCancellationSyncAction(
   if (fresh.cancellationPolicy !== "trusted") return "no_change";
   if (fresh.cancelledHint === true) {
     if (!current.published) return "no_change";
-    if (current.manualOverride) return "no_change";
+    if (current.overriddenFields.includes("published")) return "no_change";
     return "unpublish";
   }
   if (fresh.cancelledHint === false) {

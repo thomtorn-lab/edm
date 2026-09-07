@@ -223,6 +223,7 @@ function source(overrides: Partial<Source> = {}): Source {
     adapter: "test-adapter",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,

@@ -1205,8 +1205,8 @@ describe("decidePublishedEventSyncAction (data-quality Workstream A follow-up �
   });
 });
 
-describe("decideSourceCancellationSyncAction (source-driven cancellation safety, 2026-09-07)", () => {
-  const trustedNoOverride = { published: true, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: null };
+describe("decideSourceCancellationSyncAction (source-driven cancellation safety, 2026-09-07; overriddenFields precision fixed 2026-09-07 cross-case follow-up)", () => {
+  const trustedNoOverride = { published: true, overriddenFields: [] as string[], adminUnpublishReason: null, sourceCancelledBySourceId: null };
 
   it("trusted source, explicit true, published, no override -> unpublish", () => {
     expect(
@@ -1247,10 +1247,46 @@ describe("decideSourceCancellationSyncAction (source-driven cancellation safety,
     ).toBe("no_change");
   });
 
-  it("manualOverride set (any admin field edit, not just unpublish) -> no_change — an admin's own decision is never silently overridden by an automated sync, same convention as decidePublishedEventSyncAction", () => {
+  it("a manual edit to an UNRELATED field (e.g. Tickets URL) never blocks a trusted cancellation — the precise 'published' check, not the generic manualOverride flag", () => {
     expect(
       decideSourceCancellationSyncAction(
-        { ...trustedNoOverride, manualOverride: true },
+        { ...trustedNoOverride, overriddenFields: ["ticketUrl"] },
+        { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("unpublish");
+  });
+
+  it("a manual edit to the Official Event URL never blocks a trusted cancellation either", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { ...trustedNoOverride, overriddenFields: ["officialEventUrl"] },
+        { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("unpublish");
+  });
+
+  it("multiple unrelated field overrides at once (title + description + venueId) still never block a trusted cancellation", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { ...trustedNoOverride, overriddenFields: ["title", "description", "venueId"] },
+        { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("unpublish");
+  });
+
+  it("'published' itself in overriddenFields (an explicit publication/cancellation override) DOES block a trusted cancellation — the one field that legitimately protects publish state", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { ...trustedNoOverride, overriddenFields: ["published"] },
+        { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("'published' alongside other overridden fields still blocks — the check is inclusion, not exact match", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { ...trustedNoOverride, overriddenFields: ["ticketUrl", "published"] },
         { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
       ),
     ).toBe("no_change");
@@ -1265,7 +1301,7 @@ describe("decideSourceCancellationSyncAction (source-driven cancellation safety,
   it("explicit reversal (cancelledHint:false), currently unpublished, SAME source that caused it, not admin-unpublished -> restore", () => {
     expect(
       decideSourceCancellationSyncAction(
-        { published: false, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: "src-billetto" },
+        { published: false, overriddenFields: [], adminUnpublishReason: null, sourceCancelledBySourceId: "src-billetto" },
         { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
       ),
     ).toBe("restore");
@@ -1274,7 +1310,7 @@ describe("decideSourceCancellationSyncAction (source-driven cancellation safety,
   it("explicit reversal from a DIFFERENT source than the one that caused the cancellation -> no_change (Section 7: never silently guess across sources)", () => {
     expect(
       decideSourceCancellationSyncAction(
-        { published: false, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: "src-poolen" },
+        { published: false, overriddenFields: [], adminUnpublishReason: null, sourceCancelledBySourceId: "src-poolen" },
         { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
       ),
     ).toBe("no_change");
@@ -1283,7 +1319,7 @@ describe("decideSourceCancellationSyncAction (source-driven cancellation safety,
   it("explicit reversal on an event that was never cancelled by this mechanism (sourceCancelledBySourceId null) -> no_change, never invents a restore", () => {
     expect(
       decideSourceCancellationSyncAction(
-        { published: false, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: null },
+        { published: false, overriddenFields: [], adminUnpublishReason: null, sourceCancelledBySourceId: null },
         { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
       ),
     ).toBe("no_change");
@@ -1292,7 +1328,7 @@ describe("decideSourceCancellationSyncAction (source-driven cancellation safety,
   it("explicit reversal on an ADMIN-unpublished event -> no_change — admin override always wins, even from the same source that originally caused it", () => {
     expect(
       decideSourceCancellationSyncAction(
-        { published: false, manualOverride: true, adminUnpublishReason: "cancelled", sourceCancelledBySourceId: "src-billetto" },
+        { published: false, overriddenFields: ["published"], adminUnpublishReason: "cancelled", sourceCancelledBySourceId: "src-billetto" },
         { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
       ),
     ).toBe("no_change");
@@ -1301,7 +1337,7 @@ describe("decideSourceCancellationSyncAction (source-driven cancellation safety,
   it("explicit reversal on an already-published event -> no_change (nothing to restore)", () => {
     expect(
       decideSourceCancellationSyncAction(
-        { published: true, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: "src-billetto" },
+        { published: true, overriddenFields: [], adminUnpublishReason: null, sourceCancelledBySourceId: "src-billetto" },
         { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
       ),
     ).toBe("no_change");

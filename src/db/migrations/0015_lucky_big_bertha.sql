@@ -1,0 +1,1 @@
+ALTER TABLE "sources" ADD COLUMN "cancellation_policy" text DEFAULT 'none' NOT NULL;

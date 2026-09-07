@@ -15,6 +15,35 @@ export type SourceType =
   | "social";
 
 /**
+ * Cancellation-signal trust classification (source-driven cancellation
+ * safety, 2026-09-07; moved from a hardcoded id map to real source metadata
+ * in the same task's cross-case follow-up — see that follow-up's report for
+ * why: explicit per-source registry metadata, exactly like sourceType/
+ * trustLevel/autoPublish, is the preferred model over a source-name
+ * hardcode when the registry can express the capability cleanly, and it
+ * can here). Deliberately NOT derived from sourceType/trustLevel/
+ * autoPublish — the sources that can set cancelledHint at all (Billetto,
+ * Poolen, Pumpehuset) span multiple values of each with no clean common
+ * denominator; see src/lib/adapters/types.ts::RawCandidateEvent.cancelledHint
+ * for the underlying per-adapter capability audit.
+ *
+ * - "none" (the default for every source unless explicitly set otherwise):
+ *   no cancellation authority at all — its cancelledHint, if it ever somehow
+ *   set one, is never trusted for anything, not even the plain `cancelled`
+ *   metadata column.
+ * - "review": cancellation is visible to admin (e.g. surfaces on a pending
+ *   Discovery Queue candidate) but never automatically unpublishes anything.
+ *   No current source qualifies — kept as a real value for a future source
+ *   whose signal is real but less reliable (e.g. free-text scraping), not
+ *   fabricated for an existing source just to exercise it.
+ * - "trusted": may automatically unpublish a live event (see
+ *   src/lib/sync.ts::decideSourceCancellationSyncAction) — reserved for a
+ *   source whose cancellation signal is a genuine, explicit, structured
+ *   field, not inferred from free text or a listing disappearance.
+ */
+export type CancellationPolicy = "none" | "review" | "trusted";
+
+/**
  * Canonical authority order used to resolve conflicting field values
  * across sources. Lower index = higher authority. See spec section 32.
  */
@@ -36,6 +65,8 @@ export interface Source {
   adapter: string | null;
   trustLevel: ConfidenceLevel;
   autoPublish: boolean;
+  /** See CancellationPolicy's own doc comment above. */
+  cancellationPolicy: CancellationPolicy;
   syncFrequency: string;
   active: boolean;
   lastSuccessfulSync: string | null;
