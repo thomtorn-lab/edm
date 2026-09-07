@@ -7,7 +7,7 @@ import type { Venue } from "@/lib/types";
 import { getGenre, GENRES } from "@/lib/taxonomy";
 import { resolveVenue } from "@/lib/normalize";
 import { isProtectedSubVenueName } from "@/lib/venueCreation";
-import { formatIsoDateForInput } from "@/lib/format";
+import { formatFullDateLabel, formatIsoDateForInput, formatTimeLabel } from "@/lib/format";
 
 interface Props {
   items: DiscoveryQueueItem[];
@@ -174,6 +174,8 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
         </span>
       </div>
       <p className="mt-1 text-xs text-text-secondary">
+        {item.probableStart ? `${formatFullDateLabel(item.probableStart)} · ${formatTimeLabel(item.probableStart)}` : "Date unresolved"}
+        {" · "}
         {item.probableVenueName ?? "Venue unresolved"}
         {item.probableSubVenue ? ` (${item.probableSubVenue})` : ""} · source: {item.sourceName}
       </p>
@@ -186,6 +188,19 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       {item.missingFields.length > 0 && (
         <p className="mt-1 text-xs text-status-warn">Missing: {item.missingFields.join(", ")}</p>
       )}
+      <p className="mt-1 text-xs">
+        <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="text-accent-strong underline decoration-dotted underline-offset-2">
+          Source
+        </a>
+        {item.probableTicketUrl && (
+          <>
+            {" · "}
+            <a href={item.probableTicketUrl} target="_blank" rel="noreferrer" className="text-accent-strong underline decoration-dotted underline-offset-2">
+              Tickets
+            </a>
+          </>
+        )}
+      </p>
       {item.suspectedDuplicateOfEventId && (
         <p className="mt-1 rounded border border-status-warn/50 bg-status-warn/10 px-2 py-1 text-xs font-semibold text-status-warn">
           ⚠ Possible duplicate of{" "}
