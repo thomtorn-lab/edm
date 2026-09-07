@@ -79,6 +79,7 @@ const ADMIN_UNPUBLISHED: AdminUnpublishedRow[] = [
     eventId: "e-jasho",
     title: "Jasho Club // Poolen Outside",
     reason: "cancelled",
+    note: null,
     unpublishedAt: "2026-09-06T09:00:00+02:00",
     venueName: "Poolen",
     sourceName: "src-poolen",

@@ -152,6 +152,17 @@ export const events = pgTable("events", {
    * suppressing publication.
    */
   adminUnpublishReason: text("admin_unpublish_reason"),
+  /**
+   * Optional free-text detail alongside adminUnpublishReason (admin
+   * unpublish/cancellation safety follow-up, 2026-09-07) — editorial/audit
+   * metadata only, e.g. "promoter confirmed by email" or "dup of e-abc123".
+   * Never rendered on any public page (see EventRecord's own doc comment
+   * and StatusBadge.tsx's "no Cancelled badge" precedent for why internal
+   * unpublish detail stays admin-only); shown only in the admin UI
+   * alongside the reason. Cleared alongside adminUnpublishReason by
+   * adminRepublishEvent, same lifecycle as the reason itself.
+   */
+  adminUnpublishNote: text("admin_unpublish_note"),
   adminUnpublishedAt: timestamp("admin_unpublished_at", { withTimezone: true }),
   manualOverride: boolean("manual_override").notNull().default(false),
   /**

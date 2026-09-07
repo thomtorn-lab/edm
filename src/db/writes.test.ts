@@ -117,6 +117,28 @@ describe("adminUnpublishEvent (admin unpublish/cancellation safety, 2026-09-06)"
     );
   });
 
+  it("stores a trimmed optional note and includes it in the change-log entry", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await adminUnpublishEvent("e-1", "cancelled", "  promoter confirmed by email  ");
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.adminUnpublishNote).toBe("promoter confirmed by email");
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ note: "reason: cancelled; note: promoter confirmed by email" }),
+    );
+  });
+
+  it("stores null for an omitted, empty, or whitespace-only note — never an empty string", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+    await adminUnpublishEvent("e-1", "cancelled");
+    expect(updateSetMock.mock.calls[0][0].adminUnpublishNote).toBeNull();
+
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+    await adminUnpublishEvent("e-1", "cancelled", "   ");
+    expect(updateSetMock.mock.calls[0][0].adminUnpublishNote).toBeNull();
+  });
+
   it("throws when the event does not exist", async () => {
     selectResults = [[]];
     await expect(adminUnpublishEvent("e-missing", "other")).rejects.toThrow("Event e-missing not found");
@@ -142,6 +164,7 @@ describe("adminRepublishEvent ('Publish Again') (admin unpublish/cancellation sa
     const patch = updateSetMock.mock.calls[0][0];
     expect(patch.published).toBe(true);
     expect(patch.adminUnpublishReason).toBeNull();
+    expect(patch.adminUnpublishNote).toBeNull();
     expect(patch.adminUnpublishedAt).toBeNull();
     expect(patch.overriddenFields).not.toContain("published");
   });
@@ -214,6 +237,7 @@ describe("applyAdminEventEdit — generic PATCH bypass safety (admin unpublish/c
     const patch = updateSetMock.mock.calls[0][0];
     expect(patch.published).toBe(true);
     expect(patch.adminUnpublishReason).toBeNull();
+    expect(patch.adminUnpublishNote).toBeNull();
     expect(patch.adminUnpublishedAt).toBeNull();
   });
 

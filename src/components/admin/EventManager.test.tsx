@@ -60,6 +60,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     timeChanged: false,
     published: true,
     adminUnpublishReason: null,
+    adminUnpublishNote: null,
     adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
@@ -139,7 +140,7 @@ describe("EventManager — admin unpublish + Publish Again (admin unpublish/canc
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("Confirm unpublish posts the selected reason to /unpublish", async () => {
+  it("Confirm unpublish posts the selected reason (and null note by default) to /unpublish", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<EventManager events={[makeEvent()]} venues={VENUES} />);
@@ -151,7 +152,28 @@ describe("EventManager — admin unpublish + Publish Again (admin unpublish/canc
     await vi.waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/admin/events/e-1/unpublish",
-        expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "cancelled" }) }),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "cancelled", note: null }) }),
+      ),
+    );
+  });
+
+  it("Confirm unpublish trims and posts an optional note", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "cancelled" } });
+    fireEvent.change(screen.getByLabelText("Note (optional)"), { target: { value: "  promoter confirmed by email  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unpublish" }));
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/e-1/unpublish",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ reason: "cancelled", note: "promoter confirmed by email" }),
+        }),
       ),
     );
   });

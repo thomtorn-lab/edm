@@ -88,6 +88,7 @@ export function eventRowToRecord(row: EventRow): EventRecord {
     timeChanged: row.timeChanged,
     published: row.published,
     adminUnpublishReason: row.adminUnpublishReason as EventRecord["adminUnpublishReason"],
+    adminUnpublishNote: row.adminUnpublishNote,
     adminUnpublishedAt: row.adminUnpublishedAt?.toISOString() ?? null,
     manualOverride: row.manualOverride,
     overriddenFields: row.overriddenFields,

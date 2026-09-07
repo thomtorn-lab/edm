@@ -122,6 +122,7 @@ function UnpublishedByAdminList({ rows }: { rows: AdminUnpublishedRow[] }) {
             {row.venueName}
             {row.sourceName ? ` · source: ${row.sourceName}` : ""}
           </p>
+          {row.note && <p className="mt-1 text-xs text-text-secondary">{row.note}</p>}
           {row.unpublishedAt && (
             <p className="mt-1 text-[11px] text-text-tertiary">Unpublished {formatFullDateLabel(row.unpublishedAt)}</p>
           )}

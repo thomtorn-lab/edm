@@ -180,6 +180,8 @@ export interface AdminUnpublishedRow {
   eventId: string;
   title: string;
   reason: AdminUnpublishReason;
+  /** Optional free-text detail an admin left alongside the reason — admin-UI-only, never public. */
+  note: string | null;
   unpublishedAt: string | null;
   venueName: string;
   sourceName: string | null;
@@ -204,6 +206,7 @@ export function deriveAdminUnpublishedRows(
       eventId: e.id,
       title: e.title,
       reason: e.adminUnpublishReason,
+      note: e.adminUnpublishNote,
       unpublishedAt: e.adminUnpublishedAt,
       venueName: venuesById.get(e.venueId)?.name ?? "Unknown venue",
       sourceName: e.canonicalSourceId ? (sourcesById.get(e.canonicalSourceId)?.sourceName ?? null) : null,

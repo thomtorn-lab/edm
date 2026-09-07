@@ -148,6 +148,8 @@ export interface EventRecord {
   published: boolean;
   /** Non-null means an admin explicitly took this event down — see AdminUnpublishReason and src/db/writes.ts::adminUnpublishEvent. Never set by an automated process. */
   adminUnpublishReason: AdminUnpublishReason | null;
+  /** Optional free-text detail alongside adminUnpublishReason — editorial/audit metadata, admin-UI-only, never rendered on a public page. */
+  adminUnpublishNote: string | null;
   adminUnpublishedAt: string | null;
   manualOverride: boolean;
   /** Field names an admin has hand-corrected — a later sync must never overwrite these (see src/lib/override.ts). */

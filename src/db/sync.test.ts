@@ -680,6 +680,7 @@ function existingCultureBoxEvent(): EventWithVenue {
     timeChanged: false,
     published: true,
     adminUnpublishReason: null,
+    adminUnpublishNote: null,
     adminUnpublishedAt: null,
     manualOverride: false,
     overriddenFields: [],
