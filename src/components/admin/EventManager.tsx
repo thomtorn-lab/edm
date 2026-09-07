@@ -6,6 +6,7 @@ import type { EventWithVenue } from "@/lib/queries";
 import type { AdminUnpublishReason, Venue } from "@/lib/types";
 import { GENRES } from "@/lib/taxonomy";
 import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
+import { isValidHttpUrl } from "@/lib/urlValidation";
 
 /** UNPUBLISH reasons offered in the admin UI (admin unpublish/cancellation
  *  safety, 2026-09-06) — must stay in sync with AdminUnpublishReason. */
@@ -99,6 +100,16 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       setError("End time isn't a complete, valid date — use the picker, finish typing it, or clear it explicitly.");
       return;
     }
+    const officialEventUrlTrimmed = officialEventUrl.trim();
+    if (officialEventUrlTrimmed && !isValidHttpUrl(officialEventUrlTrimmed)) {
+      setError("Official event URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
+    const ticketUrlTrimmed = ticketUrl.trim();
+    if (ticketUrlTrimmed && !isValidHttpUrl(ticketUrlTrimmed)) {
+      setError("Ticket URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -111,8 +122,8 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
         patch.subgenres = [primaryGenre];
       }
       if (description !== (event.description ?? "")) patch.description = description || null;
-      if (officialEventUrl !== (event.officialEventUrl ?? "")) patch.officialEventUrl = officialEventUrl || null;
-      if (ticketUrl !== (event.ticketUrl ?? "")) patch.ticketUrl = ticketUrl || null;
+      if (officialEventUrlTrimmed !== (event.officialEventUrl ?? "")) patch.officialEventUrl = officialEventUrlTrimmed || null;
+      if (ticketUrlTrimmed !== (event.ticketUrl ?? "")) patch.ticketUrl = ticketUrlTrimmed || null;
       if (facebookUrl !== (event.facebookUrl ?? "")) patch.facebookUrl = facebookUrl || null;
       if (residentAdvisorUrl !== (event.residentAdvisorUrl ?? "")) patch.residentAdvisorUrl = residentAdvisorUrl || null;
       const newEndIso = endLocal ? new Date(endLocal).toISOString() : null;

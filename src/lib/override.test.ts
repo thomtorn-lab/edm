@@ -60,6 +60,26 @@ describe("stripOverriddenFields — the manual-override protection guarantee", (
     expect(applied).toEqual({ soldOut: true });
     expect(applied).not.toHaveProperty("published");
   });
+
+  // Event-level link editing (2026-09-07): officialEventUrl/ticketUrl go
+  // through this exact same generic mechanism as every other editable
+  // field — no URL-specific code path exists or is needed.
+  it("an admin-added officialEventUrl survives a later source sync proposing a different URL", () => {
+    const overriddenFields = addOverriddenFields([], ["officialEventUrl"]);
+    const syncProposedPatch = { officialEventUrl: "https://source.example.com/new-page", ticketUrl: "https://source.example.com/tickets" };
+    const applied = stripOverriddenFields(syncProposedPatch, overriddenFields);
+    expect(applied).not.toHaveProperty("officialEventUrl");
+    expect(applied.ticketUrl).toBe("https://source.example.com/tickets");
+  });
+
+  it("an admin-cleared ticketUrl (protected, currently null) is not silently restored by a later sync", () => {
+    const overriddenFields = addOverriddenFields([], ["ticketUrl"]);
+    // The source still reports a ticketUrl on every sync — a real value,
+    // not null — but the admin's explicit clear must still win.
+    const syncProposedPatch = { ticketUrl: "https://billetto.dk/e/some-event-1" };
+    const applied = stripOverriddenFields(syncProposedPatch, overriddenFields);
+    expect(applied).toEqual({});
+  });
 });
 
 describe("isEditableEventField", () => {
@@ -73,5 +93,10 @@ describe("isEditableEventField", () => {
     expect(isEditableEventField("slug")).toBe(false);
     expect(isEditableEventField("canonicalSourceId")).toBe(false);
     expect(isEditableEventField("createdAt")).toBe(false);
+  });
+
+  it("accepts officialEventUrl and ticketUrl (event-level link editing, 2026-09-07)", () => {
+    expect(isEditableEventField("officialEventUrl")).toBe(true);
+    expect(isEditableEventField("ticketUrl")).toBe(true);
   });
 });

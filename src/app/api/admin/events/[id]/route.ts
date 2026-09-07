@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyAdminEventEdit } from "@/db/writes";
 import { isEditableEventField } from "@/lib/override";
+import { isValidHttpUrl } from "@/lib/urlValidation";
+
+/**
+ * URL-shaped fields validated on this route (event-level link editing,
+ * 2026-09-07) — scoped to exactly the two fields that task added editing
+ * for; every other editable field's validation is unchanged. `null` always
+ * means "clear it" and is never validated as a URL.
+ */
+const URL_FIELDS = ["officialEventUrl", "ticketUrl"] as const;
 
 /**
  * Generic admin edit endpoint — correct genre, correct venue, add/correct
@@ -19,6 +28,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const invalidFields = Object.keys(patch).filter((f) => !isEditableEventField(f));
   if (invalidFields.length > 0) {
     return NextResponse.json({ error: `Not editable: ${invalidFields.join(", ")}` }, { status: 400 });
+  }
+
+  for (const field of URL_FIELDS) {
+    const value = (patch as Record<string, unknown>)[field];
+    if (typeof value === "string" && !isValidHttpUrl(value)) {
+      return NextResponse.json({ error: `${field}: enter a valid http(s) URL, or clear the field.` }, { status: 400 });
+    }
   }
 
   try {

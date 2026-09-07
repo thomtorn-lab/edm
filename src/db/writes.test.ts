@@ -271,3 +271,81 @@ describe("applyAdminEventEdit — generic PATCH bypass safety (admin unpublish/c
     expect(patch).not.toHaveProperty("adminUnpublishReason");
   });
 });
+
+describe("applyAdminEventEdit — event-level link editing (officialEventUrl/ticketUrl, 2026-09-07)", () => {
+  it("adds an Official Event URL where none existed and marks the field overridden", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { officialEventUrl: "https://venue.example.com/events/night" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.officialEventUrl).toBe("https://venue.example.com/events/night");
+    expect(patch.overriddenFields).toContain("officialEventUrl");
+    expect(patch.manualOverride).toBe(true);
+  });
+
+  it("edits an existing Official Event URL", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { officialEventUrl: "https://venue.example.com/events/corrected" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.officialEventUrl).toBe("https://venue.example.com/events/corrected");
+  });
+
+  it("clears an Official Event URL back to null and still marks it overridden (so a later sync doesn't restore it)", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { officialEventUrl: null });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.officialEventUrl).toBeNull();
+    expect(patch.overriddenFields).toContain("officialEventUrl");
+  });
+
+  it("adds a Tickets URL where none existed", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { ticketUrl: "https://tickets.example.com/e/1" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.ticketUrl).toBe("https://tickets.example.com/e/1");
+    expect(patch.overriddenFields).toContain("ticketUrl");
+  });
+
+  it("edits an existing Tickets URL", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: ["ticketUrl"] }]];
+
+    await applyAdminEventEdit("e-1", { ticketUrl: "https://tickets.example.com/e/updated" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.ticketUrl).toBe("https://tickets.example.com/e/updated");
+  });
+
+  it("clears a Tickets URL back to null and still marks it overridden", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: ["ticketUrl"] }]];
+
+    await applyAdminEventEdit("e-1", { ticketUrl: null });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.ticketUrl).toBeNull();
+    expect(patch.overriddenFields).toContain("ticketUrl");
+  });
+
+  it("editing officialEventUrl on one event never touches another — overriddenFields accumulates per-row from that row's own existing list, never a shared/global list", async () => {
+    selectResults = [
+      [{ id: "e-A", overriddenFields: [] }],
+      [{ id: "e-B", overriddenFields: ["title"] }],
+    ];
+
+    await applyAdminEventEdit("e-A", { officialEventUrl: "https://a.example.com" });
+    await applyAdminEventEdit("e-B", { officialEventUrl: "https://b.example.com" });
+
+    const patchA = updateSetMock.mock.calls[0][0];
+    const patchB = updateSetMock.mock.calls[1][0];
+    expect(patchA.overriddenFields).toEqual(["officialEventUrl"]);
+    expect(patchB.overriddenFields).toEqual(expect.arrayContaining(["title", "officialEventUrl"]));
+    expect(patchB.officialEventUrl).toBe("https://b.example.com");
+    expect(patchA.officialEventUrl).toBe("https://a.example.com");
+  });
+});

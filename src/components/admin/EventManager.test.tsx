@@ -326,6 +326,126 @@ describe("EventManager — FREE (admin/manual-event work package, 2026-08-24)", 
     expect(body.patch.priceFrom).toBeNull();
   });
 
+  it("adds an Official Event URL where none existed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ officialEventUrl: null })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Official event URL"), { target: { value: "https://venue.example.com/events/night" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.officialEventUrl).toBe("https://venue.example.com/events/night");
+  });
+
+  it("edits an existing Official Event URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ officialEventUrl: "https://venue.example.com/old" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Official event URL"), { target: { value: "https://venue.example.com/corrected" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.officialEventUrl).toBe("https://venue.example.com/corrected");
+  });
+
+  it("clears an Official Event URL back to null", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ officialEventUrl: "https://venue.example.com/old" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Official event URL"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.officialEventUrl).toBeNull();
+  });
+
+  it("edits an existing Ticket URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ ticketUrl: "https://tickets.example.com/old" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Ticket URL"), { target: { value: "https://tickets.example.com/updated" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.ticketUrl).toBe("https://tickets.example.com/updated");
+  });
+
+  it("clears a Ticket URL back to null", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ ticketUrl: "https://tickets.example.com/old" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Ticket URL"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.ticketUrl).toBeNull();
+  });
+
+  it("blocks save with an inline error on a malformed Official Event URL, never calling fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ officialEventUrl: null })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Official event URL"), { target: { value: "not a url" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    expect(await screen.findByText(/Official event URL isn't a valid/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks save with an inline error on a malformed Ticket URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ ticketUrl: null })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Ticket URL"), { target: { value: "javascript:alert(1)" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    expect(await screen.findByText(/Ticket URL isn't a valid/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("editing event A's Official Event URL never touches event B", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <EventManager
+        events={[
+          makeEvent({ id: "e-A", slug: "a", officialEventUrl: null }),
+          makeEvent({ id: "e-B", slug: "b", title: "Other Night", officialEventUrl: null }),
+        ]}
+        venues={VENUES}
+      />,
+    );
+
+    const editButtons = screen.getAllByRole("button", { name: "Edit" });
+    fireEvent.click(editButtons[0]);
+    fireEvent.change(screen.getByLabelText("Official event URL"), { target: { value: "https://a.example.com" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /Save/ })[0]);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/admin/events/e-A");
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.officialEventUrl).toBe("https://a.example.com");
+  });
+
   it("Ticket URL still works and can coexist with Free in the data model (Tickets link takes rendering precedence — see src/lib/links.ts's showFreeCta)", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);

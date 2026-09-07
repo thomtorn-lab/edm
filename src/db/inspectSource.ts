@@ -1192,7 +1192,7 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
   const rows = await client.query(
     `SELECT e.id, e.slug, e.title, e.description, e.start_datetime, e.end_datetime,
             e.published, e.admin_unpublish_reason, e.admin_unpublished_at,
-            e.official_event_url, e.canonical_source_id,
+            e.official_event_url, e.ticket_url, e.canonical_source_id,
             v.name AS venue_name, s.source_name
      FROM events e
      LEFT JOIN venues v ON v.id = e.venue_id
@@ -1265,6 +1265,8 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
       published: r.published,
       adminUnpublishReason: r.admin_unpublish_reason,
       adminUnpublishedAt: r.admin_unpublished_at,
+      officialEventUrl: r.official_event_url,
+      ticketUrl: r.ticket_url,
     });
   }
 
