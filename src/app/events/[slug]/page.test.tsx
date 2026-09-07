@@ -68,45 +68,67 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 
 vi.mock("@/lib/queries", () => ({
   getEventBySlugWithVenue: vi.fn(),
+  getSourceEventLinksForEvent: vi.fn(),
 }));
 
-const { getEventBySlugWithVenue } = await import("@/lib/queries");
+const { getEventBySlugWithVenue, getSourceEventLinksForEvent } = await import("@/lib/queries");
 const { default: EventDetailPage } = await import("./page");
 
-async function renderPage(event: EventWithVenue) {
+type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
+
+/**
+ * `sourceLinks` stands in for the event's real `source_event_links` rows
+ * (public source-link provenance, 2026-09-07 revision) — the detail page
+ * now fetches these separately via getSourceEventLinksForEvent rather than
+ * deriving provenance from the event's own canonicalSourceId/officialEventUrl
+ * fields, so tests must supply them explicitly whenever provenance is
+ * expected to render. Defaults to none (no provenance).
+ */
+async function renderPage(event: EventWithVenue, sourceLinks: SourceLinkRow[] = []) {
   vi.mocked(getEventBySlugWithVenue).mockResolvedValue(event);
+  vi.mocked(getSourceEventLinksForEvent).mockResolvedValue(sourceLinks);
   const element = await EventDetailPage({ params: Promise.resolve({ slug: event.slug }) } as never);
   render(element);
 }
 
-describe("Event detail page — Source CTA visibility + discreet provenance (public source-link visibility work package, 2026-09-07)", () => {
+describe("Event detail page — Source CTA visibility + discreet provenance (public source-link visibility work package, 2026-09-07; revised same day to derive provenance from source_event_links, not only canonicalSourceId)", () => {
   afterEach(cleanup);
 
-  it("7. hides the Source CTA when an Official event link exists, but still shows discreet source provenance", async () => {
+  it("1. official canonical (Hangaren) + secondary discovery match (KultuNaut) -> Official event CTA shown, Source CTA hidden, KultuNaut provenance now visible", async () => {
+    // This is the case the earlier canonical-only design silently dropped:
+    // a genuine first-party canonical source_event_links row (role
+    // "official") plus a second, non-canonical KultuNaut row for the same
+    // event — the real shape confirmed live for 13 published events.
     await renderPage(
-      makeEvent({
-        officialEventUrl: "https://www.hangaren.dk/events/x",
-        canonicalSourceId: "src-hangaren",
-        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=2"],
-      }),
+      makeEvent({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren" }),
+      [
+        { sourceId: "src-hangaren", sourceUrl: "https://www.hangaren.dk/events/x", role: "official" },
+        { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=2", role: "official" },
+      ],
     );
     expect(screen.getByText(/^Official event/i)).toBeTruthy();
-    // Real Production shape (13 published events): the secondary,
-    // non-canonical otherSourceUrls match is never surfaced — provenance is
-    // decided by the event's own canonical source alone, which here is
-    // Hangaren (official-venue), so no "Source:" line renders at all.
+    expect(screen.queryByRole("link", { name: /^Source ↗/i })).toBeNull();
+    expect(screen.getByText("Source:")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "KultuNaut" })).toBeTruthy();
+  });
+
+  it("2. official-venue and ticketing source_event_links rows are never listed as provenance themselves — already shown as Official event/Tickets", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren" }),
+      [{ sourceId: "src-hangaren", sourceUrl: "https://www.hangaren.dk/events/x", role: "official" }],
+    );
+    expect(screen.getByText(/^Official event/i)).toBeTruthy();
     expect(screen.queryByText(/^Source/)).toBeNull();
   });
 
-  it("hides the Source CTA when a Tickets link exists (Tickets + Source combination)", async () => {
-    await renderPage(
-      makeEvent({
-        ticketUrl: "https://billetto.dk/e/x",
-        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=3"],
-      }),
-    );
+  it("hides the Source CTA when a Tickets link exists, still shows KultuNaut provenance from the event's own source_event_links (Tickets + Source combination)", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }), [
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=3", role: "official" },
+    ]);
     expect(screen.getByText(/^Tickets/i)).toBeTruthy();
-    expect(screen.queryByText(/^Source\b/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Source ↗/i })).toBeNull();
+    expect(screen.getByText("Source:")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "KultuNaut" })).toBeTruthy();
   });
 
   it("shows Official event + Tickets together, Source CTA hidden, when all three exist", async () => {
@@ -115,12 +137,27 @@ describe("Event detail page — Source CTA visibility + discreet provenance (pub
         officialEventUrl: "https://www.hangaren.dk/events/x",
         canonicalSourceId: "src-hangaren",
         ticketUrl: "https://billetto.dk/e/x",
-        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=4"],
       }),
+      [
+        { sourceId: "src-hangaren", sourceUrl: "https://www.hangaren.dk/events/x", role: "official" },
+        { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=4", role: "official" },
+      ],
     );
     expect(screen.getByText(/^Official event/i)).toBeTruthy();
     expect(screen.getByText(/^Tickets/i)).toBeTruthy();
-    expect(screen.queryByText(/^Source\b/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Source ↗/i })).toBeNull();
+    expect(screen.getByText("Source:")).toBeTruthy();
+  });
+
+  it("4. multiple qualifying discovery sources render a compact 'Sources: A · B' line, not a source browser", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }), [
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=5", role: "official" },
+      { sourceId: "src-eventbrite", sourceUrl: "https://www.eventbrite.dk/e/example", role: "official" },
+    ]);
+    expect(screen.getByText("Sources:")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Eventbrite" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "KultuNaut" })).toBeTruthy();
+    expect(screen.queryByText("Source:")).toBeNull();
   });
 
   it("9. source-only detail page shows the Source CTA and a discreet 'Source: <name>' provenance line naming it — not an awkward duplicate block, just one small caption under the CTA row", async () => {
@@ -129,12 +166,15 @@ describe("Event detail page — Source CTA visibility + discreet provenance (pub
         officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664",
         canonicalSourceId: "src-kultunaut",
       }),
+      [{ sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664", role: "official" }],
     );
     // The CTA itself stays generically labelled "Source".
     expect(screen.getByRole("link", { name: /^Source ↗/i })).toBeTruthy();
-    // The discreet provenance line separately names the actual source.
+    // 5. The discreet provenance line separately names the actual source by
+    // its clean public brand name, never the internal registry sourceName.
     expect(screen.getByText("Source:")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "KultuNaut — Elektronisk / Club-DJ (Kbh. og Frederiksberg)" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "KultuNaut" })).toBeTruthy();
+    expect(screen.queryByText(/Elektronisk/)).toBeNull();
     // Exactly one provenance line, not a duplicated block.
     expect(screen.getAllByText("Source:")).toHaveLength(1);
   });
@@ -145,18 +185,30 @@ describe("Event detail page — Source CTA visibility + discreet provenance (pub
         officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664",
         canonicalSourceId: "src-kultunaut",
       }),
+      [{ sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664", role: "official" }],
     );
-    const provenanceLink = screen.getByRole("link", { name: "KultuNaut — Elektronisk / Club-DJ (Kbh. og Frederiksberg)" });
+    const provenanceLink = screen.getByRole("link", { name: "KultuNaut" });
     expect(provenanceLink.getAttribute("href")).toBe("https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664");
   });
 
-  it("renders no provenance line for a genuine first-party Official event with no source/discovery ambiguity", async () => {
-    await renderPage(makeEvent({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren" }));
+  it("renders no provenance line for a genuine first-party Official event with no discovery source_event_links row", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren" }),
+      [{ sourceId: "src-hangaren", sourceUrl: "https://www.hangaren.dk/events/x", role: "official" }],
+    );
+    expect(screen.queryByText(/^Source/)).toBeNull();
+  });
+
+  it("renders no provenance line when the event has no source_event_links rows at all (e.g. admin-added)", async () => {
+    await renderPage(makeEvent({ officialEventUrl: "https://example.com/x", canonicalSourceId: null }), []);
     expect(screen.queryByText(/^Source/)).toBeNull();
   });
 
   it("the provenance line is visually secondary (small, muted text), never styled like the Official event/Tickets buttons", async () => {
-    await renderPage(makeEvent({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut" }));
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut" }),
+      [{ sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", role: "official" }],
+    );
     const provenanceLine = screen.getByText("Source:").closest("p");
     expect(provenanceLine?.className).toContain("text-text-tertiary");
     expect(provenanceLine?.className).not.toContain("border");

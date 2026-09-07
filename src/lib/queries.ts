@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { discoveryQueue, events, sources, venues } from "@/db/schema";
+import { discoveryQueue, events, sourceEventLinks, sources, venues } from "@/db/schema";
 import {
   discoveryRowToRecord,
   eventRowToRecord,
@@ -107,6 +107,27 @@ export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVe
     .limit(1);
   const withVenue = await attachVenue(rows);
   return withVenue[0];
+}
+
+/**
+ * All `source_event_links` rows for one event (public source-link
+ * provenance, 2026-09-07 revision) — a single query scoped to this one
+ * event, never per-source (no N+1): the event detail page calls this once
+ * alongside getEventBySlugWithVenue and passes the result to
+ * getSourceProvenance in src/lib/links.ts, which decides what (if anything)
+ * to show publicly. Never called from a cards/list page.
+ */
+export async function getSourceEventLinksForEvent(
+  eventId: string,
+): Promise<{ sourceId: string; sourceUrl: string; role: string }[]> {
+  return db
+    .select({
+      sourceId: sourceEventLinks.sourceId,
+      sourceUrl: sourceEventLinks.sourceUrl,
+      role: sourceEventLinks.role,
+    })
+    .from(sourceEventLinks)
+    .where(eq(sourceEventLinks.eventId, eventId));
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {
