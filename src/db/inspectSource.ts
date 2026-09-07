@@ -1602,6 +1602,27 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
 
   section(`LINK-ROLE AUDIT — events with no usable public link (${noUsableLink.length})`);
   console.log(JSON.stringify(noUsableLink, null, 2));
+
+  // Multi-source provenance audit (public source-link visibility work
+  // package, 2026-09-07): source_event_links rows are inserted for every
+  // SOURCE whose sync candidate matches an event (db/sync.ts's match
+  // branch), not only the event's canonical source — so a single canonical
+  // event can genuinely accumulate links from several different sources.
+  // Read-only, informs the public detail-page provenance design.
+  const multiSource = await client.query(
+    `SELECT sel.event_id, e.title, count(DISTINCT sel.source_id)::int AS distinct_sources,
+            array_agg(DISTINCT s.source_name ORDER BY s.source_name) AS source_names
+     FROM source_event_links sel
+     JOIN events e ON e.id = sel.event_id
+     LEFT JOIN sources s ON s.id = sel.source_id
+     WHERE e.published = true
+     GROUP BY sel.event_id, e.title
+     HAVING count(DISTINCT sel.source_id) > 1
+     ORDER BY distinct_sources DESC
+     LIMIT 20`,
+  );
+  section(`LINK-ROLE AUDIT — published events with source_event_links from more than one source (${multiSource.rows.length} found, capped at 20)`);
+  console.log(JSON.stringify(multiSource.rows, null, 2));
 }
 
 const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
