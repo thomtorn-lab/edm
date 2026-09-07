@@ -67,6 +67,48 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
   };
 }
 
+describe("EventRow — Source CTA visibility rule (public source-link visibility work package, 2026-09-07)", () => {
+  afterEach(cleanup);
+
+  it("shows the Source CTA as a fallback when it's the only usable link", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+          canonicalSourceId: "src-kultunaut",
+        })}
+      />,
+    );
+    expect(screen.getByText(/^Source/)).toBeTruthy();
+  });
+
+  it("hides the Source CTA once an Official event link exists — Official event only", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          officialEventUrl: "https://www.hangaren.dk/events/x",
+          canonicalSourceId: "src-hangaren",
+          otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=2"],
+        })}
+      />,
+    );
+    expect(screen.getByText(/Official event/i)).toBeTruthy();
+    expect(screen.queryByText(/^Source/)).toBeNull();
+  });
+
+  it("8. cards never gain the discreet provenance metadata line — CTA rule only, no 'Source:' caption", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+          canonicalSourceId: "src-kultunaut",
+        })}
+      />,
+    );
+    expect(screen.queryByText(/^Source:/)).toBeNull();
+  });
+});
+
 describe("EventRow — genre display and ticket/free CTA", () => {
   afterEach(cleanup);
 

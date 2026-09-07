@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getExternalLinks, hasTicketDestination, isFreeAdmission, showFreeCta } from "./links";
+import { getExternalLinks, getSourceProvenance, hasTicketDestination, isFreeAdmission, showFreeCta } from "./links";
 import type { EventRecord } from "./types";
 
 function event(overrides: Partial<EventRecord> = {}): EventRecord {
@@ -185,6 +185,168 @@ describe("getExternalLinks — event-link role classification (Zoumer reference 
   it("an unresolvable canonicalSourceId doesn't downgrade what's already stored", () => {
     const links = getExternalLinks(event({ officialEventUrl: "https://example.com/x", canonicalSourceId: "src-does-not-exist" }));
     expect(links[0].label).toBe("Official event");
+  });
+});
+
+describe("getExternalLinks — Source CTA visibility rule (public source-link visibility work package, 2026-09-07)", () => {
+  // SOURCE is a CTA fallback only: it must never appear as an equal
+  // alternative next to a genuine Official event/Tickets destination, but
+  // remains the CTA when it's the only usable public link. src-kultunaut is
+  // a real discovery/aggregator source (officialUrlRole "unknown" ->
+  // "Source"); src-hangaren is official-venue; src-billetto is ticketing.
+
+  it("1. Source only -> Source CTA visible", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut" }),
+    );
+    expect(links).toEqual([{ label: "Source", href: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", primary: true }]);
+  });
+
+  it("2. Official event + Source -> only Official event CTA visible", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/x",
+        canonicalSourceId: "src-hangaren",
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=2"],
+      }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://www.hangaren.dk/events/x", primary: true }]);
+    expect(links.some((l) => l.label === "Source")).toBe(false);
+  });
+
+  it("3. Tickets + Source -> only Tickets CTA visible", () => {
+    const links = getExternalLinks(
+      event({
+        ticketUrl: "https://billetto.dk/e/x",
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=3"],
+      }),
+    );
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/x", primary: false }]);
+    expect(links.some((l) => l.label === "Source")).toBe(false);
+  });
+
+  it("4. Official event + Tickets + Source -> Official event + Tickets visible, Source CTA hidden", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/x",
+        canonicalSourceId: "src-hangaren",
+        ticketUrl: "https://billetto.dk/e/x",
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=4"],
+      }),
+    );
+    expect(links).toEqual([
+      { label: "Official event", href: "https://www.hangaren.dk/events/x", primary: true },
+      { label: "Tickets", href: "https://billetto.dk/e/x", primary: false },
+    ]);
+    expect(links.some((l) => l.label === "Source")).toBe(false);
+  });
+
+  it("5. Official event + Tickets, no Source -> unchanged from existing behavior", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/x",
+        canonicalSourceId: "src-hangaren",
+        ticketUrl: "https://billetto.dk/e/x",
+      }),
+    );
+    expect(links).toEqual([
+      { label: "Official event", href: "https://www.hangaren.dk/events/x", primary: true },
+      { label: "Tickets", href: "https://billetto.dk/e/x", primary: false },
+    ]);
+  });
+
+  it("6. same-URL Official/Tickets collapse still happens before Source suppression is applied", () => {
+    const zoumerUrl = "https://billetto.dk/e/zoumer-billetter-1926030?utm_campaign=websites";
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: zoumerUrl,
+        ticketUrl: zoumerUrl,
+        canonicalSourceId: "src-billetto",
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=6"],
+      }),
+    );
+    expect(links).toEqual([{ label: "Tickets", href: zoumerUrl, primary: true }]);
+  });
+
+  it("no usable links at all -> empty CTA list (rule E)", () => {
+    expect(getExternalLinks(event())).toEqual([]);
+  });
+
+  it("Source suppression composes correctly with EventRow's max=2 truncation (Official + Tickets + Source with a cap of 2)", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/x",
+        canonicalSourceId: "src-hangaren",
+        ticketUrl: "https://billetto.dk/e/x",
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=7"],
+      }),
+      2,
+    );
+    expect(links.map((l) => l.label)).toEqual(["Official event", "Tickets"]);
+  });
+
+  it("12. is a pure read of the event — never mutates the input (no source_event_links/otherSourceUrls mutation)", () => {
+    const input = event({
+      officialEventUrl: "https://www.hangaren.dk/events/x",
+      canonicalSourceId: "src-hangaren",
+      otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1"],
+    });
+    const snapshot = JSON.parse(JSON.stringify(input));
+    getExternalLinks(input);
+    getSourceProvenance(input);
+    expect(input).toEqual(snapshot);
+  });
+
+  it("14. does not regress source-role classification — a ticketing source's link is still 'Tickets', not 'Source', even once suppression exists", () => {
+    const links = getExternalLinks(event({ officialEventUrl: "https://billetto.dk/e/x", canonicalSourceId: "src-billetto" }));
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/x", primary: true }]);
+  });
+});
+
+describe("getSourceProvenance — discreet public provenance (detail page only, public source-link visibility work package, 2026-09-07)", () => {
+  it("identifies the actual source by name for a discovery/aggregator-sourced event (Jasho Club // Poolen Outside reference shape)", () => {
+    const provenance = getSourceProvenance(
+      event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664", canonicalSourceId: "src-kultunaut" }),
+    );
+    expect(provenance).toEqual({ sourceName: "KultuNaut — Elektronisk / Club-DJ (Kbh. og Frederiksberg)", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664" });
+  });
+
+  it("returns null for a genuine first-party official-venue source — no separate 'Source' identity to surface", () => {
+    expect(getSourceProvenance(event({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren" }))).toBeNull();
+  });
+
+  it("returns null for a ticketing source — Tickets already identifies the destination clearly enough", () => {
+    expect(getSourceProvenance(event({ officialEventUrl: "https://billetto.dk/e/x", canonicalSourceId: "src-billetto" }))).toBeNull();
+  });
+
+  it("returns null when there is no officialEventUrl at all", () => {
+    expect(getSourceProvenance(event({ officialEventUrl: null, canonicalSourceId: "src-kultunaut" }))).toBeNull();
+  });
+
+  it("returns null for an admin-added event with no canonicalSourceId — never invents a source name", () => {
+    expect(getSourceProvenance(event({ officialEventUrl: "https://example.com/x", canonicalSourceId: null }))).toBeNull();
+  });
+
+  it("never exposes internal fields — the returned shape is exactly {sourceName, sourceUrl}, never a source id, trust level, or confidence", () => {
+    const provenance = getSourceProvenance(
+      event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut" }),
+    );
+    expect(provenance && Object.keys(provenance).sort()).toEqual(["sourceName", "sourceUrl"]);
+  });
+
+  it("10. multiple-source deterministic rule: a secondary, non-canonical source_event_links match (e.g. a KultuNaut duplicate layered onto an already-canonical Poolen event) is never surfaced — only the event's own canonical source decides public provenance", () => {
+    // Real Production shape (13 published events confirmed live): the
+    // canonical source is the official venue, and otherSourceUrls carries a
+    // secondary, non-canonical KultuNaut match. Canonical authority alone
+    // decides — the secondary source never appears here.
+    const provenance = getSourceProvenance(
+      event({
+        officialEventUrl: "https://poolen.dk/da/koncerter/example/",
+        canonicalSourceId: "src-poolen",
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1"],
+      }),
+    );
+    expect(provenance).toBeNull();
   });
 });
 

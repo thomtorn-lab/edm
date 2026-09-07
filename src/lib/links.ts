@@ -48,6 +48,19 @@ function officialUrlRole(event: Pick<EventRecord, "canonicalSourceId">): "offici
  * the same URL, only the correctly-classified label is kept (see
  * officialUrlRole above) — never both, and never "Official event" merely
  * because it was checked first.
+ *
+ * Source-CTA visibility (public source-link visibility work package,
+ * 2026-09-07): a "Source" entry (a discovery/aggregator link with no
+ * first-party or ticketing standing over this event — see officialUrlRole
+ * above, and any admin-merged `otherSourceUrls`) is a CTA of last resort,
+ * never an equal alternative next to a genuine Official event/Tickets
+ * destination. Once "Official event", "Tickets" or "Resident Advisor" is
+ * present in the list, every "Source" entry is dropped before this function
+ * returns (and before `max` truncates) — Source is shown as a CTA only when
+ * it's the sole usable public link (spec section 2, rule D). This applies
+ * identically wherever this function is called (event cards and the detail
+ * page share this one helper — see getSourceProvenance below for the
+ * separate, detail-page-only, non-CTA provenance treatment).
  */
 export function getExternalLinks(event: EventRecord, max?: number): ExternalLink[] {
   const seen = new Set<string>();
@@ -80,7 +93,46 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
   add("Facebook", event.facebookUrl);
   for (const url of event.otherSourceUrls) add("Source", url);
 
-  return typeof max === "number" ? links.slice(0, max) : links;
+  const hasPrimaryDestination = links.some((l) => l.label === "Official event" || l.label === "Tickets" || l.label === "Resident Advisor");
+  const ctaLinks = hasPrimaryDestination ? links.filter((l) => l.label !== "Source") : links;
+
+  return typeof max === "number" ? ctaLinks.slice(0, max) : ctaLinks;
+}
+
+/**
+ * Discreet, non-CTA public provenance for the event DETAIL PAGE only (public
+ * source-link visibility work package, 2026-09-07) — never wired into event
+ * cards/homepage (see getExternalLinks's own doc comment). Identifies the
+ * actual discovery/aggregator source by name (e.g. "KultuNaut"), even when
+ * getExternalLinks has hidden its Source CTA because a real Official
+ * event/Tickets destination exists — that's the common case this exists
+ * for. When Source is the only CTA (rule D), this still resolves so the
+ * name is identified somewhere, since the CTA button itself only ever reads
+ * the generic word "Source".
+ *
+ * Deliberately scoped to the event's own canonical source only — never a
+ * source-id, trust level, confidence, or other ingestion/pipeline internal.
+ * Real Production events can carry `source_event_links` from a SECOND,
+ * non-canonical source too (recordSourceLink in db/sync.ts records a link
+ * for any source whose sync candidate matches an existing event, not only
+ * the canonical one — confirmed live: 13 published events, each a
+ * KultuNaut discovery match layered onto an already-canonical Poolen/
+ * Pumpehuset event). Those secondary links are intentionally never surfaced
+ * here: the event's canonicalSourceId is already the established authority
+ * (the same field officialUrlRole above and cancellation trust elsewhere
+ * both key off), so it alone decides public provenance — never a browser
+ * across every source that has ever matched this event. Full multi-source
+ * history remains available in admin/diagnostics (source_event_links itself
+ * is never touched by this presentation-only change).
+ */
+export function getSourceProvenance(
+  event: Pick<EventRecord, "officialEventUrl" | "canonicalSourceId">,
+): { sourceName: string; sourceUrl: string } | null {
+  if (!event.officialEventUrl || !event.canonicalSourceId) return null;
+  if (officialUrlRole(event) !== "unknown") return null;
+  const source = getSourceById(event.canonicalSourceId);
+  if (!source) return null;
+  return { sourceName: source.sourceName, sourceUrl: event.officialEventUrl };
 }
 
 /**
