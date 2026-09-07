@@ -74,7 +74,13 @@ export function classifyAdminQueueRow(
   // bucket === "other_blockers" from here: either venue is already resolved
   // (the common case for most rows) or it's unresolved alongside another
   // real blocker — either way, the REAL holdReason decides the category.
-  if (item.holdReason === "negative_relevance") return "rejected";
+  // "source_cancelled" (source-driven cancellation safety, 2026-09-07) is
+  // deliberately routed the same place as negative_relevance: a trusted/
+  // review-policy source's own explicit cancellation is a real, no-longer-
+  // actionable rejection, not a data gap — an admin should not have to
+  // review a candidate the source itself already retracted, but the row is
+  // never deleted (see src/db/sync.ts's own doc comment on this signal).
+  if (item.holdReason === "negative_relevance" || item.holdReason === "source_cancelled") return "rejected";
   if (item.holdReason === "incomplete_data" || item.holdReason === "low_confidence" || item.holdReason === "no_genre_evidence") {
     return "insufficient";
   }

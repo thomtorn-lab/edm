@@ -201,6 +201,126 @@ export async function applySyncHoldUnpublish(eventId: string, sourceId: string, 
 }
 
 /**
+ * Automated-sync unpublish for a TRUSTED source's explicit cancellation
+ * signal (source-driven cancellation safety, 2026-09-07 — see
+ * src/lib/sync.ts::decideSourceCancellationSyncAction, the only decision
+ * this write authorizes). Deliberately NOT applyAdminEventEdit/
+ * adminUnpublishEvent: this is a sync-driven action, never an admin edit —
+ * it must never set manualOverride/adminUnpublishReason, both of which are
+ * reserved for an admin's own decision (see adminUnpublishReason's own
+ * schema doc comment: "admin and source cancellation are different
+ * concepts"). Stamps sourceCancelledAt/sourceCancelledBySourceId/
+ * sourceCancellationEvidence — the provenance a later "same source
+ * explicitly reverses" restore (applySourceCancellationRestore below) and
+ * the admin UI both depend on. Only ever touches this one row: never
+ * deletes it, never touches source_event_links or any other record.
+ */
+export async function applySourceCancellationUnpublish(eventId: string, sourceId: string, evidence: string | null) {
+  const now = new Date();
+  await db
+    .update(events)
+    .set({
+      published: false,
+      sourceCancelledAt: now,
+      sourceCancelledBySourceId: sourceId,
+      sourceCancellationEvidence: evidence,
+      updatedAt: now,
+      lastChanged: now,
+      lastSourceCheck: now,
+    })
+    .where(eq(events.id, eventId));
+  await writeChangeLog(
+    eventId,
+    sourceId,
+    "auto_unpublish",
+    ["published", "sourceCancelledAt", "sourceCancelledBySourceId"],
+    evidence ? `Source-driven cancellation (trusted source): ${evidence}` : "Source-driven cancellation (trusted source)",
+  );
+}
+
+/**
+ * Automated-sync restore — the one reversal path
+ * decideSourceCancellationSyncAction authorizes as "restore": the SAME
+ * trusted source that caused sourceCancelledAt (never a different one) has
+ * now explicitly reported cancelledHint:false for this exact event, and it
+ * was never admin-unpublished in the meantime (that precondition is
+ * decideSourceCancellationSyncAction's, enforced before this is ever
+ * called). Clears all three source-cancellation fields together — never
+ * left partially set — and republishes. Never sets manualOverride/
+ * overriddenFields (a sync-driven action, not an admin edit, same
+ * convention as applySyncHoldUnpublish/applySourceCancellationUnpublish).
+ */
+export async function applySourceCancellationRestore(eventId: string, sourceId: string) {
+  const now = new Date();
+  await db
+    .update(events)
+    .set({
+      published: true,
+      sourceCancelledAt: null,
+      sourceCancelledBySourceId: null,
+      sourceCancellationEvidence: null,
+      updatedAt: now,
+      lastChanged: now,
+      lastSourceCheck: now,
+    })
+    .where(eq(events.id, eventId));
+  await writeChangeLog(
+    eventId,
+    sourceId,
+    "auto_publish",
+    ["published", "sourceCancelledAt", "sourceCancelledBySourceId"],
+    "Same trusted source that reported this event cancelled has now explicitly reversed that signal",
+  );
+}
+
+/**
+ * Explicit admin override of an ACTIVE trusted source cancellation (source-
+ * driven cancellation safety, 2026-09-07, Section 5: "block republish while
+ * trusted cancellation remains active OR require an explicit admin override
+ * acknowledging the cancellation" — this implements the second option).
+ * Distinct from adminRepublishEvent: that function reverses an admin's OWN
+ * prior unpublish decision (adminUnpublishReason) and is safe to call
+ * unconditionally; this one is for an event the SYSTEM unpublished due to a
+ * source's cancellation signal, which the admin is choosing to override
+ * because they judge the source's signal wrong/stale. Sets manualOverride/
+ * overriddenFields (["published"]) so the very next sync — the source may
+ * well still report cancelledHint:true — can never silently re-unpublish
+ * this event out from under the admin's explicit decision (mirrors
+ * decideSourceCancellationSyncAction's own manualOverride check). Clears
+ * the source-cancellation tracking fields since they no longer describe the
+ * event's current (admin-overridden) state.
+ */
+export async function adminOverrideSourceCancellation(eventId: string) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  const overriddenFields = addOverriddenFields(existing.overriddenFields, ["published"]);
+  const now = new Date();
+
+  await db
+    .update(events)
+    .set({
+      published: true,
+      sourceCancelledAt: null,
+      sourceCancelledBySourceId: null,
+      sourceCancellationEvidence: null,
+      manualOverride: true,
+      overriddenFields,
+      updatedAt: now,
+      lastChanged: now,
+    })
+    .where(eq(events.id, eventId));
+
+  await writeChangeLog(
+    eventId,
+    "admin",
+    "admin_override_source_cancellation",
+    ["published", "sourceCancelledAt"],
+    "Admin explicitly overrode an active trusted source cancellation",
+  );
+}
+
+/**
  * Reverses an unintended manualOverride side effect: clears manualOverride
  * and removes the given field names from overriddenFields, touching nothing
  * else on the row. For correcting a write that went through

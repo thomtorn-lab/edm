@@ -164,6 +164,31 @@ export const events = pgTable("events", {
    */
   adminUnpublishNote: text("admin_unpublish_note"),
   adminUnpublishedAt: timestamp("admin_unpublished_at", { withTimezone: true }),
+  /**
+   * Source-driven cancellation tracking (source-driven cancellation safety,
+   * 2026-09-07) — structurally distinct from adminUnpublishReason, exactly
+   * as that column's own doc comment requires ("admin and source
+   * cancellation are different concepts"): this is set by an AUTOMATED sync
+   * decision (see src/lib/sync.ts::decideSourceCancellationSyncAction),
+   * never by an admin edit, and adminUnpublishEvent/adminRepublishEvent
+   * never touch it. Non-null sourceCancelledAt means "the system itself
+   * unpublished this event because a TRUSTED source explicitly reported it
+   * cancelled" — the one condition src/db/writes.ts::
+   * applySourceCancellationRestore is later allowed to auto-reverse (only
+   * when the SAME source, sourceCancelledBySourceId, later explicitly
+   * un-cancels; see that function's own doc comment). All three fields are
+   * cleared together, by either an automated restore or an explicit admin
+   * override (applySourceCancellationRestore /
+   * adminOverrideSourceCancellation) — never independently. If an admin
+   * separately unpublishes this same event (adminUnpublishReason set), that
+   * always takes precedence for publish state, but these three fields are
+   * left alone until the source itself clears its own signal, so the
+   * evidence of what the source said is never silently lost.
+   */
+  sourceCancelledAt: timestamp("source_cancelled_at", { withTimezone: true }),
+  sourceCancelledBySourceId: text("source_cancelled_by_source_id").references(() => sources.id),
+  /** Short raw evidence string from the source at the moment of cancellation (e.g. Pumpehuset's ticket_status "aflyst", Billetto's state "cancelled") — admin-UI display only, never public. Null whenever sourceCancelledAt is null. */
+  sourceCancellationEvidence: text("source_cancellation_evidence"),
   manualOverride: boolean("manual_override").notNull().default(false),
   /**
    * Field-level manual-override protection (spec section 46 / user

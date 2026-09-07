@@ -87,8 +87,28 @@ export interface PipelineOptions {
  * allowed to clear a previously-resolved classification (see
  * src/lib/sync.ts's buildDiscoveryQueueClassificationPatch). null when the
  * decision isn't "hold" at all.
+ *
+ * "source_cancelled" (source-driven cancellation safety, 2026-09-07) is
+ * different in kind from every other member: computeDecision below NEVER
+ * sets it — genre/venue/relevance classification is completely unchanged by
+ * cancellation (explicit instruction: do not change classifier semantics).
+ * It is assigned only in src/db/sync.ts, as a deliberate override applied
+ * AFTER computeDecision returns, exactly the same way that file's existing
+ * "route away from auto-publish on cancelledHint===true" guard already
+ * works — never a cancellation-driven bypass INSIDE the classifier itself.
+ * It exists purely so a not-yet-existing Discovery Queue candidate that a
+ * trusted/review-policy source already reports cancelled carries a visible,
+ * self-healing trace of that fact (routes to the REJECTED admin tab via
+ * classifyAdminQueueRow — see src/lib/adminQueue.ts), instead of looking
+ * like an ordinary, actionable Needs Review row.
  */
-export type HoldReason = "incomplete_data" | "low_confidence" | "negative_relevance" | "no_genre_evidence" | null;
+export type HoldReason =
+  | "incomplete_data"
+  | "low_confidence"
+  | "negative_relevance"
+  | "no_genre_evidence"
+  | "source_cancelled"
+  | null;
 
 export interface PipelineResult {
   decision: PublishDecision;

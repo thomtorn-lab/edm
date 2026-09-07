@@ -151,6 +151,12 @@ export interface EventRecord {
   /** Optional free-text detail alongside adminUnpublishReason — editorial/audit metadata, admin-UI-only, never rendered on a public page. */
   adminUnpublishNote: string | null;
   adminUnpublishedAt: string | null;
+  /** Non-null means the system automatically unpublished this event because a TRUSTED source explicitly reported it cancelled — see events.sourceCancelledAt's own schema doc comment. Structurally distinct from adminUnpublishReason. */
+  sourceCancelledAt: string | null;
+  /** Which source caused sourceCancelledAt — only that same source's later explicit reversal may auto-restore (see src/lib/sync.ts::decideSourceCancellationSyncAction). */
+  sourceCancelledBySourceId: string | null;
+  /** Short raw evidence string from the source at the moment of cancellation — admin-UI display only, never public. */
+  sourceCancellationEvidence: string | null;
   manualOverride: boolean;
   /** Field names an admin has hand-corrected — a later sync must never overwrite these (see src/lib/override.ts). */
   overriddenFields: string[];

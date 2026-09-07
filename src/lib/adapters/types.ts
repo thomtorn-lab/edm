@@ -87,6 +87,15 @@ export interface RawCandidateEvent {
    */
   soldOutHint?: boolean | null;
   cancelledHint?: boolean | null;
+  /**
+   * Short raw evidence string backing a true cancelledHint (source-driven
+   * cancellation safety, 2026-09-07) — e.g. Pumpehuset's own ticket_status
+   * value "aflyst", Billetto's own state value "cancelled", or Poolen's own
+   * "Aflyst" status-badge text. Admin-UI display only (see events.
+   * sourceCancellationEvidence), never public. Optional/nullable like the
+   * hints above; omitted or null whenever cancelledHint isn't true.
+   */
+  cancellationEvidence?: string | null;
 }
 
 export interface SourceAdapter {

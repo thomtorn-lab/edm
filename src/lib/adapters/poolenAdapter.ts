@@ -306,6 +306,7 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     relevanceText: fullDescriptionText || null,
     soldOutHint,
     cancelledHint,
+    cancellationEvidence: cancelledHint ? 'Poolen status badge "Aflyst"' : null,
   };
 }
 

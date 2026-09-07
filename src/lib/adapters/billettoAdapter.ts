@@ -356,6 +356,7 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
     // (rare — most real records carry one) correctly yields "unknown" rather
     // than a false negative.
     cancelledHint: event.state == null ? null : event.state === "cancelled",
+    cancellationEvidence: event.state === "cancelled" ? `Billetto state="${event.state}"` : null,
     // `availability` is deliberately NOT mapped to soldOutHint (re-audited
     // 2026-08-28): Billetto's own documentation gives no confirmed meaning
     // for this field beyond a hedge in the Phase 1 diagnosis notes

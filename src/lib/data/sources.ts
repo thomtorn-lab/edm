@@ -652,3 +652,47 @@ const TRUSTED_ELECTRONIC_SOURCE_IDS: ReadonlySet<string> = new Set(["src-hangare
 export function isTrustedElectronicSource(sourceId: string): boolean {
   return TRUSTED_ELECTRONIC_SOURCE_IDS.has(sourceId);
 }
+
+export type CancellationPolicy = "none" | "review" | "trusted";
+
+/**
+ * Cancellation-signal trust classification (source-driven cancellation
+ * safety, 2026-09-07). Deliberately NOT derived from sourceType/trustLevel/
+ * autoPublish: the three sources whose adapters can set cancelledHint at all
+ * today — Billetto (ticketing, medium), Poolen (official-venue, high),
+ * Pumpehuset (official-venue, medium) — span two sourceTypes and two
+ * trustLevels with no clean common denominator, and a source's general
+ * autoPublish eligibility says nothing about whether ITS SPECIFIC
+ * cancellation signal is trustworthy (see this task's own audit). A new,
+ * explicit, narrow axis instead, mirroring TRUSTED_ELECTRONIC_SOURCE_IDS'
+ * own pattern immediately above rather than adding a field to all 23
+ * SOURCES entries: an id absent from this map is "none" — no adapter
+ * capability, never assumed to have any.
+ *
+ * "trusted" (may drive an automated publish/unpublish decision — see
+ * src/lib/sync.ts::decideSourceCancellationSyncAction): all three current
+ * cancelledHint-capable sources. Each reports cancellation via its own
+ * fixed, structured field (Billetto's `state` enum, Poolen's/Pumpehuset's
+ * own status label/field) — a genuine explicit signal, not inferred from
+ * free text or a listing disappearance — which is the real bar this policy
+ * exists to enforce, independent of the source's general data-quality
+ * trustLevel.
+ *
+ * "review" (visible to admin, e.g. via a Discovery Queue holdReason, but
+ * never auto-unpublishes) has no current real example: every source with
+ * cancellation capability at all reports it as an equally-explicit
+ * structured signal, so none currently qualifies as merely ambiguous. Kept
+ * as a real policy value for a future source (e.g. a general aggregator
+ * that mentions cancellation in free text with lower reliability) rather
+ * than removed for lack of a present case — do not fabricate a "review"
+ * assignment for an existing source just to exercise the value.
+ */
+const CANCELLATION_POLICY_BY_SOURCE_ID: Readonly<Record<string, CancellationPolicy>> = {
+  "src-billetto": "trusted",
+  "src-poolen": "trusted",
+  "src-pumpehuset": "trusted",
+};
+
+export function getSourceCancellationPolicy(sourceId: string): CancellationPolicy {
+  return CANCELLATION_POLICY_BY_SOURCE_ID[sourceId] ?? "none";
+}

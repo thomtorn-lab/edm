@@ -5,6 +5,8 @@ import { discoveryQueue, sourceEventLinks, syncLocks } from "./schema";
 import {
   applyDiscoveryClassificationUpdate,
   applySourceSyncPatch,
+  applySourceCancellationRestore,
+  applySourceCancellationUnpublish,
   applySyncHoldUnpublish,
   createEvent,
   insertDiscoveryItem,
@@ -17,12 +19,13 @@ import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
-import { isTrustedElectronicSource, getSourceById } from "@/lib/data/sources";
+import { isTrustedElectronicSource, getSourceById, getSourceCancellationPolicy } from "@/lib/data/sources";
 import type { SourceAdapter, RawCandidateEvent } from "@/lib/adapters/types";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
   decidePublishedEventSyncAction,
+  decideSourceCancellationSyncAction,
   findPendingRowToResolve,
   findSyncMatch,
   summarizeWriteErrors,
@@ -205,6 +208,11 @@ async function runSourceSyncLocked(
   // `false` (never publish) if a source id somehow isn't found in the
   // registry at all, rather than defaulting open.
   const sourceAutoPublishAllowed = getSourceById(sourceId)?.autoPublish ?? false;
+  // Source-driven cancellation safety (2026-09-07) — same static, code-level
+  // trust declaration pattern as trustedElectronicSource/sourceAutoPublishAllowed
+  // above (see getSourceCancellationPolicy's own doc comment for why this is
+  // a new explicit axis rather than derived from sourceType/trustLevel).
+  const sourceCancellationPolicy = getSourceCancellationPolicy(sourceId);
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
   const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
@@ -338,6 +346,12 @@ async function runSourceSyncLocked(
           { published: existing.published, manualOverride: existing.manualOverride },
           { decision: result.decision, holdReason: result.holdReason },
         );
+        // Tracks this event's published state as this run's own writes so
+        // far actually leave it — never re-read from the DB mid-loop — so
+        // the cancellation check immediately below never fires a redundant
+        // second unpublish on top of the negative-relevance one just above
+        // (both read the SAME pre-sync `existing` snapshot otherwise).
+        let currentlyPublished = existing.published;
         if (syncAction === "unpublish") {
           await applySyncHoldUnpublish(
             match.eventId,
@@ -345,6 +359,30 @@ async function runSourceSyncLocked(
             "Automated sync: fresh classification is HOLD on negative-relevance evidence (data-quality Workstream A — existing-published-event safety net). Row preserved, not deleted; provenance untouched.",
           );
           unpublished++;
+          currentlyPublished = false;
+        }
+
+        // Source-driven cancellation safety (2026-09-07) — see
+        // src/lib/sync.ts::decideSourceCancellationSyncAction for the full
+        // safety rules this enforces (trusted-only, admin-override-always-
+        // wins, same-source-only reversal). Independent of the negative-
+        // relevance check above: a different signal (raw.cancelledHint, not
+        // result.decision/holdReason), gated on this source's own
+        // cancellationPolicy, never on sourceAutoPublishAllowed.
+        const cancellationAction = decideSourceCancellationSyncAction(
+          {
+            published: currentlyPublished,
+            manualOverride: existing.manualOverride,
+            adminUnpublishReason: existing.adminUnpublishReason,
+            sourceCancelledBySourceId: existing.sourceCancelledBySourceId,
+          },
+          { cancelledHint: raw.cancelledHint ?? null, sourceId, cancellationPolicy: sourceCancellationPolicy },
+        );
+        if (cancellationAction === "unpublish") {
+          await applySourceCancellationUnpublish(match.eventId, sourceId, raw.cancellationEvidence ?? null);
+          unpublished++;
+        } else if (cancellationAction === "restore") {
+          await applySourceCancellationRestore(match.eventId, sourceId);
         }
 
         if (raw.officialEventUrl) {
@@ -400,6 +438,27 @@ async function runSourceSyncLocked(
       // canonical event this candidate matches (the `if (match)` branch
       // above) is unaffected and still correctly updates to cancelled via
       // buildSyncPatch.
+      // Discovery Queue cancellation visibility (source-driven cancellation
+      // safety, 2026-09-07, Section 10): a not-yet-existing candidate this
+      // source's own cancellationPolicy trusts at all (review or trusted —
+      // never "none", which has no real signal to trust) is surfaced with
+      // holdReason "source_cancelled" instead of computeDecision's own
+      // holdReason — see that HoldReason member's own doc comment for why
+      // this is a deliberate override applied here, never inside the
+      // classifier itself. Reuses the SAME existingPending/
+      // buildDiscoveryQueueClassificationPatch self-heal path below as every
+      // other holdReason value (that function now treats "source_cancelled"
+      // as authoritative regardless of genre resolution — see its own doc
+      // comment), so it clears once a LATER sync both stops reporting
+      // cancelledHint:true AND reaches a fresh authoritative classification
+      // — deliberately NOT merely once the signal stops appearing (Section
+      // 6's explicit "never infer reinstatement from disappearance" rule,
+      // applied here the same conservative way "incomplete_data"/
+      // "low_confidence" already never clear an existing authoritative
+      // classification).
+      const effectiveHoldReason: HoldReason =
+        sourceCancellationPolicy !== "none" && raw.cancelledHint === true ? "source_cancelled" : result.holdReason;
+
       if (
         result.decision === "auto_publish" &&
         sourceAutoPublishAllowed &&
@@ -477,8 +536,11 @@ async function runSourceSyncLocked(
             // buildDiscoveryQueueClassificationPatch tell an authoritative
             // null genre (holdReason "no_genre_evidence") apart from an
             // unreliable one, straight from the same pipeline result every
-            // other field here already comes from.
-            holdReason: result.holdReason,
+            // other field here already comes from. effectiveHoldReason (not
+            // result.holdReason directly) so a trusted/review source's
+            // explicit cancellation keeps surfacing here on every refresh —
+            // see this signal's own computation above.
+            holdReason: effectiveHoldReason,
             sourceAutoPublishAllowed,
             resolvedVenueId: result.resolvedVenueId,
             resolvedSubVenue: result.resolvedSubVenue,
@@ -562,7 +624,7 @@ async function runSourceSyncLocked(
         lastSeenAt: seenAt,
         venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
         venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason ?? null,
-        holdReason: result.holdReason,
+        holdReason: effectiveHoldReason,
       });
       newlyQueuedItems.push(inserted);
       queuedForReview++;

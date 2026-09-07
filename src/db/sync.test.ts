@@ -119,6 +119,8 @@ vi.mock("./writes", () => ({
   touchSourceSyncStats: vi.fn().mockResolvedValue(undefined),
   applySourceSyncPatch: vi.fn(),
   applySyncHoldUnpublish: vi.fn(),
+  applySourceCancellationUnpublish: vi.fn(),
+  applySourceCancellationRestore: vi.fn(),
   createEvent: vi.fn(),
   insertDiscoveryItem: vi.fn().mockImplementation((item) =>
     Promise.resolve({
@@ -682,6 +684,9 @@ function existingCultureBoxEvent(): EventWithVenue {
     adminUnpublishReason: null,
     adminUnpublishNote: null,
     adminUnpublishedAt: null,
+    sourceCancelledAt: null,
+    sourceCancelledBySourceId: null,
+    sourceCancellationEvidence: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",
@@ -737,6 +742,46 @@ describe("Event lifecycle/status handling (2026-08-28) — source disappearance 
     expect(result.outcome).toBe("zero_events");
     expect(applySourceSyncPatch).not.toHaveBeenCalled();
     expect(applySyncHoldUnpublish).not.toHaveBeenCalled();
+  });
+});
+
+describe("Source-driven cancellation safety (2026-09-07) — Discovery Queue visibility for a not-yet-existing candidate", () => {
+  it("a trusted-policy source's explicit cancellation queues the candidate with holdReason 'source_cancelled' instead of the classifier's own real holdReason, and never deletes/skips it", async () => {
+    const cancelledCandidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-poolen",
+      title: "Melting Monday",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://poolen.dk/da/koncerter/melting-monday/",
+      cancelledHint: true,
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([cancelledCandidate]));
+
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ holdReason: "source_cancelled" }));
+  });
+
+  it("a source with no cancellation policy ('none') reporting cancelledHint:true never overrides holdReason — the raw signal is ignored entirely for classification purposes", async () => {
+    const cancelledCandidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-kultunaut",
+      title: "Melting Monday",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://kultunaut.dk/e/melting-monday",
+      cancelledHint: true,
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([cancelledCandidate]));
+
+    await runSourceSync("src-kultunaut", "KultuNaut", adapter);
+
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    const insertedRow = vi.mocked(insertDiscoveryItem).mock.calls[0][0] as { holdReason: unknown };
+    expect(insertedRow.holdReason).not.toBe("source_cancelled");
   });
 });
 

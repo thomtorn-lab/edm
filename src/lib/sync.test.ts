@@ -4,6 +4,7 @@ import {
   buildSyncPatch,
   classifyVenueBlock,
   decidePublishedEventSyncAction,
+  decideSourceCancellationSyncAction,
   decideSyncLeaseAcquisition,
   findPendingRowToResolve,
   findSyncMatch,
@@ -981,6 +982,24 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
       });
     });
 
+    it("holdReason 'source_cancelled' (source-driven cancellation safety, 2026-09-07) alongside a null genre IS ALSO authoritative — cancellation is orthogonal to genre resolution, so a candidate can self-heal into/out of this state whether or not its genre ever resolved", () => {
+      const row = pendingDiscoveryTarget({ predictedGenre: null, genreConfidence: "low", overallConfidence: "low" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "source_cancelled" },
+        row,
+      );
+      expect(patch).toEqual({ holdReason: "source_cancelled" });
+    });
+
+    it("'source_cancelled' clears once a later sync both stops reporting the signal AND reaches a fresh authoritative classification (here: genre resolves)", () => {
+      const row = pendingDiscoveryTarget({ holdReason: "source_cancelled", overallConfidence: "low" });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "techno", genreConfidence: "high", decision: "review_queue", holdReason: null },
+        row,
+      );
+      expect(patch).toEqual({ predictedGenre: "techno", genreConfidence: "high", overallConfidence: "medium", holdReason: null });
+    });
+
     it("Silent Disco Fest-shaped case: a row previously stored as disco/high self-heals to no genre once the source authoritatively reports none (real reference case — see pipeline.ts's HoldReason doc comment)", () => {
       const silentDiscoFestRow = pendingDiscoveryTarget({
         predictedGenre: "disco",
@@ -1183,6 +1202,116 @@ describe("decidePublishedEventSyncAction (data-quality Workstream A follow-up �
     const fresh = { decision: "hold" as const, holdReason: "negative_relevance" as const };
     expect(decidePublishedEventSyncAction(current, fresh)).toBe("no_change");
     expect(decidePublishedEventSyncAction(current, fresh)).toBe("no_change");
+  });
+});
+
+describe("decideSourceCancellationSyncAction (source-driven cancellation safety, 2026-09-07)", () => {
+  const trustedNoOverride = { published: true, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: null };
+
+  it("trusted source, explicit true, published, no override -> unpublish", () => {
+    expect(
+      decideSourceCancellationSyncAction(trustedNoOverride, {
+        cancelledHint: true,
+        sourceId: "src-poolen",
+        cancellationPolicy: "trusted",
+      }),
+    ).toBe("unpublish");
+  });
+
+  it("policy 'none' -> always no_change, even with an explicit true signal (no cancellation authority without an explicit policy grant)", () => {
+    expect(
+      decideSourceCancellationSyncAction(trustedNoOverride, {
+        cancelledHint: true,
+        sourceId: "src-kultunaut",
+        cancellationPolicy: "none",
+      }),
+    ).toBe("no_change");
+  });
+
+  it("policy 'review' -> never unpublishes on its own, even with an explicit true signal — visible to admin only, per Section 8", () => {
+    expect(
+      decideSourceCancellationSyncAction(trustedNoOverride, {
+        cancelledHint: true,
+        sourceId: "src-hypothetical-review",
+        cancellationPolicy: "review",
+      }),
+    ).toBe("no_change");
+  });
+
+  it("already unpublished -> no_change (idempotent, regardless of reason it's already down)", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { ...trustedNoOverride, published: false },
+        { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("manualOverride set (any admin field edit, not just unpublish) -> no_change — an admin's own decision is never silently overridden by an automated sync, same convention as decidePublishedEventSyncAction", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { ...trustedNoOverride, manualOverride: true },
+        { cancelledHint: true, sourceId: "src-poolen", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("cancelledHint null (no signal this run) -> no_change, never inferred as reinstatement from a signal merely disappearing", () => {
+    expect(
+      decideSourceCancellationSyncAction(trustedNoOverride, { cancelledHint: null, sourceId: "src-poolen", cancellationPolicy: "trusted" }),
+    ).toBe("no_change");
+  });
+
+  it("explicit reversal (cancelledHint:false), currently unpublished, SAME source that caused it, not admin-unpublished -> restore", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { published: false, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: "src-billetto" },
+        { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("restore");
+  });
+
+  it("explicit reversal from a DIFFERENT source than the one that caused the cancellation -> no_change (Section 7: never silently guess across sources)", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { published: false, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: "src-poolen" },
+        { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("explicit reversal on an event that was never cancelled by this mechanism (sourceCancelledBySourceId null) -> no_change, never invents a restore", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { published: false, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: null },
+        { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("explicit reversal on an ADMIN-unpublished event -> no_change — admin override always wins, even from the same source that originally caused it", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { published: false, manualOverride: true, adminUnpublishReason: "cancelled", sourceCancelledBySourceId: "src-billetto" },
+        { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("explicit reversal on an already-published event -> no_change (nothing to restore)", () => {
+    expect(
+      decideSourceCancellationSyncAction(
+        { published: true, manualOverride: false, adminUnpublishReason: null, sourceCancelledBySourceId: "src-billetto" },
+        { cancelledHint: false, sourceId: "src-billetto", cancellationPolicy: "trusted" },
+      ),
+    ).toBe("no_change");
+  });
+
+  it("is idempotent: running the same fresh true signal against an already-unpublished event never re-triggers anything new", () => {
+    const current = { ...trustedNoOverride, published: false };
+    const fresh = { cancelledHint: true as const, sourceId: "src-poolen", cancellationPolicy: "trusted" as const };
+    expect(decideSourceCancellationSyncAction(current, fresh)).toBe("no_change");
+    expect(decideSourceCancellationSyncAction(current, fresh)).toBe("no_change");
   });
 });
 
