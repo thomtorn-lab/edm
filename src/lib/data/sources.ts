@@ -1,4 +1,4 @@
-import type { Source } from "../types";
+import type { CancellationPolicy, Source } from "../types";
 
 /**
  * Source registry (spec sections 25-32, 42-43). Every external reference the
@@ -28,6 +28,7 @@ export const SOURCES: Source[] = [
     adapter: "culture-box-html",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -55,6 +56,7 @@ export const SOURCES: Source[] = [
     adapter: "hangaren-html",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: "2026-08-13T06:30:00+02:00",
@@ -75,6 +77,7 @@ export const SOURCES: Source[] = [
     adapter: "first-party-json",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: "2026-08-13T05:45:00+02:00",
@@ -123,6 +126,7 @@ export const SOURCES: Source[] = [
     adapter: "gravity-html",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -155,6 +159,7 @@ export const SOURCES: Source[] = [
     adapter: "alice-html",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -192,6 +197,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "medium",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -222,6 +228,7 @@ export const SOURCES: Source[] = [
     adapter: "poolen-html",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "trusted",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -251,6 +258,7 @@ export const SOURCES: Source[] = [
     adapter: "pumpehuset-html",
     trustLevel: "medium",
     autoPublish: true, // validated via a real live sync (validate-source.yml): 26/26 candidates auto-published at high genre confidence, 0 review cases, 0 dedup false positives, 26/26 venue resolution, idempotent on re-sync, zero regressions on every other source
+    cancellationPolicy: "trusted",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -271,6 +279,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "medium",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -293,6 +302,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "high",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -312,6 +322,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "high",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -331,6 +342,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "high",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -352,6 +364,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "medium",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -371,6 +384,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "medium",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -406,6 +420,7 @@ export const SOURCES: Source[] = [
     adapter: "billetto-api",
     trustLevel: "medium",
     autoPublish: true,
+    cancellationPolicy: "trusted",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -475,6 +490,7 @@ export const SOURCES: Source[] = [
     // "high" overallConfidence so it surfaces as a priority review item
     // rather than being lost among low-confidence noise.
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,
@@ -497,6 +513,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual coverage check",
     active: true,
     lastSuccessfulSync: null,
@@ -518,6 +535,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual",
     active: true,
     lastSuccessfulSync: null,
@@ -537,6 +555,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual",
     active: true,
     lastSuccessfulSync: null,
@@ -556,6 +575,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual",
     active: true,
     lastSuccessfulSync: null,
@@ -575,6 +595,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual",
     active: true,
     lastSuccessfulSync: null,
@@ -594,6 +615,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual",
     active: true,
     lastSuccessfulSync: null,
@@ -613,6 +635,7 @@ export const SOURCES: Source[] = [
     adapter: null,
     trustLevel: "low",
     autoPublish: false,
+    cancellationPolicy: "none",
     syncFrequency: "manual",
     active: true,
     lastSuccessfulSync: null,
@@ -651,4 +674,28 @@ const TRUSTED_ELECTRONIC_SOURCE_IDS: ReadonlySet<string> = new Set(["src-hangare
 
 export function isTrustedElectronicSource(sourceId: string): boolean {
   return TRUSTED_ELECTRONIC_SOURCE_IDS.has(sourceId);
+}
+
+/**
+ * Cancellation-signal trust classification (source-driven cancellation
+ * safety, 2026-09-07) — reads real per-source registry metadata
+ * (Source.cancellationPolicy, see its own doc comment in src/lib/types.ts)
+ * rather than a hardcoded source-id list. An earlier revision of this task
+ * used a hardcoded `CANCELLATION_POLICY_BY_SOURCE_ID` map here, mirroring
+ * TRUSTED_ELECTRONIC_SOURCE_IDS' own pattern immediately above — reconsidered
+ * in this task's own cross-case follow-up: unlike isTrustedElectronicSource
+ * (a narrow, single-purpose routing flag with no other registry analog),
+ * cancellationPolicy is exactly the same shape of fact as sourceType/
+ * trustLevel/autoPublish, which already ARE explicit per-source registry
+ * fields — the registry can express this capability cleanly, so it should,
+ * per the explicit product direction that a source-name hardcode is only
+ * acceptable when the registry genuinely can't. All 23 SOURCES entries set
+ * this field explicitly (never left to an implicit default in the registry
+ * itself, even though the schema/type both default to "none") — only
+ * src-billetto/src-poolen/src-pumpehuset are "trusted", every other source
+ * "none". See CancellationPolicy's own doc comment for why no source is
+ * currently "review".
+ */
+export function getSourceCancellationPolicy(sourceId: string): CancellationPolicy {
+  return getSourceById(sourceId)?.cancellationPolicy ?? "none";
 }

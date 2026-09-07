@@ -70,6 +70,10 @@ describe("classifyAdminQueueRow", () => {
     expect(classifyAdminQueueRow(row({ holdReason: "negative_relevance" }), SYNC)).toBe("rejected");
   });
 
+  it("source_cancelled hold reason -> REJECTED (source-driven cancellation safety, 2026-09-07) — never left actionable in Needs Review, never deleted", () => {
+    expect(classifyAdminQueueRow(row({ holdReason: "source_cancelled" }), SYNC)).toBe("rejected");
+  });
+
   it("a stale row (lastSeenAt behind the source's last complete sync) -> PAST_STALE", () => {
     expect(classifyAdminQueueRow(row({ lastSeenAt: "2026-09-01T00:00:00+02:00" }), SYNC)).toBe("past_stale");
   });
@@ -177,6 +181,9 @@ function eventRecord(overrides: Partial<EventRecord> = {}): EventRecord {
     adminUnpublishReason: null,
     adminUnpublishNote: null,
     adminUnpublishedAt: null,
+    sourceCancelledAt: null,
+    sourceCancelledBySourceId: null,
+    sourceCancellationEvidence: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",
@@ -216,6 +223,7 @@ function source(overrides: Partial<Source> = {}): Source {
     adapter: "test-adapter",
     trustLevel: "high",
     autoPublish: true,
+    cancellationPolicy: "none",
     syncFrequency: "every 6h",
     active: true,
     lastSuccessfulSync: null,

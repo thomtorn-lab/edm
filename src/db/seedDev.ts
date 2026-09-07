@@ -57,6 +57,7 @@ async function seed() {
       lastSourceCheck: e.lastSourceCheck ? new Date(e.lastSourceCheck) : null,
       lastChanged: e.lastChanged ? new Date(e.lastChanged) : null,
       adminUnpublishedAt: e.adminUnpublishedAt ? new Date(e.adminUnpublishedAt) : null,
+      sourceCancelledAt: e.sourceCancelledAt ? new Date(e.sourceCancelledAt) : null,
       overriddenFields: [] as string[],
     };
     await db.insert(events).values(row).onConflictDoUpdate({ target: events.id, set: row });

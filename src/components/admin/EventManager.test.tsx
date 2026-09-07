@@ -62,6 +62,9 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     adminUnpublishReason: null,
     adminUnpublishNote: null,
     adminUnpublishedAt: null,
+    sourceCancelledAt: null,
+    sourceCancelledBySourceId: null,
+    sourceCancellationEvidence: null,
     manualOverride: false,
     overriddenFields: [],
     confidence: "high",
@@ -213,6 +216,85 @@ describe("EventManager — admin unpublish + Publish Again (admin unpublish/canc
     expect(screen.getByText("[hidden]")).toBeTruthy();
     expect(screen.queryByText(/Unpublished by admin/i)).toBeNull();
     expect(screen.getByRole("button", { name: "Publish again" })).toBeTruthy();
+  });
+});
+
+describe("EventManager — source-driven cancellation (2026-09-07)", () => {
+  afterEach(cleanup);
+
+  it("shows a 'Cancelled by source' label with evidence and timestamp, and offers 'Override & publish' instead of 'Publish again'", () => {
+    render(
+      <EventManager
+        events={[
+          makeEvent({
+            published: false,
+            sourceCancelledAt: "2026-09-06T09:00:00.000Z",
+            sourceCancelledBySourceId: "src-poolen",
+            sourceCancellationEvidence: 'Poolen status badge "Aflyst"',
+          }),
+        ]}
+        venues={VENUES}
+      />,
+    );
+
+    expect(screen.getByText(/Cancelled by source.*Aflyst/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Override & publish" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Publish again" })).toBeNull();
+  });
+
+  it("Override & publish calls the dedicated override-cancellation route, not /publish", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <EventManager
+        events={[
+          makeEvent({
+            published: false,
+            sourceCancelledAt: "2026-09-06T09:00:00.000Z",
+            sourceCancelledBySourceId: "src-poolen",
+            sourceCancellationEvidence: "aflyst",
+          }),
+        ]}
+        venues={VENUES}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Override & publish" }));
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/e-1/override-cancellation",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("admin-unpublished always takes precedence over a stale source-cancellation trace — shows the admin panel and Publish again, not the source-cancelled one", () => {
+    render(
+      <EventManager
+        events={[
+          makeEvent({
+            published: false,
+            adminUnpublishReason: "cancelled",
+            adminUnpublishedAt: "2026-09-06T00:00:00.000Z",
+            sourceCancelledAt: "2026-09-05T09:00:00.000Z",
+            sourceCancelledBySourceId: "src-poolen",
+            sourceCancellationEvidence: "aflyst",
+          }),
+        ]}
+        venues={VENUES}
+      />,
+    );
+
+    expect(screen.getByText(/Unpublished by admin/i)).toBeTruthy();
+    expect(screen.queryByText(/Cancelled by source/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Publish again" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Override & publish" })).toBeNull();
+  });
+
+  it("a published event with no source-cancellation trace shows neither label", () => {
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+    expect(screen.queryByText(/Cancelled by source/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Override & publish" })).toBeNull();
   });
 });
 

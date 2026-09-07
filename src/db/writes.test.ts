@@ -41,7 +41,16 @@ vi.mock("./client", () => ({
   },
 }));
 
-const { insertDiscoveryItem, adminUnpublishEvent, adminRepublishEvent, publishDiscoveryItem, applyAdminEventEdit } = await import("./writes");
+const {
+  insertDiscoveryItem,
+  adminUnpublishEvent,
+  adminRepublishEvent,
+  publishDiscoveryItem,
+  applyAdminEventEdit,
+  applySourceCancellationUnpublish,
+  applySourceCancellationRestore,
+  adminOverrideSourceCancellation,
+} = await import("./writes");
 
 const item = {
   id: "dq-abc123",
@@ -190,6 +199,90 @@ describe("adminRepublishEvent ('Publish Again') (admin unpublish/cancellation sa
   it("throws when the event does not exist", async () => {
     selectResults = [[]];
     await expect(adminRepublishEvent("e-missing")).rejects.toThrow("Event e-missing not found");
+  });
+});
+
+describe("applySourceCancellationUnpublish (source-driven cancellation safety, 2026-09-07)", () => {
+  it("sets published=false and stamps sourceCancelledAt/sourceCancelledBySourceId/sourceCancellationEvidence, without touching adminUnpublishReason or manualOverride", async () => {
+    await applySourceCancellationUnpublish("e-1", "src-poolen", 'Poolen status badge "Aflyst"');
+
+    expect(updateSetMock).toHaveBeenCalledTimes(1);
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.published).toBe(false);
+    expect(patch.sourceCancelledAt).toBeInstanceOf(Date);
+    expect(patch.sourceCancelledBySourceId).toBe("src-poolen");
+    expect(patch.sourceCancellationEvidence).toBe('Poolen status badge "Aflyst"');
+    expect(patch.manualOverride).toBeUndefined();
+    expect(patch.adminUnpublishReason).toBeUndefined();
+  });
+
+  it("stores a null evidence string as-is (no evidence recorded)", async () => {
+    await applySourceCancellationUnpublish("e-1", "src-pumpehuset", null);
+    expect(updateSetMock.mock.calls[0][0].sourceCancellationEvidence).toBeNull();
+  });
+
+  it("logs the change to the audit trail attributed to the source, not 'admin'", async () => {
+    await applySourceCancellationUnpublish("e-1", "src-poolen", "aflyst");
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "e-1", changedBy: "src-poolen", changeType: "auto_unpublish" }),
+    );
+  });
+});
+
+describe("applySourceCancellationRestore (source-driven cancellation safety, 2026-09-07)", () => {
+  it("sets published=true and clears all three source-cancellation fields together", async () => {
+    await applySourceCancellationRestore("e-1", "src-billetto");
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.published).toBe(true);
+    expect(patch.sourceCancelledAt).toBeNull();
+    expect(patch.sourceCancelledBySourceId).toBeNull();
+    expect(patch.sourceCancellationEvidence).toBeNull();
+    expect(patch.manualOverride).toBeUndefined();
+  });
+
+  it("logs the change to the audit trail attributed to the source", async () => {
+    await applySourceCancellationRestore("e-1", "src-billetto");
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "e-1", changedBy: "src-billetto", changeType: "auto_publish" }),
+    );
+  });
+});
+
+describe("adminOverrideSourceCancellation (source-driven cancellation safety, 2026-09-07, Section 5)", () => {
+  it("sets published=true, clears source-cancellation fields, and sets manualOverride/overriddenFields to protect against the same source re-firing on the next sync", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await adminOverrideSourceCancellation("e-1");
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.published).toBe(true);
+    expect(patch.sourceCancelledAt).toBeNull();
+    expect(patch.sourceCancelledBySourceId).toBeNull();
+    expect(patch.sourceCancellationEvidence).toBeNull();
+    expect(patch.manualOverride).toBe(true);
+    expect(patch.overriddenFields).toContain("published");
+  });
+
+  it("logs the change to the audit trail attributed to 'admin'", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+    await adminOverrideSourceCancellation("e-1");
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "e-1", changedBy: "admin", changeType: "admin_override_source_cancellation" }),
+    );
+  });
+
+  it("preserves any other already-overridden field alongside 'published'", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: ["title"] }]];
+    await adminOverrideSourceCancellation("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.overriddenFields).toEqual(expect.arrayContaining(["title", "published"]));
+  });
+
+  it("throws when the event does not exist", async () => {
+    selectResults = [[]];
+    await expect(adminOverrideSourceCancellation("e-missing")).rejects.toThrow("Event e-missing not found");
+    expect(updateSetMock).not.toHaveBeenCalled();
   });
 });
 

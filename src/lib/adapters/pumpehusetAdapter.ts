@@ -483,6 +483,7 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
         genreConfidenceHint,
         soldOutHint,
         cancelledHint,
+        cancellationEvidence: cancelledHint ? `Pumpehuset ticket_status="${concert.ticket_status}"` : null,
       });
     } catch {
       // A single malformed record must never take down the whole sync.

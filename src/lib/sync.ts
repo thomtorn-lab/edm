@@ -471,8 +471,17 @@ export function buildDiscoveryQueueClassificationPatch(
 ): DiscoveryQueueClassificationPatch {
   if (existing.status !== "pending") return {};
   if (existing.overriddenFields.includes("predictedGenre")) return {};
+  // "source_cancelled" (source-driven cancellation safety, 2026-09-07) is
+  // authoritative the same way "no_genre_evidence"/"negative_relevance" are
+  // — a genuinely complete, current-run conclusion, orthogonal to genre
+  // resolution: a candidate can be cancelled whether or not its genre ever
+  // resolved, and this holdReason must self-heal (in either direction, on
+  // the source reversing) regardless of that row's genre status.
   const freshGenreIsAuthoritative =
-    fresh.genre != null || fresh.holdReason === "no_genre_evidence" || fresh.holdReason === "negative_relevance";
+    fresh.genre != null ||
+    fresh.holdReason === "no_genre_evidence" ||
+    fresh.holdReason === "negative_relevance" ||
+    fresh.holdReason === "source_cancelled";
   if (!freshGenreIsAuthoritative) return {};
 
   const patch: DiscoveryQueueClassificationPatch = {};
@@ -743,5 +752,93 @@ export function decidePublishedEventSyncAction(
   if (!current.published) return "no_change";
   if (current.manualOverride) return "no_change";
   if (fresh.decision === "hold" && fresh.holdReason === "negative_relevance") return "unpublish";
+  return "no_change";
+}
+
+export type SourceCancellationSyncAction = "no_change" | "unpublish" | "restore";
+
+/**
+ * Source-driven cancellation safety (2026-09-07) — the cancellation
+ * counterpart to decidePublishedEventSyncAction immediately above, same
+ * safety conventions applied to a completely different signal
+ * (raw.cancelledHint, never result.decision/holdReason): only a TRUSTED
+ * source's EXPLICIT cancellation may automatically unpublish; a missing
+ * event, a stale/failed sync, or an untrusted/review-only source's signal
+ * must never be treated as cancellation (see src/db/sync.ts's own zero-
+ * events-anomaly guard for the established precedent this mirrors).
+ *
+ * - `fresh.cancellationPolicy !== "trusted"` -> always "no_change". Only a
+ *   trusted source's signal can move `published` at all; a "review" or
+ *   "none" source's cancelledHint may still update the plain `cancelled`
+ *   metadata column via buildSyncPatch above, but never this decision.
+ * - `cancelledHint === true` (explicit cancellation):
+ *   - already unpublished (either by this same mechanism, by an admin, or
+ *     any other reason) -> "no_change", idempotent.
+ *   - `current.overriddenFields` contains "published" -> "no_change".
+ *     Deliberately NOT the generic `manualOverride` boolean (audited
+ *     2026-09-07, cross-case follow-up): manualOverride is true after ANY
+ *     single hand-corrected field via applyAdminEventEdit — e.g. an admin
+ *     merely fixing a stale Tickets URL sets manualOverride:true with
+ *     overriddenFields:["ticketUrl"], nothing about "published". Gating on
+ *     that generic flag would let an unrelated, purely editorial correction
+ *     silently block a genuine trusted cancellation forever after — wrong
+ *     product semantics (a manual edit to an unrelated field must never
+ *     prevent a trusted explicit cancellation from auto-unpublishing).
+ *     overriddenFields.includes("published") is the precise signal for
+ *     "an admin has explicitly taken a position on THIS event's publication
+ *     state" — set by adminUnpublishEvent, adminOverrideSourceCancellation,
+ *     and any direct {published: ...} edit; cleared by adminRepublishEvent
+ *     ("Publish Again" — deliberately re-opens the event to normal
+ *     sync-driven behavior, cancellation included). Never weakens
+ *     overriddenFields' own per-field sync-protection guarantee
+ *     (stripOverriddenFields) — this only decides what blocks THIS
+ *     cancellation-unpublish decision, a completely separate write path.
+ *   - otherwise -> "unpublish".
+ * - `cancelledHint === false` (explicit reversal) -> "restore" ONLY when
+ *   ALL of: the event is currently unpublished, it was NOT admin-unpublished
+ *   (`adminUnpublishReason == null` — an admin's own decision is never
+ *   auto-reversed), and `current.sourceCancelledBySourceId` equals
+ *   `fresh.sourceId` — the exact multi-source-conflict safety condition:
+ *   only the SAME trusted source that caused this event's cancellation may
+ *   reverse it, never a different source's unrelated signal, and never a
+ *   restore invented for an event this mechanism never touched in the first
+ *   place (sourceCancelledBySourceId null). Every other combination ->
+ *   "no_change" — in particular, already-published stays "no_change"
+ *   (nothing to restore), and a currently-published-but-metadata-cancelled
+ *   row (cancelled=true, published=true — the exact live gap this whole
+ *   feature exists to close) is reached via the "unpublish" branch above on
+ *   ITS OWN next true signal, never here.
+ * - `cancelledHint == null` (no signal this run) -> always "no_change".
+ *   Never infers reinstatement from a signal merely disappearing (Section
+ *   6's explicit requirement) — only a real, explicit `false` can restore.
+ *
+ * Callers hold the same structural preconditions as
+ * decidePublishedEventSyncAction (only from inside a source's own
+ * per-candidate sync loop, after successful fetch/classification) — see
+ * that function's own doc comment. Never deletes the row, never touches
+ * source_event_links; see src/db/writes.ts::applySourceCancellationUnpublish/
+ * applySourceCancellationRestore, the only writes this decision authorizes.
+ */
+export function decideSourceCancellationSyncAction(
+  current: {
+    published: boolean;
+    overriddenFields: string[];
+    adminUnpublishReason: string | null;
+    sourceCancelledBySourceId: string | null;
+  },
+  fresh: { cancelledHint: boolean | null; sourceId: string; cancellationPolicy: "none" | "review" | "trusted" },
+): SourceCancellationSyncAction {
+  if (fresh.cancellationPolicy !== "trusted") return "no_change";
+  if (fresh.cancelledHint === true) {
+    if (!current.published) return "no_change";
+    if (current.overriddenFields.includes("published")) return "no_change";
+    return "unpublish";
+  }
+  if (fresh.cancelledHint === false) {
+    if (current.published) return "no_change";
+    if (current.adminUnpublishReason != null) return "no_change";
+    if (current.sourceCancelledBySourceId !== fresh.sourceId) return "no_change";
+    return "restore";
+  }
   return "no_change";
 }

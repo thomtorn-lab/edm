@@ -1,4 +1,5 @@
 import type {
+  CancellationPolicy,
   ConfidenceLevel,
   DiscoveryQueueItem,
   DiscoveryQueueStatus,
@@ -46,6 +47,7 @@ export function sourceRowToRecord(row: SourceRow): Source {
     adapter: row.adapter,
     trustLevel: row.trustLevel as ConfidenceLevel,
     autoPublish: row.autoPublish,
+    cancellationPolicy: row.cancellationPolicy as CancellationPolicy,
     syncFrequency: row.syncFrequency,
     active: row.active,
     lastSuccessfulSync: row.lastSuccessfulSync?.toISOString() ?? null,
@@ -90,6 +92,9 @@ export function eventRowToRecord(row: EventRow): EventRecord {
     adminUnpublishReason: row.adminUnpublishReason as EventRecord["adminUnpublishReason"],
     adminUnpublishNote: row.adminUnpublishNote,
     adminUnpublishedAt: row.adminUnpublishedAt?.toISOString() ?? null,
+    sourceCancelledAt: row.sourceCancelledAt?.toISOString() ?? null,
+    sourceCancelledBySourceId: row.sourceCancelledBySourceId,
+    sourceCancellationEvidence: row.sourceCancellationEvidence,
     manualOverride: row.manualOverride,
     overriddenFields: row.overriddenFields,
     confidence: row.confidence as ConfidenceLevel,

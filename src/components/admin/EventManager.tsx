@@ -91,6 +91,30 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
     }
   }
 
+  // Source-driven cancellation safety (2026-09-07): distinct from
+  // publishAgain (adminRepublishEvent), which only reverses an admin's own
+  // unpublish decision — it never clears sourceCancelledAt/
+  // sourceCancelledBySourceId, so calling it on a source-cancelled event
+  // would leave the source's signal in place for the very next sync to
+  // re-unpublish right out from under the admin. This calls the dedicated
+  // override route instead (adminOverrideSourceCancellation), which also
+  // protects the decision against that same re-firing.
+  async function overrideCancellation() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/events/${event.id}/override-cancellation`, { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json.error ?? "Override failed.");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveEdit() {
     // Same native-datetime-local caveat as the discovery-queue date field
     // (see DiscoveryQueue.tsx): an incomplete typed entry reports value=""
@@ -180,6 +204,16 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               {event.adminUnpublishNote && <p className="mt-0.5 text-xs text-text-secondary">{event.adminUnpublishNote}</p>}
             </>
           )}
+          {/* Source-driven cancellation safety (2026-09-07): shown only when
+              the SYSTEM (not an admin) unpublished this event because a
+              trusted source explicitly reported it cancelled — mutually
+              exclusive with the admin-unpublish panel above (adminUnpublishReason
+              always takes precedence for the button choice below). */}
+          {event.sourceCancelledAt && !event.adminUnpublishReason && (
+            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-status-bad">
+              Cancelled by source ({event.sourceCancellationEvidence ?? "no evidence recorded"}) — {formatRowDateLabel(event.sourceCancelledAt)}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-2">
           <button type="button" disabled={busy} onClick={() => setEditing((v) => !v)} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
@@ -188,6 +222,10 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
           {event.published ? (
             <button type="button" disabled={busy} onClick={() => setConfirmingUnpublish(true)} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
               Unpublish
+            </button>
+          ) : event.sourceCancelledAt && !event.adminUnpublishReason ? (
+            <button type="button" disabled={busy} onClick={overrideCancellation} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+              Override &amp; publish
             </button>
           ) : (
             <button type="button" disabled={busy} onClick={publishAgain} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
