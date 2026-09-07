@@ -16,6 +16,33 @@ describe("venue normalization", () => {
     expect(resolveVenue("Some Random Bar", VENUES)).toBeUndefined();
   });
 
+  // Refshaleøen neutral venue model (2026-09-07): v-refshaleoen-ved-hangaren
+  // is a standalone location identity for the shared outdoor festival field
+  // on Refshaleøen, registered with deliberately NO aliases (no live source
+  // has ever emitted bare "Refshaleøen" as a raw venue string, and adding it
+  // speculatively risks absorbing an unrelated Refshaleøen location later).
+  // Karrusel 2027's real raw KultuNaut string, "Copenhell festivalplads", is
+  // intentionally excluded from the registry entirely (Copenhell is a
+  // separate rock festival) and so is intentionally left unresolved here —
+  // it's assigned only via an admin's explicit venue selection at publish
+  // time, never automatic string matching.
+  it("registers Refshaleøen (ved Hangaren) as its own standalone venue, distinct from Hangaren, with no aliases", () => {
+    const refshaleoen = VENUES.find((v) => v.id === "v-refshaleoen-ved-hangaren");
+    expect(refshaleoen).toBeDefined();
+    expect(refshaleoen?.name).toBe("Refshaleøen (ved Hangaren)");
+    expect(refshaleoen?.aliases).toEqual([]);
+    expect(refshaleoen?.id).not.toBe("v-hangaren");
+
+    expect(resolveVenue("Refshaleøen (ved Hangaren)", VENUES)?.venue.id).toBe("v-refshaleoen-ved-hangaren");
+    // Never auto-resolves from the raw KultuNaut string it deliberately excludes.
+    expect(resolveVenue("Copenhell festivalplads", VENUES)).toBeUndefined();
+    // Never absorbs a bare "Refshaleøen" or an unrelated named Refshaleøen location.
+    expect(resolveVenue("Refshaleøen", VENUES)).toBeUndefined();
+    expect(resolveVenue("Sønder Hoved, Refshaleøen", VENUES)).toBeUndefined();
+    // Hangaren itself is untouched and remains its own separate venue.
+    expect(resolveVenue("Hangaren", VENUES)?.venue.id).toBe("v-hangaren");
+  });
+
   it("normalizeVenueName strips punctuation and collapses whitespace", () => {
     expect(normalizeVenueName("Culture Box!")).toBe("culture box");
     expect(normalizeVenueName("  Culture   Box  ")).toBe("culture box");
