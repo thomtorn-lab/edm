@@ -1475,3 +1475,53 @@ describe("generalized discovery-queue genre self-heal (2026-09-06) — authorita
     expect(result.holdReason).toBeNull();
   });
 });
+
+// Generalized event description/text normalization work package,
+// 2026-09-07 — runIngestionPipeline is the single shared choke point (same
+// one sanitizeExtractedTitle already used for `title`) every source's
+// description/relevanceText/venueName/artists pass through exactly once,
+// so a source like Billetto that never decodes its own raw API text gets
+// clean text without any adapter-specific code.
+describe("runIngestionPipeline — text normalization at the shared choke point", () => {
+  it("decodes an &nbsp; entity leaking into description — the real Billetto/Sparkling Sound Festival defect this fixes", () => {
+    const candidate = raw({ description: "musik på&nbsp;KU.BE", relevanceText: null });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBe("musik på KU.BE");
+  });
+
+  it("normalizes relevanceText the same way when the adapter supplies one", () => {
+    const candidate = raw({ relevanceText: "house &amp; techno på&nbsp;Culture Box" });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.relevanceText).toBe("house & techno på Culture Box");
+  });
+
+  it("normalizes venueName (collapsed to a single line)", () => {
+    const candidate = raw({ venueName: "Culture\nBox" });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.venueName).toBe("Culture Box");
+  });
+
+  it("normalizes each artist independently without merging or splitting entries", () => {
+    const candidate = raw({ artists: ["DJ&nbsp;One", "DJ Two &amp; Friends", "DJ Three"] });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.artists).toEqual(["DJ One", "DJ Two & Friends", "DJ Three"]);
+  });
+
+  it("leaves source-authored \"14'e\" completely unchanged", () => {
+    const candidate = raw({ description: "14'e festival for ny hybrid dansk & international musik" });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBe("14'e festival for ny hybrid dansk & international musik");
+  });
+
+  it("never rewrites ordinary wording — only encoding/whitespace artifacts", () => {
+    const candidate = raw({ description: "A night of techno and melodic techno." });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBe("A night of techno and melodic techno.");
+  });
+
+  it("is null-safe when description/relevanceText are absent", () => {
+    const candidate = raw({ description: null, relevanceText: null });
+    expect(() => runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] })).not.toThrow();
+    expect(candidate.description).toBeNull();
+  });
+});

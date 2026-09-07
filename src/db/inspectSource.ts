@@ -32,7 +32,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -1267,6 +1267,11 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
       adminUnpublishedAt: r.admin_unpublished_at,
       officialEventUrl: r.official_event_url,
       ticketUrl: r.ticket_url,
+      // description omitted from the default bulk scan (can be long across
+      // hundreds of rows) but included once the row set is already
+      // title-scoped down to a handful (generalized text normalization
+      // work package, 2026-09-07).
+      ...(titleFilter ? { description: r.description } : {}),
     });
   }
 
@@ -1293,6 +1298,77 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
       console.log(JSON.stringify(links.rows, null, 2));
     }
   }
+}
+
+/**
+ * Read-only text-leakage audit (generalized event description/text
+ * normalization work package, 2026-09-07) — scans for encoded-HTML/entity
+ * leakage in exactly the fields real admins/visitors read: published
+ * canonical events' title+description, and pending/current Discovery Queue
+ * rows' probableTitle (discoveryQueue has no description column at all —
+ * description is only ever constructed at publish time from the raw
+ * candidate, see publishDiscoveryItem in src/db/writes.ts). Deliberately
+ * pattern-based and conservative — every pattern here is unambiguous
+ * evidence of a leaked encoding artifact (a literal "&nbsp;", an unclosed
+ * "<br", the Unicode replacement character), never a guess at "unusual"
+ * wording. This must never flag ordinary punctuation, apostrophes, or
+ * editorial phrasing — see this work package's explicit distinction
+ * between corruption (fix) and legitimate upstream wording (leave alone,
+ * e.g. a literal source-authored "14'e").
+ */
+const TEXT_LEAKAGE_PATTERNS: { name: string; re: RegExp }[] = [
+  { name: "&nbsp;", re: /&nbsp;/i },
+  { name: "&amp;", re: /&amp;/i },
+  { name: "&quot;", re: /&quot;/i },
+  { name: "&#39;/&#x27;", re: /&#0?39;|&#x27;/i },
+  { name: "&lt;/&gt;", re: /&lt;|&gt;/i },
+  { name: "other numeric entity (&#...)", re: /&#x?[0-9a-f]+;/i },
+  { name: "<br tag", re: /<br\s*\/?>/i },
+  { name: "<div tag", re: /<div[\s>]/i },
+  { name: "<p> tag", re: /<p[\s>]/i },
+  { name: "other HTML tag", re: /<\/?[a-z][a-z0-9]*(\s[^>]*)?>/i },
+  { name: "Unicode replacement character (U+FFFD)", re: /�/ },
+  { name: "non-breaking space (U+00A0, raw)", re: / / },
+  { name: "repeated horizontal whitespace (3+ spaces)", re: /[ \t]{3,}/ },
+];
+
+async function modeTextLeakageAudit(client: Client) {
+  const events = await client.query(
+    `SELECT e.id, e.title, e.description, s.source_name
+     FROM events e
+     LEFT JOIN sources s ON s.id = e.canonical_source_id
+     WHERE e.published = true`,
+  );
+  const dq = await client.query(
+    `SELECT id, probable_title, source_name, status FROM discovery_queue WHERE status IN ('pending', 'published', 'merged')`,
+  );
+
+  const findings: Record<string, unknown>[] = [];
+  const countsByPattern = new Map<string, number>();
+
+  function scan(id: string, title: string | null, source: string | null, field: string, value: string | null) {
+    if (!value) return;
+    for (const { name, re } of TEXT_LEAKAGE_PATTERNS) {
+      if (re.test(value)) {
+        countsByPattern.set(name, (countsByPattern.get(name) ?? 0) + 1);
+        findings.push({ id, title, source, field, pattern: name, excerpt: value.slice(0, 160) });
+      }
+    }
+  }
+
+  for (const r of events.rows) {
+    scan(r.id as string, r.title as string, r.source_name as string | null, "title", r.title as string);
+    scan(r.id as string, r.title as string, r.source_name as string | null, "description", r.description as string | null);
+  }
+  for (const r of dq.rows) {
+    scan(r.id as string, r.probable_title as string, r.source_name as string | null, "probableTitle", r.probable_title as string);
+  }
+
+  section(`TEXT LEAKAGE AUDIT — counts by pattern (${events.rows.length} published events + ${dq.rows.length} discovery_queue rows inspected)`);
+  console.log(JSON.stringify(Object.fromEntries(countsByPattern), null, 2));
+
+  section(`TEXT LEAKAGE AUDIT — exact findings (${findings.length})`);
+  console.log(JSON.stringify(findings, null, 2));
 }
 
 /**
@@ -1462,6 +1538,7 @@ async function main() {
     "discovery-queue-venues": modeDiscoveryQueueVenues,
     "venue-blocks": modeVenueBlocks,
     "event-integrity": modeEventIntegrity,
+    "text-leakage-audit": modeTextLeakageAudit,
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
     "adapter-dry-run": modeAdapterDryRun,

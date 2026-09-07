@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -266,7 +266,12 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
         .replace(/\s+/g, " ")
         .trim()
     : "";
-  const description = fullDescriptionText ? fullDescriptionText.slice(0, 800) : null;
+  // Word/sentence-boundary-aware, matching every other adapter's own
+  // truncation (generalized text normalization work package, 2026-09-07) —
+  // this was a bare .slice(0, 800) before, the same mid-word-cut bug
+  // truncateAtBoundary was originally built to fix on Hangaren/ALICE/
+  // Gravity/Poolen.
+  const description = fullDescriptionText ? truncateAtBoundary(fullDescriptionText, 800) : null;
 
   const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
   const imageUrl = imageMatch ? decodeHtmlEntities(imageMatch[1]) : null;
