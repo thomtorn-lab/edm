@@ -1610,13 +1610,13 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
   // event can genuinely accumulate links from several different sources.
   // Read-only, informs the public detail-page provenance design.
   const multiSource = await client.query(
-    `SELECT sel.event_id, e.title, count(DISTINCT sel.source_id)::int AS distinct_sources,
+    `SELECT sel.event_id, e.slug, e.title, count(DISTINCT sel.source_id)::int AS distinct_sources,
             array_agg(DISTINCT s.source_name ORDER BY s.source_name) AS source_names
      FROM source_event_links sel
      JOIN events e ON e.id = sel.event_id
      LEFT JOIN sources s ON s.id = sel.source_id
      WHERE e.published = true
-     GROUP BY sel.event_id, e.title
+     GROUP BY sel.event_id, e.slug, e.title
      HAVING count(DISTINCT sel.source_id) > 1
      ORDER BY distinct_sources DESC
      LIMIT 20`,
