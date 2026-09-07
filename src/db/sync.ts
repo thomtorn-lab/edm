@@ -498,6 +498,7 @@ async function runSourceSyncLocked(
             suspectedDuplicateOfEventId: existingPending.suspectedDuplicateOfEventId,
             venueResolvedDecision: existingPending.venueResolvedDecision as PublishDecision | null,
             venueResolvedHoldReason: existingPending.venueResolvedHoldReason as HoldReason,
+            holdReason: existingPending.holdReason as HoldReason,
           },
         );
         // lastSeenAt is unconditional — this candidate's own sourceUrl was
@@ -561,6 +562,7 @@ async function runSourceSyncLocked(
         lastSeenAt: seenAt,
         venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
         venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason ?? null,
+        holdReason: result.holdReason,
       });
       newlyQueuedItems.push(inserted);
       queuedForReview++;

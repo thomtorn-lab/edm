@@ -5,6 +5,8 @@ import {
   hasExplicitNonElectronicIdentityAssertion,
   hasNonElectronicGenreSignal,
   hasNonElectronicCategorySignal,
+  countNonElectronicGenreFamilies,
+  hasElectronicsAsInstrumentationOnly,
 } from "./relevance";
 
 describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
@@ -76,6 +78,17 @@ describe("hasNonElectronicGenreSignal (data-quality Workstream A)", () => {
 
   it("still flags a genuinely capitalized sentence-initial genre reference (capitalization alone is not the signal — mid-sentence position is what matters)", () => {
     expect(hasNonElectronicGenreSignal("Grime is the sound running through the whole night.")).toBe(true);
+  });
+
+  it("flags 'rock' compounded without a separating space, the same Danish-style compounding gap already fixed for 'postpunk' (admin Discovery Queue cleanup quality audit, 2026-09-06 — real KultuNaut evidence: Mikael Simpson's own description names 'stemningsfuld indierock')", () => {
+    expect(hasNonElectronicGenreSignal("Med elektroniske beats og stemningsfuld indierock leverer Simpson forunderlige dansk lyrik.")).toBe(true);
+    expect(hasNonElectronicGenreSignal("A night of pure poprock energy.")).toBe(true);
+    // Bare, space-separated "rock" already worked before this fix — still does.
+    expect(hasNonElectronicGenreSignal("A blend of indie rock and electronic textures.")).toBe(true);
+  });
+
+  it("does not let the compound-'rock' pattern collide with an event's own listed artist name (masking still applies)", () => {
+    expect(hasNonElectronicGenreSignal("Brock brings his signature electronic sound to the club.", ["Brock"])).toBe(false);
   });
 });
 
@@ -381,5 +394,187 @@ describe("hasNonElectronicCategorySignal (data-quality Workstream, Billetto queu
 
   it("gap 4C does not flag an ordinary club night with none of these format words", () => {
     expect(hasNonElectronicCategorySignal("Teletech Copenhagen — a night of techno at Poolen")).toBe(false);
+  });
+});
+
+describe("round 3 quality audit, 2026-09-06 — new non-electronic signals from real ALICE evidence", () => {
+  it("flags flamenco (real evidence: Yerai Cortés ES — 'one of flamenco's brightest new stars', 'a leading figure in a new era of flamenco')", () => {
+    expect(hasNonElectronicGenreSignal("Yerai Cortés has established himself as one of the most distinctive voices of flamenco's new generation.")).toBe(true);
+  });
+
+  it("flags 'Música Popular Brasileira'/'(MPB)' as a category-style bypass signal, same as the existing Kammermusikforeningen entry (real evidence: Bruno Berle BR — 'is gently expanding the boundaries of Música Popular Brasileira (MPB)')", () => {
+    expect(hasNonElectronicCategorySignal("the composer is gently expanding the boundaries of Música Popular Brasileira (MPB) — the influential movement that emerged in the 1960s.")).toBe(true);
+    expect(hasNonElectronicCategorySignal("A night of Música Popular Brasileira at ALICE.")).toBe(true);
+  });
+
+  it("flags the English 'chamber music' spelling alongside the existing Danish 'kammermusik' entry (real evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg's own bio — 'Drawing on jazz, chamber music, ambient and free improvisation')", () => {
+    expect(hasNonElectronicCategorySignal("Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language.")).toBe(true);
+  });
+
+  it("does not flag an ordinary electronic-event title with none of these new signals", () => {
+    expect(hasNonElectronicGenreSignal("Dengue Dengue Dengue — a night of techno")).toBe(false);
+    expect(hasNonElectronicCategorySignal("A night of house and disco at Culture Box")).toBe(false);
+  });
+});
+
+describe("countNonElectronicGenreFamilies (round 3 quality audit, 2026-09-06)", () => {
+  it("counts each DISTINCT non-electronic genre family once, not every raw occurrence (real evidence: Nubiyan Twist UK — 'genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music')", () => {
+    // jazz, hip hop, reggae are recognized families here (afrobeat/dancehall/soul
+    // aren't in the fixed NON_ELECTRONIC_GENRE_SIGNALS list — the count only
+    // reflects patterns this module actually recognizes).
+    const count = countNonElectronicGenreFamilies(
+      "Nubiyan Twist deliver an energetic fusion of jazz, funk and soul. Their genre-blending sound draws on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music.",
+    );
+    expect(count).toBeGreaterThanOrEqual(3);
+  });
+
+  it("counts a single repeated family only once (real evidence: Mikael Simpson's genuine indierock crossover, a single contradiction, must stay at 1)", () => {
+    const count = countNonElectronicGenreFamilies(
+      "Med elektroniske, knitrende beats og stemningsfuld indierock leverer Simpson forunderlige dansk lyrik. En stemningsfuld indierock-aften.",
+    );
+    expect(count).toBe(1);
+  });
+
+  it("returns 0 for text with no non-electronic genre signal at all", () => {
+    expect(countNonElectronicGenreFamilies("A night of techno and house at Culture Box.")).toBe(0);
+  });
+
+  it("masks a known artist's own name first, same as hasNonElectronicGenreSignal", () => {
+    expect(countNonElectronicGenreFamilies("Brock brings his signature electronic sound to the club.", ["Brock"])).toBe(0);
+  });
+});
+
+describe("assessRelevance — hasBroadNonElectronicGenreMix (round 3 quality audit, 2026-09-06)", () => {
+  const baseInput = {
+    genre: "electronic-other",
+    hasExplicitElectronicAssertion: true,
+    hasTrustedElectronicTicketing: false,
+    hasCorroboratingArtistGenreEvidence: false,
+    hasPopOrRnbSignal: false,
+  };
+
+  it("downgrades a one-strong-signal contradiction to 'none' when the mix flag is set, same as an explicit scene/genre identity claim would", () => {
+    expect(
+      assessRelevance({
+        ...baseInput,
+        hasNonElectronicGenreSignal: true,
+        hasExplicitNonElectronicIdentityAssertion: false,
+        hasBroadNonElectronicGenreMix: true,
+      }),
+    ).toBe("none");
+  });
+
+  it("stays 'weak' for a one-strong-signal contradiction when the mix flag is false/absent (unaffected — the existing single-word-crossover tolerance, e.g. Mikael Simpson, is preserved)", () => {
+    expect(
+      assessRelevance({
+        ...baseInput,
+        hasNonElectronicGenreSignal: true,
+        hasExplicitNonElectronicIdentityAssertion: false,
+      }),
+    ).toBe("weak");
+  });
+});
+
+describe("hasElectronicsAsInstrumentationOnly (final focused pass, round 3 part 2, 2026-09-06 — Daniel Sommer root cause)", () => {
+  it("is true when every 'electronics' mention sits in an instrument list (real Daniel Sommer/Arve Henriksen/Johannes Lundberg evidence)", () => {
+    expect(
+      hasElectronicsAsInstrumentationOnly(
+        "Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language where acoustic instruments and electronics open up new sonic possibilities. Arve Henriksen's trumpet, voice and electronics, Johannes Lundberg's double bass move between simple melodies.",
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for a simpler 'guitar and electronics' instrument-list shape", () => {
+    expect(hasElectronicsAsInstrumentationOnly("A trio of guitar, drums and electronics playing free improvisation.")).toBe(true);
+  });
+
+  it("is false when there is no 'electronics'/'electronic' mention at all", () => {
+    expect(hasElectronicsAsInstrumentationOnly("A vernissage with drum and bass in the background.")).toBe(false);
+    expect(hasElectronicsAsInstrumentationOnly("")).toBe(false);
+  });
+
+  it("is false when 'electronic' is used as a genre claim, even elsewhere in the same text (must never suppress a genuine electronic assertion)", () => {
+    expect(
+      hasElectronicsAsInstrumentationOnly(
+        "A singular sonic universe where folk, electronic music, and spiritual traditions merge into deeply human stories.",
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for a genuinely electronic live act naming its own hardware/gear, not an acoustic-instrument list (must not globally suppress real electronic live acts)", () => {
+    expect(hasElectronicsAsInstrumentationOnly("A live set of modular synths, drum machines and electronics.")).toBe(false);
+  });
+
+  it("is false when even ONE electronic mention sits outside an instrument-list context, alongside one that does (mixed text — the genre-claim mention must win)", () => {
+    expect(
+      hasElectronicsAsInstrumentationOnly(
+        "Trumpet and electronics open the set, before a full electronic music takeover for the rest of the night.",
+      ),
+    ).toBe(false);
+  });
+
+  it("masks a known artist's own name first, same as the other relevance signals", () => {
+    expect(hasElectronicsAsInstrumentationOnly("Electronics brings his trumpet and electronics show to the club.", ["Electronics"])).toBe(false);
+  });
+});
+
+describe("assessRelevance — hasRichSpecificGenreEvidence in the pop/R&B zone (round 3 part 3, 2026-09-06 — Roya (dk) root cause)", () => {
+  const popBase = {
+    hasExplicitElectronicAssertion: false,
+    hasTrustedElectronicTicketing: false,
+    hasCorroboratingArtistGenreEvidence: false,
+    hasNonElectronicGenreSignal: false,
+    hasExplicitNonElectronicIdentityAssertion: false,
+    hasPopOrRnbSignal: true,
+  };
+
+  it("caps at 'weak' (never 'strong') for a pop act whose only genre evidence is a non-rich '-inspired' mention (real Roya (dk) evidence: 'house-inspireret popmusik... med elektroniske trommer' — no direct claim the show itself is house)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+        hasRichSpecificGenreEvidence: false,
+      }),
+    ).toBe("weak");
+  });
+
+  it("never forces 'none' for the pop/R&B zone, even with zero rich evidence — only ever caps at the generic-category floor (matches assessRelevance's own documented invariant)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+        hasRichSpecificGenreEvidence: false,
+      }),
+    ).not.toBe("none");
+  });
+
+  it("stays 'strong' for a pop/R&B crossover with a RICH, direct specific-genre claim (real MNEK-shape evidence — must not regress the existing precedent)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+        hasRichSpecificGenreEvidence: true,
+      }),
+    ).toBe("strong");
+  });
+
+  it("defaults to treating genre evidence as rich when hasRichSpecificGenreEvidence is omitted (every existing caller/test unaffected)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        genre: "house",
+      }),
+    ).toBe("strong");
+  });
+
+  it("is completely unaffected outside the pop/R&B zone — a non-rich specific genre still counts as a strong signal when hasPopOrRnbSignal is false (must not repeat the earlier reverted GLOBAL richness-gating regression)", () => {
+    expect(
+      assessRelevance({
+        ...popBase,
+        hasPopOrRnbSignal: false,
+        genre: "drum-and-bass",
+        hasRichSpecificGenreEvidence: false,
+      }),
+    ).toBe("strong");
   });
 });

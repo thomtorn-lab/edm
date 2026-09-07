@@ -15,6 +15,7 @@ export const SOURCES: Source[] = [
   // ---- First-party venues/promoters: highest verification priority, only sources with a working adapter ----
   {
     id: "src-culture-box",
+    lastCompleteSyncAt: null,
     sourceName: "Culture Box",
     sourceType: "official-venue",
     baseUrl: "https://culture-box.com/",
@@ -39,6 +40,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-hangaren",
+    lastCompleteSyncAt: null,
     sourceName: "Hangaren",
     sourceType: "official-venue",
     baseUrl: "https://www.hangaren.dk/events",
@@ -65,6 +67,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-das",
+    lastCompleteSyncAt: null,
     sourceName: "Den Anden Side",
     sourceType: "official-venue",
     baseUrl: "https://www.denandenside.com/",
@@ -84,6 +87,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-gravity",
+    lastCompleteSyncAt: null,
     sourceName: "Gravity Copenhagen",
     sourceType: "official-venue",
     baseUrl: "https://gravitycph.dk/",
@@ -132,6 +136,7 @@ export const SOURCES: Source[] = [
 
   {
     id: "src-alice",
+    lastCompleteSyncAt: null,
     sourceName: "ALICE",
     sourceType: "official-venue",
     baseUrl: "https://alicecph.com/en/",
@@ -179,6 +184,7 @@ export const SOURCES: Source[] = [
   // API, reinforcing its existing "not currently viable" note).
   {
     id: "src-klub-werkstatt",
+    lastCompleteSyncAt: null,
     sourceName: "Klub Werkstatt",
     sourceType: "official-venue",
     baseUrl: "https://klubwerkstatt.dk/",
@@ -198,6 +204,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-poolen",
+    lastCompleteSyncAt: null,
     sourceName: "Poolen",
     sourceType: "official-venue",
     baseUrl: "https://poolen.dk/",
@@ -227,6 +234,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-pumpehuset",
+    lastCompleteSyncAt: null,
     sourceName: "Pumpehuset",
     sourceType: "official-venue",
     baseUrl: "https://pumpehuset.dk/",
@@ -255,6 +263,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-bolsjefabrikken",
+    lastCompleteSyncAt: null,
     sourceName: "Bolsjefabrikken",
     sourceType: "official-venue",
     baseUrl: "https://bolsjefabrikken.com/",
@@ -276,6 +285,7 @@ export const SOURCES: Source[] = [
   // ---- Resident Advisor: primary discovery + secondary verification benchmark, no automated ingestion ----
   {
     id: "src-ra-copenhagen",
+    lastCompleteSyncAt: null,
     sourceName: "Resident Advisor — Copenhagen",
     sourceType: "specialist-aggregator",
     baseUrl: "https://ra.co/events/dk/copenhagen",
@@ -294,6 +304,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-ra-techno",
+    lastCompleteSyncAt: null,
     sourceName: "Resident Advisor — Techno Copenhagen",
     sourceType: "specialist-aggregator",
     baseUrl: "https://ra.co/events/dk/copenhagen/techno",
@@ -312,6 +323,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-ra-house",
+    lastCompleteSyncAt: null,
     sourceName: "Resident Advisor — House Copenhagen",
     sourceType: "specialist-aggregator",
     baseUrl: "https://ra.co/events/dk/copenhagen/house",
@@ -332,6 +344,7 @@ export const SOURCES: Source[] = [
   // ---- AllEvents: secondary discovery for long-tail/underground promoters ----
   {
     id: "src-allevents-edm",
+    lastCompleteSyncAt: null,
     sourceName: "AllEvents — EDM Copenhagen",
     sourceType: "general-aggregator",
     baseUrl: "https://allevents.in/copenhagen/edm",
@@ -350,6 +363,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-allevents-raves",
+    lastCompleteSyncAt: null,
     sourceName: "AllEvents — Raves Copenhagen",
     sourceType: "general-aggregator",
     baseUrl: "https://allevents.in/copenhagen/raves",
@@ -370,6 +384,7 @@ export const SOURCES: Source[] = [
   // ---- Billetto: ticketing discovery, verification-strength for date/venue/status ----
   {
     id: "src-billetto",
+    lastCompleteSyncAt: null,
     sourceName: "Billetto — Copenhagen Electronic / EDM",
     sourceType: "ticketing",
     baseUrl: "https://billetto.dk/",
@@ -427,6 +442,7 @@ export const SOURCES: Source[] = [
   // ---- KultuNaut: national culture-guide aggregator, DISCOVERY ONLY ----
   {
     id: "src-kultunaut",
+    lastCompleteSyncAt: null,
     sourceName: "KultuNaut — Elektronisk / Club-DJ (Kbh. og Frederiksberg)",
     sourceType: "general-aggregator",
     baseUrl: "https://www.kultunaut.dk/",
@@ -473,6 +489,7 @@ export const SOURCES: Source[] = [
   // ---- Eventbrite: supplemental discovery only ----
   {
     id: "src-eventbrite",
+    lastCompleteSyncAt: null,
     sourceName: "Eventbrite — Copenhagen Rave",
     sourceType: "general-aggregator",
     baseUrl: "https://www.eventbrite.dk/d/denmark--copenhagen/rave-party/",
@@ -493,6 +510,7 @@ export const SOURCES: Source[] = [
   // ---- Facebook groups: discovery / gap-filling only, never a critical dependency ----
   {
     id: "src-fb-techno-events-cph",
+    lastCompleteSyncAt: null,
     sourceName: "Facebook — Techno Events Copenhagen",
     sourceType: "social",
     baseUrl: "https://www.facebook.com/groups/technoeventscopenhagen/",
@@ -511,6 +529,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-fb-electronic-music-cph",
+    lastCompleteSyncAt: null,
     sourceName: "Facebook — Electronic Music Copenhagen",
     sourceType: "social",
     baseUrl: "https://www.facebook.com/groups/264600830563590/",
@@ -529,6 +548,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-fb-minimal-events",
+    lastCompleteSyncAt: null,
     sourceName: "Facebook — Copenhagen Minimal Events",
     sourceType: "social",
     baseUrl: "https://www.facebook.com/groups/copenhagen.minimal.events/",
@@ -547,6 +567,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-fb-wonderful-electronic",
+    lastCompleteSyncAt: null,
     sourceName: "Facebook — Wonderful Electronic Copenhagen",
     sourceType: "social",
     baseUrl: "https://www.facebook.com/groups/187120494682590/",
@@ -565,6 +586,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-fb-techhagen",
+    lastCompleteSyncAt: null,
     sourceName: "Facebook — Techhagen Tech Scene",
     sourceType: "social",
     baseUrl: "https://www.facebook.com/groups/371329669614338/",
@@ -583,6 +605,7 @@ export const SOURCES: Source[] = [
   },
   {
     id: "src-fb-denmark-electronic-parties",
+    lastCompleteSyncAt: null,
     sourceName: "Facebook — Denmark Electronic Parties",
     sourceType: "social",
     baseUrl: "https://www.facebook.com/groups/7906566894/",

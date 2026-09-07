@@ -25,6 +25,10 @@ export const DISCOVERY_QUEUE: DiscoveryQueueItem[] = [
     missingFields: ["venue (unresolved against registry)", "official source url"],
     overallConfidence: "medium",
     status: "pending",
+    holdReason: null,
+    lastSeenAt: null,
+    venueResolvedDecision: null,
+    venueResolvedHoldReason: null,
   },
   {
     id: "dq-002",
@@ -45,6 +49,10 @@ export const DISCOVERY_QUEUE: DiscoveryQueueItem[] = [
     missingFields: [],
     overallConfidence: "medium",
     status: "pending",
+    holdReason: null,
+    lastSeenAt: null,
+    venueResolvedDecision: null,
+    venueResolvedHoldReason: null,
   },
   {
     id: "dq-003",
@@ -65,5 +73,9 @@ export const DISCOVERY_QUEUE: DiscoveryQueueItem[] = [
     missingFields: ["venue", "genre evidence", "official source url"],
     overallConfidence: "low",
     status: "pending",
+    holdReason: null,
+    lastSeenAt: null,
+    venueResolvedDecision: null,
+    venueResolvedHoldReason: null,
   },
 ];

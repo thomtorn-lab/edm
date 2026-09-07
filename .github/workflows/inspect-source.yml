@@ -48,8 +48,9 @@ on:
           - link-role-audit
           - db-integrity
           - adapter-dry-run
+          - admin-queue-audit
       source_id:
-        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks/event-integrity/link-role-audit with no source scoping; must match src-[a-z0-9-]+)'
+        description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks/event-integrity/link-role-audit/admin-queue-audit with no source scoping; must match src-[a-z0-9-]+)'
         required: false
       table:
         description: "db-integrity mode only, optional: one of venues, sources, events, discovery_queue, source_event_links, sync_locks — reports that table's information_schema columns (name/type/nullable/default) alongside the row counts every db-integrity run always prints."

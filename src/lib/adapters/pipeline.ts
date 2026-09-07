@@ -12,10 +12,12 @@ import {
   hasNonElectronicGenreSignal,
   hasNonElectronicCategorySignal,
   hasPopOrRnbSignal,
+  countNonElectronicGenreFamilies,
+  hasElectronicsAsInstrumentationOnly,
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
-import { deterministicGenreFromText, refineGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
 import { sanitizeExtractedTitle } from "./htmlExtraction";
 import type { RawCandidateEvent } from "./types";
 
@@ -270,7 +272,7 @@ function computeDecision(
     // mixed-programme venue (ALICE, Poolen, Pumpehuset) — see
     // isTrustedElectronicSource's own doc comment for why.
     decision = "auto_publish";
-  } else if (decision === "auto_publish") {
+  } else if (decision === "auto_publish" || decision === "review_queue") {
     // Source-aware relevance evidence (data-quality Workstream A): a broad
     // venue/platform category tag or a generic mention is real evidence the
     // SOURCE considers the night electronic, but it is never on its own
@@ -279,9 +281,29 @@ function computeDecision(
     // "this artist's sound is electronic" assertion, trusted RA/ticket
     // corroboration, independent artist-genre corroboration) rather than a
     // single blunt genre-floor cap — see relevance.ts's header comment for
-    // the full design. Applied only when the gate would otherwise
-    // auto-publish (full data, high genre confidence already established).
-    if (relevance === "weak") {
+    // the full design.
+    //
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06: this branch
+    // used to be gated on `decision === "auto_publish"` only, which meant a
+    // genreConfidence "medium" candidate (evaluateQualityGate routes those
+    // straight to "review_queue", never through "auto_publish") NEVER had
+    // its relevance verdict consulted at all — a real, explicit
+    // non-electronic identity assertion in the event's own text
+    // (relevance === "none") was silently ignored for every medium-
+    // confidence candidate, the exact live false-positive class the Needs
+    // Review quality audit found (e.g. a kultunaut candidate whose own
+    // description reads "elektroniske, knitrende beats og stemningsfuld
+    // indierock" — a genuine mixed electronic/indie-rock bill, not a clean
+    // EDM night). Extending this branch to also run for "review_queue"
+    // costs nothing for the genuinely weak-but-real cases (weak was already
+    // exactly where review_queue belongs) and only ever tightens: "weak"
+    // starting from "review_queue" is a no-op (already the right tier), but
+    // "none" — a genuine contradiction with no offsetting signal — now
+    // correctly downgrades a review_queue candidate to hold/negative_relevance
+    // the same way it already did for auto_publish, rather than letting a
+    // medium-confidence generic-genre match sail past the same check a
+    // high-confidence one would have failed.
+    if (relevance === "weak" && decision === "auto_publish") {
       decision = "review_queue";
     } else if (relevance === "none") {
       decision = "hold";
@@ -446,6 +468,30 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, normalizedArtists),
     hasCorroboratingArtistGenreEvidence: false, // no enrichment has run yet at this stage — see applyEnrichedGenre
     hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, normalizedArtists),
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06: real evidence
+    // (Nubiyan Twist UK — "jazz, hip hop, afrobeat, dancehall, soul, reggae
+    // and electronic music", six non-electronic families against one
+    // incidental mention) showed a single-word contradiction being treated
+    // the same as an overwhelming multi-genre one — see
+    // countNonElectronicGenreFamilies's own doc comment.
+    hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, normalizedArtists) >= 3,
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06, final focused
+    // pass (Daniel Sommer / Arve Henriksen / Johannes Lundberg root cause):
+    // "electronics" named only as an instrument in the ensemble's own
+    // lineup ("trumpet, voice and electronics") must not, on its own, keep
+    // a genuine non-electronic contradiction (jazz/chamber music here) from
+    // resolving to "none" — see hasElectronicsAsInstrumentationOnly's own
+    // doc comment.
+    hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, normalizedArtists),
+    // Round 3 part 3 (2026-09-06): scoped exclusively to the pop/R&B
+    // crossover zone (see assessRelevance's own comment) — real evidence:
+    // Roya (dk)'s bio, "house-inspireret popmusik... med elektroniske
+    // trommer", was reaching "strong"/auto-credible relevance purely from a
+    // non-rich "-inspired" genre mention, the same evidentiary shape the
+    // codebase already documents (deterministicGenreMapping.ts's
+    // INFLUENCE_QUALIFIER_RE) as NOT a direct claim about this event's own
+    // sound.
+    hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
   });
   const { decision, holdReason } = computeDecision(
     missingFields,
@@ -498,11 +544,16 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
  * downgraded, so a violation is loud rather than silently miscategorized.
  *
  * CASE A — genre was fully unresolved (`result.genre === null`): enrichment
- * supplies the only genre evidence available. Unchanged from before this
- * follow-up review: genreConfidence is capped below "high", so the quality
- * gate can never return "auto_publish" here — at most "review_queue" — so
- * the relevance check inside computeDecision is structurally unreachable;
- * "none" is passed as a placeholder relevance value, never consulted.
+ * supplies the only genre evidence available. genreConfidence is capped
+ * below "high", so the quality gate can never return "auto_publish" here —
+ * at most "review_queue". Admin Discovery Queue cleanup quality audit,
+ * 2026-09-06: computeDecision's relevance check now also runs for a
+ * "review_queue" decision (previously "auto_publish" only), so this branch
+ * computes a REAL assessRelevance verdict from the enriched genre and the
+ * enrichment-time evidence text rather than passing a "none" placeholder —
+ * a genuine contradiction in that text (e.g. the artist's own Discogs-
+ * corroborated genre sits alongside explicit non-electronic identity text)
+ * can now correctly hold the candidate instead of always landing in review.
  *
  * CASE B — genre already resolved to the generic category floor
  * (electronic-other) and this run's relevance verdict was "weak" (a broad
@@ -550,6 +601,27 @@ export function applyEnrichedGenre(
     const nonElectronicSignal =
       hasNonElectronicGenreSignal(relevanceText, result.normalizedArtists) ||
       hasNonElectronicCategorySignal(relevanceText, result.normalizedArtists);
+    // Real relevance, not a placeholder (admin Discovery Queue cleanup
+    // quality audit, 2026-09-06): computeDecision now also consults
+    // `relevance` for a "review_queue" decision, not only "auto_publish" —
+    // genreConfidence is always capped below "high" here, so
+    // evaluateQualityGate can still never return "auto_publish", but
+    // "review_queue" is now reachable and DOES look at this value. A
+    // generic-genre-only enrichment result is itself the corroborating
+    // signal (hasCorroboratingArtistGenreEvidence), mirroring CASE B below;
+    // a specific subgenre already counts via `genre` inside assessRelevance.
+    const relevance = assessRelevance({
+      genre,
+      hasExplicitElectronicAssertion: hasExplicitElectronicAssertion(relevanceText),
+      hasTrustedElectronicTicketing,
+      hasNonElectronicGenreSignal: nonElectronicSignal,
+      hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
+      hasCorroboratingArtistGenreEvidence: genre === GENERIC_ELECTRONIC_GENRE,
+      hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
+      hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
+      hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, result.normalizedArtists),
+      hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
+    });
     // hasEvidenceText's true/false distinction only matters inside
     // computeDecision's genre==null branch (see hasCoreRecordFields there) —
     // `genre` here is always the just-enriched, non-null value (this whole
@@ -562,7 +634,7 @@ export function applyEnrichedGenre(
       genre,
       genreConfidence,
       result.duplicateConfidence,
-      "none",
+      relevance,
       false, // unreachable for a trusted-electronic source — see db/sync.ts's needsEnrichment guard
       nonElectronicSignal,
       true,
@@ -578,7 +650,7 @@ export function applyEnrichedGenre(
       genre,
       genreConfidence,
       result.duplicateConfidence,
-      "none",
+      relevance,
       false,
       nonElectronicSignal,
       true,
@@ -608,6 +680,9 @@ export function applyEnrichedGenre(
       hasExplicitNonElectronicIdentityAssertion: hasExplicitNonElectronicIdentityAssertion(relevanceText, result.normalizedArtists),
       hasCorroboratingArtistGenreEvidence: !isSpecificSubgenre,
       hasPopOrRnbSignal: hasPopOrRnbSignal(relevanceText, result.normalizedArtists),
+      hasBroadNonElectronicGenreMix: countNonElectronicGenreFamilies(relevanceText, result.normalizedArtists) >= 3,
+      hasElectronicsAsInstrumentationOnly: hasElectronicsAsInstrumentationOnly(relevanceText, result.normalizedArtists),
+      hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
     });
     // Same placeholder reasoning as CASE A above: `finalGenre` is always
     // non-null here (this branch only runs when result.genre was already

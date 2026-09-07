@@ -197,6 +197,21 @@ export function parseAliceEventDetailHtml(html: string, entry: AliceProgramEntry
     sourceUrl,
     title,
     description,
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06 — real live
+    // bug found re-running the fix against ALICE's actual current pages:
+    // `description` above is truncated to 800 chars (truncateAtBoundary)
+    // for display, but genreHint is resolved from the FULL untruncated
+    // fullDescriptionText. Real evidence: Bruno Berle BR's own bio states
+    // "Música Popular Brasileira (MPB)" and "subtle electronic textures"
+    // — the exact text that should downgrade its false-positive
+    // "electronic-other" genre match — starting at character ~600, past
+    // where the 800-char truncation's own sentence-boundary preference cuts
+    // it off at ~586. Without this, the pipeline's relevance check (which
+    // falls back to `description` when `relevanceText` is absent — see
+    // RawCandidateEvent.relevanceText's own doc comment, built for exactly
+    // this "adapter truncates its description" case) never even sees the
+    // contradicting evidence its own genreHint was resolved from.
+    relevanceText: fullDescriptionText || null,
     artists,
     startDatetime,
     endDatetime: null, // no end time is ever stated on this site — never invented

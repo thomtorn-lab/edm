@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { discoveryQueue, events, sources, venues } from "@/db/schema";
 import {
@@ -52,6 +52,25 @@ export async function getDiscoveryQueue(
     .select()
     .from(discoveryQueue)
     .where(eq(discoveryQueue.status, status))
+    .orderBy(desc(discoveryQueue.createdAt));
+  return rows.map(discoveryRowToRecord);
+}
+
+/**
+ * Every discovery_queue row the admin Discovery Queue tabs need to classify
+ * (admin Discovery Queue cleanup/actionable views, 2026-09-06): "pending"
+ * (the 5 actionable/blocked/insufficient/rejected/past-stale tabs) plus
+ * "published"/"merged" (the PUBLISHED tab). Deliberately excludes "ignored"
+ * — no tab shows dismissed rows, so fetching them would only cost query
+ * time and client payload for data nothing renders (Section 14's
+ * performance requirement). One query via inArray rather than 3 separate
+ * status queries.
+ */
+export async function getDiscoveryQueueForAdmin(): Promise<DiscoveryQueueItem[]> {
+  const rows = await db
+    .select()
+    .from(discoveryQueue)
+    .where(inArray(discoveryQueue.status, ["pending", "published", "merged"]))
     .orderBy(desc(discoveryQueue.createdAt));
   return rows.map(discoveryRowToRecord);
 }

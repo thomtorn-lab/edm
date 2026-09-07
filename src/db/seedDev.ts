@@ -26,13 +26,14 @@ async function seed() {
 
   console.log(`Seeding ${SOURCES.length} sources (including staged demo sync-health states)...`);
   for (const s of SOURCES) {
-    const { lastSuccessfulSync, lastAttemptedSync, ...rest } = s;
+    const { lastSuccessfulSync, lastAttemptedSync, lastCompleteSyncAt, ...rest } = s;
     await db
       .insert(sources)
       .values({
         ...rest,
         lastSuccessfulSync: lastSuccessfulSync ? new Date(lastSuccessfulSync) : null,
         lastAttemptedSync: lastAttemptedSync ? new Date(lastAttemptedSync) : null,
+        lastCompleteSyncAt: lastCompleteSyncAt ? new Date(lastCompleteSyncAt) : null,
       })
       .onConflictDoUpdate({
         target: sources.id,
@@ -40,6 +41,7 @@ async function seed() {
           ...rest,
           lastSuccessfulSync: lastSuccessfulSync ? new Date(lastSuccessfulSync) : null,
           lastAttemptedSync: lastAttemptedSync ? new Date(lastAttemptedSync) : null,
+          lastCompleteSyncAt: lastCompleteSyncAt ? new Date(lastCompleteSyncAt) : null,
         },
       });
   }
@@ -66,6 +68,7 @@ async function seed() {
       ...d,
       probableStart: d.probableStart ? new Date(d.probableStart) : null,
       probableEnd: d.probableEnd ? new Date(d.probableEnd) : null,
+      lastSeenAt: d.lastSeenAt ? new Date(d.lastSeenAt) : null,
     };
     await db.insert(discoveryQueue).values(row).onConflictDoUpdate({ target: discoveryQueue.id, set: row });
   }

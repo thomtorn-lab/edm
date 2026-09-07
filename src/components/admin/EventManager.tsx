@@ -144,7 +144,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
   }
 
   return (
-    <li className="border-b border-border py-3 last:border-b-0">
+    <li id={`event-${event.id}`} className="scroll-mt-4 border-b border-border py-3 last:border-b-0 target:ring-2 target:ring-status-warn">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-text-primary">

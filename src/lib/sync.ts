@@ -287,6 +287,11 @@ export interface DiscoveryQueueTarget {
    *  doc comment. */
   venueResolvedDecision: PublishDecision | null;
   venueResolvedHoldReason: HoldReason;
+  /** Currently stored REAL (non-counterfactual) holdReason (admin Discovery
+   *  Queue cleanup/actionable views, 2026-09-06), so a fresh recompute can
+   *  detect it moved — in either direction, same as venueResolvedHoldReason.
+   *  See discoveryQueue.holdReason's own doc comment. */
+  holdReason: HoldReason;
 }
 
 export interface DiscoveryQueueClassification {
@@ -375,6 +380,8 @@ export interface DiscoveryQueueClassificationPatch {
   probableSubVenue?: string | null;
   venueResolvedDecision?: PublishDecision | null;
   venueResolvedHoldReason?: HoldReason;
+  /** See discoveryQueue.holdReason's own doc comment. */
+  holdReason?: HoldReason;
 }
 
 /**
@@ -488,6 +495,10 @@ export function buildDiscoveryQueueClassificationPatch(
       : fresh.decision === "review_queue"
         ? "medium"
         : "low";
+  if (fresh.holdReason !== undefined && fresh.holdReason !== existing.holdReason) {
+    patch.holdReason = fresh.holdReason;
+  }
+
   if (freshOverallConfidence !== existing.overallConfidence) {
     patch.overallConfidence = freshOverallConfidence;
   }

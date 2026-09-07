@@ -1,0 +1,1 @@
+ALTER TABLE "discovery_queue" ADD COLUMN "hold_reason" text;

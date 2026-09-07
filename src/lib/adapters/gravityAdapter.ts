@@ -264,6 +264,16 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
     sourceUrl,
     title,
     description: description ? truncateAtBoundary(description, 800) : null,
+    // Admin Discovery Queue cleanup quality audit, 2026-09-06 — same real
+    // gap found and fixed on aliceAdapter.ts: `description` above is
+    // truncated to 800 chars for display, but genreHint is resolved from
+    // the untruncated `genreEvidenceText`. Without a separate
+    // `relevanceText`, the pipeline's relevance check falls back to the
+    // truncated `description` (RawCandidateEvent.relevanceText's own doc
+    // comment) and can silently miss contradicting evidence that appears
+    // after the truncation boundary, exactly the class of bug that
+    // produced a real false positive on ALICE.
+    relevanceText: genreEvidenceText || null,
     artists: [artistName],
     startDatetime,
     endDatetime,

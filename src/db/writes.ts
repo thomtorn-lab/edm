@@ -684,6 +684,8 @@ export async function applyDiscoveryClassificationUpdate(
      */
     venueResolvedDecision?: PublishDecision | null;
     venueResolvedHoldReason?: HoldReason;
+    /** See discoveryQueue.holdReason's own doc comment. */
+    holdReason?: HoldReason;
   },
 ) {
   if (Object.keys(patch).length === 0) return;
@@ -747,6 +749,8 @@ export async function insertDiscoveryItem(item: {
   /** See discoveryQueue.venueResolvedDecision's own doc comment. */
   venueResolvedDecision?: PublishDecision | null;
   venueResolvedHoldReason?: HoldReason;
+  /** See discoveryQueue.holdReason's own doc comment. */
+  holdReason?: HoldReason;
 }): Promise<DiscoveryQueueNotificationItem> {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
 

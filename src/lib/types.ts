@@ -1,4 +1,6 @@
 import type { GenreSlug } from "./taxonomy";
+import type { PublishDecision } from "./classification";
+import type { HoldReason } from "./adapters/pipeline";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
 
@@ -43,6 +45,12 @@ export interface Source {
   eventsUpdated: number;
   /** Human-readable note on integration method / permission status (spec section 59). */
   integrationNote: string;
+  /** Timestamp of this source's most recent COMPLETE fetch (never a partial
+   *  one) — see src/lib/sync.ts::isDiscoveryRowCurrent, the only thing this
+   *  is compared against to derive a Discovery Queue row's current-vs-stale
+   *  freshness. Never sources.lastSuccessfulSync, which also covers a
+   *  partial-fetch success. Null when never completed. */
+  lastCompleteSyncAt: string | null;
 }
 
 /**
@@ -210,4 +218,16 @@ export interface DiscoveryQueueItem {
   missingFields: string[];
   overallConfidence: ConfidenceLevel;
   status: DiscoveryQueueStatus;
+  /** The REAL (non-counterfactual) pipeline hold reason for this row's most
+   *  recent classification — see src/db/schema.ts's holdReason column
+   *  comment and src/lib/adminQueue.ts::classifyAdminQueueRow, the reason
+   *  this is exposed at all. Null when the fresh decision isn't "hold", or
+   *  for a row not yet re-synced since this field existed. */
+  holdReason: HoldReason;
+  /** Source-freshness timestamp — see src/db/schema.ts's lastSeenAt column comment. */
+  lastSeenAt: string | null;
+  /** Venue-resolution counterfactual — see src/db/schema.ts's venueResolvedDecision column comment. */
+  venueResolvedDecision: PublishDecision | null;
+  /** Companion to venueResolvedDecision — see src/db/schema.ts's venueResolvedHoldReason column comment. */
+  venueResolvedHoldReason: HoldReason;
 }

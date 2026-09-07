@@ -361,6 +361,228 @@ describe("source-aware relevance evidence (data-quality Workstream A — a gener
   });
 });
 
+describe("relevance check reaches medium-confidence (review_queue) candidates too (admin Discovery Queue cleanup quality audit, 2026-09-06)", () => {
+  // Real gap found auditing the admin Needs Review tab: computeDecision only
+  // ever consulted assessRelevance's verdict when evaluateQualityGate had
+  // already picked "auto_publish" (genreConfidence "high"). A genreConfidence
+  // "medium" candidate — the deterministic-mapping/bare-keyword tier every
+  // adapter's own genericElectronic fallback and kultunautAdapter's
+  // non-"rich" match land on — went straight to "review_queue" with its
+  // relevance verdict computed but never looked at: a real, one-sided
+  // non-electronic identity in the event's own text, with no offsetting
+  // electronic evidence at all, sailed into the human review queue exactly
+  // the same as a genuinely ambiguous crossover candidate would.
+
+  it("holds, rather than review-queues, a medium-confidence generic-electronic candidate whose own text carries a one-sided non-electronic signal with no offsetting evidence", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Support Act Night",
+        description: "A DJ-led electronic warm-up, followed by the headline act — a well-known local jazz trio.",
+        artists: [],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("still review-queues a genuinely weak-but-real medium-confidence generic-electronic candidate with no contradicting signal at all (regression: the fix must not make the gate stricter for real ambiguous cases)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Friday Club Night",
+        description: "Doors at 11pm, resident DJs all night, electronic sounds until close.",
+        artists: [],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("still review-queues (never over-corrects to hold) a medium-confidence SPECIFIC-subgenre candidate with no contradicting signal (Kenton Slash Demon-type real case)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Kenton Slash Demon",
+        description: "A night of driving house music.",
+        artists: ["Kenton Slash Demon"],
+        genreHint: "house",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("house");
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("still review-queues a genuine electronic/indie-rock crossover with real corroboration on the electronic side too (real KultuNaut evidence, Mikael Simpson: 'vender ... tilbage til det elektroniske lydlandskab ... elektroniske, knitrende beats og stemningsfuld indierock' — a genuine mixed bill, not a one-sided false positive, so this correctly stays a human's call rather than auto-holding)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Mikael Simpson",
+        description:
+          "Med sit live-setup vender Mikael Simpson nu tilbage til det elektroniske lydlandskab, som mange kender og elsker fra hans pladeudgivelser. Med elektroniske, knitrende beats og stemningsfuld indierock leverer Simpson forunderlige dansk lyrik.",
+        artists: ["Mikael Simpson"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.relevance).toBe("weak");
+    expect(result.decision).toBe("review_queue");
+  });
+});
+
+describe("generalized relevance fixes for real Needs Review false positives (round 3 quality audit, 2026-09-06)", () => {
+  // Real live ALICE evidence (fetched via the read-only reachability
+  // diagnostic against the actual current pages) showed the fix above was
+  // NOT sufficient on its own: several rows still landed in review_queue
+  // with relevance "weak" even though a human reading the same bio would
+  // never call them EDM candidates. Each test below quotes the real text
+  // that exposed the gap.
+
+  it("holds a bossa nova/MPB artist whose only 'electronic' evidence is one incidental production adjective (real ALICE evidence: Bruno Berle BR's own bio explicitly self-identifies as 'Música Popular Brasileira (MPB)', with 'subtle electronic textures' as the sole electronic mention)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Bruno Berle BR",
+        description:
+          "With a voice of pure gold and a featherlight, deeply sensitive take on samba and bossa nova, Bruno Berle has emerged as one of the leading names in a new wave of Brazilian artists. Alongside names such as Bala Desejo, Zé Ibarra and Ana Frango Elétrico, the composer, singer and multi-instrumentalist is gently expanding the boundaries of Música Popular Brasileira (MPB) — the influential movement that emerged in the 1960s, blending traditional Brazilian genres like samba and bossa nova with pop, jazz and rock. His music effortlessly weaves together indie pop and subtle electronic textures.",
+        artists: ["Bruno Berle"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("holds a flamenco guitarist whose only 'electronic' mention names a DIFFERENT collaborator, never the event's own sound (real ALICE evidence: Yerai Cortés ES — 'collaborating with contemporary artists such as icon C. Tangana, pop star Judeline, and electronic musician Floating Points')", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Yerai Cortés ES",
+        description:
+          "With his masterful guitar playing, Yerai Cortés has established himself as one of the most distinctive voices of flamenco's new generation. He has performed with many of flamenco's great masters while also collaborating with contemporary artists such as icon C. Tangana, pop star Judeline, and electronic musician Floating Points. His playing is elegant, expressive, and profoundly moving.",
+        artists: ["Yerai Cortés"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("holds a nine-piece afrojazz/funk/soul ensemble whose bio names six non-electronic genre families against one incidental 'electronic music' mention tacked onto the end of that list (real ALICE evidence: Nubiyan Twist UK — 'genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music')", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Nubiyan Twist UK",
+        description:
+          "Nubiyan Twist deliver an energetic fusion of jazz, funk and soul that is nearly impossible to stand still to. Nubiyan Twist was formed in 2011 at Leeds College of Music, where they developed their expansive, genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music. The nine-piece ensemble spans saxophone, trumpet, vocals and percussion.",
+        artists: ["Nubiyan Twist"],
+        genreHint: "electronic-other",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  // Final focused pass (round 3, part 2, 2026-09-06): the first attempt at
+  // fixing this exact case — gating a specific-genre match's "strong
+  // signal" status on deterministicGenreMapping.ts's hasRichGenreEvidence
+  // (a bare, single "ambient" keyword isn't "rich") — was reverted after it
+  // caused two regressions elsewhere (Mærk. Bemærk.'s vernissage-context
+  // case; Tinie Tempah's metadata-only-hint case — see the two regression
+  // tests immediately below, which prove both stay correct under THIS
+  // fix). The actual, narrower fix: hasElectronicsAsInstrumentationOnly —
+  // "electronics" named only as one instrument among trumpet/voice/bass/
+  // drums is not genre evidence, distinct from a bare "ambient" keyword
+  // match, which is what actually let this row through before.
+  it("holds a jazz/chamber-ensemble show whose only specific-genre match is a bare, non-rich 'ambient' keyword, once 'electronics' is recognized as pure instrumentation (real ALICE evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Daniel Sommer / Arve Henriksen / Johannes Lundberg: Sounds & Sequences",
+        description:
+          "Sounds & Sequences brings together three distinctive voices from the Nordic improvised music scene. Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language where acoustic instruments and electronics open up new sonic possibilities. Arve Henriksen's trumpet, voice and electronics, Johannes Lundberg's double bass and Daniel Sommer's drumming move between simple melodies, open improvisation and rhythmic passages.",
+        artists: ["Daniel Sommer", "Arve Henriksen", "Johannes Lundberg"],
+        genreHint: null,
+        genreConfidenceHint: null,
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("ambient-experimental"); // confirms this test exercises the real mis-mapping, not a different code path
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("negative_relevance");
+  });
+
+  it("regression: still review-queues (never holds) the vernissage-context case — a genuine specific-genre match (drum-and-bass) inside a gallery vernissage, no 'electronics' word at all, so hasElectronicsAsInstrumentationOnly must stay false and not interact with this case (real Mærk. Bemærk. evidence, gap 4C)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-kultunaut",
+        title: "Mærk. Bemærk.",
+        description: "En vernissage på det nye galleri, med drum and bass fra en lokal DJ i baggrunden.",
+        genreHint: "drum-and-bass",
+        genreConfidenceHint: "high",
+        artists: [],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("drum-and-bass");
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("regression: still auto-publishes the metadata-only-hint case — no description/relevanceText at all, so there is nothing for hasElectronicsAsInstrumentationOnly to match (real Tinie Tempah evidence)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-pumpehuset",
+        title: "Tinie Tempah",
+        description: null,
+        genreHint: "house",
+        genreConfidenceHint: "high",
+        artists: ["Tinie Tempah"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("still review-queues a genuine ambient-electronic artist with a REPEATED, explicit first-party 'electronic music' self-description (regression: richness-gating must not over-tighten a real case — real ALICE evidence, Beverly Glenn-Copeland CA: 'a singular sonic universe where folk, electronic music, and spiritual traditions merge' ... 'folk, meditative electronics, and spiritual reflection meet in compositions of otherworldly beauty')", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Beverly Glenn-Copeland CA",
+        description:
+          "Glenn-Copeland has created a singular sonic universe where folk, electronic music, and spiritual traditions merge into deeply human stories of community, care, and hope. He has over the decades built a unique body of work where folk, meditative electronics, and spiritual reflection meet in compositions of otherworldly beauty, achieving iconic status within ambient and experimental music communities around the world.",
+        artists: ["Beverly Glenn-Copeland"],
+        genreHint: null,
+        genreConfidenceHint: null,
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.decision).toBe("review_queue");
+  });
+
+  it("no longer resolves 'strong' relevance for a pop act whose only genre evidence is a non-rich 'house-inspired' qualifier (round 3 part 3, real KultuNaut evidence: Roya (dk) — 'house-inspireret popmusik... med elektroniske trommer', no direct claim the show itself is house; still review-queues, just no longer as an over-confident auto-credible match)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        sourceId: "src-kultunaut",
+        title: "Roya (dk)",
+        description:
+          "TikTok-virale ROYA vender triumferende tilbage til VEGA. Med deres intime univers af house-inspireret popmusik - spækket med elektroniske trommer og effektfyldte vokaler - har de opnået international berømmelse.",
+        genreHint: "house",
+        genreConfidenceHint: "medium",
+        artists: ["Roya (dk)"],
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("house");
+    expect(result.relevance).toBe("weak"); // was "strong" before this fix — confirms it now goes through the pop/RnB non-rich cap, not the naive genre-present-alone floor
+    expect(result.decision).toBe("review_queue"); // downgraded from an over-confident match to a genuine human-review case, not silently excluded — see assessRelevance's documented "never forces none on its own" invariant for the pop/R&B zone
+  });
+});
+
 describe("moved/rescheduled first-party events (data-quality Workstream C)", () => {
   const existingSameSource: ExistingEventForDedup = {
     id: "e-tonser-old",
