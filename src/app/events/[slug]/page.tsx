@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEventBySlugWithVenue } from "@/lib/queries";
+import { getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
@@ -43,7 +43,8 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event);
-  const sourceProvenance = getSourceProvenance(event);
+  const sourceLinks = await getSourceEventLinksForEvent(event.id);
+  const sourceProvenance = getSourceProvenance(sourceLinks);
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
@@ -156,24 +157,33 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             ))}
           </div>
           {/* Discreet, non-CTA provenance (public source-link visibility work
-              package, 2026-09-07): identifies the actual discovery/aggregator
-              source by name — deliberately small/muted text, never a button,
-              so it never competes with Official event/Tickets above. Shown
-              even when getExternalLinks already hid the Source CTA (the
-              common case), and also when Source remains the only CTA above,
-              since that button's own label only ever reads the generic word
-              "Source". */}
-          {sourceProvenance && (
+              package, 2026-09-07; revised same day to read from ALL of the
+              event's real source_event_links, not only its canonical
+              source — see getSourceProvenance's own doc comment): identifies
+              every qualifying discovery/aggregator source by its clean
+              public brand name — deliberately small/muted text, never a
+              button, so it never competes with Official event/Tickets
+              above. Shown even when getExternalLinks already hid the Source
+              CTA (the common case), and also when Source remains the only
+              CTA above, since that button's own label only ever reads the
+              generic word "Source". Compact "Sources: A · B" form when more
+              than one qualifying source exists — never a source browser. */}
+          {sourceProvenance.length > 0 && (
             <p className="mt-2 text-[11px] text-text-tertiary">
-              Source:{" "}
-              <a
-                href={sourceProvenance.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline decoration-1 underline-offset-2 hover:text-text-secondary"
-              >
-                {sourceProvenance.sourceName}
-              </a>
+              {sourceProvenance.length === 1 ? "Source:" : "Sources:"}{" "}
+              {sourceProvenance.map((s, i) => (
+                <span key={s.sourceName}>
+                  {i > 0 && " · "}
+                  <a
+                    href={s.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-1 underline-offset-2 hover:text-text-secondary"
+                  >
+                    {s.sourceName}
+                  </a>
+                </span>
+              ))}
             </p>
           )}
         </div>

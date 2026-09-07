@@ -59,6 +59,19 @@ export const SOURCE_TYPE_PRIORITY: SourceType[] = [
 export interface Source {
   id: string;
   sourceName: string;
+  /**
+   * Clean public brand name (public source-link visibility follow-up,
+   * 2026-09-07) — what the DETAIL PAGE's discreet "Source: <name>"
+   * provenance line shows, distinct from `sourceName` (the internal
+   * registry label, which can carry feed-specific detail like "KultuNaut —
+   * Elektronisk / Club-DJ (Kbh. og Frederiksberg)" that must never reach the
+   * public page). Optional so the DB-backed `sources` table/admin path
+   * (src/db/mappers.ts::sourceRowToRecord, which has no matching column)
+   * never has to supply one — only the static registry in
+   * src/lib/data/sources.ts (the one `src/lib/links.ts` reads from for
+   * public rendering) needs to set it, and does, for every entry.
+   */
+  publicName?: string;
   sourceType: SourceType;
   baseUrl: string;
   roles: SourceRole[];

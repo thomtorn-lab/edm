@@ -293,7 +293,6 @@ describe("getExternalLinks — Source CTA visibility rule (public source-link vi
     });
     const snapshot = JSON.parse(JSON.stringify(input));
     getExternalLinks(input);
-    getSourceProvenance(input);
     expect(input).toEqual(snapshot);
   });
 
@@ -303,50 +302,88 @@ describe("getExternalLinks — Source CTA visibility rule (public source-link vi
   });
 });
 
-describe("getSourceProvenance — discreet public provenance (detail page only, public source-link visibility work package, 2026-09-07)", () => {
-  it("identifies the actual source by name for a discovery/aggregator-sourced event (Jasho Club // Poolen Outside reference shape)", () => {
-    const provenance = getSourceProvenance(
-      event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664", canonicalSourceId: "src-kultunaut" }),
-    );
-    expect(provenance).toEqual({ sourceName: "KultuNaut — Elektronisk / Club-DJ (Kbh. og Frederiksberg)", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664" });
+describe("getSourceProvenance — discreet public provenance (detail page only; revised 2026-09-07 to read source_event_links, not only canonicalSourceId)", () => {
+  // getSourceProvenance now takes the event's real source_event_links rows
+  // ({sourceId, sourceUrl, role}), not the event object — see its own doc
+  // comment in links.ts for why the earlier canonical-only design was too
+  // narrow (it silently dropped a secondary discovery match on an otherwise
+  // official-venue/ticketing canonical event).
+
+  it("identifies a source-only discovery/aggregator event by its clean brand name (Jasho Club // Poolen Outside reference shape)", () => {
+    const provenance = getSourceProvenance([
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664", role: "official" },
+    ]);
+    expect(provenance).toEqual([{ sourceName: "KultuNaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137664" }]);
   });
 
-  it("returns null for a genuine first-party official-venue source — no separate 'Source' identity to surface", () => {
-    expect(getSourceProvenance(event({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren" }))).toBeNull();
+  it("1. official canonical (Poolen) + secondary discovery match (KultuNaut) -> KultuNaut provenance visible, even though an Official event CTA also shows", () => {
+    // Real Production shape (13 published events confirmed live): canonical
+    // official-venue source + a secondary KultuNaut source_event_links row
+    // from db/sync.ts's match branch. This is exactly the case the
+    // canonical-only design used to miss.
+    const provenance = getSourceProvenance([
+      { sourceId: "src-poolen", sourceUrl: "https://poolen.dk/da/koncerter/example/", role: "official" },
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", role: "official" },
+    ]);
+    expect(provenance).toEqual([{ sourceName: "KultuNaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1" }]);
   });
 
-  it("returns null for a ticketing source — Tickets already identifies the destination clearly enough", () => {
-    expect(getSourceProvenance(event({ officialEventUrl: "https://billetto.dk/e/x", canonicalSourceId: "src-billetto" }))).toBeNull();
+  it("2. official-venue and ticketing sources are never listed as provenance themselves — already shown as Official event/Tickets", () => {
+    expect(getSourceProvenance([{ sourceId: "src-hangaren", sourceUrl: "https://www.hangaren.dk/events/x", role: "official" }])).toEqual([]);
+    expect(getSourceProvenance([{ sourceId: "src-billetto", sourceUrl: "https://billetto.dk/e/x", role: "official" }])).toEqual([]);
   });
 
-  it("returns null when there is no officialEventUrl at all", () => {
-    expect(getSourceProvenance(event({ officialEventUrl: null, canonicalSourceId: "src-kultunaut" }))).toBeNull();
+  it("3. canonical KultuNaut (with a separate Tickets destination elsewhere) -> KultuNaut provenance still resolves", () => {
+    const provenance = getSourceProvenance([
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=2", role: "official" },
+    ]);
+    expect(provenance).toEqual([{ sourceName: "KultuNaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=2" }]);
   });
 
-  it("returns null for an admin-added event with no canonicalSourceId — never invents a source name", () => {
-    expect(getSourceProvenance(event({ officialEventUrl: "https://example.com/x", canonicalSourceId: null }))).toBeNull();
+  it("4. multiple qualifying discovery sources -> compact, deterministically ordered, deduplicated-by-source list", () => {
+    const provenance = getSourceProvenance([
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=3", role: "official" },
+      { sourceId: "src-eventbrite", sourceUrl: "https://www.eventbrite.dk/e/example", role: "official" },
+      // A duplicate row for a source already recorded "official" (e.g. a
+      // later re-sync also wrote an "other" row) must not produce a second
+      // entry, and must not displace the preferred "official" URL.
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=3-alt", role: "other" },
+    ]);
+    expect(provenance).toEqual([
+      { sourceName: "Eventbrite", sourceUrl: "https://www.eventbrite.dk/e/example" },
+      { sourceName: "KultuNaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=3" },
+    ]);
   });
 
-  it("never exposes internal fields — the returned shape is exactly {sourceName, sourceUrl}, never a source id, trust level, or confidence", () => {
-    const provenance = getSourceProvenance(
-      event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut" }),
-    );
-    expect(provenance && Object.keys(provenance).sort()).toEqual(["sourceName", "sourceUrl"]);
+  it("5. public display name is a clean brand name, never the internal registry sourceName's feed-specific detail", () => {
+    const provenance = getSourceProvenance([
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", role: "official" },
+    ]);
+    expect(provenance[0].sourceName).toBe("KultuNaut");
+    expect(provenance[0].sourceName).not.toContain("Elektronisk");
   });
 
-  it("10. multiple-source deterministic rule: a secondary, non-canonical source_event_links match (e.g. a KultuNaut duplicate layered onto an already-canonical Poolen event) is never surfaced — only the event's own canonical source decides public provenance", () => {
-    // Real Production shape (13 published events confirmed live): the
-    // canonical source is the official venue, and otherSourceUrls carries a
-    // secondary, non-canonical KultuNaut match. Canonical authority alone
-    // decides — the secondary source never appears here.
-    const provenance = getSourceProvenance(
-      event({
-        officialEventUrl: "https://poolen.dk/da/koncerter/example/",
-        canonicalSourceId: "src-poolen",
-        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1"],
-      }),
-    );
-    expect(provenance).toBeNull();
+  it("returns an empty array when there are no source_event_links rows at all (e.g. an admin-added event)", () => {
+    expect(getSourceProvenance([])).toEqual([]);
+  });
+
+  it("skips a link whose sourceId doesn't resolve in the registry, rather than throwing", () => {
+    expect(() => getSourceProvenance([{ sourceId: "src-does-not-exist", sourceUrl: "https://example.com/x", role: "official" }])).not.toThrow();
+    expect(getSourceProvenance([{ sourceId: "src-does-not-exist", sourceUrl: "https://example.com/x", role: "official" }])).toEqual([]);
+  });
+
+  it("never exposes internal fields — each entry is exactly {sourceName, sourceUrl}, never a source id, trust level, or confidence", () => {
+    const provenance = getSourceProvenance([
+      { sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", role: "official" },
+    ]);
+    expect(Object.keys(provenance[0]).sort()).toEqual(["sourceName", "sourceUrl"]);
+  });
+
+  it("is a pure read of its input — never mutates the source_event_links rows passed in", () => {
+    const input = [{ sourceId: "src-kultunaut", sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", role: "official" }];
+    const snapshot = JSON.parse(JSON.stringify(input));
+    getSourceProvenance(input);
+    expect(input).toEqual(snapshot);
   });
 });
 
