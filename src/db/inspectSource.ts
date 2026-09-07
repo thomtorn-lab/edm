@@ -760,9 +760,10 @@ async function modeSnapshot(client: Client, args: Record<string, string | boolea
   console.log(JSON.stringify(dq.rows));
 
   const ev = await client.query(
-    `SELECT id, slug, title, description, artists, venue_id, start_datetime, primary_genre, genre_confidence, confidence,
-            published, cancelled, manual_override, overridden_fields, official_event_url, ticket_url,
-            resident_advisor_url, facebook_url, image_url, price_from, created_at
+    `SELECT id, slug, title, description, artists, venue_id, sub_venue, start_datetime, primary_genre, genre_confidence, confidence,
+            published, cancelled, manual_override, overridden_fields, admin_unpublish_reason,
+            source_cancelled_at, source_cancelled_by_source_id, source_cancellation_evidence,
+            official_event_url, ticket_url, resident_advisor_url, facebook_url, image_url, price_from, created_at
      FROM events WHERE canonical_source_id = $1 ORDER BY created_at`,
     [sourceId],
   );
