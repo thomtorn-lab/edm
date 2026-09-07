@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { getEventBySlugWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
-import { getExternalLinks } from "@/lib/links";
+import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
@@ -43,6 +43,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event);
+  const sourceProvenance = getSourceProvenance(event);
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
@@ -154,6 +155,27 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
               </a>
             ))}
           </div>
+          {/* Discreet, non-CTA provenance (public source-link visibility work
+              package, 2026-09-07): identifies the actual discovery/aggregator
+              source by name — deliberately small/muted text, never a button,
+              so it never competes with Official event/Tickets above. Shown
+              even when getExternalLinks already hid the Source CTA (the
+              common case), and also when Source remains the only CTA above,
+              since that button's own label only ever reads the generic word
+              "Source". */}
+          {sourceProvenance && (
+            <p className="mt-2 text-[11px] text-text-tertiary">
+              Source:{" "}
+              <a
+                href={sourceProvenance.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-1 underline-offset-2 hover:text-text-secondary"
+              >
+                {sourceProvenance.sourceName}
+              </a>
+            </p>
+          )}
         </div>
       )}
 
