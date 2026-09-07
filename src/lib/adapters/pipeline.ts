@@ -18,7 +18,7 @@ import {
   type RelevanceLevel,
 } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
-import { sanitizeExtractedTitle } from "./htmlExtraction";
+import { sanitizeExtractedTitle, normalizeExtractedText } from "./htmlExtraction";
 import type { RawCandidateEvent } from "./types";
 
 /**
@@ -352,6 +352,28 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // than a change repeated per adapter or per write site. See
   // sanitizeExtractedTitle's own doc comment for what this guards against.
   if (raw.title) raw.title = sanitizeExtractedTitle(raw.title);
+
+  // TEXT NORMALIZATION (generalized event description/text normalization
+  // work package, 2026-09-07): the same single choke point as the title
+  // sanitization immediately above — every source's description/
+  // relevanceText/venueName/artists pass through here exactly once, before
+  // dedup matching, genre evidence, or any DB write path reads them.
+  // normalizeExtractedText decodes HTML entities, strips any stray tags,
+  // and collapses non-breaking/zero-width/repeated whitespace — it never
+  // rewrites words, so an adapter that already calls htmlToText/
+  // decodeHtmlEntities itself (most of them) simply gets a harmless,
+  // idempotent second pass; the one adapter that extracts a plain JSON
+  // field with no decoding at all (Billetto) gets its first and only pass
+  // here. Real Production incident this fixes: Billetto's own API returns
+  // rich-text fields with literal "&nbsp;" entities never decoded, which
+  // rendered as the literal visible text "&nbsp;" on the public site (e.g.
+  // "musik på&nbsp;KU.BE"). Description/relevanceText keep meaningful line
+  // breaks (singleLine omitted); venueName and each artist are display
+  // labels, not paragraphs, so line breaks collapse to spaces there.
+  if (raw.description) raw.description = normalizeExtractedText(raw.description);
+  if (raw.relevanceText) raw.relevanceText = normalizeExtractedText(raw.relevanceText);
+  if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });
+  raw.artists = raw.artists.map((a) => normalizeExtractedText(a, { singleLine: true }));
 
   // VALIDATION
   const missingFields: string[] = [];

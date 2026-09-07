@@ -24,24 +24,82 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&([a-zA-Z]+);/g, (full, name) => NAMED_ENTITIES[name] ?? full);
 }
 
-/** Renders an HTML fragment to plain text the way a browser would display it. */
-export function htmlToText(html: string): string {
-  const withoutStyleScript = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  const withBreaks = withoutStyleScript
+// Non-breaking / narrow-no-break space variants — a raw U+00A0 (as opposed
+// to an &nbsp; entity, which decodeHtmlEntities above already turns into a
+// real space) survives untouched through tag-stripping and entity-decoding
+// alike, since neither operation is a whitespace pass. Real evidence: Culture
+// Box event descriptions carry the literal character (not the entity) —
+// presumably pasted from a rich-text editor — which then renders as an
+// invisible/inconsistent gap rather than a real space (generalized text
+// normalization work package, 2026-09-07).
+const NBSP_CHAR_RE = /[  ]/g;
+// Zero-width formatting characters that can leak in from a rich-text source
+// with no visible trace at all (zero-width space/joiner/non-joiner, BOM).
+const ZERO_WIDTH_RE = /[​-‍﻿]/g;
+
+/**
+ * The one generalized, safe plain-text normalizer for adapter-extracted
+ * text (generalized event description/text normalization work package,
+ * 2026-09-07). Deliberately conservative: every transformation here is
+ * either (a) making already-decoded/whitespace-correct text idempotent
+ * under a second pass, or (b) fixing an unambiguous encoding/formatting
+ * artifact — HTML entities, stray tags, non-breaking/zero-width characters,
+ * CRLF line endings, repeated whitespace, Unicode composition. It NEVER
+ * rewrites words: no spelling/grammar changes, no apostrophe substitution,
+ * no capitalization changes, no removal of ordinary punctuation. A
+ * source-authored token like "14'e" passes through completely unchanged —
+ * there is no entity or tag anywhere inside it for this function to touch.
+ *
+ * `singleLine` (title/artist/venue-name-shaped fields): every line break
+ * collapses to a space, matching how those fields are actually displayed.
+ * Default (description/relevanceText-shaped fields): line breaks are
+ * meaningful paragraph/list separators and are kept, but a run of blank
+ * lines collapses away entirely — the same behavior htmlToText already had
+ * before this function existed, now shared rather than duplicated.
+ *
+ * Idempotent by construction — safe to call more than once on the same
+ * string (e.g. once inside an adapter's own htmlToText call, once more at
+ * the shared pipeline choke point) without further altering already-clean
+ * text. This is deliberate: rather than trying to have some adapters "opt
+ * out" of the shared pipeline pass, every adapter's extracted text always
+ * goes through it, and a second harmless pass is the price of one universal
+ * integration point instead of per-source conditional logic.
+ */
+export function normalizeExtractedText(text: string, options: { singleLine?: boolean } = {}): string {
+  if (!text) return text;
+  let out = text
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
     // Matches a bare <br>/<br/> as well as an attributed variant like
     // <br class="html-br" /> (real evidence: a Pumpehuset lineup list used
     // exactly this to separate names — without this, "Leeni & Danilo
     // Kupfernagel", "Lush" and "NILU" would silently concatenate into one
     // run-on string with no separator at all).
     .replace(/<br\b[^>]*>/gi, "\n")
-    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n");
-  const stripped = withBreaks.replace(/<[^>]+>/g, "");
-  const decoded = decodeHtmlEntities(stripped);
-  return decoded
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  out = decodeHtmlEntities(out);
+  out = out.normalize("NFC");
+  out = out
+    .replace(/\u2029/g, "\n\n") // Unicode paragraph separator -> blank line
+    .replace(/\u2028/g, "\n") // Unicode line separator -> line break
+    .replace(/\r\n?/g, "\n") // CRLF/CR -> LF
+    .replace(ZERO_WIDTH_RE, "")
+    .replace(NBSP_CHAR_RE, " ");
+
+  if (options.singleLine) {
+    return out.replace(/\s+/g, " ").trim();
+  }
+  return out
     .split("\n")
-    .map((l) => l.trim())
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
     .filter((l) => l.length > 0)
-    .join("\n");
+    .join("\n")
+    .trim();
+}
+
+/** Renders an HTML fragment to plain text the way a browser would display it. */
+export function htmlToText(html: string): string {
+  return normalizeExtractedText(html);
 }
 
 /** Every `<a ...>TEXT</a>` anchor's decoded, trimmed text within an HTML fragment, in document order. */
@@ -120,14 +178,20 @@ const TITLE_CTA_MARKER =
  * with no CTA marker but still-runaway length can't reach storage either.
  */
 export function sanitizeExtractedTitle(title: string, maxLength = 200): string {
-  const ctaMatch = TITLE_CTA_MARKER.exec(title);
-  if (!ctaMatch) return truncateAtBoundary(title, maxLength);
+  // Text normalization (generalized event description/text normalization
+  // work package, 2026-09-07) runs first — entity-decoded, tag-stripped,
+  // nbsp/zero-width-clean, single-line — so every title reaching this
+  // function's own CTA-stripping/length-cap logic is already clean,
+  // regardless of whether the source adapter itself decoded anything.
+  const normalized = normalizeExtractedText(title, { singleLine: true });
+  const ctaMatch = TITLE_CTA_MARKER.exec(normalized);
+  if (!ctaMatch) return truncateAtBoundary(normalized, maxLength);
   // Only the CTA-stripped boundary gets its trailing separator cleaned up —
   // an ordinary title with no CTA match is never touched by this trim, so a
   // legitimate title that itself ends in punctuation (e.g. an abbreviation)
   // can't be altered by this pass.
-  const withoutCta = title.slice(0, ctaMatch.index).replace(/[\s:;,.–—-]+$/, "").trim();
-  return truncateAtBoundary(withoutCta || title.trim(), maxLength);
+  const withoutCta = normalized.slice(0, ctaMatch.index).replace(/[\s:;,.–—-]+$/, "").trim();
+  return truncateAtBoundary(withoutCta || normalized, maxLength);
 }
 
 // Product decision (editorial-description follow-up, Pumpehuset): a
