@@ -1510,8 +1510,8 @@ async function modeCancellationAudit(client: Client) {
 async function modeLinkRoleAudit(client: Client, args: Record<string, string | boolean>) {
   const titleFilter = typeof args.title === "string" ? args.title : null;
   const rows = await client.query(
-    `SELECT e.id, e.title, e.official_event_url, e.ticket_url, e.resident_advisor_url,
-            e.canonical_source_id, s.source_name, s.source_type,
+    `SELECT e.id, e.slug, e.title, e.official_event_url, e.ticket_url, e.resident_advisor_url,
+            e.other_source_urls, e.canonical_source_id, s.source_name, s.source_type,
             v.name AS venue_name
      FROM events e
      LEFT JOIN venues v ON v.id = e.venue_id
@@ -1623,6 +1623,53 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
   );
   section(`LINK-ROLE AUDIT — published events with source_event_links from more than one source (${multiSource.rows.length} found, capped at 20)`);
   console.log(JSON.stringify(multiSource.rows, null, 2));
+
+  // Public CTA-combo classification (public source-link visibility work
+  // package, 2026-09-07, Production verification): mirrors getExternalLinks/
+  // getSourceProvenance in src/lib/links.ts exactly, so this reports what the
+  // live site actually renders today for each published event — not a
+  // re-derivation, a read-only cross-check against the real implementation.
+  const comboExamples: Record<string, Record<string, unknown>[]> = {};
+  for (const r of rows.rows) {
+    const officialUrl = r.official_event_url as string | null;
+    const ticketUrl = r.ticket_url as string | null;
+    const raUrl = r.resident_advisor_url as string | null;
+    const otherSourceUrls = (r.other_source_urls as string[] | null) ?? [];
+    const sourceType = r.source_type as string | null;
+    const role = officialUrl ? roleForSourceType(sourceType) : null;
+
+    const hasOfficial = officialUrl !== null && role !== "tickets" && role !== "unknown";
+    const hasTicketsFromTicketUrl = ticketUrl !== null;
+    const hasTicketsFromOfficialUrl = officialUrl !== null && role === "tickets";
+    const hasTicketsFromRa = !hasTicketsFromTicketUrl && raUrl !== null;
+    const hasTickets = hasTicketsFromTicketUrl || hasTicketsFromOfficialUrl || hasTicketsFromRa;
+    const hasSourceFromOfficialUrl = officialUrl !== null && role === "unknown";
+    const hasAnySourceEntry = hasSourceFromOfficialUrl || otherSourceUrls.length > 0;
+    const hasPrimary = hasOfficial || hasTickets;
+    const sourceCtaShown = hasAnySourceEntry && !hasPrimary;
+    const provenanceShown = hasSourceFromOfficialUrl; // getSourceProvenance: role === "unknown" && officialEventUrl set
+
+    const combo = [hasOfficial ? "Official" : null, hasTickets ? "Tickets" : null, hasAnySourceEntry ? "Source(any)" : null]
+      .filter(Boolean)
+      .join("+") || "None";
+    const key = `${combo} | sourceCtaShown=${sourceCtaShown} | provenanceShown=${provenanceShown}`;
+    (comboExamples[key] ??= []).push({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      venue: r.venue_name,
+      canonicalSource: r.source_name,
+      sourceType,
+    });
+  }
+  section("LINK-ROLE AUDIT — public CTA-combo classification (mirrors getExternalLinks/getSourceProvenance; up to 3 example slugs per combo)");
+  console.log(
+    JSON.stringify(
+      Object.fromEntries(Object.entries(comboExamples).map(([k, v]) => [k, { count: v.length, examples: v.slice(0, 3) }])),
+      null,
+      2,
+    ),
+  );
 }
 
 const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
