@@ -32,7 +32,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -543,6 +543,37 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
       });
     }
   }
+
+  // Source-driven cancellation safety live audit (2026-09-07, Section 14):
+  // cancelledHint/soldOutHint are already fetched onto every raw candidate
+  // above — this never re-fetches or re-classifies, just tallies what THIS
+  // run's real live source data reports, generalized across any adapter
+  // (most report null for every candidate; only billetto/poolen/pumpehuset
+  // are known to ever report true as of this writing). Answers "explicit
+  // vs ambiguous signal counts" for not-yet-existing candidates the way
+  // modeCancellationAudit's DB query answers it for canonical events —
+  // discovery_queue itself persists no cancellation signal at all today
+  // (see that column's absence in schema.ts), so a live fetch is the only
+  // way to see a pending candidate's real current signal.
+  const cancellationSignalCounts = { true: 0, false: 0, null: 0 };
+  const soldOutSignalCounts = { true: 0, false: 0, null: 0 };
+  const cancelledCandidates: { title: string; sourceUrl: string; officialEventUrl: string | null; startDatetime: string | null }[] = [];
+  for (const raw of candidates) {
+    cancellationSignalCounts[raw.cancelledHint === true ? "true" : raw.cancelledHint === false ? "false" : "null"]++;
+    soldOutSignalCounts[raw.soldOutHint === true ? "true" : raw.soldOutHint === false ? "false" : "null"]++;
+    if (raw.cancelledHint === true) {
+      cancelledCandidates.push({
+        title: raw.title,
+        sourceUrl: raw.sourceUrl,
+        officialEventUrl: raw.officialEventUrl ?? null,
+        startDatetime: raw.startDatetime ?? null,
+      });
+    }
+  }
+  section(`Cancellation/sold-out signal audit — LIVE fetch, ${candidates.length} candidates this run`);
+  console.log(JSON.stringify({ cancelledHint: cancellationSignalCounts, soldOutHint: soldOutSignalCounts }, null, 2));
+  section(`Candidates this source currently, explicitly reports as cancelled (${cancelledCandidates.length})`);
+  console.log(JSON.stringify(cancelledCandidates, null, 2));
 
   section("Decision breakdown (pipeline-level — NOT what would actually be written; see source's own autoPublish policy)");
   console.log(JSON.stringify(decisions, null, 2));
@@ -1372,6 +1403,98 @@ async function modeTextLeakageAudit(client: Client) {
 }
 
 /**
+ * Source-driven cancellation safety — read-only Production audit
+ * (2026-09-07, Section 14 of the cancellation-safety work package). Run
+ * BEFORE any implementation, per that task's explicit instruction. Reports
+ * the DB-side half of the picture: every canonical event currently carrying
+ * `cancelled = true` (the existing events.cancelled metadata column —
+ * already populated automatically today via buildSyncPatch's cancelledHint
+ * mapping, see src/lib/sync.ts — but with zero publication consequence as
+ * of this writing: nothing currently unpublishes a cancelled-but-published
+ * event; see StatusBadge.tsx's own doc comment for the intended-but-not-yet-
+ * automated mechanism). `TRUSTED_CANCELLATION_SOURCE_IDS` mirrors the
+ * proposed CANCELLATION_POLICY_BY_SOURCE_ID trust classification in
+ * src/lib/data/sources.ts exactly (billetto/poolen/pumpehuset — the only
+ * three sources whose adapters can set cancelledHint at all; see this file's
+ * modeAdapterDryRun for the live-fetch half of this same audit, which
+ * covers not-yet-existing Discovery Queue candidates instead — discovery_queue
+ * itself persists no cancellation signal today, so it cannot be queried
+ * directly). Kept as a hardcoded duplicate, not an import, so this
+ * diagnostic keeps working unchanged regardless of which module ends up
+ * owning the real trust classification once implemented.
+ */
+const TRUSTED_CANCELLATION_SOURCE_IDS = ["src-billetto", "src-poolen", "src-pumpehuset"];
+
+async function modeCancellationAudit(client: Client) {
+  const cancelledEvents = await client.query(
+    `SELECT e.id, e.title, e.published, e.admin_unpublish_reason, e.canonical_source_id, s.source_name, s.source_type, s.trust_level, v.name AS venue_name
+     FROM events e
+     LEFT JOIN sources s ON s.id = e.canonical_source_id
+     LEFT JOIN venues v ON v.id = e.venue_id
+     WHERE e.cancelled = true
+     ORDER BY e.updated_at DESC`,
+  );
+
+  const bySource = new Map<string, number>();
+  const candidateTrustedAutoCancellations: Record<string, unknown>[] = [];
+  const alreadySafe: Record<string, unknown>[] = [];
+  const untrustedSourceStillLive: Record<string, unknown>[] = [];
+
+  for (const r of cancelledEvents.rows) {
+    const sourceName = (r.source_name as string | null) ?? "(no canonical source)";
+    bySource.set(sourceName, (bySource.get(sourceName) ?? 0) + 1);
+
+    const row = {
+      id: r.id,
+      title: r.title,
+      venue: r.venue_name,
+      source: sourceName,
+      canonicalSourceId: r.canonical_source_id,
+      published: r.published,
+      adminUnpublishReason: r.admin_unpublish_reason,
+    };
+    const isTrustedSource = r.canonical_source_id != null && TRUSTED_CANCELLATION_SOURCE_IDS.includes(r.canonical_source_id as string);
+    if (!r.published) {
+      alreadySafe.push(row); // already unpublished (admin or otherwise) — no live exposure regardless of source trust
+    } else if (isTrustedSource) {
+      // Exactly what decideSourceCancellationSyncAction would unpublish on
+      // this event's NEXT sync once implemented — the live candidates for
+      // Section 13's "PLAN ONLY" requirement, not something this read-only
+      // audit itself changes.
+      candidateTrustedAutoCancellations.push(row);
+    } else {
+      // cancelled=true from a source with no proposed auto-unpublish
+      // authority (or no resolvable source at all, e.g. admin-set) — stays
+      // published under this design; surfaced for awareness, not action.
+      untrustedSourceStillLive.push(row);
+    }
+  }
+
+  const pendingBySource = await client.query(
+    `SELECT source_name, source_id, count(*)::int AS n
+     FROM discovery_queue WHERE status = 'pending'
+     GROUP BY source_name, source_id ORDER BY n DESC`,
+  );
+
+  section(`CANCELLATION AUDIT — canonical events with cancelled=true (${cancelledEvents.rows.length} total)`);
+  console.log(JSON.stringify({ bySource: Object.fromEntries(bySource) }, null, 2));
+
+  section(`CANCELLATION AUDIT — candidate trusted auto-cancellations: published=true, cancelled=true, from a proposed-trusted source (${candidateTrustedAutoCancellations.length})`);
+  console.log(JSON.stringify(candidateTrustedAutoCancellations, null, 2));
+
+  section(`CANCELLATION AUDIT — already safe: cancelled=true and already unpublished, any source (${alreadySafe.length})`);
+  console.log(JSON.stringify(alreadySafe, null, 2));
+
+  section(`CANCELLATION AUDIT — cancelled=true, still published, NOT from a proposed-trusted source (${untrustedSourceStillLive.length})`);
+  console.log(JSON.stringify(untrustedSourceStillLive, null, 2));
+
+  section(
+    "CANCELLATION AUDIT — discovery_queue pending rows by source (context only: no cancellation signal is persisted on this table today, so this cannot show explicit-vs-ambiguous signal counts for pending candidates — see modeAdapterDryRun's live-fetch cancellation block for that)",
+  );
+  console.log(JSON.stringify(pendingBySource.rows, null, 2));
+}
+
+/**
  * Event-link role audit (event-link-role-classification work package,
  * 2026-09-05 — Zoumer reference case). Mirrors src/lib/links.ts's own
  * officialUrlRole() classification (event's canonicalSourceId's
@@ -1539,6 +1662,7 @@ async function main() {
     "venue-blocks": modeVenueBlocks,
     "event-integrity": modeEventIntegrity,
     "text-leakage-audit": modeTextLeakageAudit,
+    "cancellation-audit": modeCancellationAudit,
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
     "adapter-dry-run": modeAdapterDryRun,
@@ -1554,7 +1678,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit.`,
     );
     process.exit(1);
   }
