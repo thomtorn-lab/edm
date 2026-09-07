@@ -418,3 +418,33 @@ describe("DiscoveryQueue — End time / Ticket URL / FREE fields in the real pre
     expect(patch).not.toHaveProperty("probableEnd");
   });
 });
+
+describe("DiscoveryQueue — row info (admin Discovery Queue cleanup, Section 7)", () => {
+  it("shows the candidate's date and time so an admin can decide without opening Edit", () => {
+    render(<DiscoveryQueue items={[makeItem({ probableStart: "2026-09-20T20:00:00.000Z" })]} venues={VENUES} />);
+    expect(screen.getByText(/2026/)).toBeTruthy();
+    // formatTimeLabel renders Copenhagen local time as HH:MM.
+    expect(screen.getByText(/\d{2}:\d{2}/)).toBeTruthy();
+  });
+
+  it("shows 'Date unresolved' rather than nothing when probableStart is null", () => {
+    render(<DiscoveryQueue items={[makeItem({ probableStart: null })]} venues={VENUES} />);
+    expect(screen.getByText(/Date unresolved/)).toBeTruthy();
+  });
+
+  it("links to the source page, and to the ticket URL only when one is known", () => {
+    render(
+      <DiscoveryQueue
+        items={[makeItem({ sourceUrl: "https://ra.co/events/1", probableTicketUrl: "https://tickets.example.com/1" })]}
+        venues={VENUES}
+      />,
+    );
+    expect((screen.getByRole("link", { name: "Source" }) as HTMLAnchorElement).href).toBe("https://ra.co/events/1");
+    expect((screen.getByRole("link", { name: "Tickets" }) as HTMLAnchorElement).href).toBe("https://tickets.example.com/1");
+  });
+
+  it("omits the Tickets link when no ticket URL is known", () => {
+    render(<DiscoveryQueue items={[makeItem({ probableTicketUrl: null })]} venues={VENUES} />);
+    expect(screen.queryByRole("link", { name: "Tickets" })).toBeNull();
+  });
+});

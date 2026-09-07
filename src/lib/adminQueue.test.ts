@@ -265,6 +265,61 @@ describe("groupAdminQueueRows", () => {
     const groups = groupAdminQueueRows(items, new Map(), NOW);
     expect(groups.past_stale.map((i) => i.id)).toEqual(["dq-1"]);
   });
+
+  it("Needs review sorts by soonest upcoming date first, a missing date sinking to the bottom", () => {
+    const items = [
+      discoveryItem({ id: "dq-no-date", probableStart: null }),
+      discoveryItem({ id: "dq-later", probableStart: "2026-09-20T22:00:00+02:00" }),
+      discoveryItem({ id: "dq-soonest", probableStart: "2026-09-08T22:00:00+02:00" }),
+    ];
+    const sourceSync = new Map([["src-test", "2026-09-06T10:00:00+02:00"]]);
+    const groups = groupAdminQueueRows(items, sourceSync, NOW);
+    expect(groups.needs_review.map((i) => i.id)).toEqual(["dq-soonest", "dq-later", "dq-no-date"]);
+  });
+
+  it("Needs review breaks a same-date tie by higher overall confidence first", () => {
+    const items = [
+      discoveryItem({ id: "dq-low", overallConfidence: "medium" }),
+      discoveryItem({ id: "dq-high", overallConfidence: "high" }),
+    ];
+    const sourceSync = new Map([["src-test", "2026-09-06T10:00:00+02:00"]]);
+    const groups = groupAdminQueueRows(items, sourceSync, NOW);
+    expect(groups.needs_review.map((i) => i.id)).toEqual(["dq-high", "dq-low"]);
+  });
+
+  it("Insufficient sorts by freshest evidence (lastSeenAt) first", () => {
+    const items = [
+      discoveryItem({ id: "dq-older", holdReason: "no_genre_evidence", lastSeenAt: "2026-09-06T10:00:00+02:00" }),
+      discoveryItem({ id: "dq-newer", holdReason: "no_genre_evidence", lastSeenAt: "2026-09-06T20:00:00+02:00" }),
+    ];
+    const sourceSync = new Map([["src-test", "2026-09-06T10:00:00+02:00"]]);
+    const groups = groupAdminQueueRows(items, sourceSync, NOW);
+    expect(groups.insufficient.map((i) => i.id)).toEqual(["dq-newer", "dq-older"]);
+  });
+
+  it("Past/stale sorts most-recently-relevant first (most recent probable date first)", () => {
+    const items = [
+      discoveryItem({ id: "dq-long-past", lastSeenAt: "2026-08-01T00:00:00+02:00", probableStart: "2026-08-01T22:00:00+02:00" }),
+      discoveryItem({ id: "dq-recent-past", lastSeenAt: "2026-09-05T00:00:00+02:00", probableStart: "2026-09-05T22:00:00+02:00" }),
+    ];
+    const sourceSync = new Map([["src-test", "2026-09-06T10:00:00+02:00"]]);
+    const groups = groupAdminQueueRows(items, sourceSync, NOW);
+    expect(groups.past_stale.map((i) => i.id)).toEqual(["dq-recent-past", "dq-long-past"]);
+  });
+
+  it("a row that has moved out of the pending set (e.g. after Publish/Ignore) is absent from every group, since only pending items are ever passed in", () => {
+    // admin/page.tsx pre-filters to status === "pending" before calling
+    // groupAdminQueueRows — this documents that contract directly: an item
+    // simply isn't in the input once published/ignored, so it can't land
+    // in Needs Review or any other pending-only tab.
+    const stillPending = [discoveryItem({ id: "dq-1" })];
+    const groups = groupAdminQueueRows(stillPending, new Map([["src-test", "2026-09-06T10:00:00+02:00"]]), NOW);
+    expect(groups.needs_review.map((i) => i.id)).toEqual(["dq-1"]);
+
+    const afterPublish: DiscoveryQueueItem[] = []; // the published row is no longer status "pending"
+    const groupsAfter = groupAdminQueueRows(afterPublish, new Map([["src-test", "2026-09-06T10:00:00+02:00"]]), NOW);
+    expect(groupsAfter.needs_review).toEqual([]);
+  });
 });
 
 describe("PUBLISHED tab resolution", () => {
@@ -291,6 +346,22 @@ describe("PUBLISHED tab resolution", () => {
 
   it("a pending row is never resolved by resolvePublishedCanonicalEventId", () => {
     expect(resolvePublishedCanonicalEventId(discoveryItem({ status: "pending" }), [eventRecord()])).toBeNull();
+  });
+
+  it("excludes a row whose canonical event is now admin-unpublished — real Production case, Jasho Club // Poolen Outside: its discoveryQueue row stays status=published forever (admin unpublish never rewrites it), so without this filter it would show in both PUBLISHED and UNPUBLISHED BY ADMIN at once", () => {
+    const item = discoveryItem({ id: "dq-jasho", status: "published", sourceId: "src-test", sourceUrl: "https://example.com/events/1" });
+    const events = [
+      eventRecord({
+        id: "e-jasho",
+        title: "Jasho Club // Poolen Outside",
+        canonicalSourceId: "src-test",
+        officialEventUrl: "https://example.com/events/1",
+        published: false,
+        adminUnpublishReason: "cancelled",
+        adminUnpublishedAt: "2026-09-06T09:00:00+02:00",
+      }),
+    ];
+    expect(buildPublishedQueueRows([item], events, new Map())).toEqual([]);
   });
 });
 
@@ -328,5 +399,14 @@ describe("deriveAdminUnpublishedRows", () => {
   it("never mixes an ordinary rejected/held discoveryQueue candidate into this list — it only ever reads events.adminUnpublishReason", () => {
     const events = [eventRecord({ adminUnpublishReason: null })];
     expect(deriveAdminUnpublishedRows(events, new Map(), new Map())).toEqual([]);
+  });
+
+  it("sorts most recently unpublished first (Section 6)", () => {
+    const events = [
+      eventRecord({ id: "e-older", adminUnpublishReason: "cancelled", adminUnpublishedAt: "2026-09-01T09:00:00+02:00" }),
+      eventRecord({ id: "e-newer", adminUnpublishReason: "duplicate", adminUnpublishedAt: "2026-09-06T09:00:00+02:00" }),
+    ];
+    const rows = deriveAdminUnpublishedRows(events, new Map(), new Map());
+    expect(rows.map((r) => r.eventId)).toEqual(["e-newer", "e-older"]);
   });
 });
