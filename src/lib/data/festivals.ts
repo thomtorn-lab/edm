@@ -63,7 +63,7 @@ export const FESTIVALS: FestivalRecord[] = [
     country: "Belgium",
     location: "Boom",
     typicalMonth: "July",
-    edition: confirmed("17–19 & 24–26 Jul 2027"),
+    edition: datesTBA(),
     genres: ["house", "trance", "electronic-other"],
     description: "The largest mainstage electronic festival in the world, spread across two summer weekends in Boom.",
     officialUrl: "https://www.tomorrowland.com/",
