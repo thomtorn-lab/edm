@@ -657,6 +657,40 @@ export const VENUES: Venue[] = [
     venueProfile: null,
   },
   {
+    // Refshaleøen neutral venue model (2026-09-07): registered to give the
+    // shared outdoor festival/event field on Refshaleøen its own neutral
+    // canonical identity, separate from any one festival brand. Real raw
+    // evidence for the physical site (KultuNaut's live "Karrusel 2027"
+    // listing, ArrNr 20288648) gives its venue as "Copenhell festivalplads"
+    // at this exact address — but that raw string is deliberately NOT used
+    // anywhere here (name, alias, or description): Copenhell is a rock
+    // festival, and its source-specific place label is not an acceptable
+    // public identity for this neutral electronic-event location. "(ved
+    // Hangaren)" is geographic disambiguation only — this is a standalone
+    // venue, not a v-hangaren room or alias, and Hangaren is not its parent.
+    // Deliberately NO aliases: no live source has ever emitted bare
+    // "Refshaleøen" as a raw venue string, and adding it speculatively could
+    // wrongly absorb an unrelated Refshaleøen location in the future (real
+    // example already on file: KultuNaut's "Sønder Hoved, Refshaleøen" is a
+    // distinct place with no evidence it's this same site). Karrusel 2027
+    // (dq-8f24b209) is therefore deliberately left unresolved by automatic
+    // string matching — it resolves only via an admin's explicit venue
+    // selection at publish time (src/db/writes.ts's publishDiscoveryItem),
+    // the same generalized mechanism every other manually-resolved
+    // Discovery Queue row already uses.
+    id: "v-refshaleoen-ved-hangaren",
+    slug: "refshaleoen-ved-hangaren",
+    name: "Refshaleøen (ved Hangaren)",
+    aliases: [],
+    address: "Refshalevej 183, 1432 København K",
+    city: "Copenhagen",
+    postalCode: "1432",
+    websiteUrl: null,
+    description: "Outdoor event area on Refshaleøen near Hangaren, used for open-air festivals and events.",
+    shortDescription: null,
+    venueProfile: null,
+  },
+  {
     id: "v-kube",
     slug: "kube",
     name: "KU.BE",
