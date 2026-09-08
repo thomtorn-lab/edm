@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getAllEventsAdmin, getVenues } from "@/lib/queries";
+import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createEvent, insertDiscoveryItem } from "@/db/writes";
 import { notifyDiscoveryQueueInsert } from "@/lib/discoveryNotification";
+import { classifyAdminQueueRow, mapPendingDiscoveryQueueForDedup } from "@/lib/adminQueue";
+import { findBestDuplicateMatch } from "@/lib/dedup";
 import type { RawCandidateEvent } from "@/lib/adapters/types";
 
 /**
@@ -72,7 +74,11 @@ export async function POST(request: NextRequest) {
     venueName: null,
     officialEventUrl: parsed.toString(),
     ticketUrl: null,
-    facebookUrl: parsed.hostname.includes("facebook.com") ? parsed.toString() : null,
+    // Facebook decision (unified event create/edit model, 2026-09-08):
+    // Facebook is no longer a distinct public link role (src/lib/links.ts) —
+    // a pasted Facebook event URL is already carried as officialEventUrl
+    // above, so setting facebookUrl here too would only ever duplicate it.
+    facebookUrl: null,
     residentAdvisorUrl: parsed.hostname.includes("ra.co") ? parsed.toString() : null,
     imageUrl: image,
     priceFrom: null,
@@ -80,7 +86,7 @@ export async function POST(request: NextRequest) {
     genreConfidenceHint: null,
   };
 
-  const [venues, allEvents] = await Promise.all([getVenues(), getAllEventsAdmin()]);
+  const [venues, allEvents, discoveryRows] = await Promise.all([getVenues(), getAllEventsAdmin(), getDiscoveryQueueForAdmin()]);
   const existing = allEvents.map((e) => ({
     id: e.id,
     title: e.title,
@@ -91,6 +97,32 @@ export async function POST(request: NextRequest) {
   }));
 
   const result = runIngestionPipeline(raw, { venues, existingEvents: existing });
+
+  // Duplicate-DQ-candidate check (unified event create/edit model,
+  // 2026-09-08 — Karrusel 2027 gap): runIngestionPipeline's own dedup only
+  // ever sees canonical `events` rows (via `existing` above) — a pending
+  // discovery_queue candidate was structurally invisible to it. This is a
+  // SEPARATE, second check against pending DQ rows, surfaced as its own
+  // field (never conflated with result.duplicateOfEventId, which has real
+  // merge semantics against a canonical event id — merging into a DQ row
+  // isn't a supported operation). Warning only; never auto-merged.
+  const duplicateDiscoveryQueueMatch = raw.startDatetime
+    ? findBestDuplicateMatch(
+        {
+          title: raw.title,
+          artists: result.normalizedArtists,
+          venueId: result.resolvedVenueId,
+          subVenue: result.resolvedSubVenue,
+          startDatetime: raw.startDatetime,
+          sourceId: raw.sourceId,
+          officialEventUrl: raw.officialEventUrl,
+          ticketUrl: raw.ticketUrl,
+          residentAdvisorUrl: raw.residentAdvisorUrl,
+        },
+        mapPendingDiscoveryQueueForDedup(discoveryRows, venues),
+      )
+    : null;
+  const duplicateDiscoveryQueueId = duplicateDiscoveryQueueMatch?.match.id ?? null;
 
   // Persist immediately, per the quality gate's decision — a page refresh
   // must not lose the analysis, and the review queue is where the admin
@@ -127,18 +159,28 @@ export async function POST(request: NextRequest) {
       },
       "admin-paste",
     );
-    return NextResponse.json({ raw, result, persisted: { kind: "event", id: eventId } });
+    return NextResponse.json({ raw, result, persisted: { kind: "event", id: eventId }, duplicateDiscoveryQueueId });
   }
 
+  const now = new Date();
   const queueId = `dq-${randomUUID().slice(0, 8)}`;
+  const overallConfidence =
+    result.decision === "auto_publish" ? "high" : result.decision === "review_queue" ? "medium" : "low";
   const inserted = await insertDiscoveryItem({
     id: queueId,
     probableTitle: raw.title || "(untitled)",
     probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
     probableEnd: raw.endDatetime ? new Date(raw.endDatetime) : null,
     probableTicketUrl: raw.ticketUrl,
+    // Unified event create/edit model (2026-09-08): Analyze's own extraction
+    // already found this — previously discarded before ever reaching the
+    // queue row, forcing the admin to retype a URL the system already had.
+    probableOfficialEventUrl: raw.officialEventUrl,
+    probableResidentAdvisorUrl: raw.residentAdvisorUrl,
+    description: raw.description,
     probableFree: raw.priceFrom === 0,
     probableVenueName: raw.venueName,
+    probableSubVenue: result.resolvedSubVenue,
     sourceName: "Admin: Add event from URL",
     sourceUrl: raw.sourceUrl,
     detectedLineup: result.normalizedArtists,
@@ -146,12 +188,51 @@ export async function POST(request: NextRequest) {
     genreConfidence: result.genreConfidence,
     suspectedDuplicateOfEventId: result.duplicateOfEventId,
     missingFields: result.missingFields,
-    overallConfidence: result.decision === "review_queue" ? "medium" : "low",
+    overallConfidence,
+    lastSeenAt: now,
+    venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
+    venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason,
+    holdReason: result.holdReason,
   });
 
   // Single item, not a batch — safe to await directly (never throws; see
   // notifyDiscoveryQueueInsert).
   await notifyDiscoveryQueueInsert(inserted);
 
-  return NextResponse.json({ raw, result, persisted: { kind: "discovery", id: queueId } });
+  // Bucket handoff (unified event create/edit model, 2026-09-08 — Section
+  // 10/5): classifyAdminQueueRow is the SAME single source of truth
+  // admin/page.tsx uses for the 5 pending-row tabs — reused here rather than
+  // re-deriving bucket logic, so this can never disagree with which tab the
+  // row actually renders in. sourceId: null (this row has none — admin
+  // "Add event from URL" is never a registered source) is what makes
+  // classifyAdminQueueRow route it through its own admin-originated-row
+  // handling: NEEDS_REVIEW regardless of missing date/venue/other fields,
+  // never PAST_STALE merely because there's no source to compare freshness
+  // against — see that function's own doc comment for the addendum this
+  // fixes (an Analyze-created row previously landed in "Past / stale"
+  // unconditionally, the least likely tab for an admin to check right after
+  // using the tool that just created it). lastCompleteSyncAt here is
+  // consequently unused for this row, but still passed for shape parity
+  // with every other caller.
+  const category = classifyAdminQueueRow(
+    {
+      overallConfidence: inserted.overallConfidence,
+      holdReason: result.holdReason,
+      venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
+      missingFields: inserted.missingFields,
+      probableStart: raw.startDatetime,
+      probableEnd: raw.endDatetime,
+      lastSeenAt: now.toISOString(),
+      sourceId: null,
+    },
+    { lastCompleteSyncAt: null, now },
+  );
+
+  return NextResponse.json({
+    raw,
+    result,
+    persisted: { kind: "discovery", id: queueId },
+    category,
+    duplicateDiscoveryQueueId,
+  });
 }

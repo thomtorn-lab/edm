@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import DiscoveryQueue from "./DiscoveryQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
 import type { AdminQueueCategory, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
@@ -32,8 +33,22 @@ interface Props {
  * (that's classifyAdminQueueRow's job, see src/lib/adminQueue.ts), it only
  * decides which already-classified list to show.
  */
+const VALID_TABS: Tab[] = ["needs_review", "venue_blocked", "insufficient", "rejected", "past_stale", "published", "admin_unpublished"];
+
 export default function AdminQueueTabs({ groups, published, adminUnpublished, venues }: Props) {
-  const [tab, setTab] = useState<Tab>("needs_review");
+  // Direct handoff (unified event create/edit model, 2026-09-08 — Section
+  // 5/10): AddEventFromUrl and AdminQueueTabs are sibling client components
+  // on the same server-rendered /admin page (see src/app/admin/page.tsx) —
+  // Analyze's own "Saved to: {bucket}" link sets ?tab=<category>#dq-<id> and
+  // this reads its INITIAL tab straight from that query param, so a freshly
+  // analyzed candidate opens directly on the tab it actually landed in
+  // instead of defaulting to "Needs review" and leaving the admin to search.
+  // Read once on mount only (an admin's own later clicks inside this
+  // component must not be fought back to the URL's original tab).
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const initialTab: Tab = requestedTab && (VALID_TABS as string[]).includes(requestedTab) ? (requestedTab as Tab) : "needs_review";
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "needs_review", label: ADMIN_QUEUE_CATEGORY_LABELS.needs_review, count: groups.needs_review.length },

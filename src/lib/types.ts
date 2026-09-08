@@ -258,6 +258,10 @@ export interface DiscoveryQueueItem {
   probableTicketUrl: string | null;
   /** Admin-entered Official Event URL for an unpublished candidate — see src/db/schema.ts's probableOfficialEventUrl column comment. */
   probableOfficialEventUrl: string | null;
+  /** Admin-entered Resident Advisor URL for an unpublished candidate — see src/db/schema.ts's probableResidentAdvisorUrl column comment. */
+  probableResidentAdvisorUrl: string | null;
+  /** Admin-entered/extracted description for an unpublished candidate — see src/db/schema.ts's description column comment. */
+  description: string | null;
   probableFree: boolean;
   probableVenueName: string | null;
   /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06) — see src/db/schema.ts's column comment. */

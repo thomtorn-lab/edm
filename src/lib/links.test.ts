@@ -464,3 +464,29 @@ describe("FREE admission CTA", () => {
     expect(showFreeCta(event({ priceFrom: 0, residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(false);
   });
 });
+
+describe("getExternalLinks — Facebook decision (unified event create/edit model, 2026-09-08): Facebook is never its own public link role", () => {
+  it("renders a Facebook URL as Official event when officialEventUrl is unset — 'if a Facebook URL is the official event page, use it as Official Event URL'", () => {
+    const links = getExternalLinks(event({ officialEventUrl: null, facebookUrl: "https://facebook.com/events/123" }));
+    expect(links).toEqual([{ label: "Official event", href: "https://facebook.com/events/123", primary: true }]);
+  });
+
+  it("never shows a separate Facebook CTA once a real officialEventUrl exists — no third chip alongside Official event/Tickets", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://venue.dk/event/1", ticketUrl: "https://billetto.dk/e/x", facebookUrl: "https://facebook.com/events/123" }),
+    );
+    expect(links.map((l) => l.label)).toEqual(["Official event", "Tickets"]);
+    expect(links.some((l) => l.href === "https://facebook.com/events/123")).toBe(false);
+  });
+
+  it("a Facebook fallback never gets suppressed by the Source-suppression rule the way a genuine 'Source' entry would — it renders as a real primary destination", () => {
+    const links = getExternalLinks(event({ officialEventUrl: null, facebookUrl: "https://facebook.com/events/123", ticketUrl: "https://billetto.dk/e/x" }));
+    expect(links.map((l) => l.label).sort()).toEqual(["Official event", "Tickets"]);
+    expect(links.find((l) => l.label === "Official event")).toEqual({ label: "Official event", href: "https://facebook.com/events/123", primary: true });
+  });
+
+  it("no facebookUrl and no officialEventUrl: no Official event entry at all (nothing to fall back to)", () => {
+    const links = getExternalLinks(event({ officialEventUrl: null, facebookUrl: null, ticketUrl: "https://billetto.dk/e/x" }));
+    expect(links.map((l) => l.label)).toEqual(["Tickets"]);
+  });
+});
