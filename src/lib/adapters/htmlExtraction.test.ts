@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToText, normalizeExtractedText, sanitizeExtractedTitle, stripBareUrls, truncateAtBoundary } from "./htmlExtraction";
+import { htmlToText, isSameHost, normalizeExtractedText, sanitizeExtractedTitle, stripBareUrls, truncateAtBoundary } from "./htmlExtraction";
 
 describe("htmlToText", () => {
   it("treats an attributed <br> the same as a bare one (real Pumpehuset lineup evidence)", () => {
@@ -227,5 +227,26 @@ describe("normalizeExtractedText", () => {
 
   it("returns null/empty input unchanged rather than throwing", () => {
     expect(normalizeExtractedText("")).toBe("");
+  });
+});
+
+describe("isSameHost (admin + public link integrity, 2026-09-08 — guards an adapter against mistaking its own site's internal redirect for a genuine external destination)", () => {
+  it("true for the exact same host", () => {
+    expect(isSameHost("https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=1", "https://www.kultunaut.dk/")).toBe(true);
+  });
+
+  it("true regardless of a www. prefix on either side", () => {
+    expect(isSameHost("https://kultunaut.dk/perl/billet/type-nynaut?ArrNr=1", "https://www.kultunaut.dk/")).toBe(true);
+    expect(isSameHost("https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=1", "https://kultunaut.dk/")).toBe(true);
+  });
+
+  it("false for a genuinely different host, even a similarly-named one", () => {
+    expect(isSameHost("https://billetto.dk/e/some-event", "https://www.kultunaut.dk/")).toBe(false);
+    expect(isSameHost("https://kultunaut.dk.evil.example/", "https://www.kultunaut.dk/")).toBe(false);
+  });
+
+  it("false (never throws) for a malformed URL on either side", () => {
+    expect(isSameHost("not a url", "https://www.kultunaut.dk/")).toBe(false);
+    expect(isSameHost("https://www.kultunaut.dk/", "not a url")).toBe(false);
   });
 });

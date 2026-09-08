@@ -8,6 +8,7 @@ import { getGenre, GENRES } from "@/lib/taxonomy";
 import { resolveVenue } from "@/lib/normalize";
 import { isProtectedSubVenueName } from "@/lib/venueCreation";
 import { formatFullDateLabel, formatIsoDateForInput, formatTimeLabel } from "@/lib/format";
+import { isValidHttpUrl } from "@/lib/urlValidation";
 
 interface Props {
   items: DiscoveryQueueItem[];
@@ -43,6 +44,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   const [dateTouched, setDateTouched] = useState(false);
   const [endLocal, setEndLocal] = useState(item.probableEnd ? toLocalInput(item.probableEnd) : "");
   const [endTouched, setEndTouched] = useState(false);
+  const [officialEventUrl, setOfficialEventUrl] = useState(item.probableOfficialEventUrl ?? "");
   const [ticketUrl, setTicketUrl] = useState(item.probableTicketUrl ?? "");
   const [free, setFree] = useState(item.probableFree);
   const [venueNameText, setVenueNameText] = useState(item.probableVenueName ?? "");
@@ -150,12 +152,23 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       setError("End time isn't a complete, valid date — use the picker, finish typing it, or clear it explicitly.");
       return;
     }
+    const officialEventUrlTrimmed = officialEventUrl.trim();
+    if (officialEventUrlTrimmed && !isValidHttpUrl(officialEventUrlTrimmed)) {
+      setError("Official event URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
+    const ticketUrlTrimmed = ticketUrl.trim();
+    if (ticketUrlTrimmed && !isValidHttpUrl(ticketUrlTrimmed)) {
+      setError("Ticket URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
     const patch: Record<string, unknown> = {
       probableTitle: title,
       probableVenueName: venueNameText || null,
       detectedLineup: lineup.split(",").map((s) => s.trim()).filter(Boolean),
       predictedGenre: genre || null,
-      probableTicketUrl: ticketUrl || null,
+      probableOfficialEventUrl: officialEventUrlTrimmed || null,
+      probableTicketUrl: ticketUrlTrimmed || null,
       probableFree: free,
     };
     if (startLocal) patch.probableStart = new Date(startLocal).toISOString();
@@ -192,6 +205,14 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
         <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="text-accent-strong underline decoration-dotted underline-offset-2">
           Source
         </a>
+        {item.probableOfficialEventUrl && (
+          <>
+            {" · "}
+            <a href={item.probableOfficialEventUrl} target="_blank" rel="noreferrer" className="text-accent-strong underline decoration-dotted underline-offset-2">
+              Official event
+            </a>
+          </>
+        )}
         {item.probableTicketUrl && (
           <>
             {" · "}
@@ -242,6 +263,10 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
               }}
               className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
             />
+          </div>
+          <div>
+            <label htmlFor={`dq-official-url-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Official event URL (optional)</label>
+            <input id={`dq-official-url-${item.id}`} value={officialEventUrl} onChange={(e) => setOfficialEventUrl(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
           </div>
           <div>
             <label htmlFor={`dq-ticket-url-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Ticket URL (optional)</label>

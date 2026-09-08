@@ -50,6 +50,7 @@ function makeItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueIt
     probableStart: "2026-09-20T20:00:00.000Z",
     probableEnd: null,
     probableTicketUrl: null,
+    probableOfficialEventUrl: null,
     probableFree: false,
     probableVenueName: "Suporama",
     probableSubVenue: null,
@@ -416,6 +417,65 @@ describe("DiscoveryQueue — End time / Ticket URL / FREE fields in the real pre
     const [, options] = fetchMock.mock.calls[0];
     const { patch } = JSON.parse((options as { body: string }).body);
     expect(patch).not.toHaveProperty("probableEnd");
+  });
+});
+
+describe("DiscoveryQueue — Official Event URL field (admin + public link integrity, 2026-09-08 — this field previously did not exist at all, so an admin could never add it before publish)", () => {
+  afterEach(cleanup);
+
+  it("lets an admin add an Official Event URL on a candidate that had none — before it is ever published — and sends it in the PATCH alongside Ticket URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Official event URL/), { target: { value: "https://real-official-venue.dk/event/xyz" } });
+    fireEvent.change(screen.getByLabelText(/Ticket URL/), { target: { value: "https://tickets.example.com/kaj" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, options] = fetchMock.mock.calls[0];
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.probableOfficialEventUrl).toBe("https://real-official-venue.dk/event/xyz");
+    expect(patch.probableTicketUrl).toBe("https://tickets.example.com/kaj");
+  });
+
+  it("pre-fills Official Event URL from the candidate's existing value when opening the editor", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(
+      <DiscoveryQueue
+        items={[makeItem({ probableVenueName: "Culture Box", probableOfficialEventUrl: "https://real-official-venue.dk/event/xyz" })]}
+        venues={VENUES}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Official event URL/) as HTMLInputElement).value).toBe("https://real-official-venue.dk/event/xyz");
+  });
+
+  it("rejects a non-http(s) Official Event URL client-side, same rule as Ticket URL, and does not call fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Official event URL/), { target: { value: "not a url" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/Official event URL isn't a valid/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows an Official event link in the row summary only when one is known, alongside Source and Tickets", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(
+      <DiscoveryQueue
+        items={[makeItem({ probableOfficialEventUrl: "https://real-official-venue.dk/event/xyz", probableTicketUrl: "https://tickets.example.com/1" })]}
+        venues={VENUES}
+      />,
+    );
+    expect((screen.getByRole("link", { name: "Official event" }) as HTMLAnchorElement).href).toBe("https://real-official-venue.dk/event/xyz");
+    expect((screen.getByRole("link", { name: "Tickets" }) as HTMLAnchorElement).href).toBe("https://tickets.example.com/1");
   });
 });
 

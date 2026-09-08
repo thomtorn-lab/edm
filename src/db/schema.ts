@@ -225,6 +225,20 @@ export const discoveryQueue = pgTable("discovery_queue", {
    */
   probableEnd: timestamp("probable_end", { withTimezone: true }),
   probableTicketUrl: text("probable_ticket_url"),
+  /**
+   * Admin-entered Official Event URL for an unpublished candidate (admin +
+   * public link integrity, 2026-09-08) — mirrors probableTicketUrl exactly:
+   * the DQ editor previously had no field for this at all, so admin review
+   * could never set a real official-event link before publish (it always
+   * defaulted to this row's own sourceUrl — the discovery page itself —
+   * carried into the canonical event unconditionally). Carried onto the
+   * created event's officialEventUrl by publishDiscoveryItem (preferred
+   * over sourceUrl when set), and — like every other admin-touched
+   * DiscoveryEditPatch field — recorded in this row's own overriddenFields
+   * the moment it's edited, then threaded into the new event's initial
+   * overriddenFields so a later sync can never silently revert it.
+   */
+  probableOfficialEventUrl: text("probable_official_event_url"),
   probableFree: boolean("probable_free").notNull().default(false),
   probableVenueName: text("probable_venue_name"),
   /**

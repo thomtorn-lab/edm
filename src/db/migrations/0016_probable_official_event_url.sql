@@ -1,0 +1,1 @@
+ALTER TABLE "discovery_queue" ADD COLUMN "probable_official_event_url" text;

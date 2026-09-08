@@ -128,6 +128,7 @@ function discoveryItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQu
     probableStart: "2026-09-10T22:00:00+02:00",
     probableEnd: "2026-09-11T04:00:00+02:00",
     probableTicketUrl: null,
+    probableOfficialEventUrl: null,
     probableFree: false,
     probableVenueName: "Test Venue",
     probableSubVenue: null,

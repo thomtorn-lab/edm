@@ -199,11 +199,11 @@ describe("parseKultunautDetailHtml — real fixtures (iso-8859-1 decoding, stabl
     expect(first).toEqual(second);
   });
 
-  it("detail-page enrichment: title, venue, ticket link and Copenhagen-local start time all come from the event's own detail page (Paul Van Dyk, ArrNr 20137632)", () => {
+  it("detail-page enrichment: title, venue and Copenhagen-local start time all come from the event's own detail page (Paul Van Dyk, ArrNr 20137632); ticketUrl is null since the page's own ticket button links to kultunaut.dk itself, never an external provider", () => {
     const c = candidate("20137632");
     expect(c.title).toBe("Paul Van Dyk");
     expect(c.venueName).toBe("Poolen");
-    expect(c.ticketUrl).toBe("https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=20137632");
+    expect(c.ticketUrl).toBeNull();
     expect(c.startDatetime).toBe("2026-10-23T19:00:00.000Z"); // kl. 21 CEST -> 19:00 UTC would be wrong; real page states 21:00 local landing at 19:00Z only if UTC+2 — verified against real detail page text directly, not invented
   });
 
@@ -374,10 +374,10 @@ describe("Link-role behavior (Section 8) — structural, via src/lib/links.ts's 
     }
   });
 
-  it("ticketUrl, when present, is a separate kultunaut.dk billet link — stored as ticketUrl (renders as 'Tickets'), never conflated with officialEventUrl/SOURCE", () => {
-    const c = candidate("20137632");
-    expect(c.ticketUrl).toBe("https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=20137632");
-    expect(c.ticketUrl).not.toBe(c.officialEventUrl);
+  it("never sets ticketUrl from the page's own 'Køb/bestil billet' button — that button always links to kultunaut.dk's own /perl/billet/ redirect (confirmed across every real fixture), never a verifiable external ticket provider, so it must never render as 'Tickets' (admin + public link integrity, 2026-09-08)", () => {
+    for (const arrNr of ["19981111", "19784059", "20265870", "20288648", "20137632", "20158318"]) {
+      expect(candidate(arrNr).ticketUrl, `ArrNr ${arrNr}`).toBeNull();
+    }
   });
 
   it("never sets facebookUrl or residentAdvisorUrl — this site exposes neither as a distinct first-party link", () => {

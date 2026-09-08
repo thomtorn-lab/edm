@@ -188,6 +188,63 @@ describe("getExternalLinks — event-link role classification (Zoumer reference 
   });
 });
 
+describe("getExternalLinks — KultuNaut role integrity (admin + public link integrity, 2026-09-08)", () => {
+  const kultunautUrl = "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137632";
+
+  it("1/2/3. canonical KultuNaut, untouched officialEventUrl (its own page, the sync default) -> Source only, never Official event or Tickets", () => {
+    const links = getExternalLinks(event({ officialEventUrl: kultunautUrl, canonicalSourceId: "src-kultunaut" }));
+    expect(links).toEqual([{ label: "Source", href: kultunautUrl, primary: true }]);
+  });
+
+  it("4. canonical KultuNaut + a distinct external real ticket URL -> Tickets CTA, KultuNaut itself never promoted", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: kultunautUrl, ticketUrl: "https://billetto.dk/e/nico-moreno-123", canonicalSourceId: "src-kultunaut" }),
+    );
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/nico-moreno-123", primary: false }]);
+  });
+
+  it("5. canonical KultuNaut + a MANUAL (overriddenFields-tracked) officialEventUrl -> Official event CTA, not downgraded to Source by canonicalSourceId", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://official-venue.dk/event/xyz",
+        canonicalSourceId: "src-kultunaut",
+        overriddenFields: ["officialEventUrl"],
+      }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://official-venue.dk/event/xyz", primary: true }]);
+  });
+
+  it("5b. the SAME manual officialEventUrl also survives when the event additionally has a ticketUrl — this was the literal 'link disappears' bug: Source-labeled entries get stripped whenever a Tickets/RA CTA exists, and an unfixed officialUrlRole mislabels a manual override as Source", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://official-venue.dk/event/xyz",
+        ticketUrl: "https://billetto.dk/e/nico-moreno-123",
+        canonicalSourceId: "src-kultunaut",
+        overriddenFields: ["officialEventUrl"],
+      }),
+    );
+    expect(links).toEqual([
+      { label: "Official event", href: "https://official-venue.dk/event/xyz", primary: true },
+      { label: "Tickets", href: "https://billetto.dk/e/nico-moreno-123", primary: false },
+    ]);
+  });
+
+  it("6. canonical KultuNaut + manual ticketUrl -> Tickets CTA (already correct before this fix — ticketUrl is never role-classified by source — regression guard)", () => {
+    const links = getExternalLinks(
+      event({ ticketUrl: "https://billetto.dk/e/manual-ticket", canonicalSourceId: "src-kultunaut", overriddenFields: ["ticketUrl"] }),
+    );
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/manual-ticket", primary: false }]);
+  });
+
+  it("14. bad historical same-URL data (ticketUrl literally equals the KultuNaut page URL) never renders as Tickets — collapses to the correctly-classified Source entry only", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: kultunautUrl, ticketUrl: kultunautUrl, canonicalSourceId: "src-kultunaut" }),
+    );
+    expect(links).toEqual([{ label: "Source", href: kultunautUrl, primary: true }]);
+    expect(links.some((l) => l.label === "Tickets")).toBe(false);
+  });
+});
+
 describe("getExternalLinks — Source CTA visibility rule (public source-link visibility work package, 2026-09-07)", () => {
   // SOURCE is a CTA fallback only: it must never appear as an equal
   // alternative next to a genuine Official event/Tickets destination, but

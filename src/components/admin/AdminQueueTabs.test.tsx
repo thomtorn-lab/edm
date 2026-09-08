@@ -21,6 +21,7 @@ function makeItem(id: string, title: string): DiscoveryQueueItem {
     probableStart: "2026-09-20T20:00:00.000Z",
     probableEnd: null,
     probableTicketUrl: null,
+    probableOfficialEventUrl: null,
     probableFree: false,
     probableVenueName: "Culture Box",
     probableSubVenue: null,

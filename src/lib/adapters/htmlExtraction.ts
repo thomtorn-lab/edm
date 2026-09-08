@@ -210,3 +210,28 @@ const DANISH_LETTERS = /[æøåÆØÅ]/;
 export function isLikelyDanish(text: string): boolean {
   return DANISH_LETTERS.test(text);
 }
+
+/**
+ * True when `url` resolves to the same host as `baseUrl` (www.-insensitive).
+ * Source-agnostic guard against a discovery/aggregator adapter mistaking its
+ * OWN site's internal redirect/CTA link for a genuine external destination
+ * (admin + public link integrity, 2026-09-08 — real bug found live:
+ * kultunautAdapter's "Køb/bestil billet" button always links to
+ * kultunaut.dk's own `/perl/billet/` page, never an external ticket
+ * provider directly — every real fixture confirms this, and robots.txt
+ * disallows fetching that path to see where it ultimately redirects). Any
+ * adapter whose site links onward through its own domain before reaching a
+ * real external ticket page should check the extracted URL against its own
+ * base URL with this before assigning it a role (ticketUrl/officialEventUrl
+ * as "official") a same-domain link never actually earns — see
+ * SOURCE_ONBOARDING.md's link-role invariant.
+ */
+export function isSameHost(url: string, baseUrl: string): boolean {
+  try {
+    const a = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    const b = new URL(baseUrl).hostname.toLowerCase().replace(/^www\./, "");
+    return a === b;
+  } catch {
+    return false;
+  }
+}
