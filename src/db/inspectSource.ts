@@ -1127,6 +1127,7 @@ async function modeAdminQueueAudit(client: Client) {
         probableStart: r.probable_start ? new Date(r.probable_start as string).toISOString() : null,
         probableEnd: r.probable_end ? new Date(r.probable_end as string).toISOString() : null,
         lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at as string).toISOString() : null,
+        sourceId: (r.source_id as string | null) ?? null,
       },
       { lastCompleteSyncAt, now },
     );

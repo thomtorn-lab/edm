@@ -5,6 +5,7 @@ import {
   groupAdminQueueRows,
   buildPublishedQueueRows,
   resolvePublishedCanonicalEventId,
+  mapPendingDiscoveryQueueForDedup,
   type AdminQueueClassifiable,
 } from "./adminQueue";
 import type { DiscoveryQueueItem, EventRecord, Source, Venue } from "./types";
@@ -33,6 +34,13 @@ function row(overrides: Partial<AdminQueueClassifiable> = {}): AdminQueueClassif
     probableStart: "2026-09-10T22:00:00+02:00",
     probableEnd: "2026-09-11T04:00:00+02:00",
     lastSeenAt: "2026-09-06T10:00:00+02:00", // >= lastCompleteSyncAt -> current
+    // A real source-ingested row by default — every existing precedence
+    // test in this describe block exercises the freshness/venue-block path,
+    // which only applies to rows with a registered source (see
+    // classifyAdminQueueRow's own "ADMIN-ORIGINATED ROWS" doc comment). The
+    // admin-originated (sourceId: null) path has its own dedicated describe
+    // block below.
+    sourceId: "src-test",
     ...overrides,
   };
 }
@@ -121,6 +129,66 @@ describe("classifyAdminQueueRow", () => {
   });
 });
 
+describe("classifyAdminQueueRow — admin-originated rows (unified event create/edit model addendum, 2026-09-08): manually created/analyzed events must land in NEEDS REVIEW until the admin resolves them, never PAST_STALE merely from missing data", () => {
+  // sourceId: null is the row() fixture's own signal for "no registered
+  // source" (the schema's own contract — see discoveryQueue.sourceId's
+  // column comment) — exactly what admin "Add event from URL"/Analyze
+  // produces. ctx.lastCompleteSyncAt is deliberately null here too, the
+  // same as a real admin-originated row always has (there is no source to
+  // look one up from) — confirming the fix doesn't depend on the caller
+  // happening to pass a favorable ctx.
+  const NO_SYNC = { lastCompleteSyncAt: null, now: NOW };
+
+  it("1. no date at all -> NEEDS_REVIEW, never PAST_STALE — 'unknown date' is not evidence of staleness", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: null, probableStart: null, probableEnd: null }), NO_SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("2. unresolved venue -> NEEDS_REVIEW, never VENUE_BLOCKED — the admin-originated override collapses every incompleteness into one actionable tab", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: null, venueResolvedDecision: null, holdReason: "incomplete_data" }), NO_SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("3. both date and venue missing -> still NEEDS_REVIEW", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ sourceId: null, probableStart: null, probableEnd: null, venueResolvedDecision: null, holdReason: "incomplete_data" }),
+        NO_SYNC,
+      ),
+    ).toBe("needs_review");
+  });
+
+  it("4. a genuinely past manually-analyzed event (a real, known date that has already happened) may still be PAST_STALE — the override only ever suppresses staleness from UNKNOWN data, never from real evidence", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ sourceId: null, probableStart: "2020-01-01T20:00:00+01:00", probableEnd: "2020-01-02T02:00:00+01:00" }),
+        NO_SYNC,
+      ),
+    ).toBe("past_stale");
+  });
+
+  it("an upcoming, fully-resolved admin-originated row is NEEDS_REVIEW exactly like before — this is not a behavior change for the common case", () => {
+    expect(classifyAdminQueueRow(row({ sourceId: null }), NO_SYNC)).toBe("needs_review");
+  });
+
+  it("5. a normal source-ingested row (real sourceId) retains its EXISTING bucket semantics — no global weakening of PAST_STALE for source-ingested events. Same stale-freshness input that would be NEEDS_REVIEW if sourceId were null still resolves PAST_STALE here.", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ sourceId: "src-test", probableStart: null, probableEnd: null, lastSeenAt: "2026-09-01T00:00:00+02:00" }),
+        SYNC, // lastSeenAt predates SYNC.lastCompleteSyncAt -> stale, unchanged from before this addendum
+      ),
+    ).toBe("past_stale");
+  });
+
+  it("5b. a normal source-ingested row with an unresolved venue still lands in VENUE_BLOCKED, not NEEDS_REVIEW — the admin-originated override never applies when sourceId is set", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-test", venueResolvedDecision: "review_queue" }), SYNC),
+    ).toBe("venue_blocked");
+  });
+});
+
 function discoveryItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueItem {
   return {
     id: "dq-1",
@@ -129,6 +197,8 @@ function discoveryItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQu
     probableEnd: "2026-09-11T04:00:00+02:00",
     probableTicketUrl: null,
     probableOfficialEventUrl: null,
+    probableResidentAdvisorUrl: null,
+    description: null,
     probableFree: false,
     probableVenueName: "Test Venue",
     probableSubVenue: null,
@@ -417,5 +487,61 @@ describe("deriveAdminUnpublishedRows", () => {
     ];
     const rows = deriveAdminUnpublishedRows(events, new Map(), new Map());
     expect(rows.map((r) => r.eventId)).toEqual(["e-newer", "e-older"]);
+  });
+});
+
+describe("mapPendingDiscoveryQueueForDedup (unified event create/edit model, 2026-09-08 — Karrusel 2027 duplicate-detection gap)", () => {
+  // Real gap this exists to fix: extract/route.ts's own dedup pool was built
+  // exclusively from canonical `events` — a pending discovery_queue row
+  // (like an earlier Karrusel 2027 candidate) was structurally invisible to
+  // Analyze's duplicate check. This mapper feeds pending DQ rows into the
+  // SAME findBestDuplicateMatch (src/lib/dedup.ts) machinery already used
+  // for canonical events.
+
+  it("maps a pending row's core fields into the DuplicateCandidate shape, resolving its venue name", () => {
+    const item = discoveryItem({
+      id: "dq-karrusel",
+      probableTitle: "Karrusel 2027",
+      probableStart: "2027-06-01T20:00:00Z",
+      probableVenueName: "Test Venue",
+      detectedLineup: ["DJ One"],
+      sourceId: "src-test",
+      probableOfficialEventUrl: "https://example.com/karrusel",
+      probableTicketUrl: "https://example.com/tickets",
+    });
+    const [mapped] = mapPendingDiscoveryQueueForDedup([item], [venue()]);
+    expect(mapped).toEqual({
+      id: "dq-karrusel",
+      title: "Karrusel 2027",
+      artists: ["DJ One"],
+      venueId: "v-1",
+      subVenue: null,
+      startDatetime: "2027-06-01T20:00:00Z",
+      sourceId: "src-test",
+      officialEventUrl: "https://example.com/karrusel",
+      ticketUrl: "https://example.com/tickets",
+      residentAdvisorUrl: null,
+    });
+  });
+
+  it("excludes a row with no resolved date — findBestDuplicateMatch is only ever run when the fresh candidate itself has one", () => {
+    const item = discoveryItem({ probableStart: null });
+    expect(mapPendingDiscoveryQueueForDedup([item], [venue()])).toEqual([]);
+  });
+
+  it("excludes an ignored row — a deliberate admin dismissal must never resurface as a duplicate warning", () => {
+    const item = discoveryItem({ status: "ignored" });
+    expect(mapPendingDiscoveryQueueForDedup([item], [venue()])).toEqual([]);
+  });
+
+  it("excludes a published/merged row — those already have a real canonical event, covered by the existing events-table dedup check", () => {
+    const item = discoveryItem({ status: "published" });
+    expect(mapPendingDiscoveryQueueForDedup([item], [venue()])).toEqual([]);
+  });
+
+  it("leaves venueId null when the venue name doesn't resolve, rather than dropping the candidate", () => {
+    const item = discoveryItem({ probableVenueName: "Some Unknown Venue" });
+    const [mapped] = mapPendingDiscoveryQueueForDedup([item], [venue()]);
+    expect(mapped.venueId).toBeNull();
   });
 });

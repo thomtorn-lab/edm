@@ -353,6 +353,8 @@ describe("publishDiscoveryItem — DQ manual Official Event/Ticket URLs (admin +
     // exact same probableTicketUrl field, unrelated to this test's focus.
     probableTicketUrl: null as string | null,
     probableOfficialEventUrl: null as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    description: null as string | null,
     overriddenFields: [] as string[],
   };
 
@@ -423,6 +425,95 @@ describe("publishDiscoveryItem — DQ manual Official Event/Ticket URLs (admin +
     )?.[0] as Record<string, unknown> | undefined;
     expect(provenanceCall?.sourceUrl).toBe(kultunautPending.sourceUrl);
     expect(provenanceCall?.sourceUrl).not.toBe("https://real-official-venue.dk/event/xyz");
+  });
+});
+
+describe("publishDiscoveryItem — description/Resident Advisor URL/expanded field parity (unified event create/edit model, 2026-09-08)", () => {
+  const kultunautPending = {
+    id: "dq-kn-1",
+    status: "pending",
+    probableTitle: "Nico Moreno",
+    probableStart: new Date("2026-09-12T22:00:00Z"),
+    probableEnd: null,
+    probableSubVenue: null,
+    detectedLineup: [] as string[],
+    predictedGenre: "techno",
+    genreConfidence: "high",
+    probableFree: false,
+    overallConfidence: "medium",
+    sourceId: "src-kultunaut",
+    sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137632",
+    suspectedDuplicateOfEventId: null,
+    probableTicketUrl: null as string | null,
+    probableOfficialEventUrl: null as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    description: null as string | null,
+    overriddenFields: [] as string[],
+  };
+
+  function eventInsertCall() {
+    return insertValuesMock.mock.calls.find(
+      (call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object),
+    )?.[0] as Record<string, unknown> | undefined;
+  }
+
+  it("DQ description transfers to the canonical event's description — previously always hardcoded null regardless of what was extracted", async () => {
+    selectResults = [[{ ...kultunautPending, description: "A night of raw techno.", overriddenFields: ["description"] }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.description).toBe("A night of raw techno.");
+  });
+
+  it("DQ manual Resident Advisor URL transfers exactly to the canonical event's residentAdvisorUrl, taking precedence over the ra.co-sourceUrl fallback", async () => {
+    selectResults = [
+      [
+        {
+          ...kultunautPending,
+          sourceUrl: "https://ra.co/events/1234567",
+          probableResidentAdvisorUrl: "https://ra.co/events/9999999",
+          overriddenFields: ["probableResidentAdvisorUrl"],
+        },
+      ],
+    ];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.residentAdvisorUrl).toBe("https://ra.co/events/9999999");
+  });
+
+  it("with no admin-entered Resident Advisor URL, falls back to the ra.co-sourceUrl heuristic exactly as before", async () => {
+    selectResults = [[{ ...kultunautPending, sourceUrl: "https://ra.co/events/1234567" }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.residentAdvisorUrl).toBe("https://ra.co/events/1234567");
+  });
+
+  it("Facebook decision: publishDiscoveryItem never sets a distinct facebookUrl on a new event — officialEventUrl already carries a Facebook-sourced URL", async () => {
+    selectResults = [[{ ...kultunautPending, sourceUrl: "https://facebook.com/events/123" }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.facebookUrl).toBeNull();
+    expect(eventInsertCall()?.officialEventUrl).toBe("https://facebook.com/events/123");
+  });
+
+  it("DQ manual title/date/venue-name/lineup/genre edits all map onto the new event's overriddenFields, surviving publish the same way the URL pair already does", async () => {
+    selectResults = [
+      [
+        {
+          ...kultunautPending,
+          overriddenFields: ["probableTitle", "probableStart", "probableEnd", "probableVenueName", "probableSubVenue", "detectedLineup", "predictedGenre"],
+        },
+      ],
+    ];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.overriddenFields).toEqual(
+      expect.arrayContaining(["title", "startDatetime", "endDatetime", "venueId", "subVenue", "artists", "primaryGenre", "subgenres"]),
+    );
   });
 });
 

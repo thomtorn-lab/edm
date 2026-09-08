@@ -619,3 +619,78 @@ describe("EventManager — Sold out / Cancelled / Postponed (event lifecycle/sta
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("EventManager — unified event create/edit model (2026-09-08): start date, artists/lineup and sub-venue now editable, same fields/labels a pre-publish edit already uses", () => {
+  afterEach(cleanup);
+
+  it("lets an admin correct the start date, and only sends it when actually touched (a round-trip through the local input must never send an unwanted no-op patch)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Date &amp; time|Date & time/), { target: { value: "2026-10-05T21:00" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.startDatetime).toBe(new Date("2026-10-05T21:00").toISOString());
+  });
+
+  it("pre-fills the start date field from the event's own startDatetime", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent({ startDatetime: "2026-09-20T20:00:00.000Z" })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const input = screen.getByLabelText(/Date &amp; time|Date & time/) as HTMLInputElement;
+    expect(input.value).not.toBe("");
+  });
+
+  it("lets an admin correct artists/lineup and sends the parsed, trimmed list", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ artists: ["Kaj"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Artists \/ lineup/), { target: { value: "Kaj, DJ Two" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.artists).toEqual(["Kaj", "DJ Two"]);
+  });
+
+  it("never sends an artists patch when the lineup is unchanged", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ artists: ["Kaj"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Kaj - Din ven i solen (v5)" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch).not.toHaveProperty("artists");
+  });
+
+  it("lets an admin correct the sub-venue/room, same field DiscoveryQueue already exposes pre-publish", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ subVenue: null })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Room \/ sub-venue/), { target: { value: "Store VEGA" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.subVenue).toBe("Store VEGA");
+  });
+
+  it("Facebook decision: the Facebook field is now labeled as legacy/internal, not a public link role", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent({ facebookUrl: "https://facebook.com/events/123" })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByText(/Legacy Facebook URL/)).toBeTruthy();
+  });
+});

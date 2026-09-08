@@ -11,7 +11,7 @@ import { isValidHttpUrl } from "@/lib/urlValidation";
  * link-integrity audit ("prefer the same labels/validation rules"). `null`
  * always means "clear it" and is never validated as a URL.
  */
-const URL_FIELDS = ["probableTicketUrl", "probableOfficialEventUrl"] as const;
+const URL_FIELDS = ["probableTicketUrl", "probableOfficialEventUrl", "probableResidentAdvisorUrl"] as const;
 
 /** Lets an admin fill in fields extraction couldn't determine (date, venue, lineup, official/ticket URL) before publishing. */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {

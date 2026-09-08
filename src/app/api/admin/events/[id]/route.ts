@@ -9,7 +9,7 @@ import { isValidHttpUrl } from "@/lib/urlValidation";
  * for; every other editable field's validation is unchanged. `null` always
  * means "clear it" and is never validated as a URL.
  */
-const URL_FIELDS = ["officialEventUrl", "ticketUrl"] as const;
+const URL_FIELDS = ["officialEventUrl", "ticketUrl", "residentAdvisorUrl", "facebookUrl"] as const;
 
 /**
  * Generic admin edit endpoint — correct genre, correct venue, add/correct

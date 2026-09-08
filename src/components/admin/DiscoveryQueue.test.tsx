@@ -51,6 +51,8 @@ function makeItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueIt
     probableEnd: null,
     probableTicketUrl: null,
     probableOfficialEventUrl: null,
+    probableResidentAdvisorUrl: null,
+    description: null,
     probableFree: false,
     probableVenueName: "Suporama",
     probableSubVenue: null,
@@ -506,5 +508,65 @@ describe("DiscoveryQueue — row info (admin Discovery Queue cleanup, Section 7)
   it("omits the Tickets link when no ticket URL is known", () => {
     render(<DiscoveryQueue items={[makeItem({ probableTicketUrl: null })]} venues={VENUES} />);
     expect(screen.queryByRole("link", { name: "Tickets" })).toBeNull();
+  });
+});
+
+describe("DiscoveryQueue — unified event create/edit model (2026-09-08): description, sub-venue, Resident Advisor URL now editable before publish", () => {
+  afterEach(cleanup);
+
+  it("lets an admin add a description, sub-venue and Resident Advisor URL on a candidate that had none, and sends them all in the PATCH", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "VEGA" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "A night of raw techno." } });
+    fireEvent.change(screen.getByLabelText(/Room \/ sub-venue/), { target: { value: "Store VEGA" } });
+    fireEvent.change(screen.getByLabelText(/Resident Advisor URL/), { target: { value: "https://ra.co/events/123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, options] = fetchMock.mock.calls[0];
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.description).toBe("A night of raw techno.");
+    expect(patch.probableSubVenue).toBe("Store VEGA");
+    expect(patch.probableResidentAdvisorUrl).toBe("https://ra.co/events/123");
+  });
+
+  it("pre-fills description and Resident Advisor URL from the candidate's existing value when opening the editor", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(
+      <DiscoveryQueue
+        items={[makeItem({ description: "Existing description.", probableResidentAdvisorUrl: "https://ra.co/events/456" })]}
+        venues={VENUES}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Description/) as HTMLTextAreaElement).value).toBe("Existing description.");
+    expect((screen.getByLabelText(/Resident Advisor URL/) as HTMLInputElement).value).toBe("https://ra.co/events/456");
+  });
+
+  it("rejects a non-http(s) Resident Advisor URL client-side, same rule as Official Event/Ticket URL, and does not call fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "VEGA" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Resident Advisor URL/), { target: { value: "not a url" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/Resident Advisor URL isn't a valid/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a Resident Advisor link in the row summary only when one is known", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<DiscoveryQueue items={[makeItem({ probableResidentAdvisorUrl: "https://ra.co/events/789" })]} venues={VENUES} />);
+    expect((screen.getByRole("link", { name: "Resident Advisor" }) as HTMLAnchorElement).href).toBe("https://ra.co/events/789");
+  });
+
+  it("shows the description in the row summary when known", () => {
+    render(<DiscoveryQueue items={[makeItem({ description: "A night of raw techno." })]} venues={VENUES} />);
+    expect(screen.getByText("A night of raw techno.")).toBeTruthy();
   });
 });

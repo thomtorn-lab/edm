@@ -226,6 +226,25 @@ export const discoveryQueue = pgTable("discovery_queue", {
   probableEnd: timestamp("probable_end", { withTimezone: true }),
   probableTicketUrl: text("probable_ticket_url"),
   /**
+   * Admin-entered Resident Advisor URL for an unpublished candidate (unified
+   * event create/edit model, 2026-09-08) — mirrors probableOfficialEventUrl/
+   * probableTicketUrl exactly. Published events already have a
+   * residentAdvisorUrl field/column; DQ previously had no equivalent, so an
+   * RA link found (or corrected) pre-publish had nowhere to live. Carried
+   * onto the created event's residentAdvisorUrl by publishDiscoveryItem.
+   */
+  probableResidentAdvisorUrl: text("probable_resident_advisor_url"),
+  /**
+   * Admin-entered/extracted description for an unpublished candidate
+   * (unified event create/edit model, 2026-09-08) — published events already
+   * carry a description column; DQ had none, so publishDiscoveryItem always
+   * hardcoded the new event's description to null regardless of what an
+   * admin (or the "Add event from URL" OG-description extraction) actually
+   * found. Carried onto the created event's description by
+   * publishDiscoveryItem.
+   */
+  description: text("description"),
+  /**
    * Admin-entered Official Event URL for an unpublished candidate (admin +
    * public link integrity, 2026-09-08) — mirrors probableTicketUrl exactly:
    * the DQ editor previously had no field for this at all, so admin review

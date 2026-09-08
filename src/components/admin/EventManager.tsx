@@ -4,9 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EventWithVenue } from "@/lib/queries";
 import type { AdminUnpublishReason, Venue } from "@/lib/types";
-import { GENRES } from "@/lib/taxonomy";
 import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 
 /** UNPUBLISH reasons offered in the admin UI (admin unpublish/cancellation
  *  safety, 2026-09-06) — must stay in sync with AdminUnpublishReason. */
@@ -36,12 +36,16 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
 
   const [title, setTitle] = useState(event.title);
   const [venueId, setVenueId] = useState(event.venueId);
+  const [subVenue, setSubVenue] = useState(event.subVenue ?? "");
   const [primaryGenre, setPrimaryGenre] = useState(event.primaryGenre);
+  const [artists, setArtists] = useState(event.artists.join(", "));
   const [description, setDescription] = useState(event.description ?? "");
   const [officialEventUrl, setOfficialEventUrl] = useState(event.officialEventUrl ?? "");
   const [ticketUrl, setTicketUrl] = useState(event.ticketUrl ?? "");
   const [facebookUrl, setFacebookUrl] = useState(event.facebookUrl ?? "");
   const [residentAdvisorUrl, setResidentAdvisorUrl] = useState(event.residentAdvisorUrl ?? "");
+  const [startLocal, setStartLocal] = useState(toLocalInput(event.startDatetime));
+  const [startTouched, setStartTouched] = useState(false);
   const [endLocal, setEndLocal] = useState(event.endDatetime ? toLocalInput(event.endDatetime) : "");
   const [endTouched, setEndTouched] = useState(false);
   const [free, setFree] = useState(event.priceFrom === 0);
@@ -118,8 +122,14 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
   async function saveEdit() {
     // Same native-datetime-local caveat as the discovery-queue date field
     // (see DiscoveryQueue.tsx): an incomplete typed entry reports value=""
-    // with no error, so a touched-but-empty end time must block save rather
-    // than silently clearing a real value or looking like a no-op success.
+    // with no error, so a touched-but-empty start/end time must block save
+    // rather than silently clearing a real value or looking like a no-op
+    // success. A start date is required (unlike end), so a touched-but-empty
+    // start is always an error, never an implicit clear.
+    if (startTouched && !startLocal) {
+      setError("Date & time isn't a complete, valid date — use the picker or finish typing it before saving.");
+      return;
+    }
     if (endTouched && !endLocal && event.endDatetime) {
       setError("End time isn't a complete, valid date — use the picker, finish typing it, or clear it explicitly.");
       return;
@@ -134,6 +144,16 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       setError("Ticket URL isn't a valid http(s) link — fix it or clear the field.");
       return;
     }
+    const residentAdvisorUrlTrimmed = residentAdvisorUrl.trim();
+    if (residentAdvisorUrlTrimmed && !isValidHttpUrl(residentAdvisorUrlTrimmed)) {
+      setError("Resident Advisor URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
+    const facebookUrlTrimmed = facebookUrl.trim();
+    if (facebookUrlTrimmed && !isValidHttpUrl(facebookUrlTrimmed)) {
+      setError("Facebook URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -141,15 +161,26 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       const patch: Record<string, unknown> = {};
       if (title !== event.title) patch.title = title;
       if (venueId !== event.venueId) patch.venueId = venueId;
+      const subVenueTrimmed = subVenue.trim();
+      if (subVenueTrimmed !== (event.subVenue ?? "")) patch.subVenue = subVenueTrimmed || null;
       if (primaryGenre !== event.primaryGenre) {
         patch.primaryGenre = primaryGenre;
         patch.subgenres = [primaryGenre];
       }
+      const newArtists = artists.split(",").map((s) => s.trim()).filter(Boolean);
+      if (newArtists.join(",") !== event.artists.join(",")) patch.artists = newArtists;
       if (description !== (event.description ?? "")) patch.description = description || null;
       if (officialEventUrlTrimmed !== (event.officialEventUrl ?? "")) patch.officialEventUrl = officialEventUrlTrimmed || null;
       if (ticketUrlTrimmed !== (event.ticketUrl ?? "")) patch.ticketUrl = ticketUrlTrimmed || null;
-      if (facebookUrl !== (event.facebookUrl ?? "")) patch.facebookUrl = facebookUrl || null;
-      if (residentAdvisorUrl !== (event.residentAdvisorUrl ?? "")) patch.residentAdvisorUrl = residentAdvisorUrl || null;
+      if (facebookUrlTrimmed !== (event.facebookUrl ?? "")) patch.facebookUrl = facebookUrlTrimmed || null;
+      if (residentAdvisorUrlTrimmed !== (event.residentAdvisorUrl ?? "")) patch.residentAdvisorUrl = residentAdvisorUrlTrimmed || null;
+      // Gated on startTouched (not a value comparison, unlike most other
+      // fields here): a datetime-local round trip through toLocalInput and
+      // back via `new Date(...).toISOString()` isn't guaranteed byte-
+      // identical to the originally stored ISO string, so comparing values
+      // alone could send an unwanted no-op patch on every save even when
+      // the admin never touched this field.
+      if (startTouched && startLocal) patch.startDatetime = new Date(startLocal).toISOString();
       const newEndIso = endLocal ? new Date(endLocal).toISOString() : null;
       if (newEndIso !== event.endDatetime) patch.endDatetime = newEndIso;
       const newPriceFrom = free ? 0 : event.priceFrom === 0 ? null : undefined;
@@ -275,54 +306,55 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
 
       {editing && (
         <div className="mt-3 space-y-2 rounded border border-border-strong p-3">
-          <Field id={`event-title-${event.id}`} label="Title"><input id={`event-title-${event.id}`} value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} /></Field>
+          <EventFieldEditorTop
+            idPrefix={`event-${event.id}`}
+            title={title}
+            onTitleChange={setTitle}
+            description={description}
+            onDescriptionChange={setDescription}
+            startLocal={startLocal}
+            onStartLocalChange={(v) => {
+              setStartLocal(v);
+              setStartTouched(true);
+            }}
+            endLocal={endLocal}
+            onEndLocalChange={(v) => {
+              setEndLocal(v);
+              setEndTouched(true);
+            }}
+          />
           <Field id={`event-venue-${event.id}`} label="Venue">
             <select id={`event-venue-${event.id}`} value={venueId} onChange={(e) => setVenueId(e.target.value)} className={inputCls}>
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </Field>
-          <Field id={`event-genre-${event.id}`} label="Genre">
-            <select id={`event-genre-${event.id}`} value={primaryGenre} onChange={(e) => setPrimaryGenre(e.target.value as typeof primaryGenre)} className={inputCls}>
-              {GENRES.map((g) => <option key={g.slug} value={g.slug}>{g.label}</option>)}
-            </select>
+          <Field id={`event-sub-venue-${event.id}`} label="Room / sub-venue (optional)">
+            <input id={`event-sub-venue-${event.id}`} value={subVenue} onChange={(e) => setSubVenue(e.target.value)} className={inputCls} />
           </Field>
-          <Field id={`event-description-${event.id}`} label="Description"><textarea id={`event-description-${event.id}`} value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={inputCls} /></Field>
-          <Field id={`event-official-url-${event.id}`} label="Official event URL"><input id={`event-official-url-${event.id}`} value={officialEventUrl} onChange={(e) => setOfficialEventUrl(e.target.value)} className={inputCls} /></Field>
-          <Field id={`event-ticket-url-${event.id}`} label="Ticket URL"><input id={`event-ticket-url-${event.id}`} value={ticketUrl} onChange={(e) => setTicketUrl(e.target.value)} className={inputCls} /></Field>
-          <Field id={`event-facebook-url-${event.id}`} label="Facebook URL"><input id={`event-facebook-url-${event.id}`} value={facebookUrl} onChange={(e) => setFacebookUrl(e.target.value)} className={inputCls} /></Field>
-          <Field id={`event-ra-url-${event.id}`} label="Resident Advisor URL"><input id={`event-ra-url-${event.id}`} value={residentAdvisorUrl} onChange={(e) => setResidentAdvisorUrl(e.target.value)} className={inputCls} /></Field>
-          <Field id={`event-end-${event.id}`} label="End time (optional — leave blank when unknown)">
-            <input
-              id={`event-end-${event.id}`}
-              type="datetime-local"
-              value={endLocal}
-              onChange={(e) => {
-                setEndLocal(e.target.value);
-                setEndTouched(true);
-              }}
-              className={inputCls}
-            />
-          </Field>
-          <label className="flex items-center gap-2 text-xs text-text-primary">
-            <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
-            Free entry (does not affect the Tickets link if a ticket URL is also set)
-          </label>
-          <label className="flex items-center gap-2 text-xs text-text-primary">
-            <input type="checkbox" checked={soldOut} onChange={(e) => setSoldOut(e.target.checked)} />
-            Sold out
-          </label>
-          <label className="flex items-center gap-2 text-xs text-text-primary">
-            <input type="checkbox" checked={cancelled} onChange={(e) => setCancelled(e.target.checked)} />
-            Cancelled
-          </label>
-          <label className="flex items-center gap-2 text-xs text-text-primary">
-            <input
-              type="checkbox"
-              checked={postponed}
-              onChange={(e) => setPostponed(e.target.checked)}
-            />
-            Postponed (no confirmed new date yet — clears automatically once a sync brings in a real reschedule)
-          </label>
+          <EventFieldEditorBottom
+            idPrefix={`event-${event.id}`}
+            mode="published"
+            genre={primaryGenre}
+            onGenreChange={(v) => setPrimaryGenre(v as typeof primaryGenre)}
+            artists={artists}
+            onArtistsChange={setArtists}
+            officialEventUrl={officialEventUrl}
+            onOfficialEventUrlChange={setOfficialEventUrl}
+            ticketUrl={ticketUrl}
+            onTicketUrlChange={setTicketUrl}
+            residentAdvisorUrl={residentAdvisorUrl}
+            onResidentAdvisorUrlChange={setResidentAdvisorUrl}
+            free={free}
+            onFreeChange={setFree}
+            soldOut={soldOut}
+            onSoldOutChange={setSoldOut}
+            cancelled={cancelled}
+            onCancelledChange={setCancelled}
+            postponed={postponed}
+            onPostponedChange={setPostponed}
+            facebookUrl={facebookUrl}
+            onFacebookUrlChange={setFacebookUrl}
+          />
           <div className="pt-1">
             <button type="button" disabled={busy} onClick={saveEdit} className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50">
               Save (marks edited fields as manually overridden)

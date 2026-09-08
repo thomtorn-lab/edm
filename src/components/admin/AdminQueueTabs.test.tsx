@@ -5,13 +5,25 @@ import AdminQueueTabs from "./AdminQueueTabs";
 import type { AdminQueueGroups, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
 
+const { getSearchParams, setSearchParams } = vi.hoisted(() => {
+  let params = new URLSearchParams();
+  return {
+    getSearchParams: () => params,
+    setSearchParams: (p: URLSearchParams) => {
+      params = p;
+    },
+  };
+});
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
+  useSearchParams: () => getSearchParams(),
 }));
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  setSearchParams(new URLSearchParams());
 });
 
 function makeItem(id: string, title: string): DiscoveryQueueItem {
@@ -22,6 +34,8 @@ function makeItem(id: string, title: string): DiscoveryQueueItem {
     probableEnd: null,
     probableTicketUrl: null,
     probableOfficialEventUrl: null,
+    probableResidentAdvisorUrl: null,
+    description: null,
     probableFree: false,
     probableVenueName: "Culture Box",
     probableSubVenue: null,
@@ -134,5 +148,26 @@ describe("AdminQueueTabs", () => {
     render(<AdminQueueTabs groups={EMPTY_GROUPS} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
     fireEvent.click(screen.getByRole("tab", { name: "Insufficient evidence 0" }));
     expect(screen.getByText(/Queue is empty/)).toBeTruthy();
+  });
+});
+
+describe("AdminQueueTabs — direct handoff from Analyze (unified event create/edit model, 2026-09-08, Section 5/10)", () => {
+  it("opens directly on the tab named by the ?tab= query param, instead of always defaulting to Needs review", () => {
+    setSearchParams(new URLSearchParams("tab=insufficient"));
+    const groups: AdminQueueGroups = { ...EMPTY_GROUPS, insufficient: [makeItem("dq-1", "Insufficient Candidate")] };
+    render(<AdminQueueTabs groups={groups} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
+    expect(screen.getByRole("tab", { name: /Insufficient evidence/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Insufficient Candidate")).toBeTruthy();
+  });
+
+  it("falls back to Needs review when ?tab= names something that isn't a real tab — never crashes or shows a blank view", () => {
+    setSearchParams(new URLSearchParams("tab=not-a-real-tab"));
+    render(<AdminQueueTabs groups={EMPTY_GROUPS} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
+    expect(screen.getByRole("tab", { name: /Needs review/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("with no ?tab= param at all, defaults to Needs review exactly as before", () => {
+    render(<AdminQueueTabs groups={EMPTY_GROUPS} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
+    expect(screen.getByRole("tab", { name: /Needs review/ }).getAttribute("aria-selected")).toBe("true");
   });
 });

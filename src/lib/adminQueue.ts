@@ -1,6 +1,8 @@
 import type { AdminUnpublishReason, DiscoveryQueueItem, EventRecord, Source, Venue } from "./types";
 import { classifyVenueBlock, isDiscoveryRowCurrent } from "./sync";
 import { isPastEvent } from "./datetime";
+import { resolveVenue } from "./normalize";
+import type { DuplicateCandidate } from "./dedup";
 
 /**
  * Admin Discovery Queue cleanup/actionable views, 2026-09-06. The single
@@ -33,6 +35,14 @@ export interface AdminQueueClassifiable {
   probableStart: DiscoveryQueueItem["probableStart"];
   probableEnd: DiscoveryQueueItem["probableEnd"];
   lastSeenAt: DiscoveryQueueItem["lastSeenAt"];
+  /**
+   * Registered source this row came from, null for admin-originated rows
+   * (manual "Add event from URL"/Analyze — see discoveryQueue.sourceId's own
+   * doc comment: "Null for items with no registered source"). Decides
+   * whether the freshness-based staleness check below applies at all — see
+   * this function's own "ADMIN-ORIGINATED ROWS" doc comment.
+   */
+  sourceId: DiscoveryQueueItem["sourceId"];
 }
 
 /**
@@ -60,6 +70,40 @@ export function classifyAdminQueueRow(
   item: AdminQueueClassifiable,
   ctx: { lastCompleteSyncAt: string | null; now: Date },
 ): AdminQueueCategory {
+  // ADMIN-ORIGINATED ROWS (unified event create/edit model addendum,
+  // 2026-09-08). isDiscoveryRowCurrent's "current" signal is fundamentally a
+  // SOURCE-freshness check — it compares this row's own lastSeenAt against
+  // its registered source's lastCompleteSyncAt, and returns false outright
+  // whenever either side is null (see that function's own doc comment). A
+  // row with no registered source (sourceId null — "Add event from URL"/
+  // Analyze; see discoveryQueue.sourceId's own column comment) has no
+  // lastCompleteSyncAt to compare against BY CONSTRUCTION, not because
+  // anything about it is actually stale — so isCurrent was always false for
+  // every single one of these rows, and classifyVenueBlock's very first
+  // check (`if (!isCurrent) return "stale"`) routed them straight to
+  // PAST_STALE regardless of how fresh or complete they genuinely were.
+  // Confirmed root cause: an Analyze-created row with a perfectly current,
+  // simply-not-yet-filled-in missing date landed in "Past / stale" — the
+  // least likely tab for an admin to check right after using the tool that
+  // just created it.
+  //
+  // Fix, scoped exactly to admin-originated rows (never weakens PAST_STALE
+  // for a real source-ingested row — those keep the freshness check
+  // entirely unchanged below): "unknown" is not evidence of staleness.
+  // Only a row with a RESOLVED start date that is DEFINITELY in the past
+  // (isPastEvent returning true, never merely "unknown" — see isPastEvent's
+  // own null-date handling) may still land in PAST_STALE; every other case —
+  // missing date, unresolved venue, any other incomplete field — surfaces
+  // in NEEDS_REVIEW instead, so the row is where an admin who just created
+  // it will actually see it, until they explicitly resolve/publish/ignore
+  // it themselves.
+  if (item.sourceId === null) {
+    const isPastForAdminRow = item.probableStart
+      ? isPastEvent({ startDatetime: item.probableStart, endDatetime: item.probableEnd }, ctx.now)
+      : null;
+    return isPastForAdminRow === true ? "past_stale" : "needs_review";
+  }
+
   const lastSeenAt = item.lastSeenAt ? new Date(item.lastSeenAt) : null;
   const lastCompleteSyncAt = ctx.lastCompleteSyncAt ? new Date(ctx.lastCompleteSyncAt) : null;
   const isCurrent = isDiscoveryRowCurrent(lastSeenAt, lastCompleteSyncAt);
@@ -204,6 +248,47 @@ export function resolvePublishedCanonicalEventId(item: DiscoveryQueueItem, event
     return match?.id ?? null;
   }
   return null;
+}
+
+/**
+ * Maps already-pending discovery_queue rows into the shape
+ * findBestDuplicateMatch (src/lib/dedup.ts) needs, so Analyze/"Add event
+ * from URL" can check a freshly-extracted candidate against existing DQ
+ * rows, not just canonical events (unified event create/edit model,
+ * 2026-09-08 — root cause of the reported Karrusel 2027 gap:
+ * src/app/api/admin/extract/route.ts's existingEvents pool was built
+ * exclusively from getAllEventsAdmin(), which queries the `events` table
+ * only — a pending discovery_queue candidate was structurally invisible to
+ * Analyze's own duplicate check). Deliberately excludes rows with no
+ * resolved date (findBestDuplicateMatch's caller already only runs this
+ * when the fresh candidate itself has a date — comparing against an
+ * unknown-date row would never produce a meaningful match either
+ * direction), and only "pending" rows — an "ignored" row was a deliberate
+ * admin dismissal; re-surfacing it as a duplicate warning would resurface
+ * noise the admin already resolved, not a genuinely actionable candidate.
+ */
+export function mapPendingDiscoveryQueueForDedup(
+  items: DiscoveryQueueItem[],
+  venues: Venue[],
+): (DuplicateCandidate & { id: string })[] {
+  const mapped: (DuplicateCandidate & { id: string })[] = [];
+  for (const item of items) {
+    if (item.status !== "pending" || !item.probableStart) continue;
+    const resolved = item.probableVenueName ? resolveVenue(item.probableVenueName, venues) : undefined;
+    mapped.push({
+      id: item.id,
+      title: item.probableTitle,
+      artists: item.detectedLineup,
+      venueId: resolved?.venue.id ?? null,
+      subVenue: resolved?.subVenue ?? item.probableSubVenue,
+      startDatetime: item.probableStart,
+      sourceId: item.sourceId,
+      officialEventUrl: item.probableOfficialEventUrl,
+      ticketUrl: item.probableTicketUrl,
+      residentAdvisorUrl: item.probableResidentAdvisorUrl,
+    });
+  }
+  return mapped;
 }
 
 /**

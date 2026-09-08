@@ -662,7 +662,11 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       id: eventId,
       title: item.probableTitle,
       slug,
-      description: null,
+      // Unified event create/edit model (2026-09-08): DQ previously had no
+      // description column at all, so this was always hardcoded null
+      // regardless of what an admin (or Analyze's OG-description
+      // extraction) actually found. Carried straight through when set.
+      description: item.description,
       artists: item.detectedLineup,
       startDatetime: item.probableStart,
       endDatetime: item.probableEnd,
@@ -684,8 +688,23 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // exact prior behavior when the admin never touched this field.
       officialEventUrl: item.probableOfficialEventUrl ?? item.sourceUrl,
       ticketUrl: item.probableTicketUrl,
-      facebookUrl: item.sourceUrl.includes("facebook.com") ? item.sourceUrl : null,
-      residentAdvisorUrl: item.sourceUrl.includes("ra.co") ? item.sourceUrl : null,
+      // Facebook decision (unified event create/edit model, 2026-09-08):
+      // Facebook is no longer a distinct public link role (see
+      // src/lib/links.ts's getExternalLinks) — a Facebook event URL is
+      // already carried as officialEventUrl above (either admin-entered via
+      // probableOfficialEventUrl, or this row's own sourceUrl when the
+      // source itself is a Facebook event page). Setting facebookUrl here
+      // too would only ever duplicate officialEventUrl, never add real
+      // information; the column itself stays (legacy published events may
+      // still carry a genuinely distinct value, editable in EventManager).
+      facebookUrl: null,
+      // Admin-entered Resident Advisor URL for an unpublished candidate
+      // (unified event create/edit model, 2026-09-08) — same
+      // admin-wins-over-source-heuristic pattern as officialEventUrl above;
+      // the sourceUrl-contains-"ra.co" fallback preserves every existing
+      // RA-sourced publish's exact prior behavior when the admin never
+      // touched this field.
+      residentAdvisorUrl: item.probableResidentAdvisorUrl ?? (item.sourceUrl.includes("ra.co") ? item.sourceUrl : null),
       imageUrl: null,
       // Explicit FREE flag (never inferred from ticketUrl's absence) — same
       // canonical priceFrom=0 representation as EventManager's own Free
@@ -713,13 +732,23 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // protected from a later sync the same way any post-publish admin
       // edit already is (src/lib/override.ts) — otherwise the very field an
       // admin just deliberately set at review time could be silently
-      // reverted by the next sync run. Only these two fields map onto a DQ
-      // row's own overriddenFields (probableTicketUrl/probableOfficialEventUrl
-      // are the only DQ fields with a direct canonical-event equivalent this
-      // audit is scoped to).
+      // reverted by the next sync run. Extended (unified event create/edit
+      // model, 2026-09-08) to every DQ field with a direct canonical-event
+      // equivalent, not just the URL pair — title/description/date/venue/
+      // lineup edits made pre-publish must survive exactly like a
+      // post-publish admin edit already does.
       overriddenFields: [
         ...(item.overriddenFields?.includes("probableOfficialEventUrl") ? ["officialEventUrl"] : []),
         ...(item.overriddenFields?.includes("probableTicketUrl") ? ["ticketUrl"] : []),
+        ...(item.overriddenFields?.includes("probableResidentAdvisorUrl") ? ["residentAdvisorUrl"] : []),
+        ...(item.overriddenFields?.includes("description") ? ["description"] : []),
+        ...(item.overriddenFields?.includes("probableTitle") ? ["title"] : []),
+        ...(item.overriddenFields?.includes("probableStart") ? ["startDatetime"] : []),
+        ...(item.overriddenFields?.includes("probableEnd") ? ["endDatetime"] : []),
+        ...(item.overriddenFields?.includes("probableVenueName") ? ["venueId"] : []),
+        ...(item.overriddenFields?.includes("probableSubVenue") ? ["subVenue"] : []),
+        ...(item.overriddenFields?.includes("detectedLineup") ? ["artists"] : []),
+        ...(item.overriddenFields?.includes("predictedGenre") ? ["primaryGenre", "subgenres"] : []),
       ],
     },
     "admin",
@@ -775,8 +804,13 @@ export interface DiscoveryEditPatch {
   probableTicketUrl?: string | null;
   /** Admin-entered Official Event URL — see src/db/schema.ts's probableOfficialEventUrl column comment. */
   probableOfficialEventUrl?: string | null;
+  /** Admin-entered Resident Advisor URL — see src/db/schema.ts's probableResidentAdvisorUrl column comment. */
+  probableResidentAdvisorUrl?: string | null;
+  /** Admin-entered/extracted description — see src/db/schema.ts's description column comment. */
+  description?: string | null;
   probableFree?: boolean;
   probableVenueName?: string | null;
+  probableSubVenue?: string | null;
   detectedLineup?: string[];
   predictedGenre?: GenreSlug | null;
 }
@@ -908,6 +942,12 @@ export async function insertDiscoveryItem(item: {
   probableStart: Date | null;
   probableEnd?: Date | null;
   probableTicketUrl?: string | null;
+  /** Admin/Analyze-entered Official Event URL at insert time — see src/db/schema.ts's probableOfficialEventUrl column comment. */
+  probableOfficialEventUrl?: string | null;
+  /** Admin/Analyze-entered Resident Advisor URL at insert time — see src/db/schema.ts's probableResidentAdvisorUrl column comment. */
+  probableResidentAdvisorUrl?: string | null;
+  /** Admin/Analyze-extracted description at insert time — see src/db/schema.ts's description column comment. */
+  description?: string | null;
   probableFree?: boolean;
   probableVenueName: string | null;
   /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06). Null when not applicable/unknown. */

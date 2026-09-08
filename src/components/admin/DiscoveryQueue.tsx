@@ -4,11 +4,12 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DiscoveryQueueItem } from "@/lib/types";
 import type { Venue } from "@/lib/types";
-import { getGenre, GENRES } from "@/lib/taxonomy";
+import { getGenre } from "@/lib/taxonomy";
 import { resolveVenue } from "@/lib/normalize";
 import { isProtectedSubVenueName } from "@/lib/venueCreation";
 import { formatFullDateLabel, formatIsoDateForInput, formatTimeLabel } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 
 interface Props {
   items: DiscoveryQueueItem[];
@@ -46,8 +47,11 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   const [endTouched, setEndTouched] = useState(false);
   const [officialEventUrl, setOfficialEventUrl] = useState(item.probableOfficialEventUrl ?? "");
   const [ticketUrl, setTicketUrl] = useState(item.probableTicketUrl ?? "");
+  const [residentAdvisorUrl, setResidentAdvisorUrl] = useState(item.probableResidentAdvisorUrl ?? "");
+  const [description, setDescription] = useState(item.description ?? "");
   const [free, setFree] = useState(item.probableFree);
   const [venueNameText, setVenueNameText] = useState(item.probableVenueName ?? "");
+  const [subVenueText, setSubVenueText] = useState(item.probableSubVenue ?? "");
   const [lineup, setLineup] = useState(item.detectedLineup.join(", "));
   const [genre, setGenre] = useState(item.predictedGenre ?? "");
 
@@ -162,13 +166,21 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       setError("Ticket URL isn't a valid http(s) link — fix it or clear the field.");
       return;
     }
+    const residentAdvisorUrlTrimmed = residentAdvisorUrl.trim();
+    if (residentAdvisorUrlTrimmed && !isValidHttpUrl(residentAdvisorUrlTrimmed)) {
+      setError("Resident Advisor URL isn't a valid http(s) link — fix it or clear the field.");
+      return;
+    }
     const patch: Record<string, unknown> = {
       probableTitle: title,
+      description: description.trim() || null,
       probableVenueName: venueNameText || null,
+      probableSubVenue: subVenueText.trim() || null,
       detectedLineup: lineup.split(",").map((s) => s.trim()).filter(Boolean),
       predictedGenre: genre || null,
       probableOfficialEventUrl: officialEventUrlTrimmed || null,
       probableTicketUrl: ticketUrlTrimmed || null,
+      probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
       probableFree: free,
     };
     if (startLocal) patch.probableStart = new Date(startLocal).toISOString();
@@ -179,7 +191,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   }
 
   return (
-    <li className="border-b border-border py-4 last:border-b-0">
+    <li id={`dq-${item.id}`} className="scroll-mt-4 border-b border-border py-4 last:border-b-0 target:ring-2 target:ring-status-warn">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-sm font-semibold text-text-primary">{item.probableTitle}</p>
         <span className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
@@ -195,6 +207,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       {item.detectedLineup.length > 0 && (
         <p className="mt-1 text-xs text-text-tertiary">Lineup: {item.detectedLineup.join(", ")}</p>
       )}
+      {item.description && <p className="mt-1 line-clamp-2 text-xs text-text-tertiary">{item.description}</p>}
       <p className="mt-1 text-xs text-text-tertiary">
         Genre: {item.predictedGenre ? `${getGenre(item.predictedGenre).label} (${item.genreConfidence})` : "unresolved"}
       </p>
@@ -221,6 +234,14 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
             </a>
           </>
         )}
+        {item.probableResidentAdvisorUrl && (
+          <>
+            {" · "}
+            <a href={item.probableResidentAdvisorUrl} target="_blank" rel="noreferrer" className="text-accent-strong underline decoration-dotted underline-offset-2">
+              Resident Advisor
+            </a>
+          </>
+        )}
       </p>
       {item.suspectedDuplicateOfEventId && (
         <p className="mt-1 rounded border border-status-warn/50 bg-status-warn/10 px-2 py-1 text-xs font-semibold text-status-warn">
@@ -234,65 +255,48 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
 
       {editing ? (
         <div className="mt-3 space-y-2 rounded border border-border-strong p-3">
-          <div>
-            <label htmlFor={`dq-title-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Title</label>
-            <input id={`dq-title-${item.id}`} value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
-          </div>
-          <div>
-            <label htmlFor={`dq-start-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Date &amp; time</label>
-            <input
-              id={`dq-start-${item.id}`}
-              type="datetime-local"
-              value={startLocal}
-              onChange={(e) => {
-                setStartLocal(e.target.value);
-                setDateTouched(true);
-              }}
-              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
-            />
-          </div>
-          <div>
-            <label htmlFor={`dq-end-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">End time (optional — leave blank when unknown)</label>
-            <input
-              id={`dq-end-${item.id}`}
-              type="datetime-local"
-              value={endLocal}
-              onChange={(e) => {
-                setEndLocal(e.target.value);
-                setEndTouched(true);
-              }}
-              className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary"
-            />
-          </div>
-          <div>
-            <label htmlFor={`dq-official-url-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Official event URL (optional)</label>
-            <input id={`dq-official-url-${item.id}`} value={officialEventUrl} onChange={(e) => setOfficialEventUrl(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
-          </div>
-          <div>
-            <label htmlFor={`dq-ticket-url-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Ticket URL (optional)</label>
-            <input id={`dq-ticket-url-${item.id}`} value={ticketUrl} onChange={(e) => setTicketUrl(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
-          </div>
-          <label className="flex items-center gap-2 text-xs text-text-primary">
-            <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
-            Free entry (does not affect the Tickets link if a ticket URL is also set)
-          </label>
+          <EventFieldEditorTop
+            idPrefix={`dq-${item.id}`}
+            title={title}
+            onTitleChange={setTitle}
+            description={description}
+            onDescriptionChange={setDescription}
+            startLocal={startLocal}
+            onStartLocalChange={(v) => {
+              setStartLocal(v);
+              setDateTouched(true);
+            }}
+            endLocal={endLocal}
+            onEndLocalChange={(v) => {
+              setEndLocal(v);
+              setEndTouched(true);
+            }}
+          />
           <div>
             <label htmlFor={`dq-venue-name-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Venue name (free text)</label>
             <input id={`dq-venue-name-${item.id}`} value={venueNameText} onChange={(e) => setVenueNameText(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
           </div>
           <div>
-            <label htmlFor={`dq-lineup-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Lineup (comma-separated)</label>
-            <input id={`dq-lineup-${item.id}`} value={lineup} onChange={(e) => setLineup(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
+            <label htmlFor={`dq-sub-venue-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Room / sub-venue (optional)</label>
+            <input id={`dq-sub-venue-${item.id}`} value={subVenueText} onChange={(e) => setSubVenueText(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary" />
           </div>
-          <div>
-            <label htmlFor={`dq-genre-${item.id}`} className="block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</label>
-            <select id={`dq-genre-${item.id}`} value={genre} onChange={(e) => setGenre(e.target.value)} className="mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary">
-              <option value="">Unresolved</option>
-              {GENRES.map((g) => (
-                <option key={g.slug} value={g.slug}>{g.label}</option>
-              ))}
-            </select>
-          </div>
+          <EventFieldEditorBottom
+            idPrefix={`dq-${item.id}`}
+            mode="draft"
+            genre={genre}
+            onGenreChange={setGenre}
+            allowUnresolvedGenre
+            artists={lineup}
+            onArtistsChange={setLineup}
+            officialEventUrl={officialEventUrl}
+            onOfficialEventUrlChange={setOfficialEventUrl}
+            ticketUrl={ticketUrl}
+            onTicketUrlChange={setTicketUrl}
+            residentAdvisorUrl={residentAdvisorUrl}
+            onResidentAdvisorUrlChange={setResidentAdvisorUrl}
+            free={free}
+            onFreeChange={setFree}
+          />
           <div className="flex gap-2 pt-1">
             <button type="button" disabled={busy} onClick={handleSaveEdit} className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50">
               Save

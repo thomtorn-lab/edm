@@ -114,7 +114,20 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
   // exists, the Resident Advisor link *is* the ticket destination, so it
   // must read "Tickets" too rather than leaking the provider's name.
   add(event.ticketUrl ? "Resident Advisor" : "Tickets", event.residentAdvisorUrl);
-  add("Facebook", event.facebookUrl);
+  // Facebook decision (unified event create/edit model, 2026-09-08): Facebook
+  // is no longer a distinct public link role — it was previously always its
+  // own separate "Facebook" CTA, never suppressed by the primary-destination
+  // rule below, so a Facebook-sourced event could show three CTAs (Official
+  // event/Tickets AND Facebook) at once. A Facebook URL is only ever the
+  // event's Official event destination now, and only rendered as one when
+  // officialEventUrl itself is unset — if officialEventUrl is already
+  // populated (the common case), a distinct legacy facebookUrl is presentation-
+  // suppressed as redundant rather than shown a third time. Read-path only;
+  // no data mutation — see EventManager.tsx's "Legacy Facebook URL" field for
+  // where a genuinely distinct historical value stays editable.
+  if (!event.officialEventUrl && event.facebookUrl) {
+    add("Official event", event.facebookUrl, true);
+  }
   for (const url of event.otherSourceUrls) add("Source", url);
 
   const hasPrimaryDestination = links.some((l) => l.label === "Official event" || l.label === "Tickets" || l.label === "Resident Advisor");
