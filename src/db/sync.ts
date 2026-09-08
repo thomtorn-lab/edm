@@ -548,6 +548,11 @@ async function runSourceSyncLocked(
             duplicateConfidence: result.duplicateConfidence,
             venueResolvedDecision: result.venueResolvedCounterfactual?.decision ?? null,
             venueResolvedHoldReason: result.venueResolvedCounterfactual?.holdReason ?? null,
+            // KultuNaut link-role integrity self-heal, 2026-09-08 — see
+            // buildDiscoveryQueueClassificationPatch's own doc comment. This
+            // run's own re-parse of the exact same page, straight from the
+            // adapter (already same-host-filtered by isSameHost).
+            ticketUrl: raw.ticketUrl,
           },
           {
             status: existingPending.status,
@@ -561,6 +566,7 @@ async function runSourceSyncLocked(
             venueResolvedDecision: existingPending.venueResolvedDecision as PublishDecision | null,
             venueResolvedHoldReason: existingPending.venueResolvedHoldReason as HoldReason,
             holdReason: existingPending.holdReason as HoldReason,
+            probableTicketUrl: existingPending.probableTicketUrl,
           },
         );
         // lastSeenAt is unconditional — this candidate's own sourceUrl was
