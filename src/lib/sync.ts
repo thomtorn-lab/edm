@@ -276,6 +276,12 @@ export interface DiscoveryQueueTarget {
   missingFields: string[];
   /** Currently stored probable_sub_venue (generalized sub-venue model, 2026-09-06), so a fresh resolution can detect it moved. */
   probableSubVenue: string | null;
+  /** Currently stored probable_ticket_url (KultuNaut link-role integrity
+   *  self-heal, 2026-09-08), so a fresh extraction can detect and clear a
+   *  stale same-host URL a pre-fix adapter run wrote — see
+   *  buildDiscoveryQueueClassificationPatch's own doc comment for the exact
+   *  bug this reverses. */
+  probableTicketUrl: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -368,6 +374,22 @@ export interface DiscoveryQueueClassification {
    * this function has always applied to a null genre.
    */
   holdReason?: HoldReason;
+  /**
+   * This run's freshly re-extracted ticket URL (KultuNaut link-role
+   * integrity self-heal, 2026-09-08) — straight from the adapter, after any
+   * same-host filtering (see htmlExtraction.ts's isSameHost). Optional and
+   * defaults to undefined so every pre-existing call site (which never had
+   * a reason to pass this) keeps compiling and behaving exactly as before:
+   * omitting it never touches probableTicketUrl. Only an explicit `null`
+   * here — meaning this run's own extraction, from the same page a stored
+   * row was originally queued from, genuinely found no legitimate ticket
+   * link — can clear a stale stored value; see
+   * buildDiscoveryQueueClassificationPatch's own doc comment for the exact
+   * Production bug (KultuNaut's own /perl/billet/ redirect button,
+   * pre-fix, written as probableTicketUrl) this reverses on existing rows a
+   * code-only fix can never reach retroactively.
+   */
+  ticketUrl?: string | null;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -382,6 +404,8 @@ export interface DiscoveryQueueClassificationPatch {
   venueResolvedHoldReason?: HoldReason;
   /** See discoveryQueue.holdReason's own doc comment. */
   holdReason?: HoldReason;
+  /** See DiscoveryQueueClassification.ticketUrl / DiscoveryQueueTarget.probableTicketUrl's own doc comments for the self-heal semantics this carries. May be explicitly null to clear a stale same-host URL; omitted (undefined) always means "don't touch it". */
+  probableTicketUrl?: string | null;
 }
 
 /**
@@ -590,6 +614,32 @@ export function buildDiscoveryQueueClassificationPatch(
   ) {
     patch.venueResolvedDecision = fresh.venueResolvedDecision;
     patch.venueResolvedHoldReason = fresh.venueResolvedHoldReason;
+  }
+
+  // TICKET-URL SELF-HEAL (KultuNaut link-role integrity fix, 2026-09-08).
+  // kultunautAdapter.ts used to store its own /perl/billet/ redirect button
+  // as ticketUrl unconditionally; the adapter fix (isSameHost) stops this
+  // for every candidate this function's caller re-parses from here on, but
+  // a code-only fix can never retroactively touch a row already sitting in
+  // discovery_queue from a pre-fix sync — confirmed live: 9+ already-pending
+  // KultuNaut rows kept their stale kultunaut.dk ticket URL across two full
+  // post-fix syncs, because this function (deliberately) never previously
+  // refreshed probableTicketUrl at all. Reached only when a fresh, current
+  // parse of the SAME page this row was originally queued from (raw.ticketUrl
+  // is recomputed every sync, exactly like the genre fields above) explicitly
+  // finds no legitimate ticket link — the same authority level already
+  // trusted for genre/venue self-healing once parsing succeeds. Narrow and
+  // one-directional like missingFields' own self-heal: only ever CLEARS a
+  // stored value (never sets a new one — a real ticket-URL change from a
+  // source is out of scope here), and never touches a row an admin has
+  // already manually edited (overriddenFields "probableTicketUrl", same
+  // guard predictedGenre/probableVenueName use above).
+  if (
+    !existing.overriddenFields.includes("probableTicketUrl") &&
+    fresh.ticketUrl === null &&
+    existing.probableTicketUrl !== null
+  ) {
+    patch.probableTicketUrl = null;
   }
 
   return patch;

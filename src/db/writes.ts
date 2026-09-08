@@ -865,6 +865,14 @@ export async function applyDiscoveryClassificationUpdate(
     venueResolvedHoldReason?: HoldReason;
     /** See discoveryQueue.holdReason's own doc comment. */
     holdReason?: HoldReason;
+    /**
+     * KultuNaut link-role integrity self-heal (2026-09-08) — may be
+     * explicitly null to clear a stale same-host ticket URL a pre-fix
+     * adapter run wrote; omitting the key entirely still means "don't
+     * touch it". See src/lib/sync.ts::buildDiscoveryQueueClassificationPatch's
+     * own doc comment for the exact bug this reverses.
+     */
+    probableTicketUrl?: string | null;
   },
 ) {
   if (Object.keys(patch).length === 0) return;

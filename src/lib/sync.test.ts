@@ -392,6 +392,7 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     venueResolvedDecision: null,
     venueResolvedHoldReason: null,
     holdReason: null,
+    probableTicketUrl: null,
     ...overrides,
   };
 }
@@ -1094,6 +1095,84 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
         row,
       );
       expect(patch).not.toHaveProperty("probableSubVenue");
+    });
+  });
+
+  describe("TICKET-URL SELF-HEAL (KultuNaut link-role integrity fix, 2026-09-08): a stale same-host ticket URL a pre-fix adapter run wrote must clear on the next sync, since a code-only fix can never touch a row already sitting in discovery_queue", () => {
+    // Real Production case, confirmed live post-merge (two full syncs of the
+    // fixed adapter): dq-68a3bb93 ("The Prodigy") kept
+    // probableTicketUrl "https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=19834743"
+    // across both post-fix syncs — the adapter fix alone (isSameHost) only
+    // stops a NEW bad value from being written; it does nothing for a value
+    // already stored from before the fix shipped.
+
+    it("clears a stale same-host ticket URL once this run's fresh extraction (from the same page) authoritatively finds none", () => {
+      const row = pendingDiscoveryTarget({
+        predictedGenre: null,
+        overallConfidence: "low",
+        holdReason: "no_genre_evidence",
+        probableTicketUrl: "https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=19834743",
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence", ticketUrl: null },
+        row,
+      );
+      expect(patch.probableTicketUrl).toBeNull();
+    });
+
+    it("idempotent — no patch proposed when the stored value is already null", () => {
+      const row = pendingDiscoveryTarget({
+        holdReason: "no_genre_evidence",
+        probableTicketUrl: null,
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence", ticketUrl: null },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableTicketUrl");
+    });
+
+    it("one-directional like the missingFields self-heal — a genuine fresh ticket URL never overwrites what's already stored (out of scope for this self-heal; a real URL change is a separate concern)", () => {
+      const row = pendingDiscoveryTarget({
+        holdReason: "no_genre_evidence",
+        probableTicketUrl: "https://billetto.dk/e/some-real-ticket-link",
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        {
+          genre: null,
+          genreConfidence: "low",
+          decision: "hold",
+          holdReason: "no_genre_evidence",
+          ticketUrl: "https://billetto.dk/e/a-different-real-ticket-link",
+        },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableTicketUrl");
+    });
+
+    it("never clears an admin's manual ticket-URL edit, same overriddenFields guard as every other self-heal field", () => {
+      const row = pendingDiscoveryTarget({
+        holdReason: "no_genre_evidence",
+        probableTicketUrl: "https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=19834743",
+        overriddenFields: ["probableTicketUrl"],
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence", ticketUrl: null },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableTicketUrl");
+    });
+
+    it("omitting ticketUrl entirely (every pre-existing call site/test) never touches probableTicketUrl", () => {
+      const row = pendingDiscoveryTarget({
+        holdReason: "no_genre_evidence",
+        probableTicketUrl: "https://www.kultunaut.dk/perl/billet/type-nynaut?ArrNr=19834743",
+      });
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" },
+        row,
+      );
+      expect(patch).not.toHaveProperty("probableTicketUrl");
     });
   });
 });
