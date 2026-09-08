@@ -22,12 +22,23 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: "Body must be { patch: { ...fields } }." }, { status: 400 });
   }
 
+  // Date-field type safety (unified event create/edit model addendum,
+  // 2026-09-08) — see the published-event PATCH route's own doc comment
+  // for the full drizzle-orm root cause (PgTimestamp.mapToDriverValue
+  // requires a Date, JSON only ever hands back a string). This route
+  // already converted probableStart/probableEnd before that fix existed;
+  // the addition here is only the invalid-date guard, for parity with the
+  // same guard the events route now has — "Analyze, DQ edit, and Published
+  // edit must use the same date semantics".
   const cleaned: Record<string, unknown> = { ...patch };
-  if (typeof cleaned.probableStart === "string") {
-    cleaned.probableStart = new Date(cleaned.probableStart);
-  }
-  if (typeof cleaned.probableEnd === "string") {
-    cleaned.probableEnd = new Date(cleaned.probableEnd);
+  for (const field of ["probableStart", "probableEnd"] as const) {
+    const value = cleaned[field];
+    if (typeof value !== "string") continue;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json({ error: `${field}: not a valid date.` }, { status: 400 });
+    }
+    cleaned[field] = parsed;
   }
 
   for (const field of URL_FIELDS) {
