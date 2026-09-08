@@ -11,7 +11,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * notification directly). See lib/discoveryNotification.ts.
  */
 
-const insertValuesMock = vi.fn().mockResolvedValue(undefined);
+// Awaitable directly (createEvent's own `events` row insert) AND chainable
+// with .onConflictDoNothing() (recordSourceLink's `source_event_links`
+// insert) — both real shapes db.insert(...).values(...) takes in writes.ts,
+// so a full publishDiscoveryItem happy path (admin + public link integrity,
+// 2026-09-08) can now be exercised end to end rather than only its early
+// guard-throw branches, as every test below this originally stopped short of.
+const insertValuesMock = vi.fn((row: unknown) => {
+  void row; // typed only so insertValuesMock.mock.calls[n][0] below stays indexable — the mock ignores the actual value
+  const resolved = Promise.resolve(undefined);
+  return Object.assign(resolved, { onConflictDoNothing: () => Promise.resolve(undefined) });
+});
 
 // Queue of rows returned by successive db.select().from().where().limit()
 // calls, consumed in call order (admin unpublish/cancellation safety,
@@ -318,6 +328,101 @@ describe("publishDiscoveryItem's admin-unpublish duplicate guard (admin unpublis
       // (not calling db.select a second time) is under test here.
     });
     expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("publishDiscoveryItem — DQ manual Official Event/Ticket URLs (admin + public link integrity, 2026-09-08)", () => {
+  const kultunautPending = {
+    id: "dq-kn-1",
+    status: "pending",
+    probableTitle: "Nico Moreno",
+    probableStart: new Date("2026-09-12T22:00:00Z"),
+    probableEnd: null,
+    probableSubVenue: null,
+    detectedLineup: [] as string[],
+    predictedGenre: "techno",
+    genreConfidence: "high",
+    probableFree: false,
+    overallConfidence: "medium",
+    sourceId: "src-kultunaut",
+    sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20137632",
+    suspectedDuplicateOfEventId: null,
+    // Kept null in the fixture on purpose (irrelevant to these tests) —
+    // KultuNaut's own adapter never sets this at all post-fix; a real
+    // ticket-provider URL from an entirely different source would use the
+    // exact same probableTicketUrl field, unrelated to this test's focus.
+    probableTicketUrl: null as string | null,
+    probableOfficialEventUrl: null as string | null,
+    overriddenFields: [] as string[],
+  };
+
+  function eventInsertCall() {
+    return insertValuesMock.mock.calls.find(
+      (call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object),
+    )?.[0] as Record<string, unknown> | undefined;
+  }
+
+  it("DQ manual Official Event URL transfers exactly to the canonical event's officialEventUrl (not the KultuNaut sourceUrl)", async () => {
+    selectResults = [[{ ...kultunautPending, probableOfficialEventUrl: "https://real-official-venue.dk/event/xyz", overriddenFields: ["probableOfficialEventUrl"] }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.officialEventUrl).toBe("https://real-official-venue.dk/event/xyz");
+  });
+
+  it("with no admin-entered Official Event URL, falls back to the DQ row's own sourceUrl exactly as before (unchanged default behavior)", async () => {
+    selectResults = [[{ ...kultunautPending }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.officialEventUrl).toBe(kultunautPending.sourceUrl);
+  });
+
+  it("DQ manual Ticket URL transfers exactly to the canonical event's ticketUrl", async () => {
+    selectResults = [[{ ...kultunautPending, probableTicketUrl: "https://billetto.dk/e/nico-moreno-123", overriddenFields: ["probableTicketUrl"] }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.ticketUrl).toBe("https://billetto.dk/e/nico-moreno-123");
+  });
+
+  it("overriddenFields protects both manually-entered links after publish — mapped from the DQ row's own overriddenFields (probableOfficialEventUrl/probableTicketUrl) onto the new event's officialEventUrl/ticketUrl", async () => {
+    selectResults = [
+      [
+        {
+          ...kultunautPending,
+          probableOfficialEventUrl: "https://real-official-venue.dk/event/xyz",
+          probableTicketUrl: "https://billetto.dk/e/nico-moreno-123",
+          overriddenFields: ["probableOfficialEventUrl", "probableTicketUrl"],
+        },
+      ],
+    ];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.overriddenFields).toEqual(["officialEventUrl", "ticketUrl"]);
+    expect(eventInsertCall()?.manualOverride).toBe(true);
+  });
+
+  it("a field the admin never touched at DQ stage is NOT marked overridden on the new event, even when it has a value (e.g. an adapter-populated probableTicketUrl, never hand-edited)", async () => {
+    selectResults = [[{ ...kultunautPending, probableTicketUrl: "https://billetto.dk/e/adapter-populated", overriddenFields: [] }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.overriddenFields).toEqual([]);
+    expect(eventInsertCall()?.manualOverride).toBe(false);
+  });
+
+  it("admin provenance remains intact: source_event_links still records the SOURCE's own sourceUrl (the KultuNaut page), never the admin's manually-entered officialEventUrl, even when they differ", async () => {
+    selectResults = [[{ ...kultunautPending, probableOfficialEventUrl: "https://real-official-venue.dk/event/xyz", overriddenFields: ["probableOfficialEventUrl"] }]];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    const provenanceCall = insertValuesMock.mock.calls.find(
+      (call) => typeof call[0] === "object" && call[0] !== null && "role" in (call[0] as object),
+    )?.[0] as Record<string, unknown> | undefined;
+    expect(provenanceCall?.sourceUrl).toBe(kultunautPending.sourceUrl);
+    expect(provenanceCall?.sourceUrl).not.toBe("https://real-official-venue.dk/event/xyz");
   });
 });
 

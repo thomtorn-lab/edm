@@ -113,6 +113,7 @@ export function discoveryRowToRecord(row: DiscoveryQueueRow): DiscoveryQueueItem
     probableStart: row.probableStart?.toISOString() ?? null,
     probableEnd: row.probableEnd?.toISOString() ?? null,
     probableTicketUrl: row.probableTicketUrl,
+    probableOfficialEventUrl: row.probableOfficialEventUrl,
     probableFree: row.probableFree,
     probableVenueName: row.probableVenueName,
     probableSubVenue: row.probableSubVenue,

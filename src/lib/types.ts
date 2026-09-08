@@ -256,6 +256,8 @@ export interface DiscoveryQueueItem {
    *  event's endDatetime/ticketUrl/priceFrom by publishDiscoveryItem. */
   probableEnd: string | null;
   probableTicketUrl: string | null;
+  /** Admin-entered Official Event URL for an unpublished candidate — see src/db/schema.ts's probableOfficialEventUrl column comment. */
+  probableOfficialEventUrl: string | null;
   probableFree: boolean;
   probableVenueName: string | null;
   /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06) — see src/db/schema.ts's column comment. */

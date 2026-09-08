@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, isSameHost, truncateAtBoundary } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -246,8 +246,16 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
   const venueName = decodeHtmlEntities(venueMatch[1]).trim();
   if (!venueName) throw new Error(`KultuNaut detail page has an empty venue name (${detailUrl})`);
 
+  // Admin + public link integrity (2026-09-08): every real fixture shows
+  // this button always links to kultunaut.dk's OWN /perl/billet/ redirect
+  // page, never an external ticket provider directly, and robots.txt
+  // disallows fetching that path to see where it ultimately sends buyers —
+  // so this is never treated as a genuine ticketUrl. A KultuNaut page/link
+  // must remain SOURCE-only; only a provably external destination may ever
+  // render as "Tickets" (see SOURCE_ONBOARDING.md's link-role invariant).
   const ticketMatch = html.match(/<a class="(?:white|blue)button" href="([^"]+)" title="K\S+\/bestil billet"/);
-  const ticketUrl = ticketMatch ? decodeHtmlEntities(ticketMatch[1]) : null;
+  const rawTicketUrl = ticketMatch ? decodeHtmlEntities(ticketMatch[1]) : null;
+  const ticketUrl = rawTicketUrl && !isSameHost(rawTicketUrl, KULTUNAUT_BASE_URL) ? rawTicketUrl : null;
 
   const articleMatch = html.match(/<article class="event-description">([\s\S]*?)<\/article>/);
   // Full, UNTRUNCATED cleaned text — genre classification and relevanceText

@@ -38,7 +38,27 @@ function classifySourceRole(sourceType: Source["sourceType"]): "official" | "tic
   return "unknown";
 }
 
-function officialUrlRole(event: Pick<EventRecord, "canonicalSourceId">): "official" | "tickets" | "unknown" {
+/**
+ * Manual-override precedence (admin + public link integrity, 2026-09-08):
+ * once an admin has explicitly set/edited `officialEventUrl` (tracked in
+ * `overriddenFields`, the same mechanism every other hand-corrected field
+ * already uses — src/lib/override.ts), that URL is a deliberate editorial
+ * decision, not source-derived data — it must always render "Official
+ * event" regardless of what the event's canonicalSourceId's sourceType
+ * would otherwise infer. Without this, an event whose canonical source is
+ * a discovery/aggregator source (e.g. KultuNaut, sourceType
+ * general-aggregator) permanently downgrades ANY officialEventUrl to
+ * "Source" — including a real official venue URL an admin typed in by
+ * hand — and, worse, that "Source"-labeled entry then gets silently
+ * stripped out entirely by getExternalLinks whenever the same event also
+ * has a Tickets/RA link, i.e. the admin's Official Event link visibly
+ * "disappears" from the public page. Source-role inference below still
+ * applies to every URL an admin has NOT touched (unchanged from before).
+ */
+function officialUrlRole(
+  event: Pick<EventRecord, "canonicalSourceId" | "overriddenFields">,
+): "official" | "tickets" | "unknown" {
+  if (event.overriddenFields.includes("officialEventUrl")) return "official";
   if (!event.canonicalSourceId) return "official";
   const source = getSourceById(event.canonicalSourceId);
   if (!source) return "official";

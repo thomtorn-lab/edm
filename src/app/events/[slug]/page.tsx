@@ -146,7 +146,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <div className="mt-2 flex flex-wrap gap-3">
             {links.map((link) => (
               <a
-                key={link.label}
+                key={link.href}
                 href={link.href}
                 target="_blank"
                 rel="noopener noreferrer"

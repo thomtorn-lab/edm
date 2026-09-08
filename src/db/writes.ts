@@ -425,12 +425,38 @@ interface NewEventInput {
   published: boolean;
   confidence: ConfidenceLevel;
   canonicalSourceId: string | null;
+  /**
+   * Provenance URL for source_event_links (admin + public link integrity,
+   * 2026-09-08) — the source's OWN discovery-page URL, decoupled from
+   * `officialEventUrl` above. Before this, `createEvent`'s provenance write
+   * always reused `officialEventUrl` itself, which was safe only because
+   * every caller happened to set officialEventUrl to the source's own URL
+   * (publishDiscoveryItem's old unconditional `item.sourceUrl`). Now that
+   * publishDiscoveryItem can set officialEventUrl to a DIFFERENT,
+   * admin-entered URL, provenance must keep recording what the source
+   * actually served, never a human's own edit — see Section 7 of the
+   * KultuNaut link-integrity audit. Falls back to officialEventUrl when
+   * omitted, preserving every other existing caller's behavior exactly.
+   */
+  provenanceUrl?: string | null;
+  /**
+   * Seeds the new event's own overriddenFields (admin + public link
+   * integrity, 2026-09-08) — lets a caller (publishDiscoveryItem) carry
+   * forward which fields an admin already hand-corrected at the Discovery
+   * Queue stage (e.g. a manually-entered officialEventUrl/ticketUrl) so a
+   * later sync can never silently overwrite them, exactly like every other
+   * post-publish admin edit already protects via applyAdminEventEdit.
+   * Defaults to [] (createEvent's prior, unconditional behavior) when
+   * omitted.
+   */
+  overriddenFields?: string[];
 }
 
 export async function createEvent(input: NewEventInput, createdBy: string) {
   const now = new Date();
+  const { provenanceUrl, overriddenFields, ...eventFields } = input;
   await db.insert(events).values({
-    ...input,
+    ...eventFields,
     timezone: "Europe/Copenhagen",
     otherSourceUrls: [],
     // postponed is never known at creation time — no source has evidence
@@ -439,17 +465,18 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
     postponed: false,
     dateChanged: false,
     timeChanged: false,
-    manualOverride: false,
-    overriddenFields: [],
+    manualOverride: (overriddenFields?.length ?? 0) > 0,
+    overriddenFields: overriddenFields ?? [],
     createdAt: now,
     updatedAt: now,
     lastSourceCheck: now,
     lastChanged: now,
   });
-  if (input.canonicalSourceId && input.officialEventUrl) {
-    await recordSourceLink(input.id, input.canonicalSourceId, input.officialEventUrl, "official");
+  const provenance = provenanceUrl ?? input.officialEventUrl;
+  if (input.canonicalSourceId && provenance) {
+    await recordSourceLink(input.id, input.canonicalSourceId, provenance, "official");
   }
-  await writeChangeLog(input.id, createdBy, "create", Object.keys(input));
+  await writeChangeLog(input.id, createdBy, "create", Object.keys(eventFields));
 }
 
 export async function recordSourceLink(
@@ -649,7 +676,13 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // matching comment in db/sync.ts's auto-publish branch.
       subgenres: item.predictedGenre ? [item.predictedGenre as GenreSlug] : ["electronic-other"],
       genreConfidence: item.genreConfidence as ConfidenceLevel,
-      officialEventUrl: item.sourceUrl,
+      // Admin + public link integrity (2026-09-08): an admin-entered
+      // probableOfficialEventUrl (added at the DQ review stage — see
+      // src/db/schema.ts's column comment) is a deliberate editorial
+      // decision and always wins; falling back to this row's own sourceUrl
+      // (the discovery page itself) preserves every existing publish's
+      // exact prior behavior when the admin never touched this field.
+      officialEventUrl: item.probableOfficialEventUrl ?? item.sourceUrl,
       ticketUrl: item.probableTicketUrl,
       facebookUrl: item.sourceUrl.includes("facebook.com") ? item.sourceUrl : null,
       residentAdvisorUrl: item.sourceUrl.includes("ra.co") ? item.sourceUrl : null,
@@ -671,8 +704,23 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // Provenance is persisted immediately here (via createEvent's own
       // recordSourceLink call, triggered whenever canonicalSourceId +
       // officialEventUrl are both set) rather than left for a later sync to
-      // reconstruct via fuzzy matching.
+      // reconstruct via fuzzy matching. Deliberately item.sourceUrl (the
+      // source's own page), NOT the officialEventUrl field above — those two
+      // can now differ (see provenanceUrl's own doc comment on NewEventInput).
       canonicalSourceId: item.sourceId,
+      provenanceUrl: item.sourceUrl,
+      // DQ-stage manual edits (officialEventUrl/ticketUrl) must stay
+      // protected from a later sync the same way any post-publish admin
+      // edit already is (src/lib/override.ts) — otherwise the very field an
+      // admin just deliberately set at review time could be silently
+      // reverted by the next sync run. Only these two fields map onto a DQ
+      // row's own overriddenFields (probableTicketUrl/probableOfficialEventUrl
+      // are the only DQ fields with a direct canonical-event equivalent this
+      // audit is scoped to).
+      overriddenFields: [
+        ...(item.overriddenFields?.includes("probableOfficialEventUrl") ? ["officialEventUrl"] : []),
+        ...(item.overriddenFields?.includes("probableTicketUrl") ? ["ticketUrl"] : []),
+      ],
     },
     "admin",
   );
@@ -725,6 +773,8 @@ export interface DiscoveryEditPatch {
   probableStart?: Date | null;
   probableEnd?: Date | null;
   probableTicketUrl?: string | null;
+  /** Admin-entered Official Event URL — see src/db/schema.ts's probableOfficialEventUrl column comment. */
+  probableOfficialEventUrl?: string | null;
   probableFree?: boolean;
   probableVenueName?: string | null;
   detectedLineup?: string[];
