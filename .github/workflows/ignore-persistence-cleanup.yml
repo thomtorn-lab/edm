@@ -1,0 +1,75 @@
+name: Ignore Persistence Historical Cleanup
+
+# One-time, deliberately temporary workflow (Ignore Persistence historical
+# cleanup, 2026-09-11 — addendum to the Ignore Persistence fix). Mirrors
+# this repo's established one-time-correction pattern (vega-venue-model-
+# cleanup.yml): added, run once, then removed. Runs
+# src/db/ignorePersistenceCleanup.ts, which marks pre-existing "pending"
+# discovery_queue rows as "ignored" ONLY when they share an exact source_url
+# with an already-"ignored" row (the historical fallout of the now-fixed
+# bug) — no schema change, no deletes, no published/merged/event writes.
+#
+# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) or "apply" (writes)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: "apply mode only: type IGNORE-PERSISTENCE-CLEANUP-2026-09-11 to confirm the writes."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ignore-persistence-cleanup
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run Ignore Persistence historical cleanup
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          node --env-file=.env.local --import tsx src/db/ignorePersistenceCleanup.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
