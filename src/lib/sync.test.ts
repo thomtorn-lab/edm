@@ -9,6 +9,7 @@ import {
   findPendingRowToResolve,
   findSyncMatch,
   isDiscoveryRowCurrent,
+  isIgnoredCandidate,
   summarizeWriteErrors,
   type DiscoveryQueueTarget,
   type SyncTargetEvent,
@@ -121,6 +122,30 @@ describe("findPendingRowToResolve", () => {
 
   it("empty pending map -> null", () => {
     expect(findPendingRowToResolve("https://culture-box.com/event/fri-28-august/#black-box", new Map())).toBeNull();
+  });
+});
+
+describe("isIgnoredCandidate (Ignore Persistence fix, 2026-09-11)", () => {
+  it("true when this exact dedupKey was already explicitly ignored", () => {
+    const ignoredByUrl = new Set(["https://billetto.dk/e/melting-monday-1"]);
+    expect(isIgnoredCandidate("https://billetto.dk/e/melting-monday-1", ignoredByUrl)).toBe(true);
+  });
+
+  it("false when the ignored set is empty", () => {
+    expect(isIgnoredCandidate("https://billetto.dk/e/melting-monday-1", new Set())).toBe(false);
+  });
+
+  it("false for an unrelated dedupKey, even when other rows are ignored", () => {
+    const ignoredByUrl = new Set([
+      "https://billetto.dk/e/melting-monday-1",
+      "https://billetto.dk/e/tuesday-tech-house-1",
+    ]);
+    expect(isIgnoredCandidate("https://billetto.dk/e/wednesday-warehouse-1", ignoredByUrl)).toBe(false);
+  });
+
+  it("is an exact-match check, not a prefix/substring match — a new edition's distinct URL is never accidentally caught", () => {
+    const ignoredByUrl = new Set(["https://billetto.dk/e/melting-monday-1"]);
+    expect(isIgnoredCandidate("https://billetto.dk/e/melting-monday-2", ignoredByUrl)).toBe(false);
   });
 });
 

@@ -28,6 +28,7 @@ import {
   decideSourceCancellationSyncAction,
   findPendingRowToResolve,
   findSyncMatch,
+  isIgnoredCandidate,
   summarizeWriteErrors,
   type SyncTargetEvent,
 } from "@/lib/sync";
@@ -178,11 +179,17 @@ async function runSourceSyncLocked(
   const fetchComplete = adapter.lastFetchWasComplete?.() ?? true;
   const seenAt = new Date();
 
-  const [venues, existingEventRows, links, pendingDiscovery] = await Promise.all([
+  const [venues, existingEventRows, links, pendingDiscovery, ignoredDiscovery] = await Promise.all([
     getVenues(),
     getAllEventsAdmin(),
     db.select().from(sourceEventLinks).where(eq(sourceEventLinks.sourceId, sourceId)),
     db.select().from(discoveryQueue).where(eq(discoveryQueue.status, "pending")),
+    // Ignore persistence (2026-09-11) — see isIgnoredCandidate's own doc
+    // comment (src/lib/sync.ts) for the full root cause this closes. Fetched
+    // separately from pendingDiscovery above (never merged into that map)
+    // so every existing pendingByUrl/findPendingRowToResolve call site below
+    // is completely untouched — this is a new, additive check only.
+    db.select().from(discoveryQueue).where(eq(discoveryQueue.status, "ignored")),
   ]);
   // Static, code-level declaration (src/lib/data/sources.ts) — a
   // product-routing property, not a DB read (see isTrustedElectronicSource's
@@ -216,6 +223,7 @@ async function runSourceSyncLocked(
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
   const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
+  const ignoredByUrl = new Set(ignoredDiscovery.map((d) => d.sourceUrl));
   const existingForDedup: ExistingEventForDedup[] = existingEventRows.map((e) => ({
     id: e.id,
     title: e.title,
@@ -589,6 +597,18 @@ async function runSourceSyncLocked(
       // routing for brand-new candidates on the next sync, never a bulk
       // cleanup of history.
       if (result.decision === "hold" && result.holdReason === "negative_relevance") {
+        continue;
+      }
+
+      // Ignore persistence (2026-09-11) — see isIgnoredCandidate's own doc
+      // comment (src/lib/sync.ts) for the full root cause and identity
+      // reasoning. An admin already explicitly dismissed this exact same
+      // dedupKey; never spawn a brand-new "pending" row for it just because
+      // this sync re-fetched the same page. Deliberately placed here, after
+      // the match/auto_publish branches above (both unaffected by this
+      // check) and after the negative_relevance skip (same "never create a
+      // row" shape) — the only thing this ever prevents is this insert.
+      if (isIgnoredCandidate(dedupKey, ignoredByUrl)) {
         continue;
       }
 

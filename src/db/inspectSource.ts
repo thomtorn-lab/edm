@@ -1709,12 +1709,59 @@ async function modeDbIntegrity(client: Client, args: Record<string, string | boo
   console.log(JSON.stringify(byStatus.rows, null, 2));
 }
 
+/**
+ * Ignore Persistence audit (2026-09-11) — read-only, pre-migration audit of
+ * whether Production already contains discovery_queue rows illustrating the
+ * bug this task fixes: an ignored row's identity (source_url) reappearing
+ * as a new, separate row after a later sync. Every source_url with more
+ * than one discovery_queue row is any kind of duplicate; the ones actually
+ * worth flagging are specifically those where an "ignored" row coexists
+ * with a still-actionable one (pending/published/merged) for the exact same
+ * url — that combination is the concrete, historical evidence (not just a
+ * theoretical bug) that an admin's Ignore decision was silently undone.
+ */
+async function modeIgnorePersistenceAudit(client: Client, _args: Record<string, string | boolean>) {
+  section("discovery_queue: every source_url with more than one row (any statuses)");
+  const dupes = await client.query(`
+    SELECT source_url,
+           count(*)::int AS n,
+           array_agg(id ORDER BY created_at) AS ids,
+           array_agg(status ORDER BY created_at) AS statuses,
+           array_agg(source_id ORDER BY created_at) AS source_ids,
+           array_agg(created_at ORDER BY created_at) AS created_ats
+    FROM discovery_queue
+    GROUP BY source_url
+    HAVING count(*) > 1
+    ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(dupes.rows, null, 2));
+
+  section("discovery_queue: source_urls where an 'ignored' row coexists with a still-actionable row (pending/published/merged) — the exact Ignore Persistence bug");
+  const ignoredCoexist = await client.query(`
+    SELECT source_url,
+           count(*)::int AS n,
+           array_agg(id ORDER BY created_at) AS ids,
+           array_agg(status ORDER BY created_at) AS statuses,
+           array_agg(created_at ORDER BY created_at) AS created_ats
+    FROM discovery_queue
+    GROUP BY source_url
+    HAVING count(*) FILTER (WHERE status = 'ignored') > 0
+       AND count(*) FILTER (WHERE status != 'ignored') > 0
+    ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(ignoredCoexist.rows, null, 2));
+
+  section("discovery_queue: total rows by status (context)");
+  const byStatus = await client.query("SELECT status, count(*)::int AS n FROM discovery_queue GROUP BY status ORDER BY status");
+  console.log(JSON.stringify(byStatus.rows, null, 2));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (typeof mode !== "string") {
     console.error(
-      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit> is required.",
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit> is required.",
     );
     process.exit(1);
   }
@@ -1738,6 +1785,7 @@ async function main() {
     "db-integrity": modeDbIntegrity,
     "adapter-dry-run": modeAdapterDryRun,
     "admin-queue-audit": modeAdminQueueAudit,
+    "ignore-persistence-audit": modeIgnorePersistenceAudit,
   };
 
   if (mode === "reachability") {
@@ -1749,7 +1797,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit.`,
     );
     process.exit(1);
   }

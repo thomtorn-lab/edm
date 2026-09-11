@@ -257,6 +257,48 @@ export function findPendingRowToResolve(
   return pendingByUrl.get(dedupKey)?.id ?? null;
 }
 
+/**
+ * Whether a fresh sync candidate must be skipped entirely — never spawning a
+ * new discovery_queue row — because an admin already explicitly ignored this
+ * exact same discovered-event identity (Ignore Persistence fix, 2026-09-11).
+ *
+ * Root cause this closes: src/db/sync.ts previously only ever fetched
+ * `status = "pending"` rows before deciding whether to reuse an existing row
+ * or insert a new one. ignoreDiscoveryItem (src/db/writes.ts) only ever sets
+ * `status = "ignored"` on the one row it's called on — it does nothing to
+ * stop a later sync from re-discovering the same page. Once a row moved to
+ * "ignored" it dropped out of that pending-only lookup entirely, so the next
+ * sync that re-fetched the same candidate found no existing row for its
+ * dedupKey and inserted a brand-new "pending" one — silently undoing the
+ * admin's decision.
+ *
+ * Identity: reuses the EXACT SAME dedupKey concept (raw.officialEventUrl ??
+ * raw.sourceUrl) already used by findSyncMatch/findPendingRowToResolve
+ * above — no parallel identity system. This is deliberately the narrowest
+ * identity already available (no source_event_id column exists in this
+ * schema): a title/date/venue change at the SAME url still resolves to the
+ * SAME dedupKey, so it stays correctly suppressed (edge cases A-C of the
+ * Ignore Persistence audit), while a genuinely different event — a new
+ * edition of a recurring series, say — almost always arrives under a
+ * distinct url and is never touched by this at all (edge cases D-E). Not
+ * scoped per-source: `ignoredByUrl` is built from ALL ignored rows
+ * regardless of sourceId, deliberately mirroring the existing
+ * `pendingByUrl` map's own already-established, sourceId-agnostic behavior
+ * — a url shared across two sources already means "the same real event"
+ * everywhere else in this file (edge case F).
+ *
+ * Deliberately scoped to ONLY the "insert a brand-new row" decision — never
+ * consulted by the match/auto_publish branches above it in src/db/sync.ts,
+ * so an ignored candidate that later resolves to a real existing canonical
+ * event, or clears every auto-publish evidence bar outright, is unaffected
+ * by this check (a separate, evidence-driven decision this fix does not
+ * touch — see that task's own audit for why blocking auto_publish here was
+ * deliberately left out of scope).
+ */
+export function isIgnoredCandidate(dedupKey: string, ignoredByUrl: Set<string>): boolean {
+  return ignoredByUrl.has(dedupKey);
+}
+
 export interface DiscoveryQueueTarget {
   /** Only ever proposes a patch for "pending" — a resolved item (published/ignored/merged) is frozen. */
   status: string;

@@ -342,6 +342,247 @@ describe("Billetto Discovery Queue noise — a genuinely irrelevant new candidat
   });
 });
 
+/**
+ * Ignore Persistence audit fix (2026-09-11): ignoreDiscoveryItem
+ * (src/db/writes.ts) only ever sets status="ignored" on the one row it's
+ * called on. Before this fix, runSourceSyncLocked only ever fetched
+ * status="pending" rows before deciding whether to reuse an existing row or
+ * insert a brand-new one — an ignored row was invisible to that lookup, so
+ * the next sync that re-fetched the exact same candidate found "nothing
+ * pending" for its dedupKey and silently inserted a new actionable row,
+ * undoing the admin's decision. See isIgnoredCandidate's own doc comment
+ * (src/lib/sync.ts) for the full identity reasoning these tests exercise.
+ *
+ * Seeds exactly the three sequential db.select() calls runSourceSyncLocked
+ * makes per run (sourceEventLinks, pending discoveryQueue, ignored
+ * discoveryQueue — see mockMatchedByUrl's own doc comment above for why
+ * chained mockImplementationOnce calls can rely on this fixed order).
+ */
+describe("Ignore Persistence — an explicitly ignored candidate never spawns a new discovery_queue row on a later sync (2026-09-11)", () => {
+  function mockThreeSelects(
+    linksResult: unknown[],
+    pendingResult: unknown[],
+    ignoredResult: unknown[],
+  ) {
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once(linksResult))
+      .mockImplementationOnce(() => once(pendingResult))
+      .mockImplementationOnce(() => once(ignoredResult));
+  }
+
+  function melting(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+      ...overrides,
+    };
+  }
+
+  it("1. ignore event -> run same source sync -> remains ignored (no new row is created)", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([melting()]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.outcome).toBe("ok");
+    expect(result.created).toBe(0);
+    expect(result.queuedForReview).toBe(0);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("2/3. an ignored candidate is never recreated as an actionable row, regardless of which review/hold bucket its fresh classification would land in", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    // "Melting Monday" is a genuinely unclear (not negative-evidenced)
+    // candidate — it would normally land as ordinary "review_queue" (see the
+    // Billetto noise describe block above, where this exact candidate DOES
+    // get queued absent an ignored row). No holdReason/decision branch below
+    // ever gets a chance to classify it once ignoredByUrl already matches.
+    const adapter = fakeAdapter(() => Promise.resolve([melting()]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("4. same source_event_id (URL), changed title -> remains ignored", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([melting({ title: "Melting Monday — NOW WITH SPECIAL GUEST" })]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("5. same source_event_id (URL), changed venue -> remains ignored", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([melting({ venueName: "A Completely Different Venue" })]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("6. same source_event_id (URL), changed date/time -> remains ignored", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([melting({ startDatetime: "2026-12-24T22:00:00Z" })]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("7. a genuinely new edition with a NEW source_event_id (different URL) remains fully actionable — ignoring one edition never suppresses a distinct one", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    const nextEdition = melting({
+      officialEventUrl: "https://billetto.dk/e/melting-monday-2",
+      sourceUrl: "https://billetto.dk/e/melting-monday-2",
+    });
+    const adapter = fakeAdapter(() => Promise.resolve([nextEdition]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.queuedForReview).toBe(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("8. an unrelated event from the same venue/source (different URL, different identity) is unaffected", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    const unrelated: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Tuesday Tech-House",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/tuesday-tech-house-1",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([unrelated]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.queuedForReview).toBe(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("9. published events unaffected: a candidate matching an already-published event still updates normally even when an ignored row exists for the same URL", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-wonderworld",
+        officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+        canonicalSourceId: "src-poolen",
+        title: "Old Title",
+      }),
+    ]);
+    mockThreeSelects(
+      [{ eventId: "e-wonderworld", sourceUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/" }],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/", status: "ignored", sourceId: "src-poolen" }],
+    );
+    const candidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-poolen",
+      title: "Wonderworld Christmas",
+      officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([candidate]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(result.updated).toBe(1);
+    expect(applySourceSyncPatch).toHaveBeenCalledTimes(1);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("10. source cancellation unaffected: cancellation detection on a matched existing event proceeds normally even when an ignored row exists for the same URL", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: "e-wonderworld",
+        officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+        canonicalSourceId: "src-poolen",
+      }),
+    ]);
+    mockThreeSelects(
+      [{ eventId: "e-wonderworld", sourceUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/" }],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/", status: "ignored", sourceId: "src-poolen" }],
+    );
+    const cancelled: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-poolen",
+      title: "Wonderworld Christmas",
+      officialEventUrl: "https://poolen.dk/da/koncerter/wonderworld-christmas/",
+      cancelledHint: true,
+      cancellationEvidence: 'Poolen status badge "Aflyst"',
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([cancelled]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(result.unpublished).toBe(1);
+    expect(applySourceCancellationUnpublish).toHaveBeenCalledTimes(1);
+  });
+
+  it("11. cross-source: an ignored row from one source suppresses a later candidate for the SAME url arriving via a DIFFERENT source (same discovered-event identity, per the audit's own default)", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-old", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: "src-billetto" }],
+    );
+    // Same officialEventUrl, but this run is for a completely different
+    // registered source than the one that originally surfaced (and got
+    // ignored on) this URL.
+    const sameUrlDifferentSource = melting({ sourceId: "src-culture-box" });
+    const adapter = fakeAdapter(() => Promise.resolve([sameUrlDifferentSource]));
+    const result = await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("12. a manually-ignored row (admin 'Add event from URL', sourceId null) also suppresses a later matching sync candidate — identity-based, not gated on sourceId", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-manual", sourceUrl: "https://billetto.dk/e/melting-monday-1", status: "ignored", sourceId: null }],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([melting()]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+});
+
 describe("trusted-electronic sources — a complete Hangaren/Culture Box candidate auto-publishes even with unresolved genre (Section 6, corrected 2026-08-24)", () => {
   const hangarenVenues: Venue[] = [
     {
@@ -727,11 +968,16 @@ function existingCultureBoxEvent(overrides: Partial<EventWithVenue> = {}): Event
  * source_event_links). The cross-case follow-up tests below (2026-09-07)
  * DO need that branch, since they're proving the manualOverride-precision
  * fix holds for an EXISTING matched event, not just the pure decision
- * function in isolation. `db.select()` is called exactly twice per sync run
- * inside one `Promise.all` (sourceEventLinks, then discoveryQueue) — both
- * calls fire synchronously as the array literal is built, so two chained
+ * function in isolation. `db.select()` is called three times per sync run
+ * inside one `Promise.all` (sourceEventLinks, then pending discoveryQueue,
+ * then ignored discoveryQueue — see the Ignore Persistence fix, 2026-09-11)
+ * — all calls fire synchronously as the array literal is built, so chained
  * `mockImplementationOnce` calls land on the right table in the right order
- * without needing to inspect the `.from(table)` argument at all.
+ * without needing to inspect the `.from(table)` argument at all. Only the
+ * first two calls matter here (sourceEventLinks, pending), so this helper
+ * still only chains two — the third (ignored discoveryQueue) falls through
+ * to the base module-scope mock (always `[]`), which is exactly the
+ * "nothing ignored" default every test using this helper wants.
  */
 function mockMatchedByUrl(eventId: string, sourceUrl: string) {
   vi.mocked(db.select)
