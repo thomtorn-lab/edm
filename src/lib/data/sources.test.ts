@@ -21,8 +21,8 @@ describe("getSourceCancellationPolicy (source-driven cancellation safety, 2026-0
     expect(getSourceCancellationPolicy("src-does-not-exist")).toBe("none");
   });
 
-  it("reads real per-source registry metadata (Source.cancellationPolicy), not a hardcoded id list — every one of the 23 registered sources sets it explicitly, and exactly the three cancelledHint-capable sources are 'trusted'", () => {
-    expect(SOURCES.length).toBe(23);
+  it("reads real per-source registry metadata (Source.cancellationPolicy), not a hardcoded id list — every one of the 24 registered sources sets it explicitly, and exactly the three cancelledHint-capable sources are 'trusted'", () => {
+    expect(SOURCES.length).toBe(24);
     for (const s of SOURCES) {
       expect(s.cancellationPolicy).toBeDefined();
     }

@@ -517,6 +517,47 @@ export const SOURCES: Source[] = [
     integrationNote:
       "Registered 2026-09-05 following a two-part audit: (1) FULL/COMPLETE KULTUNAUT AUDIT — exhaustive pagination of both genre listings (38 Elektronisk + 24 Club/DJ = 62 unique current events, zero cross-category duplicates, zero already-past rows exposed), full-text detail-page classification of every plausible A/B candidate, and exact event-by-event dedup verification against Production's real canonical events, Discovery Queue, and 12 targeted title searches — final numbers: 14 A-tier, 17 B-tier, 15 C-tier, 16 D-tier; of the 31 A/B candidates, 18 were exact canonical duplicates (Poolen: EleKtro Universal is actually src-billetto's; Paul Van Dyk, Benny Benassi, Nico Moreno, Intercell, Teletech, WonderWorld Christmas, Kevin de Vries & Massano, Kløbb Ka2, Kind mod Kind all match src-poolen/src-pumpehuset canonical rows exactly; Chapter II/Possessed matches src-hangaren's 'Arcanum Collective: POSSESSED'; GLØD i mørket and Final Descent: Nyx match src-billetto/src-alice canonical rows), 1 already Discovery-Queue-pending (Jasho Club, src-poolen), and only 4 A-tier (Electro Werkz, Electro Shock Therapy, Karrusel 2027, Elements – Halloween Night) + 8 B-tier (Slayyyter, Mærk. Bemærk., Back to 2000s, DJ Aligator HEAVEN/HELL, NITE, Mannings children, &ME and Adam Port) were genuinely new. (2) CLOSE KULTUNAUT DECISION + VEGA FIX — resolved the 3 remaining unresolved events (all confirmed genuinely incremental, 0 unresolved A/B left) and fixed a real, generalized venue-resolution risk the audit surfaced independently of KultuNaut itself: v-vega-ideal-bar's registry `name` field was the bare 'VEGA', which resolveVenue()'s exact-match semantics meant any source (not just KultuNaut) supplying literal 'VEGA' text would silently resolve to the Ideal Bar room specifically — fixed by renaming that row to 'VEGA (Ideal Bar)' (verified live in Production, no existing event was actually misattributed). FINAL DECISION: KultuNaut is a discovery/review source only, never a second ingestion backbone — real, disclosed value (4 confirmed incremental A-tier, 8 confirmed incremental B-tier), but a materially higher duplicate burden (18/32 exact duplicates) and weaker technical/legal profile (HTML scrape, iso-8859-1 charset handling, unresolved reuse terms) than src-billetto's stable, already-integrated JSON API justify discovery-only registration, never autoPublish.",
   },
+  {
+    id: "src-hvaderpaa",
+    lastCompleteSyncAt: null,
+    sourceName: "HvadErPå — Den Anden Side / MODULE / Jolene / Baggen (shared gap-filler, Phase 1)",
+    publicName: "HvadErPå",
+    sourceType: "general-aggregator",
+    baseUrl: "https://hvaderpaa.dk/",
+    // Discovery only, deliberately no "ingestion" role and no "link" role —
+    // same reasoning as src-kultunaut immediately above: general-aggregator
+    // sourceType already guarantees this source's own page can never render
+    // as "Official event" (src/lib/links.ts's classifySourceRole/officialUrlRole),
+    // and src/db/sync.ts's sourceAutoPublishAllowed gate (reading autoPublish
+    // below) prevents it from ever auto-publishing regardless of what the
+    // shared pipeline would otherwise decide.
+    roles: ["discovery"],
+    // Real, working adapter (src/lib/adapters/hvaderpaaAdapter.ts), built
+    // from a three-round, event-by-event read-only viability probe (see
+    // integrationNote below) — deliberately scoped to four explicit venue
+    // pages, never the site-wide feed.
+    adapter: "hvaderpaa-json-ld",
+    trustLevel: "medium",
+    // NEVER true, matching src-kultunaut's own reasoning: the closing probe
+    // found real, disclosed incremental value (21 events across 5 venues out
+    // of 14 probed) but extreme concentration (100% of that value from 5
+    // venues; 9 probed venues contributed zero) and zero event across the
+    // whole probe carrying a genuine event-specific Official Event URL —
+    // both real reasons this stays review-gated, not auto-publish, even
+    // though technical reliability itself was fully confirmed (clean,
+    // consistent schema.org JSON-LD across ~50 live fetches).
+    autoPublish: false,
+    cancellationPolicy: "none",
+    syncFrequency: "every 6h",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Registered following a three-round read-only viability probe (HVADERPAA — NARROW TECHNICAL VIABILITY PROBE, closed 'B. BUILD RECOMMENDED WITH CONDITIONS'): every current/upcoming event at 14 candidate venues was individually opened and classified against the same EDM relevance rule every other source uses (electronic DANCE music must be central/defining — never inferred from the venue alone in either direction). Of 30 raw events inspected, 23 were relevant and 21 were genuinely incremental (zero existing Production coverage, verified live via venue-events cross-check), but 100% of that incremental value came from just 5 of the 14 venues — Den Anden Side (9), MODULE (4), Jolene (4), Baggen (2), and Klub Werkstatt (2, EXCLUDED here — see below). The other 9 probed venues (RUST, H15, Halvandet, Pylonen, Bolsjefabrikken, Mayhem, Hotel Cecil, UnderWerket, Basement) contributed zero incremental events — several (UnderWerket, Basement's one candidate, H15's two non-Sunrave candidates) are hardcore/metal/jazz/wellness-class events with an explicit non-electronic genre stated in their own description text, not judgment calls. Klub Werkstatt is deliberately excluded from Phase 1 despite its 2 genuinely-incremental HvadErPå events: it already has its own dedicated first-party adapter (src-klub-werkstatt in this same file) from an earlier onboarding pass, whose current 0-event Production state is a separate problem to investigate directly rather than mask by adding a second source for the same venue. Phase 1 is therefore scoped to exactly Den Anden Side, MODULE, Jolene and Baggen's own venue pages (never the site-wide feed, never any venue outside this allowlist even if hvaderpaa's markup referenced one — see hvaderpaaAdapter.ts's own ALLOWED_VENUES/isAllowedVenueName guard). Technical reliability is fully confirmed: clean, consistent schema.org Event/ItemList JSON-LD across every one of ~50 live fetches across all three probe rounds, GET-only, no auth/JS-rendering barrier. No event sampled anywhere in the probe ever carried a genuine event-specific Official Event URL in its own offers.url (always Resident Advisor, a ticket platform, or absent) — officialEventUrl is therefore always the hvaderpaa event page itself (Source role only, structurally guaranteed never to render 'Official event' by this source's general-aggregator sourceType), and offers.url is classified role-by-destination rather than trusted merely for being in that field: ra.co -> residentAdvisorUrl, billetto.dk -> ticketUrl, anything else (songkick.com, bandsintown.com, etc.) -> neither. H15's one relevant probe event (SUNRAVE SESSIONS /// 4.0) was found already present in Production via src-billetto (exact title+date match) — real, live evidence that dedup against existing sources works and one more reason H15 stays out of Phase 1's allowlist regardless.",
+  },
 
   // ---- Eventbrite: supplemental discovery only ----
   {
