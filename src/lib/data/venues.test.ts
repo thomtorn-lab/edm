@@ -5,6 +5,7 @@ import {
   PUBLIC_VENUE_LABEL_OVERRIDES,
   VENUES,
   getPublicVenueGroupPrimaryId,
+  googleMapsUrl,
   publicVenueLabel,
 } from "./venues";
 
@@ -93,5 +94,19 @@ describe("PUBLIC_VENUE_LABEL_OVERRIDES / publicVenueLabel — Jolene/Baggen publ
 
   it("falls back to the venue's own name when no override applies", () => {
     expect(publicVenueLabel({ id: "v-culture-box", name: "Culture Box" })).toBe("Culture Box");
+  });
+});
+
+describe("googleMapsUrl — venue address linking (backlog)", () => {
+  it("builds a keyless Google Maps search URL from a venue's address", () => {
+    expect(googleMapsUrl("Kronprinsessegade 54A, 1306 København K")).toBe(
+      "https://www.google.com/maps/search/?api=1&query=Kronprinsessegade%2054A%2C%201306%20K%C3%B8benhavn%20K",
+    );
+  });
+
+  it("URL-encodes every venue address in the registry without throwing", () => {
+    for (const venue of VENUES) {
+      expect(() => new URL(googleMapsUrl(venue.address))).not.toThrow();
+    }
   });
 });

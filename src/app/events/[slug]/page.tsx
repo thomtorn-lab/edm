@@ -7,6 +7,7 @@ import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
+import { googleMapsUrl } from "@/lib/data/venues";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 
@@ -116,7 +117,15 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             </Link>
             {subVenue && <span className="text-text-secondary"> · {subVenue}</span>}
             <br />
-            <span className="text-text-secondary">{event.venue.address}</span>
+            <a
+              href={googleMapsUrl(event.venue.address)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-secondary hover:text-text-primary hover:underline"
+            >
+              {event.venue.address}
+              <span className="sr-only"> (opens Google Maps in a new tab)</span>
+            </a>
           </dd>
         </div>
         {genres.length > 0 && (

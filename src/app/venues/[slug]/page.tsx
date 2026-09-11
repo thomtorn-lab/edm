@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { getEventsForVenue, getVenueById, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
-import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
+import { getPublicVenueGroupPrimaryId, googleMapsUrl, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
 
@@ -64,7 +64,12 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
       <h1 className="font-display mt-1 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
         {label}
       </h1>
-      <p className="mt-2 text-sm text-text-secondary">{venue.address}</p>
+      <p className="mt-2 text-sm text-text-secondary">
+        <a href={googleMapsUrl(venue.address)} target="_blank" rel="noopener noreferrer" className="hover:text-text-primary hover:underline">
+          {venue.address}
+          <span className="sr-only"> (opens Google Maps in a new tab)</span>
+        </a>
+      </p>
       {(venue.venueProfile || venue.description) && (
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">
           {venue.venueProfile || venue.description}

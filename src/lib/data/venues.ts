@@ -810,3 +810,8 @@ export function publicVenueLabel(venue: Pick<Venue, "id" | "name">): string {
 export function getVenueById(id: string): Venue | undefined {
   return VENUES.find((v) => v.id === id);
 }
+
+/** Public Google Maps search link for a venue's address — keyless, no API dependency, works for any address string as stored. */
+export function googleMapsUrl(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}
