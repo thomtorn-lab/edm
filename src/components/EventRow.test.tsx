@@ -528,3 +528,30 @@ describe("EventRow — Byhaven sub-venue context in listing metadata (real Produ
     expect(screen.queryByText("Byhaven")).toBeNull();
   });
 });
+
+describe("EventRow — multi-day event date-range display", () => {
+  afterEach(cleanup);
+
+  it("shows a single date for a same-day event", () => {
+    render(
+      <EventRow
+        event={makeEvent({ startDatetime: "2026-08-10T18:00:00.000Z", endDatetime: "2026-08-10T21:00:00.000Z" })}
+      />,
+    );
+    expect(screen.getByText("MON 10 AUG")).toBeTruthy();
+  });
+
+  it("shows the full date range when the event ends on a later Copenhagen calendar day", () => {
+    render(
+      <EventRow
+        event={makeEvent({ startDatetime: "2026-10-09T20:00:00.000Z", endDatetime: "2026-10-11T03:00:00.000Z" })}
+      />,
+    );
+    expect(screen.getByText("FRI 9 OCT – SUN 11 OCT")).toBeTruthy();
+  });
+
+  it("falls back to a single date when there is no end datetime", () => {
+    render(<EventRow event={makeEvent({ startDatetime: "2026-10-09T20:00:00.000Z", endDatetime: null })} />);
+    expect(screen.getByText("FRI 9 OCT")).toBeTruthy();
+  });
+});
