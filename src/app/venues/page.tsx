@@ -4,7 +4,6 @@ import { getEventsForVenue, getVenues } from "@/lib/queries";
 import { isPastEvent } from "@/lib/datetime";
 import { CURATED_VENUE_SLUGS, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import type { Venue } from "@/lib/types";
-import VenueAddressLink from "@/components/VenueAddressLink";
 
 export const metadata: Metadata = {
   title: "Venues",
@@ -75,9 +74,7 @@ function VenueEntry({ venue, upcomingCount }: { venue: Venue; upcomingCount: num
         {publicVenueLabel(venue)}
         <span aria-hidden="true" className="text-sm text-text-tertiary">→</span>
       </Link>
-      <p className="mt-1 text-sm text-text-secondary">
-        <VenueAddressLink address={venue.address} />
-      </p>
+      <p className="mt-1 text-sm text-text-secondary">{venue.address}</p>
       <p className="mt-2 text-sm leading-relaxed text-text-secondary">
         {venue.shortDescription ?? venue.description}
       </p>
