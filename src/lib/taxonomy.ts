@@ -77,16 +77,23 @@ export function getGenre(slug: GenreSlug): GenreDef {
 }
 
 /**
- * Approved public genre taxonomy (Electronic CPH data-quality work package,
- * Workstream B): a fixed set of 13 categories, used for BOTH the genre
- * filter AND the single public-facing genre badge shown on every event card
- * and detail page (see displayGenres below). The finer-grained GenreSlug
- * values above still exist as classification metadata — an event's stored
- * `subgenres` can be as specific as "melodic-techno" or "progressive-house"
- * — but every public-facing primary genre always rolls up into exactly one
- * of these 13. A niche internal slug is never shown to the public under its
- * own specific label (e.g. "Industrial") when it has a more meaningful
- * approved umbrella (e.g. "Techno") — see mainGenreOf/GENRE_TO_MAIN.
+ * Approved public genre GROUPING taxonomy (Electronic CPH data-quality work
+ * package, Workstream B): a fixed set of 13 broad categories, used for the
+ * genre FILTER (EventExplorer.tsx) and for filter-inheritance — a specific
+ * subgenre like "melodic-techno" is discoverable both under its own exact
+ * label (search — see search.ts) and under its broader group ("Techno" in
+ * the filter dropdown), via mainGenreOf/GENRE_TO_MAIN below.
+ *
+ * This grouping is NOT used for the public-facing genre badge (see
+ * displayGenres below) — that always shows the precise admin-selected/
+ * classified genre (e.g. "Melodic Techno", "Deep House", "Industrial")
+ * verbatim, never its broader umbrella (genre/subgenre taxonomy + display
+ * integrity audit, 2026-09-11: an earlier version of this file rolled the
+ * public badge up into these 13 groups too, which silently overwrote a more
+ * precise admin selection — "Deep House" displayed as "House", "Melodic
+ * Techno" and "Industrial" both displayed as "Techno" — the broader group
+ * must never overwrite the more specific one for DISPLAY, only inform
+ * filtering).
  */
 export type MainGenreSlug =
   | "techno"
@@ -136,18 +143,21 @@ export function getMainGenre(slug: MainGenreSlug): MainGenreDef {
 
 /**
  * Every classification-level GenreSlug rolls up into exactly one
- * MainGenreSlug — this is the single source of truth for both genre
- * filtering (EventExplorer.tsx) and the public genre badge (displayGenres
- * below), so the two can never disagree about which approved category an
- * event belongs to.
+ * MainGenreSlug — the single source of truth for the genre FILTER's parent
+ * grouping (EventExplorer.tsx: selecting "Techno" also matches events tagged
+ * "melodic-techno", "industrial", etc). This mapping no longer feeds the
+ * public genre badge — see displayGenres below, which shows the precise
+ * slug's own label instead.
  *
- * `industrial` rolls up to "techno", not "hard-techno" (data-quality fix,
- * Workstream B): Techno is the meaningful public umbrella for
+ * `industrial` groups under "techno", not "hard-techno" (data-quality fix,
+ * Workstream B): Techno is the meaningful FILTER umbrella for
  * industrial-techno-leaning events (e.g. Intercell) — Industrial is not
- * itself one of the 13 approved public categories, and defaulting it to the
+ * itself one of the 13 approved filter groups, and grouping it under the
  * narrower "Hard Techno" bucket overstated a harder/harsher sound than the
  * event's own evidence supports. Hard Techno remains its own bucket for
- * events explicitly classified "hard-techno".
+ * events explicitly classified "hard-techno". (This only affects which
+ * broad filter an Industrial event surfaces under — its own display badge
+ * always reads "Industrial", never "Techno" or "Hard Techno".)
  */
 const GENRE_TO_MAIN: Record<GenreSlug, MainGenreSlug> = {
   techno: "techno",
@@ -179,29 +189,30 @@ export function mainGenreOf(slug: GenreSlug): MainGenreSlug {
 }
 
 /**
- * Public-facing genre badge(s) for an event (Electronic CPH data-quality
- * work package, Workstream B). Every badge shown to the public is one of the
- * 13 approved MainGenreSlug categories — an internal niche slug (e.g.
- * "melodic-techno", "progressive-house", "industrial") is never rendered
- * under its own specific label; it always rolls up through mainGenreOf/
- * GENRE_TO_MAIN to its approved umbrella ("Techno", "House", "Techno"
- * respectively). Internal `subgenres` metadata stays as rich as
- * classification evidence supports (still visible to admins via
- * getGenre/GENRES directly) — this function is only the public rollup.
- * Deduplicates by approved category so two internal subgenres that share an
- * umbrella (e.g. ["industrial", "melodic-techno"], both -> Techno) are never
- * shown twice.
+ * Public-facing genre badge(s) for an event (genre/subgenre taxonomy +
+ * display integrity audit, 2026-09-11). Shows the exact genre(s) an admin
+ * selected or the classification pipeline resolved, verbatim — "Deep
+ * House" displays as "Deep House", "Melodic Techno" as "Melodic Techno",
+ * "Industrial" as "Industrial". The broader filter grouping (mainGenreOf/
+ * GENRE_TO_MAIN/MAIN_GENRES) is deliberately NOT applied here; that mapping
+ * exists only so the genre FILTER can match a specific subgenre under its
+ * broader category (see EventExplorer.tsx) — it must never overwrite the
+ * more precise genre for display. (This function previously rolled every
+ * subgenre up to one of 13 approved umbrella categories for display —
+ * "Workstream B" — which silently discarded a more specific admin
+ * selection; that rollup now happens only for the filter, not the badge.)
+ * Deduplicates by the underlying slug, so a `subgenres` array containing
+ * the same slug twice is never shown twice; caps at `max` entries.
  */
-export function displayGenres(subgenres: GenreSlug[], max = 2): MainGenreDef[] {
-  const seen = new Set<MainGenreSlug>();
-  const result: MainGenreDef[] = [];
+export function displayGenres(subgenres: GenreSlug[], max = 2): GenreDef[] {
+  const seen = new Set<GenreSlug>();
+  const result: GenreDef[] = [];
 
   for (const slug of subgenres) {
     if (result.length >= max) break;
-    const mainSlug = mainGenreOf(slug);
-    if (seen.has(mainSlug)) continue;
-    seen.add(mainSlug);
-    result.push(getMainGenre(mainSlug));
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    result.push(getGenre(slug));
   }
 
   return result;

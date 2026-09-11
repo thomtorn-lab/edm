@@ -1756,12 +1756,81 @@ async function modeIgnorePersistenceAudit(client: Client, _args: Record<string, 
   console.log(JSON.stringify(byStatus.rows, null, 2));
 }
 
+/**
+ * Read-only Production audit for the genre/subgenre taxonomy + display
+ * integrity fix (2026-09-11): confirms events.primary_genre/subgenres
+ * already store the PRECISE classification-level slug (e.g.
+ * "melodic-techno", "deep-house", "industrial") — never a pre-collapsed
+ * parent-genre string — for every published event and every Discovery
+ * Queue row with a predicted_genre, so the previous public-display rollup
+ * (taxonomy.ts's old displayGenres) was purely a render-time bug with
+ * nothing to backfill: fixing the display function alone retroactively
+ * corrects every existing event, since the underlying stored value was
+ * never lost.
+ */
+async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, string | boolean>) {
+  section("events: count of published events by stored primary_genre");
+  const byGenre = await client.query(`
+    SELECT primary_genre, count(*)::int AS n
+    FROM events
+    WHERE published = true
+    GROUP BY primary_genre
+    ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(byGenre.rows, null, 2));
+
+  section("events: published events whose stored primary_genre is itself one of the 13 broader filter-group slugs (e.g. 'techno', 'house') rather than a niche subgenre — expected and NOT evidence of collapse, since these events were genuinely classified/selected at that broad level");
+  const broadOnly = await client.query(`
+    SELECT primary_genre, count(*)::int AS n
+    FROM events
+    WHERE published = true
+      AND primary_genre IN ('techno', 'house', 'trance', 'psytrance', 'drum-and-bass', 'disco', 'electro', 'ambient-experimental', 'electronic-other', 'hard-techno')
+    GROUP BY primary_genre
+    ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(broadOnly.rows, null, 2));
+
+  section("events: sample of published events whose stored primary_genre is a NICHE subgenre (proof the precise value survives in storage, e.g. melodic-techno/deep-house/industrial/tech-house/progressive-house/afro-house/minimal-techno) — up to 5 per genre");
+  const niche = await client.query(`
+    SELECT primary_genre, id, title, slug
+    FROM (
+      SELECT primary_genre, id, title, slug,
+             row_number() OVER (PARTITION BY primary_genre ORDER BY created_at DESC) AS rn
+      FROM events
+      WHERE published = true
+        AND primary_genre IN ('melodic-techno', 'minimal-techno', 'industrial', 'deep-house', 'tech-house', 'progressive-house', 'afro-house', 'garage', 'dubstep', 'hardstyle', 'rawstyle', 'hardcore')
+    ) ranked
+    WHERE rn <= 5
+    ORDER BY primary_genre, rn
+  `);
+  console.log(JSON.stringify(niche.rows, null, 2));
+
+  section("events: any published event whose subgenres array is empty or whose primary_genre is NULL/blank (would have shown no genre badge either way — not a rollup case)");
+  const missing = await client.query(`
+    SELECT id, title, slug, primary_genre, subgenres
+    FROM events
+    WHERE published = true
+      AND (primary_genre IS NULL OR primary_genre = '' OR subgenres IS NULL OR array_length(subgenres, 1) IS NULL)
+  `);
+  console.log(JSON.stringify(missing.rows, null, 2));
+
+  section("discovery_queue: count of predicted_genre values (pending/actionable rows) — confirms the classification pipeline itself never wrote a pre-collapsed value here either");
+  const dqByGenre = await client.query(`
+    SELECT predicted_genre, count(*)::int AS n
+    FROM discovery_queue
+    WHERE predicted_genre IS NOT NULL
+    GROUP BY predicted_genre
+    ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(dqByGenre.rows, null, 2));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (typeof mode !== "string") {
     console.error(
-      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit> is required.",
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit> is required.",
     );
     process.exit(1);
   }
@@ -1786,6 +1855,7 @@ async function main() {
     "adapter-dry-run": modeAdapterDryRun,
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
+    "genre-taxonomy-audit": modeGenreTaxonomyAudit,
   };
 
   if (mode === "reachability") {
@@ -1797,7 +1867,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit.`,
     );
     process.exit(1);
   }
