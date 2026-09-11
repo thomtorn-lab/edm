@@ -77,20 +77,58 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  *
  * RELEVANCE: HvadErPå exposes no first-party genre taxonomy at all (unlike
  * Billetto's categorization.subcategory or KultuNaut's Genre= filter) — this
- * adapter's own genreHint comes only from the event's own description text,
- * same evidence-hierarchy order as every other Danish-text adapter (poolen/
- * alice/kultunaut): a specific-subgenre keyword is "official-description"
- * tier; failing that, an explicit-but-non-specific electronic mention is the
- * generic "electronic-other" at the same tier (Danish "elektronisk" is
- * checked here in addition to English "electronic" — deterministicGenreMapping.ts
- * itself has no Danish generic-electronic keyword, and real evidence from the
- * probe shows several genuinely-relevant events state ONLY "elektronisk
- * musikaften"/"elektronisk klubaften" with no more specific keyword, e.g.
- * "Order Of Magnitude: Quake" at Den Anden Side). Anything short of that is
- * left unresolved for the shared pipeline's own deterministic-mapping
- * fallback and Discogs lineup enrichment — never assumed from the venue
- * alone, matching every mixed-programme first-party adapter's own rule and
- * the probe's own explicit relevance rule ("do not infer relevance merely
+ * adapter's own genreHint comes primarily from the event's own description
+ * text, same evidence-hierarchy order as every other Danish-text adapter
+ * (poolen/alice/kultunaut): a specific-subgenre keyword is "official-
+ * description" tier; failing that, an explicit-but-non-specific electronic
+ * mention is the generic "electronic-other" at the same tier (Danish
+ * "elektronisk" is checked here in addition to English "electronic" —
+ * deterministicGenreMapping.ts itself has no Danish generic-electronic
+ * keyword, and real evidence from the probe shows several genuinely-relevant
+ * events state ONLY "elektronisk musikaften"/"elektronisk klubaften" with no
+ * more specific keyword, e.g. "Order Of Magnitude: Quake" at Den Anden Side).
+ *
+ * VENUE-LEVEL SUPPORTING EVIDENCE (added post-Production-dry-run, 2026-09-11
+ * — see this same module's git history for the finding): a live dry-run
+ * against the real 4-venue Phase 1 set found 7 of 19 fetched candidates held
+ * on "no_genre_evidence" despite being probe-verified-relevant — their own
+ * Event JSON-LD (title+description) is lineup-only with zero genre words at
+ * all (e.g. "Whipped #6 with Alarico": "Whipped #6 præsenterer Alarico,
+ * Johannes Astrup, Holtz og Shaan på Den Anden Side" — no genre text
+ * whatsoever). Investigating what evidence HvadErPå actually provides found
+ * that the VENUE page's own Place.description block — fetched anyway for the
+ * event list, previously discarded after reading only the ItemList block —
+ * frequently carries genuinely explicit, stable electronic-programming text:
+ * Den Anden Side's says "...spænder over techno, trance, house og bass...";
+ * Jolene's says "...DJ'er spiller elektronisk musik fra house og dub til
+ * techno torsdag, fredag og lørdag...". This is real, source-provided
+ * evidence about the venue's programming — not an inference from the venue
+ * merely being on the Phase 1 allowlist (MODULE and Baggen's own Place
+ * blocks carry NO description field at all, so this fallback naturally
+ * yields nothing for their events — proof the mechanism is evidence-gated,
+ * not identity-gated; the allowlist controls which pages are ever fetched,
+ * never grants automatic relevance).
+ *
+ * This fallback is consulted ONLY when the event's own text yields no genre
+ * match whatsoever (never overrides or is even evaluated once the event's
+ * own text already resolved something), runs through the exact same
+ * deterministicGenreFromText/generic-electronic-regex classifier as event
+ * text (no separate logic), and is scored at classification.ts's own
+ * pre-existing "venue-promoter-metadata" evidence tier — a tier the shared
+ * GENRE_EVIDENCE_ORDER hierarchy already defines for precisely this
+ * situation (real venue/promoter-provided text), one rung below event-
+ * specific "official-description" text. That tier resolves to "medium"
+ * confidence (see genreConfidenceForEvidence), which routes the shared
+ * pipeline's evaluateQualityGate to "review_queue" — never "auto_publish" —
+ * so a venue-sourced genre match can only ever surface a candidate for
+ * admin review, exactly the target behavior (autoPublish stays false
+ * regardless, per this source's own registration in sources.ts).
+ * Anything short of even this (an event from a venue with no description, or
+ * whose description itself carries no genre text) is left correctly
+ * unresolved for the shared pipeline's own deterministic-mapping fallback
+ * and Discogs lineup enrichment — never assumed from the venue alone,
+ * matching every mixed-programme first-party adapter's own rule and the
+ * probe's own explicit relevance rule ("do not infer relevance merely
  * because the venue is electronic-focused").
  *
  * CANCELLATION: no cancelledHint/soldOutHint is ever set — hvaderpaa's own
@@ -184,6 +222,21 @@ export function parseVenueItemList(html: string): HvaderpaaItemListEntry[] {
 }
 
 /**
+ * The venue page's own `Place` JSON-LD block's `description` field — see
+ * this module's own doc comment ("VENUE-LEVEL SUPPORTING EVIDENCE") for why
+ * this is extracted and how it's used. Returns null (never throws) when the
+ * block or its description is absent — a real, valid state (MODULE and
+ * Baggen's Place blocks carry no description at all).
+ */
+export function parseVenuePlaceDescription(html: string): string | null {
+  const blocks = extractJsonLdBlocks(html);
+  const place = blocks.find((b) => b["@type"] === "Place");
+  if (!place) return null;
+  const description = typeof place.description === "string" ? decodeHtmlEntities(place.description).trim() : "";
+  return description || null;
+}
+
+/**
  * Classifies an event's offers.url into the correct link-role field — see
  * this module's own doc comment for the full semantics. Never guessed:
  * anything that isn't recognizably ra.co or billetto.dk earns neither role.
@@ -215,7 +268,7 @@ const ENGLISH_GENERIC_ELECTRONIC_RE = /\belectronic(s|a)?\b/i;
  * callers skip a single failure/rejection and continue, matching every
  * other adapter's per-record contract.
  */
-export function parseEventJsonLd(html: string, eventUrl: string): RawCandidateEvent | null {
+export function parseEventJsonLd(html: string, eventUrl: string, venueDescription: string | null = null): RawCandidateEvent | null {
   const blocks = extractJsonLdBlocks(html);
   const event = blocks.find((b) => b["@type"] === "Event" || b["@type"] === "MusicEvent");
   if (!event) return null;
@@ -282,8 +335,24 @@ export function parseEventJsonLd(html: string, eventUrl: string): RawCandidateEv
   const evidenceText = `${title} ${fullDescriptionText}`.trim();
   const specificGenre = evidenceText ? deterministicGenreFromText(evidenceText) : null;
   const genericElectronic = !specificGenre && (DANISH_GENERIC_ELECTRONIC_RE.test(evidenceText) || ENGLISH_GENERIC_ELECTRONIC_RE.test(evidenceText));
-  const genreHint: GenreSlug | null = specificGenre ?? (genericElectronic ? "electronic-other" : null);
+  const eventLevelGenreHint: GenreSlug | null = specificGenre ?? (genericElectronic ? "electronic-other" : null);
   const hasRichEvidence = evidenceText ? hasRichGenreEvidence(evidenceText) : false;
+
+  // Venue-level supporting evidence fallback — see this module's own doc
+  // comment ("VENUE-LEVEL SUPPORTING EVIDENCE"). Consulted ONLY when the
+  // event's own text found nothing at all; never overrides event-level
+  // evidence when it exists.
+  let genreHint = eventLevelGenreHint;
+  let genreFromVenue = false;
+  if (!genreHint && venueDescription) {
+    const venueSpecificGenre = deterministicGenreFromText(venueDescription);
+    const venueGenericElectronic = !venueSpecificGenre && (DANISH_GENERIC_ELECTRONIC_RE.test(venueDescription) || ENGLISH_GENERIC_ELECTRONIC_RE.test(venueDescription));
+    const venueGenreHint: GenreSlug | null = venueSpecificGenre ?? (venueGenericElectronic ? "electronic-other" : null);
+    if (venueGenreHint) {
+      genreHint = venueGenreHint;
+      genreFromVenue = true;
+    }
+  }
 
   return {
     sourceId: HVADERPAA_SOURCE_ID,
@@ -306,7 +375,11 @@ export function parseEventJsonLd(html: string, eventUrl: string): RawCandidateEv
     imageUrl,
     priceFrom,
     genreHint,
-    genreConfidenceHint: genreHint ? genreConfidenceForEvidence(hasRichEvidence ? "official-description" : "deterministic-mapping") : null,
+    genreConfidenceHint: genreFromVenue
+      ? genreConfidenceForEvidence("venue-promoter-metadata")
+      : genreHint
+        ? genreConfidenceForEvidence(hasRichEvidence ? "official-description" : "deterministic-mapping")
+        : null,
   };
 }
 
@@ -357,6 +430,12 @@ export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDel
     async fetchCandidates(): Promise<RawCandidateEvent[]> {
       lastFetchComplete = true;
       const eventUrls = new Map<string, string>(); // url -> venue name it was discovered under, for logging only
+      // Venue-level supporting evidence (see this module's own doc comment
+      // "VENUE-LEVEL SUPPORTING EVIDENCE") — the venue page is already
+      // fetched for its ItemList, so its Place.description costs nothing
+      // extra to also capture here. null for a venue whose Place block
+      // carries no description (MODULE, Baggen, as observed live).
+      const venueDescriptions = new Map<string, string | null>(); // canonicalName -> Place.description
 
       for (const venue of ALLOWED_VENUES) {
         try {
@@ -364,6 +443,7 @@ export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDel
           const html = await res.text();
           const items = parseVenueItemList(html);
           for (const item of items) eventUrls.set(item.url, venue.canonicalName);
+          venueDescriptions.set(venue.canonicalName, parseVenuePlaceDescription(html));
         } catch (err) {
           console.error(`[hvaderpaa-adapter] venue page failed (${venue.canonicalName}): ${err instanceof Error ? err.message : String(err)}`);
           lastFetchComplete = false;
@@ -376,7 +456,7 @@ export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDel
         try {
           const res = await fetchWithRetry(fetchImpl, eventUrl, retryDelayMs, `HvadErPå event page (${eventUrl})`);
           const html = await res.text();
-          const candidate = parseEventJsonLd(html, eventUrl);
+          const candidate = parseEventJsonLd(html, eventUrl, venueDescriptions.get(venueLabel) ?? null);
           if (!candidate) {
             console.error(`[hvaderpaa-adapter] skipping ${eventUrl}: no parseable Event JSON-LD or venue outside Phase 1 allowlist (discovered under ${venueLabel})`);
             continue;

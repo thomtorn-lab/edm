@@ -7,6 +7,7 @@ import {
   HVADERPAA_SOURCE_ID,
   parseEventJsonLd,
   parseVenueItemList,
+  parseVenuePlaceDescription,
 } from "./hvaderpaaAdapter";
 import { runIngestionPipeline, type ExistingEventForDedup } from "./pipeline";
 import { resolveVenue } from "../normalize";
@@ -257,13 +258,71 @@ describe("genre evidence (Danish generic-electronic mention, real probe finding)
     expect(c!.genreHint).toBe("electronic-other");
   });
 
-  it("no genre keyword and no \"elektronisk\"/\"electronic\" mention at all leaves genreHint null — never guessed from the venue or from RA ticketing alone (real probe case: Whipped #6 states no genre text whatsoever)", () => {
-    const c = eventCandidate("21119");
+  it("with no venue-level evidence supplied, no genre keyword and no \"elektronisk\"/\"electronic\" mention at all leaves genreHint null — never guessed from RA ticketing alone (real probe case: Whipped #6 states no genre text whatsoever in its OWN Event JSON-LD)", () => {
+    const c = eventCandidate("21119"); // eventCandidate() never passes a venueDescription — see helper above
     expect(c!.genreHint).toBeNull();
     expect(c!.genreConfidenceHint).toBeNull();
     // Still real, independent relevance evidence via the RA link (pipeline.ts's
     // own hasTrustedElectronicTicketing) — never silently discarded.
     expect(c!.residentAdvisorUrl).toBe("https://ra.co/events/2527684");
+  });
+});
+
+describe("venue-level supporting evidence (Production-dry-run finding, 2026-09-11): parseVenuePlaceDescription + the fallback it feeds in parseEventJsonLd", () => {
+  it("extracts the real Den Anden Side venue page's own Place.description, which states explicit stable programming genres (\"techno, trance, house og bass\")", () => {
+    const description = parseVenuePlaceDescription(fixture("hvaderpaa-venue-den-anden-side"));
+    expect(description).toContain("techno, trance, house og bass");
+  });
+
+  it("extracts the real Jolene venue page's own Place.description, which states explicit stable programming genres (\"house og dub til techno\")", () => {
+    const description = parseVenuePlaceDescription(fixture("hvaderpaa-venue-jolene"));
+    expect(description).toContain("house og dub til techno");
+  });
+
+  it("returns null (never throws) for a venue whose real Place block carries no description field at all — real evidence: MODULE and Baggen", () => {
+    const modulePlace = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Place","name":"MODULE","url":"https://hvaderpaa.dk/da/spillested/module-koebenhavn/","address":{"@type":"PostalAddress","addressCountry":"DK","addressLocality":"København"}}</script>`;
+    expect(parseVenuePlaceDescription(modulePlace)).toBeNull();
+    const baggenPlace = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Place","name":"Baggen","url":"https://hvaderpaa.dk/da/spillested/baggen-koebenhavn/","address":{"@type":"PostalAddress","addressCountry":"DK","addressLocality":"København"}}</script>`;
+    expect(parseVenuePlaceDescription(baggenPlace)).toBeNull();
+  });
+
+  it("returns null when there is no Place block on the page at all", () => {
+    expect(parseVenuePlaceDescription("<html><head></head><body>no place data</body></html>")).toBeNull();
+  });
+
+  it("REGRESSION FIX: an event with zero event-level genre evidence (real fixture: Whipped #6, id 21119, Den Anden Side) resolves a specific genre via the venue's own Place.description when it is supplied as the fallback — the exact live gap the Production dry-run found (7/19 candidates held on no_genre_evidence despite being probe-verified-relevant)", () => {
+    const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-den-anden-side"))!;
+    const c = parseEventJsonLd(fixture("hvaderpaa-event-21119"), "https://hvaderpaa.dk/da/event/21119/", venueDescription);
+    expect(c!.genreHint).toBe("techno"); // KEYWORD_MAP order: bare "techno" matches before bare "house"/"trance" for this text
+    // Lower-confidence "venue-promoter-metadata" tier (medium), never the
+    // event-level "official-description" (high) tier — this is SUPPORTING
+    // evidence, not equivalent to the event's own text, and routes the
+    // shared pipeline to review_queue, never auto_publish.
+    expect(c!.genreConfidenceHint).toBe("medium");
+  });
+
+  it("the Jolene venue fallback likewise resolves a specific genre for an event with zero event-level genre text (real title/description, live-verified 2026-09-11: \"Healing Potions presents: 'Orbit EP' release party\")", () => {
+    const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-jolene"))!;
+    const html = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Event","name":"Healing Potions presents: 'Orbit EP' release party","startDate":"2026-09-20T23:00:00+02:00","description":"Healing Potions fejrer udgivelsen af 'Orbit EP' med en release party på Jolene med kunstnere som Hakeem, A.dixen og Delta Division.","location":{"@type":"Place","name":"Jolene"},"performer":[{"@type":"Person","name":"Hakeem"},{"@type":"Person","name":"A.dixen"},{"@type":"Person","name":"Delta Division"},{"@type":"Person","name":"Keeptress"}]}</script>`;
+    const c = parseEventJsonLd(html, "https://hvaderpaa.dk/da/event/21593/", venueDescription);
+    expect(c!.genreHint).toBe("techno");
+    expect(c!.genreConfidenceHint).toBe("medium");
+    expect(c!.artists).toEqual(["Hakeem", "A.dixen", "Delta Division", "Keeptress"]);
+  });
+
+  it("event-level evidence always takes priority — the venue fallback is never even consulted when the event's own text already resolved a genre (real fixture: 22405, Jolene, \"house\" from its own description; venue fallback text contains \"techno\" but must NOT override)", () => {
+    const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-jolene"))!;
+    expect(venueDescription).toContain("techno"); // sanity: the fallback text really does contain a different genre
+    const c = parseEventJsonLd(fixture("hvaderpaa-event-22405"), "https://hvaderpaa.dk/da/event/22405/", venueDescription);
+    expect(c!.genreHint).toBe("house"); // unchanged from the event's own text — never "techno"
+    expect(c!.genreConfidenceHint).toBe("high"); // unchanged official-description tier — never downgraded to medium
+  });
+
+  it("a venue with no description (MODULE/Baggen shape) genuinely yields no fallback — the mechanism is evidence-gated, never \"venue is on the allowlist\" alone", () => {
+    const html = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Event","name":"X","startDate":"2026-10-03T22:00:00+02:00","description":"X-aften med DJ Someone på MODULE.","location":{"@type":"Place","name":"MODULE"}}</script>`;
+    const c = parseEventJsonLd(html, "https://hvaderpaa.dk/da/event/1/", null);
+    expect(c!.genreHint).toBeNull();
+    expect(c!.genreConfidenceHint).toBeNull();
   });
 });
 
@@ -374,10 +433,10 @@ describe("createHvaderpaaAdapter (end-to-end fetchCandidates, mocked fetch)", ()
         );
       }
       if (url === "https://hvaderpaa.dk/da/spillested/jolene-koebenhavn/") {
-        return new Response(
-          `<script type="application/ld+json">{"@type":"ItemList","numberOfItems":1,"itemListElement":[{"@type":"ListItem","position":1,"url":"https://hvaderpaa.dk/da/event/22405/","name":"Some Traces of House"}]}</script>`,
-          { status: 200 },
-        );
+        // Real fixture, carrying its own Place.description — exercises the
+        // venue-level-evidence extraction end-to-end (see the dedicated
+        // describe block above for the fallback's own isolated tests).
+        return new Response(fixture("hvaderpaa-venue-jolene"), { status: 200 });
       }
       if (url === "https://hvaderpaa.dk/da/spillested/baggen-koebenhavn/") {
         return new Response(
@@ -396,6 +455,9 @@ describe("createHvaderpaaAdapter (end-to-end fetchCandidates, mocked fetch)", ()
       if (url === "https://hvaderpaa.dk/da/event/21596/") return new Response(fixture("hvaderpaa-event-19246"), { status: 200 });
       if (url === "https://hvaderpaa.dk/da/event/13006/") return new Response(fixture("hvaderpaa-event-13006"), { status: 200 });
       if (url === "https://hvaderpaa.dk/da/event/22405/") return new Response(fixture("hvaderpaa-event-22405"), { status: 200 });
+      if (url === "https://hvaderpaa.dk/da/event/20765/") return new Response(fixture("hvaderpaa-event-20765"), { status: 200 });
+      if (url === "https://hvaderpaa.dk/da/event/21593/") return new Response(fixture("hvaderpaa-event-22405"), { status: 200 }); // reused shape (real Jolene ItemList entry) — same as the Den Anden Side reuses above
+      if (url === "https://hvaderpaa.dk/da/event/21123/") return new Response(fixture("hvaderpaa-event-22405"), { status: 200 });
       if (url === "https://hvaderpaa.dk/da/event/21354/") return new Response(fixture("hvaderpaa-event-21354"), { status: 200 });
       return new Response("not found", { status: 404 });
     };
@@ -415,10 +477,20 @@ describe("createHvaderpaaAdapter (end-to-end fetchCandidates, mocked fetch)", ()
       ].sort(),
     );
 
-    // 9 (Den Anden Side) + 1 (MODULE) + 1 (Jolene) + 1 (Baggen) = 12 distinct events.
-    expect(candidates).toHaveLength(12);
+    // 9 (Den Anden Side) + 1 (MODULE) + 4 (Jolene, real ItemList) + 1 (Baggen) = 15 distinct events.
+    expect(candidates).toHaveLength(15);
     expect(candidates.every((c) => c.sourceId === HVADERPAA_SOURCE_ID)).toBe(true);
     expect(adapter.lastFetchWasComplete!()).toBe(true);
+
+    // REGRESSION FIX, end-to-end: "Whipped #6" (21119, Den Anden Side) has
+    // zero event-level genre text on its own page, but the full adapter run
+    // (which fetches the venue page and threads its Place.description
+    // through) resolves it via the venue-level fallback — the exact
+    // previously-held-with-strong-relevance candidate the Production
+    // dry-run flagged.
+    const whipped6 = candidates.find((c) => c.sourceUrl === "https://hvaderpaa.dk/da/event/21119/");
+    expect(whipped6!.genreHint).toBe("techno");
+    expect(whipped6!.genreConfidenceHint).toBe("medium");
   });
 
   it("marks the sync incomplete (never throws) when a single event detail page fails, but still returns every other successfully-fetched candidate", async () => {
