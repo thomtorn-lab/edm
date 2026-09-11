@@ -3,9 +3,10 @@ import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { getEventsForVenue, getVenueById, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
-import { getPublicVenueGroupPrimaryId, googleMapsUrl, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
+import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
+import VenueAddressLink from "@/components/VenueAddressLink";
 
 export const revalidate = 0;
 
@@ -65,10 +66,7 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
         {label}
       </h1>
       <p className="mt-2 text-sm text-text-secondary">
-        <a href={googleMapsUrl(venue.address)} target="_blank" rel="noopener noreferrer" className="hover:text-text-primary hover:underline">
-          {venue.address}
-          <span className="sr-only"> (opens Google Maps in a new tab)</span>
-        </a>
+        <VenueAddressLink address={venue.address} />
       </p>
       {(venue.venueProfile || venue.description) && (
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">

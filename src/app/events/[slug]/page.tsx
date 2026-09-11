@@ -7,9 +7,9 @@ import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
-import { googleMapsUrl } from "@/lib/data/venues";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
+import VenueAddressLink from "@/components/VenueAddressLink";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -117,15 +117,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             </Link>
             {subVenue && <span className="text-text-secondary"> · {subVenue}</span>}
             <br />
-            <a
-              href={googleMapsUrl(event.venue.address)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-text-secondary hover:text-text-primary hover:underline"
-            >
-              {event.venue.address}
-              <span className="sr-only"> (opens Google Maps in a new tab)</span>
-            </a>
+            <VenueAddressLink address={event.venue.address} className="text-text-secondary" />
           </dd>
         </div>
         {genres.length > 0 && (
