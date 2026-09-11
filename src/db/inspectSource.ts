@@ -1832,12 +1832,144 @@ async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, stri
   console.log(JSON.stringify(dqByGenre.rows, null, 2));
 }
 
+/**
+ * Artist preview/snippet feasibility audit (2026-09-11, read-only research
+ * task — see AGENTS.md/SOURCE_ONBOARDING.md: extend the permanent
+ * diagnostic rather than hand-write a one-off script). Answers, from real
+ * Production data:
+ *   - how `events.artists` (a plain text[] column — no normalized artist
+ *     entity, no artist id, no per-artist external-platform URL anywhere in
+ *     the schema) is actually populated across published events;
+ *   - real examples of raw artist-string normalization issues (B2B/collab
+ *     connectors, bracketed annotations, incomplete structured lineups);
+ *   - real name-collision/ambiguity risk, using `artist_genre_cache`'s own
+ *     Discogs exact-name-match outcomes (found/not_found/ambiguous,
+ *     identityConfidence) as the closest existing proxy this app has for
+ *     "does a bare artist-name match reliably identify one external-platform
+ *     entity" — the exact same class of problem an audio-preview matcher
+ *     would face;
+ *   - a representative event sample (1 artist / 2-4 / large lineup) for
+ *     manual external-platform matching tests.
+ * Never touches discovery_queue, source_event_links, or any write path.
+ */
+async function modeArtistPreviewAudit(client: Client, _args: Record<string, string | boolean>) {
+  section("events: published-event count and artists[] coverage");
+  const coverage = await client.query(`
+    SELECT
+      count(*)::int AS published_events,
+      count(*) FILTER (WHERE array_length(artists, 1) IS NULL OR array_length(artists, 1) = 0)::int AS zero_artists,
+      count(*) FILTER (WHERE array_length(artists, 1) >= 1)::int AS at_least_one_artist,
+      round(avg(coalesce(array_length(artists, 1), 0))::numeric, 2) AS avg_artists_per_event,
+      max(coalesce(array_length(artists, 1), 0))::int AS max_artists_in_one_event
+    FROM events WHERE published = true
+  `);
+  console.log(JSON.stringify(coverage.rows, null, 2));
+
+  section("events: artist-count-per-event histogram (published only)");
+  const histogram = await client.query(`
+    SELECT coalesce(array_length(artists, 1), 0) AS artist_count, count(*)::int AS n
+    FROM events WHERE published = true
+    GROUP BY 1 ORDER BY 1
+  `);
+  console.log(JSON.stringify(histogram.rows, null, 2));
+
+  section("events: 40 most-recent published events' raw artists[] (for normalization-issue inspection — B2B/collab connectors, bracketed annotations, casing, special characters)");
+  const rawSample = await client.query(`
+    SELECT id, title, artists, array_length(artists, 1) AS artist_count
+    FROM events WHERE published = true
+    ORDER BY created_at DESC LIMIT 40
+  `);
+  console.log(JSON.stringify(rawSample.rows, null, 2));
+
+  section("events: representative sample — 1 artist / 2-4 artists / large lineup (5+), most recent 5 of each bucket, for manual external-platform matching tests");
+  const representative = await client.query(`
+    SELECT bucket, id, title, artists, venue_id, start_datetime FROM (
+      SELECT
+        CASE
+          WHEN array_length(artists, 1) IS NULL OR array_length(artists, 1) = 0 THEN '0_none'
+          WHEN array_length(artists, 1) = 1 THEN '1_single'
+          WHEN array_length(artists, 1) BETWEEN 2 AND 4 THEN '2_small'
+          ELSE '3_large'
+        END AS bucket,
+        id, title, artists, venue_id, start_datetime,
+        row_number() OVER (PARTITION BY
+          CASE
+            WHEN array_length(artists, 1) IS NULL OR array_length(artists, 1) = 0 THEN '0_none'
+            WHEN array_length(artists, 1) = 1 THEN '1_single'
+            WHEN array_length(artists, 1) BETWEEN 2 AND 4 THEN '2_small'
+            ELSE '3_large'
+          END
+          ORDER BY created_at DESC) AS rn
+      FROM events WHERE published = true
+    ) ranked
+    WHERE rn <= 5
+    ORDER BY bucket, rn
+  `);
+  console.log(JSON.stringify(representative.rows, null, 2));
+
+  section("events: distinct raw artist strings vs distinct case/whitespace-normalized names (published only) — gap indicates casing/whitespace variant risk, not yet true duplicate-identity risk");
+  const nameVariance = await client.query(`
+    SELECT
+      count(DISTINCT a)::int AS distinct_raw_strings,
+      count(DISTINCT lower(trim(a)))::int AS distinct_normalized_names
+    FROM events, unnest(artists) AS a
+    WHERE published = true
+  `);
+  console.log(JSON.stringify(nameVariance.rows, null, 2));
+
+  section("events: raw artist strings that collide on normalized (lower/trim) name but differ verbatim — real casing/whitespace variants (published only)");
+  const variants = await client.query(`
+    SELECT lower(trim(a)) AS normalized, array_agg(DISTINCT a) AS raw_variants, count(*)::int AS n
+    FROM events, unnest(artists) AS a
+    WHERE published = true
+    GROUP BY 1 HAVING count(DISTINCT a) > 1
+    ORDER BY n DESC LIMIT 20
+  `);
+  console.log(JSON.stringify(variants.rows, null, 2));
+
+  section("artist_genre_cache: lookupStatus distribution (Discogs exact-name-match outcomes — the closest existing real-data proxy for external-platform name-matching reliability)");
+  const cacheStatus = await client.query(`
+    SELECT lookup_status, count(*)::int AS n
+    FROM artist_genre_cache GROUP BY lookup_status ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(cacheStatus.rows, null, 2));
+
+  section("artist_genre_cache: identity_confidence distribution among 'found' rows (never 'high' by design — see genreEnrichment.ts's own doc comment)");
+  const identityConf = await client.query(`
+    SELECT identity_confidence, count(*)::int AS n
+    FROM artist_genre_cache WHERE lookup_status = 'found' GROUP BY identity_confidence ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(identityConf.rows, null, 2));
+
+  section("artist_genre_cache: 15 sample 'ambiguous' rows (Discogs itself has multiple distinct real people under this exact name) — direct evidence of name-collision risk");
+  const ambiguousSample = await client.query(`
+    SELECT artist_name_normalized, evidence
+    FROM artist_genre_cache WHERE lookup_status = 'ambiguous' LIMIT 15
+  `);
+  console.log(JSON.stringify(ambiguousSample.rows, null, 2));
+
+  section("artist_genre_cache: 15 sample 'not_found' rows — real local/niche artists with no Discogs presence at all");
+  const notFoundSample = await client.query(`
+    SELECT artist_name_normalized FROM artist_genre_cache WHERE lookup_status = 'not_found' LIMIT 15
+  `);
+  console.log(JSON.stringify(notFoundSample.rows, null, 2));
+
+  section("schema confirmation: no per-artist external-platform URL column exists anywhere (events.artists is the only artist-name storage in the schema; artist_genre_cache stores a discogs_artist_id but no audio-preview source)");
+  const schemaCheck = await client.query(`
+    SELECT table_name, column_name, data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_name ILIKE '%artist%'
+    ORDER BY table_name, column_name
+  `);
+  console.log(JSON.stringify(schemaCheck.rows, null, 2));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (typeof mode !== "string") {
     console.error(
-      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit> is required.",
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit|artist-preview-audit> is required.",
     );
     process.exit(1);
   }
@@ -1863,6 +1995,7 @@ async function main() {
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
+    "artist-preview-audit": modeArtistPreviewAudit,
   };
 
   if (mode === "reachability") {
@@ -1874,7 +2007,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, artist-preview-audit.`,
     );
     process.exit(1);
   }
