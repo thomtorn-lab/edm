@@ -301,7 +301,7 @@ describe("EventExplorer — Back to top", () => {
     expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
   });
 
-  it("scrolls to the true top and clears a stale month hash when activated", () => {
+  it("scrolls to the true top SMOOTHLY and clears a stale month hash when activated (2026-09-11: was an instant jump, now animated)", () => {
     render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
@@ -313,7 +313,7 @@ describe("EventExplorer — Back to top", () => {
     fireEvent.scroll(window);
     fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
 
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
     expect(window.location.hash).toBe("");
   });
 
@@ -328,8 +328,12 @@ describe("EventExplorer — Back to top", () => {
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("type")).toBe("button");
 
+    // A native <button type="button"> activates on both click AND keyboard
+    // Enter/Space per the HTML spec (the browser dispatches the same click
+    // event either way) — this is what makes the element itself the
+    // keyboard-accessibility guarantee, not any extra JS in this component.
     fireEvent.click(button);
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 
   it("works independent of month count — appears on scroll even with a single month", () => {
@@ -340,6 +344,60 @@ describe("EventExplorer — Back to top", () => {
     fireEvent.scroll(window);
 
     expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+  });
+
+  it("respects the mobile safe-area inset at the bottom edge (same env(safe-area-inset-bottom) pattern already used by the mobile filters sheet)", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    const button = screen.getByRole("button", { name: "Back to top" });
+    expect(button.className).toContain("bottom-[max(1rem,env(safe-area-inset-bottom))]");
+  });
+
+  it("sits at a lower stacking layer (z-40) than the mobile filters sheet (z-50), so an open sheet always covers it rather than the reverse", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    const button = screen.getByRole("button", { name: "Back to top" });
+    expect(button.className).toContain("z-40");
+  });
+
+  it("does not change Month nav's own click-to-scroll/highlight behavior — clicking a month still works normally after Back to top exists", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
+
+    expect(screen.getByRole("link", { name: "Sep" }).className).toContain("text-accent");
+    expect(screen.getByRole("link", { name: "Aug" }).className).not.toContain("text-accent");
+    expect(window.location.hash).toBe("#month-2026-09");
+  });
+
+  it("using Back to top after a month-nav jump leaves scroll-spy free to reflect the top of the page — no leftover pin from the month click", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
+    // Let the month click's own scroll-settle pin (isProgrammaticScrollRef)
+    // expire naturally, exactly as it would well before a real user could
+    // scroll back down and reach for Back to top.
+    vi.advanceTimersByTime(200);
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
+
+    // The IntersectionObserver mock reports Aug as the section back in view
+    // once scrolled to the top — this must not be blocked by the month
+    // click's own settle-timer pin, which only that click itself arms.
+    latestObserver().trigger("2026-08");
+    expect(screen.getByRole("link", { name: "Aug" }).className).toContain("text-accent");
   });
 });
 
