@@ -9,6 +9,7 @@ import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/e
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
+import VenueAddressLink from "@/components/VenueAddressLink";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -116,7 +117,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             </Link>
             {subVenue && <span className="text-text-secondary"> · {subVenue}</span>}
             <br />
-            <span className="text-text-secondary">{event.venue.address}</span>
+            <VenueAddressLink address={event.venue.address} className="text-text-secondary" />
           </dd>
         </div>
         {genres.length > 0 && (

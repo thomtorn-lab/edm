@@ -6,6 +6,7 @@ import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
+import VenueAddressLink from "@/components/VenueAddressLink";
 
 export const revalidate = 0;
 
@@ -64,7 +65,9 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
       <h1 className="font-display mt-1 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
         {label}
       </h1>
-      <p className="mt-2 text-sm text-text-secondary">{venue.address}</p>
+      <p className="mt-2 text-sm text-text-secondary">
+        <VenueAddressLink address={venue.address} />
+      </p>
       {(venue.venueProfile || venue.description) && (
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-text-secondary">
           {venue.venueProfile || venue.description}
