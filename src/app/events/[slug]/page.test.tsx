@@ -418,16 +418,35 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.queryByText("Genre")).toBeNull();
   });
 
-  it("renders the GENRE label with an OTHER chip for a genuinely-classified Other event, distinct from unknown/missing genre", async () => {
+  it("renders the GENRE label with an Electronic / Other chip for a genuinely-classified Other event, distinct from unknown/missing genre", async () => {
     await renderPage(makeEvent({ primaryGenre: "electronic-other", subgenres: ["electronic-other"] }));
     expect(screen.getByText("Genre")).toBeTruthy();
-    expect(screen.getByText("Other")).toBeTruthy();
+    expect(screen.getByText("Electronic / Other")).toBeTruthy();
   });
 
   it("renders a real, non-Other genre normally (regression: the conditional wrap must not hide genuine genre chips)", async () => {
     await renderPage(makeEvent({ subgenres: ["drum-and-bass"] }));
     expect(screen.getByText("Genre")).toBeTruthy();
     expect(screen.getByText("Drum & Bass")).toBeTruthy();
+  });
+
+  it("renders Deep House verbatim, not the broader House (genre display integrity audit, 2026-09-11)", async () => {
+    await renderPage(makeEvent({ primaryGenre: "deep-house", subgenres: ["deep-house"] }));
+    expect(screen.getByText("Deep House")).toBeTruthy();
+    expect(screen.queryByText("House")).toBeNull();
+  });
+
+  it("renders Melodic Techno verbatim, not the broader Techno", async () => {
+    await renderPage(makeEvent({ primaryGenre: "melodic-techno", subgenres: ["melodic-techno"] }));
+    expect(screen.getByText("Melodic Techno")).toBeTruthy();
+    expect(screen.queryByText("Techno")).toBeNull();
+  });
+
+  it("renders Industrial verbatim, not Techno or Hard Techno", async () => {
+    await renderPage(makeEvent({ primaryGenre: "industrial", subgenres: ["industrial"] }));
+    expect(screen.getByText("Industrial")).toBeTruthy();
+    expect(screen.queryByText("Techno")).toBeNull();
+    expect(screen.queryByText("Hard Techno")).toBeNull();
   });
 
   it("renders no empty About heading/block when the event has no description", async () => {

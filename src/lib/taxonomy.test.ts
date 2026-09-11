@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENRES, MAIN_GENRES, displayGenres, mainGenreOf } from "./taxonomy";
+import { GENRES, MAIN_GENRES, displayGenres, getGenre, mainGenreOf } from "./taxonomy";
 
 describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
   it("never exposes 'D&B' anywhere — Drum & Bass is always spelled out, including in dense/short labels", () => {
@@ -36,20 +36,23 @@ describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
   });
 });
 
-describe("genre precision — internal niche slugs roll up to the approved public taxonomy (data-quality Workstream B)", () => {
-  it("Industrial rolls up to Techno publicly, not Hard Techno (Intercell regression case)", () => {
-    expect(mainGenreOf("industrial")).toBe("techno");
-    expect(displayGenres(["industrial"])).toEqual([{ slug: "techno", label: "Techno", shortLabel: "Techno" }]);
+describe("genre display integrity — the admin-selected/classified genre is shown verbatim, never its broader filter group (2026-09-11 audit)", () => {
+  it("Deep House displays as Deep House, not House", () => {
+    expect(displayGenres(["deep-house"])).toEqual([getGenre("deep-house")]);
+    expect(displayGenres(["deep-house"])[0].label).toBe("Deep House");
   });
 
-  it("melodic-techno rolls up to Techno publicly", () => {
-    expect(mainGenreOf("melodic-techno")).toBe("techno");
-    expect(displayGenres(["melodic-techno"])[0].label).toBe("Techno");
+  it("Melodic Techno displays as Melodic Techno, not Techno", () => {
+    expect(displayGenres(["melodic-techno"])[0].label).toBe("Melodic Techno");
   });
 
-  it("progressive-house rolls up to House publicly", () => {
-    expect(mainGenreOf("progressive-house")).toBe("house");
-    expect(displayGenres(["progressive-house"])[0].label).toBe("House");
+  it("Industrial displays as Industrial, not Techno or Hard Techno", () => {
+    expect(displayGenres(["industrial"])[0].label).toBe("Industrial");
+  });
+
+  it("a parent genre selected directly still displays correctly", () => {
+    expect(displayGenres(["techno"])[0].label).toBe("Techno");
+    expect(displayGenres(["house"])[0].label).toBe("House");
   });
 
   it("Trance and Psytrance stay distinguished (never collapsed into each other)", () => {
@@ -57,23 +60,46 @@ describe("genre precision — internal niche slugs roll up to the approved publi
     expect(displayGenres(["psytrance"])[0].label).toBe("Psytrance");
   });
 
-  it("hard-techno stays its own public bucket, distinct from techno", () => {
-    expect(mainGenreOf("hard-techno")).toBe("hard-techno");
+  it("hard-techno displays as its own label, distinct from techno", () => {
     expect(displayGenres(["hard-techno"])[0].label).toBe("Hard Techno");
   });
 
-  it("electronic-other rolls up to the genuine fallback 'Other', never a guessed specific label", () => {
-    expect(displayGenres(["electronic-other"])[0].label).toBe("Other");
+  it("electronic-other displays its own specific label, not the filter's 'Other' shorthand", () => {
+    expect(displayGenres(["electronic-other"])[0].label).toBe("Electronic / Other");
   });
 
-  it("deduplicates by approved public category — two internal niche slugs sharing an umbrella are shown once", () => {
-    expect(displayGenres(["industrial", "melodic-techno"])).toHaveLength(1);
-    expect(displayGenres(["industrial", "melodic-techno"])[0].label).toBe("Techno");
+  it("deduplicates by the underlying slug — the same slug repeated in subgenres is shown once", () => {
+    expect(displayGenres(["deep-house", "deep-house"])).toHaveLength(1);
   });
 
-  it("filter grouping (mainGenreOf) and the public display badge (displayGenres) always agree", () => {
+  it("two distinct subgenres that share a filter group are still shown as two distinct badges (no display-level merging)", () => {
+    const genres = displayGenres(["industrial", "melodic-techno"]);
+    expect(genres).toHaveLength(2);
+    expect(genres.map((g) => g.label)).toEqual(["Industrial", "Melodic Techno"]);
+  });
+
+  it("every GenreSlug displays as its own exact label — display never substitutes the broader mainGenreOf label", () => {
     for (const g of GENRES) {
-      expect(displayGenres([g.slug])[0].slug).toBe(mainGenreOf(g.slug));
+      expect(displayGenres([g.slug])[0].slug).toBe(g.slug);
+      expect(displayGenres([g.slug])[0].label).toBe(g.label);
     }
+  });
+});
+
+describe("genre filter inheritance — mainGenreOf still groups a precise subgenre under its broader filter category (unchanged by the display fix)", () => {
+  it("Deep House inherits the House filter group", () => {
+    expect(mainGenreOf("deep-house")).toBe("house");
+  });
+
+  it("Melodic Techno inherits the Techno filter group", () => {
+    expect(mainGenreOf("melodic-techno")).toBe("techno");
+  });
+
+  it("Industrial inherits the Techno filter group, not Hard Techno (Intercell regression case)", () => {
+    expect(mainGenreOf("industrial")).toBe("techno");
+  });
+
+  it("hard-techno stays its own filter group, distinct from techno", () => {
+    expect(mainGenreOf("hard-techno")).toBe("hard-techno");
   });
 });

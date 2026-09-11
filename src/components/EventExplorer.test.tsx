@@ -436,6 +436,100 @@ describe("EventExplorer — Filters button active state (Round 15)", () => {
   });
 });
 
+describe("EventExplorer — genre display integrity + filter inheritance (2026-09-11 audit)", () => {
+  afterEach(cleanup);
+
+  const DEEP_HOUSE_EVENT = {
+    ...makeEvent("2026-08-10T20:00:00.000Z"),
+    primaryGenre: "deep-house" as GenreSlug,
+    subgenres: ["deep-house"] as GenreSlug[],
+  };
+  const MELODIC_TECHNO_EVENT = {
+    ...makeEvent("2026-08-11T20:00:00.000Z"),
+    primaryGenre: "melodic-techno" as GenreSlug,
+    subgenres: ["melodic-techno"] as GenreSlug[],
+  };
+  const INDUSTRIAL_EVENT = {
+    ...makeEvent("2026-08-12T20:00:00.000Z"),
+    primaryGenre: "industrial" as GenreSlug,
+    subgenres: ["industrial"] as GenreSlug[],
+  };
+  const TRANCE_EVENT = {
+    ...makeEvent("2026-08-13T20:00:00.000Z"),
+    primaryGenre: "trance" as GenreSlug,
+    subgenres: ["trance"] as GenreSlug[],
+  };
+  const ALL_EVENTS = [DEEP_HOUSE_EVENT, MELODIC_TECHNO_EVENT, INDUSTRIAL_EVENT, TRANCE_EVENT];
+
+  function selectGenre(value: string) {
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    fireEvent.change(genreSelect, { target: { value } });
+  }
+
+  // Several genre labels used below ("House", "Techno", "Hard Techno",
+  // "Trance") are ALSO literal option text in the always-present Genre
+  // filter <select> (desktop + mobile), so a plain screen.getByText would
+  // match the dropdown option itself regardless of what's in the event
+  // list — these helpers exclude <option> elements so assertions only see
+  // real event-card content.
+  const ignoreOptions = { ignore: "option, script, style" };
+  const cardText = (text: string) => screen.getByText(text, ignoreOptions);
+  const queryCardText = (text: string) => screen.queryByText(text, ignoreOptions);
+  const allCardText = (text: string) => screen.getAllByText(text, ignoreOptions);
+
+  it("shows Deep House's own event row tagged 'Deep House', not the broader 'House'", () => {
+    render(<EventExplorer events={[DEEP_HOUSE_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(cardText("Deep House")).toBeTruthy();
+    expect(queryCardText("House")).toBeNull();
+  });
+
+  it("shows Melodic Techno's own event row tagged 'Melodic Techno', not the broader 'Techno'", () => {
+    render(<EventExplorer events={[MELODIC_TECHNO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(cardText("Melodic Techno")).toBeTruthy();
+    expect(queryCardText("Techno")).toBeNull();
+  });
+
+  it("shows Industrial's own event row tagged 'Industrial', not 'Techno' or 'Hard Techno'", () => {
+    render(<EventExplorer events={[INDUSTRIAL_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(cardText("Industrial")).toBeTruthy();
+    expect(queryCardText("Techno")).toBeNull();
+    expect(queryCardText("Hard Techno")).toBeNull();
+  });
+
+  it("Deep House is discoverable under the broader 'House' filter (parent-group inheritance)", () => {
+    render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("house");
+    expect(cardText("Deep House")).toBeTruthy();
+    expect(queryCardText("Melodic Techno")).toBeNull();
+    expect(queryCardText("Industrial")).toBeNull();
+    expect(queryCardText("Trance")).toBeNull();
+  });
+
+  it("Melodic Techno and Industrial are both discoverable under the broader 'Techno' filter, with no duplicate rows", () => {
+    render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("techno");
+    expect(allCardText("Melodic Techno")).toHaveLength(1);
+    expect(allCardText("Industrial")).toHaveLength(1);
+    expect(queryCardText("Deep House")).toBeNull();
+    expect(queryCardText("Trance")).toBeNull();
+  });
+
+  it("an event tagged with an unrelated genre (Trance) is unaffected by the Techno/House filter change", () => {
+    render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("trance");
+    expect(cardText("Trance")).toBeTruthy();
+    expect(queryCardText("Deep House")).toBeNull();
+    expect(queryCardText("Melodic Techno")).toBeNull();
+    expect(queryCardText("Industrial")).toBeNull();
+  });
+});
+
 describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", () => {
   afterEach(cleanup);
 
