@@ -24,7 +24,7 @@ export default function VenueAddressLink({ address, className = "" }: { address:
       href={googleMapsUrl(trimmed)}
       target="_blank"
       rel="noopener noreferrer"
-      className={`inline-flex items-center gap-1 hover:text-text-primary hover:underline ${className}`}
+      className={`inline-flex items-center gap-1 hover:text-text-primary hover:underline focus-visible:underline active:underline ${className}`}
     >
       <MapPinIcon />
       {trimmed}
