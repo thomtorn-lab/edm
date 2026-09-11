@@ -111,25 +111,39 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  *
  * This fallback is consulted ONLY when the event's own text yields no genre
  * match whatsoever (never overrides or is even evaluated once the event's
- * own text already resolved something), runs through the exact same
- * deterministicGenreFromText/generic-electronic-regex classifier as event
- * text (no separate logic), and is scored at classification.ts's own
- * pre-existing "venue-promoter-metadata" evidence tier — a tier the shared
- * GENRE_EVIDENCE_ORDER hierarchy already defines for precisely this
+ * own text already resolved something), and is scored at classification.ts's
+ * own pre-existing "venue-promoter-metadata" evidence tier — a tier the
+ * shared GENRE_EVIDENCE_ORDER hierarchy already defines for precisely this
  * situation (real venue/promoter-provided text), one rung below event-
  * specific "official-description" text. That tier resolves to "medium"
  * confidence (see genreConfidenceForEvidence), which routes the shared
  * pipeline's evaluateQualityGate to "review_queue" — never "auto_publish" —
- * so a venue-sourced genre match can only ever surface a candidate for
- * admin review, exactly the target behavior (autoPublish stays false
- * regardless, per this source's own registration in sources.ts).
+ * so a venue-sourced match can only ever surface a candidate for admin
+ * review, exactly the target behavior (autoPublish stays false regardless,
+ * per this source's own registration in sources.ts).
+ *
+ * DELIBERATELY GENERIC, NEVER SPECIFIC (pre-merge correction, 2026-09-11):
+ * the venue fallback ALWAYS resolves to the generic "electronic-other" —
+ * never a specific GenreSlug like "techno"/"house"/"trance", even though
+ * deterministicGenreFromText would happily return one of those for the
+ * venue's own text. A venue description naming several genres together
+ * ("techno, trance, house og bass") is evidence the VENUE programs
+ * electronic dance music generally; it is NOT evidence that THIS event is
+ * specifically techno rather than house or trance — assigning whichever
+ * keyword happens to match first in KEYWORD_MAP's own ordering would be an
+ * accident of iteration order standing in for a claim no source ever made
+ * about this particular event. A specific subgenre is reserved for genuine
+ * event-level text (eventLevelGenreHint above) — the venue fallback exists
+ * only to clear the relevance gate for admin review, never to assert a
+ * subgenre precision the source data doesn't support.
+ *
  * Anything short of even this (an event from a venue with no description, or
- * whose description itself carries no genre text) is left correctly
- * unresolved for the shared pipeline's own deterministic-mapping fallback
- * and Discogs lineup enrichment — never assumed from the venue alone,
- * matching every mixed-programme first-party adapter's own rule and the
- * probe's own explicit relevance rule ("do not infer relevance merely
- * because the venue is electronic-focused").
+ * whose description itself carries no genre/generic-electronic text at all)
+ * is left correctly unresolved for the shared pipeline's own deterministic-
+ * mapping fallback and Discogs lineup enrichment — never assumed from the
+ * venue alone, matching every mixed-programme first-party adapter's own rule
+ * and the probe's own explicit relevance rule ("do not infer relevance
+ * merely because the venue is electronic-focused").
  *
  * CANCELLATION: no cancelledHint/soldOutHint is ever set — hvaderpaa's own
  * eventStatus was observed as EventScheduled on every event sampled, and per
@@ -342,14 +356,29 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
   // comment ("VENUE-LEVEL SUPPORTING EVIDENCE"). Consulted ONLY when the
   // event's own text found nothing at all; never overrides event-level
   // evidence when it exists.
+  //
+  // DELIBERATELY generic, never specific (pre-merge correction, 2026-09-11):
+  // a deterministicGenreFromText match against the VENUE's own description
+  // is evidence that the venue programs electronic dance music generally —
+  // it says nothing about which subgenre THIS event is. Den Anden Side's
+  // description mentions "techno, trance, house og bass" together; Jolene's
+  // mentions "house og dub til techno" — using whichever keyword happens to
+  // match first (an accident of KEYWORD_MAP's own ordering, unrelated to
+  // this event) would assign a specific, unsupported genre no source ever
+  // claimed for this particular event. So venue-level evidence, when it's
+  // the only evidence available, can only ever resolve to the generic
+  // "electronic-other" — enough to clear the relevance gate for admin
+  // review, never enough to claim a specific subgenre. A specific genre is
+  // reserved for genuine event-level text (see eventLevelGenreHint above).
   let genreHint = eventLevelGenreHint;
   let genreFromVenue = false;
   if (!genreHint && venueDescription) {
-    const venueSpecificGenre = deterministicGenreFromText(venueDescription);
-    const venueGenericElectronic = !venueSpecificGenre && (DANISH_GENERIC_ELECTRONIC_RE.test(venueDescription) || ENGLISH_GENERIC_ELECTRONIC_RE.test(venueDescription));
-    const venueGenreHint: GenreSlug | null = venueSpecificGenre ?? (venueGenericElectronic ? "electronic-other" : null);
-    if (venueGenreHint) {
-      genreHint = venueGenreHint;
+    const venueHasElectronicEvidence =
+      deterministicGenreFromText(venueDescription) != null ||
+      DANISH_GENERIC_ELECTRONIC_RE.test(venueDescription) ||
+      ENGLISH_GENERIC_ELECTRONIC_RE.test(venueDescription);
+    if (venueHasElectronicEvidence) {
+      genreHint = "electronic-other";
       genreFromVenue = true;
     }
   }

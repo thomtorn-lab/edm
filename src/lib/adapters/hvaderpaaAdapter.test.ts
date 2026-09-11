@@ -258,6 +258,13 @@ describe("genre evidence (Danish generic-electronic mention, real probe finding)
     expect(c!.genreHint).toBe("electronic-other");
   });
 
+  it("event-level explicit \"techno\" text resolves genreHint to the specific \"techno\" genre — event-level text IS allowed to claim a specific subgenre, unlike the venue-level fallback (see the dedicated describe block below)", () => {
+    const html = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Event","name":"Techno Night","startDate":"2026-10-03T22:00:00+02:00","description":"En techno-aften på MODULE med lokale DJs.","location":{"@type":"Place","name":"MODULE"}}</script>`;
+    const c = parseEventJsonLd(html, "https://hvaderpaa.dk/da/event/1/");
+    expect(c!.genreHint).toBe("techno");
+    expect(c!.genreConfidenceHint).toBe("high");
+  });
+
   it("with no venue-level evidence supplied, no genre keyword and no \"elektronisk\"/\"electronic\" mention at all leaves genreHint null — never guessed from RA ticketing alone (real probe case: Whipped #6 states no genre text whatsoever in its OWN Event JSON-LD)", () => {
     const c = eventCandidate("21119"); // eventCandidate() never passes a venueDescription — see helper above
     expect(c!.genreHint).toBeNull();
@@ -290,10 +297,16 @@ describe("venue-level supporting evidence (Production-dry-run finding, 2026-09-1
     expect(parseVenuePlaceDescription("<html><head></head><body>no place data</body></html>")).toBeNull();
   });
 
-  it("REGRESSION FIX: an event with zero event-level genre evidence (real fixture: Whipped #6, id 21119, Den Anden Side) resolves a specific genre via the venue's own Place.description when it is supplied as the fallback — the exact live gap the Production dry-run found (7/19 candidates held on no_genre_evidence despite being probe-verified-relevant)", () => {
+  it("REGRESSION FIX: an event with zero event-level genre evidence (real fixture: Whipped #6, id 21119, Den Anden Side) resolves to the GENERIC electronic-other via the venue's own Place.description when it is supplied as the fallback — the exact live gap the Production dry-run found (7/19 candidates held on no_genre_evidence despite being probe-verified-relevant)", () => {
     const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-den-anden-side"))!;
     const c = parseEventJsonLd(fixture("hvaderpaa-event-21119"), "https://hvaderpaa.dk/da/event/21119/", venueDescription);
-    expect(c!.genreHint).toBe("techno"); // KEYWORD_MAP order: bare "techno" matches before bare "house"/"trance" for this text
+    // NEVER a specific subgenre from venue text alone (pre-merge correction):
+    // Den Anden Side's description names techno/trance/house/bass together —
+    // real evidence the VENUE plays electronic dance music, not a claim that
+    // THIS event specifically is techno rather than house or trance. Picking
+    // whichever keyword matches first in KEYWORD_MAP's own iteration order
+    // would assert a subgenre precision no source ever claimed for this event.
+    expect(c!.genreHint).toBe("electronic-other");
     // Lower-confidence "venue-promoter-metadata" tier (medium), never the
     // event-level "official-description" (high) tier — this is SUPPORTING
     // evidence, not equivalent to the event's own text, and routes the
@@ -301,21 +314,33 @@ describe("venue-level supporting evidence (Production-dry-run finding, 2026-09-1
     expect(c!.genreConfidenceHint).toBe("medium");
   });
 
-  it("the Jolene venue fallback likewise resolves a specific genre for an event with zero event-level genre text (real title/description, live-verified 2026-09-11: \"Healing Potions presents: 'Orbit EP' release party\")", () => {
+  it("the Jolene venue fallback likewise resolves to the GENERIC electronic-other, never a specific subgenre, for an event with zero event-level genre text (real title/description, live-verified 2026-09-11: \"Healing Potions presents: 'Orbit EP' release party\")", () => {
     const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-jolene"))!;
     const html = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Event","name":"Healing Potions presents: 'Orbit EP' release party","startDate":"2026-09-20T23:00:00+02:00","description":"Healing Potions fejrer udgivelsen af 'Orbit EP' med en release party på Jolene med kunstnere som Hakeem, A.dixen og Delta Division.","location":{"@type":"Place","name":"Jolene"},"performer":[{"@type":"Person","name":"Hakeem"},{"@type":"Person","name":"A.dixen"},{"@type":"Person","name":"Delta Division"},{"@type":"Person","name":"Keeptress"}]}</script>`;
     const c = parseEventJsonLd(html, "https://hvaderpaa.dk/da/event/21593/", venueDescription);
-    expect(c!.genreHint).toBe("techno");
+    // Jolene's own description names house/dub/techno together — same
+    // principle: real evidence of electronic-dance PROGRAMMING at the venue,
+    // never a specific per-event subgenre claim.
+    expect(c!.genreHint).toBe("electronic-other");
     expect(c!.genreConfidenceHint).toBe("medium");
     expect(c!.artists).toEqual(["Hakeem", "A.dixen", "Delta Division", "Keeptress"]);
   });
 
-  it("event-level evidence always takes priority — the venue fallback is never even consulted when the event's own text already resolved a genre (real fixture: 22405, Jolene, \"house\" from its own description; venue fallback text contains \"techno\" but must NOT override)", () => {
+  it("event-level evidence always takes priority — the venue fallback is never even consulted when the event's own text already resolved a genre (real fixture: 22405, Jolene, \"house\" from its own description; venue fallback text contains \"techno\" but must NOT override, and must not even downgrade to electronic-other)", () => {
     const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-jolene"))!;
     expect(venueDescription).toContain("techno"); // sanity: the fallback text really does contain a different genre
     const c = parseEventJsonLd(fixture("hvaderpaa-event-22405"), "https://hvaderpaa.dk/da/event/22405/", venueDescription);
-    expect(c!.genreHint).toBe("house"); // unchanged from the event's own text — never "techno"
+    expect(c!.genreHint).toBe("house"); // unchanged from the event's own text — never "techno", never generic "electronic-other"
     expect(c!.genreConfidenceHint).toBe("high"); // unchanged official-description tier — never downgraded to medium
+  });
+
+  it("REGRESSION: the venue-level fallback (generic electronic-other, medium confidence) is enough to clear the shared pipeline's quality gate and reach review_queue — the coverage fix's actual target outcome, not just a genreHint value in isolation (real fixture: Whipped #6, id 21119, previously held on no_genre_evidence)", () => {
+    const venueDescription = parseVenuePlaceDescription(fixture("hvaderpaa-venue-den-anden-side"))!;
+    const candidate = parseEventJsonLd(fixture("hvaderpaa-event-21119"), "https://hvaderpaa.dk/da/event/21119/", venueDescription)!;
+    const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(result.decision).toBe("review_queue");
+    expect(result.holdReason).toBeNull();
+    expect(result.genre).toBe("electronic-other"); // never a specific subgenre from venue text alone
   });
 
   it("a venue with no description (MODULE/Baggen shape) genuinely yields no fallback — the mechanism is evidence-gated, never \"venue is on the allowlist\" alone", () => {
@@ -487,9 +512,10 @@ describe("createHvaderpaaAdapter (end-to-end fetchCandidates, mocked fetch)", ()
     // (which fetches the venue page and threads its Place.description
     // through) resolves it via the venue-level fallback — the exact
     // previously-held-with-strong-relevance candidate the Production
-    // dry-run flagged.
+    // dry-run flagged. GENERIC electronic-other only, never a specific
+    // subgenre — see the dedicated describe block above for why.
     const whipped6 = candidates.find((c) => c.sourceUrl === "https://hvaderpaa.dk/da/event/21119/");
-    expect(whipped6!.genreHint).toBe("techno");
+    expect(whipped6!.genreHint).toBe("electronic-other");
     expect(whipped6!.genreConfidenceHint).toBe("medium");
   });
 
