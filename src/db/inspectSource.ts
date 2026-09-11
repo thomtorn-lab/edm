@@ -15,6 +15,7 @@ import { createGravityAdapter, GRAVITY_SOURCE_ID } from "@/lib/adapters/gravityA
 import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangarenAdapter";
 import { createPoolenAdapter, POOLEN_SOURCE_ID } from "@/lib/adapters/poolenAdapter";
 import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pumpehusetAdapter";
+import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvaderpaaAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -424,6 +425,12 @@ const DRY_RUN_ADAPTERS: Record<string, () => SourceAdapter> = {
   [HANGAREN_SOURCE_ID]: createHangarenAdapter,
   [POOLEN_SOURCE_ID]: createPoolenAdapter,
   [PUMPEHUSET_SOURCE_ID]: createPumpehusetAdapter,
+  // HvadErPå shared gap-filler (Phase 1, 2026-09-11): registered so Section
+  // 13's required pre-enable read-only dry-run (fetch/accept/reject counts,
+  // dedup, link-role classification) can run against LIVE HvadErPå data and
+  // the real Production DB's existing venues/events, compared against the
+  // 21-incremental-event probe baseline, before the source is ever enabled.
+  [HVADERPAA_SOURCE_ID]: createHvaderpaaAdapter,
 };
 
 /**

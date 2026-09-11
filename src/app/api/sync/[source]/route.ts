@@ -8,6 +8,7 @@ import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pu
 import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter";
 import { createGravityAdapter, GRAVITY_SOURCE_ID } from "@/lib/adapters/gravityAdapter";
 import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
+import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvaderpaaAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
@@ -30,6 +31,11 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   // pipeline would otherwise decide. See kultunautAdapter.ts's module doc
   // comment for the full audit trail behind this decision.
   kultunaut: { sourceId: KULTUNAUT_SOURCE_ID, displayName: "KultuNaut", create: createKultunautAdapter },
+  // Discovery only, scoped to Den Anden Side/MODULE/Jolene/Baggen — see
+  // hvaderpaaAdapter.ts's own module doc comment and src-hvaderpaa's
+  // integrationNote in src/lib/data/sources.ts for the full probe evidence
+  // behind this Phase 1 scope.
+  hvaderpaa: { sourceId: HVADERPAA_SOURCE_ID, displayName: "HvadErPå", create: createHvaderpaaAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {
