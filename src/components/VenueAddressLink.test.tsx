@@ -48,4 +48,17 @@ describe("VenueAddressLink — venue address -> Google Maps backlog item", () =>
     const link = screen.getByRole("link", { name: /^Test St 1/ });
     expect(link.getAttribute("href")).toBe("https://www.google.com/maps/search/?api=1&query=Test%20St%201");
   });
+
+  it("underlines on hover, focus-visible, and active — matching classes for all three states, nothing else added", () => {
+    render(<VenueAddressLink address="Test St 1" />);
+    const link = screen.getByRole("link");
+    const classes = link.className.split(/\s+/);
+    expect(classes).toContain("hover:underline");
+    expect(classes).toContain("focus-visible:underline");
+    expect(classes).toContain("active:underline");
+    // Color stays exactly as before this refinement: only hover brightens text — no new color trigger was added for focus-visible/active.
+    expect(classes).toContain("hover:text-text-primary");
+    expect(classes).not.toContain("focus-visible:text-text-primary");
+    expect(classes).not.toContain("active:text-text-primary");
+  });
 });
