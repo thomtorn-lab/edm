@@ -120,10 +120,15 @@ describe("VEGA parent/room model (venue model cleanup, 2026-09-06; corrected to 
     expect(vega?.rooms?.map((r) => r.name)).toEqual(["Store VEGA", "Lille VEGA"]);
   });
 
-  it("the Ideal Bar venue's own display name still does not overclaim the whole VEGA building", () => {
+  it("the Ideal Bar venue's own display name still does not overclaim the whole VEGA building (renamed from 'VEGA (Ideal Bar)' to 'Ideal Bar' — venue-subsite VEGA grouping, 2026-09-11)", () => {
     const idealBar = VENUES.find((v) => v.id === "v-vega-ideal-bar");
-    expect(idealBar?.name).toBe("VEGA (Ideal Bar)");
+    expect(idealBar?.name).toBe("Ideal Bar");
     expect(idealBar?.name).not.toBe("VEGA");
+    // Resolution is unaffected by the rename: the old "VEGA (Ideal Bar)"
+    // string is still a listed alias, so every raw source string that used
+    // to resolve here still does (see the "explicit 'Ideal Bar' resolves…"
+    // test above).
+    expect(idealBar?.aliases).toContain("VEGA (Ideal Bar)");
   });
 
   it("the VEGA parent and Ideal Bar are two distinct venue rows, each still resolving only to itself", () => {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getEventsForVenue, getVenues } from "@/lib/queries";
 import { isPastEvent } from "@/lib/datetime";
-import { CURATED_VENUE_SLUGS } from "@/lib/data/venues";
+import { CURATED_VENUE_SLUGS, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import type { Venue } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -21,8 +21,17 @@ export default async function VenuesPage() {
   const curated = await Promise.all(
     CURATED_VENUE_SLUGS.map(async (slug) => {
       const venue = bySlug.get(slug);
+      // Grouped venues (VEGA overall-venue presentation, 2026-09-11):
+      // aggregate the upcoming count across the primary plus every group
+      // member (e.g. VEGA + Ideal Bar) — each id names a distinct set of
+      // events, so summing never double-counts.
+      const groupMemberIds = venue ? (PUBLIC_VENUE_GROUPS[venue.id] ?? []) : [];
       const upcomingCount = venue
-        ? (await getEventsForVenue(venue.id)).filter((e) => !isPastEvent(e, now)).length
+        ? (
+            await Promise.all([venue.id, ...groupMemberIds].map((id) => getEventsForVenue(id)))
+          )
+            .flat()
+            .filter((e) => !isPastEvent(e, now)).length
         : null;
       return { slug, venue, upcomingCount };
     }),
@@ -62,7 +71,7 @@ function VenueEntry({ venue, upcomingCount }: { venue: Venue; upcomingCount: num
         href={`/venues/${venue.slug}`}
         className="inline-flex cursor-pointer items-baseline gap-1.5 text-lg font-semibold text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110"
       >
-        {venue.name}
+        {publicVenueLabel(venue)}
         <span aria-hidden="true" className="text-sm text-text-tertiary">→</span>
       </Link>
       <p className="mt-1 text-sm text-text-secondary">{venue.address}</p>

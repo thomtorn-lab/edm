@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getEventsForVenue, getVenueBySlug } from "@/lib/queries";
+import { notFound, permanentRedirect } from "next/navigation";
+import { getEventsForVenue, getVenueById, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
+import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
 
@@ -12,9 +13,14 @@ export async function generateMetadata({ params }: PageProps<"/venues/[slug]">):
   const { slug } = await params;
   const venue = await getVenueBySlug(slug);
   if (!venue) return {};
+  // A grouped member (e.g. Ideal Bar) hard-redirects below rather than
+  // rendering — its own metadata is never served, so no canonical/title
+  // needs computing for it here.
+  if (getPublicVenueGroupPrimaryId(venue.id)) return {};
+  const label = publicVenueLabel(venue);
   return {
-    title: venue.name,
-    description: `${venue.name}, ${venue.address} — upcoming electronic music events. ${venue.shortDescription ?? venue.description}`,
+    title: label,
+    description: `${label}, ${venue.address} — upcoming electronic music events. ${venue.shortDescription ?? venue.description}`,
     alternates: { canonical: `/venues/${venue.slug}` },
   };
 }
@@ -24,8 +30,29 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
   const venue = await getVenueBySlug(slug);
   if (!venue) notFound();
 
+  // VEGA overall-venue presentation (2026-09-11): a grouped member's own
+  // URL (e.g. /venues/vega-ideal-bar) is never an indexable page of its
+  // own — it permanently redirects to its group's primary URL, so there is
+  // exactly one public page for the VEGA identity (Section 5: avoid
+  // duplicate indexable venue pages, preserve a redirect rather than a
+  // broken URL).
+  const groupPrimaryId = getPublicVenueGroupPrimaryId(venue.id);
+  if (groupPrimaryId) {
+    const primary = await getVenueById(groupPrimaryId);
+    if (primary) {
+      permanentRedirect(`/venues/${primary.slug}`);
+      return;
+    }
+  }
+
+  const label = publicVenueLabel(venue);
+  // A primary group venue's page (e.g. VEGA) aggregates upcoming events
+  // across itself and every grouped member (e.g. Ideal Bar) — each id names
+  // a distinct set of events, so concatenating never double-counts.
+  const groupMemberIds = PUBLIC_VENUE_GROUPS[venue.id] ?? [];
   const now = new Date();
-  const upcoming = sortByStart((await getEventsForVenue(venue.id)).filter((e) => !isPastEvent(e, now)));
+  const rawEvents = (await Promise.all([venue.id, ...groupMemberIds].map((id) => getEventsForVenue(id)))).flat();
+  const upcoming = sortByStart(rawEvents.filter((e) => !isPastEvent(e, now)));
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -35,7 +62,7 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
 
       <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-accent">Venue</p>
       <h1 className="font-display mt-1 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
-        {venue.name}
+        {label}
       </h1>
       <p className="mt-2 text-sm text-text-secondary">{venue.address}</p>
       {(venue.venueProfile || venue.description) && (
@@ -56,7 +83,7 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
       )}
 
       <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
-        Upcoming at {venue.name}
+        Upcoming at {label}
       </h2>
       <div className="mt-2">
         {upcoming.length === 0 ? (

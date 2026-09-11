@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { FESTIVALS } from "@/lib/data/festivals";
+import { getPublicVenueGroupPrimaryId } from "@/lib/data/venues";
 
 // Forced request-time (build-time DB dependency audit, 2026-09-07): without
 // this, Next.js prerenders this route at BUILD time by default, so the
@@ -42,12 +43,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  const venueRoutes: MetadataRoute.Sitemap = venues.map((venue) => ({
-    url: `${SITE_URL}/venues/${venue.slug}`,
-    lastModified: now,
-    changeFrequency: "weekly",
-    priority: 0.5,
-  }));
+  // A grouped member (VEGA overall-venue presentation, 2026-09-11 — e.g.
+  // Ideal Bar) now permanently redirects to its group's primary URL
+  // (src/app/venues/[slug]/page.tsx) rather than rendering its own page —
+  // excluded here so the sitemap never lists a URL that immediately
+  // redirects away from itself.
+  const venueRoutes: MetadataRoute.Sitemap = venues
+    .filter((venue) => !getPublicVenueGroupPrimaryId(venue.id))
+    .map((venue) => ({
+      url: `${SITE_URL}/venues/${venue.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    }));
 
   const festivalRoutes: MetadataRoute.Sitemap = FESTIVALS.map((festival) => ({
     url: `${SITE_URL}/festivals/${festival.slug}`,

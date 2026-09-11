@@ -161,6 +161,25 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     expect(new Set(urls).size).toBe(urls.length);
   });
 
+  it("VEGA overall-venue presentation (2026-09-11): excludes a grouped member's own URL (it now permanently redirects — src/app/venues/[slug]/page.tsx) but keeps the group's primary URL and every other venue's own URL, including venues removed from the /venues directory listing but still real registry entries", async () => {
+    const vega = makeVenue({ id: "v-vega", slug: "vega", name: "VEGA" });
+    const idealBar = makeVenue({ id: "v-vega-ideal-bar", slug: "vega-ideal-bar", name: "Ideal Bar" });
+    // H15 was removed from the curated /venues directory listing but is not
+    // part of any group — its own detail page keeps working and stays
+    // indexable (Section 3 of the addendum: "no broken event venue
+    // references", "underlying venue remains valid").
+    const h15 = makeVenue({ id: "v-h15", slug: "h15", name: "H15" });
+    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
+    vi.mocked(getVenues).mockResolvedValue([vega, idealBar, h15]);
+    const { default: sitemap } = await import("./sitemap");
+    const result = await sitemap();
+
+    const urls = result.map((r) => r.url);
+    expect(urls).toContain("https://electroniccph.com/venues/vega");
+    expect(urls).toContain("https://electroniccph.com/venues/h15");
+    expect(urls).not.toContain("https://electroniccph.com/venues/vega-ideal-bar");
+  });
+
   it("preserves existing URL/mapping semantics: only published events (as returned by getPublishedEventsWithVenue) become event routes, keyed by slug", async () => {
     // getPublishedEventsWithVenue itself already filters to published=true —
     // this test just proves sitemap() doesn't apply any additional filter of
