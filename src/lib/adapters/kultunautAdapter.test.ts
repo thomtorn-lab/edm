@@ -164,7 +164,7 @@ describe("Venue resolution (Section 7 of the discovery-only implementation task)
     expect(resolveVenue("VEGA", VENUES)?.venue.id).not.toBe("v-vega-ideal-bar");
   });
 
-  it("'Ideal Bar' resolves to VEGA (Ideal Bar), the separate standalone venue — not the VEGA parent, no room", () => {
+  it("'Ideal Bar' resolves to the separate standalone Ideal Bar venue — not the VEGA parent, no room", () => {
     expect(resolveVenue("Ideal Bar", VENUES)?.venue.id).toBe("v-vega-ideal-bar");
     expect(resolveVenue("Ideal Bar", VENUES)?.subVenue).toBeNull();
   });

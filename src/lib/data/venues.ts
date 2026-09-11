@@ -361,7 +361,18 @@ export const VENUES: Venue[] = [
     // have reintroduced exactly the conflation this cleanup fixes.
     id: "v-vega-ideal-bar",
     slug: "vega-ideal-bar",
-    name: "VEGA (Ideal Bar)",
+    // Renamed from "VEGA (Ideal Bar)" (venue-subsite VEGA grouping,
+    // 2026-09-11): that name was also this row's public-facing display
+    // everywhere event-level venue text is shown (EventRow, calendar
+    // exports, event detail pages) — repeating "VEGA" is exactly the
+    // redundant/confusing presentation the grouping in PUBLIC_VENUE_GROUPS
+    // below fixes on /venues, and per that task's own example an
+    // individual event "at Ideal Bar" should still just display "Ideal
+    // Bar". Resolution is unaffected: aliases below still include "Ideal
+    // Bar", "Vega Ideal Bar" and the old "VEGA (Ideal Bar)" string, and
+    // resolveVenue() (src/lib/normalize.ts) matches name OR aliases — every
+    // raw source string that used to resolve here still does.
+    name: "Ideal Bar",
     aliases: ["Ideal Bar", "Vega Ideal Bar", "VEGA (Ideal Bar)"],
     address: "Enghavevej 40, 1674 København V",
     city: "Copenhagen",
@@ -717,6 +728,17 @@ export const VENUES: Venue[] = [
  * registry data it draws from can't silently drift apart. Extending this
  * list requires explicit approval, same as the page-level rule it replaces.
  */
+/**
+ * Venues-subsite visibility decision (2026-09-11 addendum to the VEGA
+ * overall-venue task): H15, Hotel Cecil, Klub Werkstatt, Halvandet,
+ * Pylonen, UnderWerket, Mayhem, Odds and Ends and RUST are removed as
+ * public top-level directory entries, and "vega-ideal-bar" is replaced by
+ * "vega" (the new overall-VEGA entry — see PUBLIC_VENUE_GROUPS below).
+ * This is presentation-only, same rule as the comment above: every removed
+ * slug remains a real, event-linkable registry entry (own detail page at
+ * /venues/<slug>, own sitemap entry, full admin venue-selection
+ * availability) — only the curated /venues highlights list drops them.
+ */
 export const CURATED_VENUE_SLUGS: readonly string[] = [
   "culture-box",
   "hangaren",
@@ -724,26 +746,65 @@ export const CURATED_VENUE_SLUGS: readonly string[] = [
   "module",
   "jolene",
   "baggen",
-  "klub-werkstatt",
   "basement",
   "pumpehuset",
   "poolen",
-  "rust",
-  "h15",
   "bolsjefabrikken",
-  "odds-and-ends",
-  "mayhem",
   "tap1",
-  "underwerket",
-  "vega-ideal-bar",
+  "vega",
   "alice",
-  "hotel-cecil",
-  "halvandet",
-  "pylonen",
 ];
 
 export function getVenueBySlug(slug: string): Venue | undefined {
   return VENUES.find((v) => v.slug === slug);
+}
+
+/**
+ * Public Venues-subsite-only grouping (VEGA overall-venue presentation,
+ * 2026-09-11). Store VEGA/Lille VEGA are already one row (v-vega, via
+ * `rooms` — see that venue's own comment above). Ideal Bar is deliberately
+ * kept as its own standalone venue row (real evidence: KultuNaut/Billetto
+ * never conflate the two — see v-vega-ideal-bar's own comment), so
+ * absorbing it into VEGA for public presentation can't reuse `rooms` or
+ * aliases without losing that real distinction. This map is
+ * presentation-only: it drives the public /venues directory card, the
+ * /venues/[slug] detail page's aggregated upcoming-events list, and a
+ * redirect from a grouped member's own URL to its group's primary URL
+ * (src/app/venues/[slug]/page.tsx). It is never read by event-venue
+ * resolution, dedup, or the canonical venue rows themselves — see
+ * src/lib/normalize.ts (resolveVenue) and src/lib/dedup.ts, neither of
+ * which imports this map — so it cannot affect which venue an event
+ * actually belongs to.
+ */
+export const PUBLIC_VENUE_GROUPS: Record<string, string[]> = {
+  "v-vega": ["v-vega-ideal-bar"],
+};
+
+/** Reverse lookup: a grouped member's venue id -> its group's primary venue id, or null if `venueId` isn't a grouped member. */
+export function getPublicVenueGroupPrimaryId(venueId: string): string | null {
+  for (const [primaryId, memberIds] of Object.entries(PUBLIC_VENUE_GROUPS)) {
+    if (memberIds.includes(venueId)) return primaryId;
+  }
+  return null;
+}
+
+/**
+ * Public Venues-subsite-only display-label overrides (2026-09-11
+ * addendum). Jolene and Baggen's canonical `name` ("Jolene Bar" / "Baggen")
+ * stays exactly as stored — event rows, calendar exports and admin venue
+ * selection keep showing that canonical name unchanged, per the addendum's
+ * own "do not change event-level venue names unless unavoidable" rule.
+ * Only the public /venues directory card and /venues/[slug] detail heading
+ * substitute this clearer "(Club)" label.
+ */
+export const PUBLIC_VENUE_LABEL_OVERRIDES: Record<string, string> = {
+  "v-jolene": "Jolene (Club)",
+  "v-baggen": "Baggen (Club)",
+};
+
+/** The label to show on the public /venues directory and /venues/[slug] detail page — falls back to the venue's own canonical name when no override applies. */
+export function publicVenueLabel(venue: Pick<Venue, "id" | "name">): string {
+  return PUBLIC_VENUE_LABEL_OVERRIDES[venue.id] ?? venue.name;
 }
 
 export function getVenueById(id: string): Venue | undefined {
