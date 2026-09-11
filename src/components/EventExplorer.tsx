@@ -368,7 +368,15 @@ export default function EventExplorer({
   }, []);
 
   function handleBackToTop() {
-    window.scrollTo({ top: 0 }); // instant, matching handleMonthNavClick's own scroll (no smooth-scroll anywhere here, so no reduced-motion handling is needed)
+    // Smooth (unlike handleMonthNavClick's own instant jump, which replaces
+    // a native #hash anchor jump and matches that browser default) — this
+    // button is a deliberate, visible "return to the top" action, so an
+    // animated scroll is the more legible affordance for it (Back-to-top
+    // control, 2026-09-11). Doesn't touch isProgrammaticScrollRef/the
+    // month-nav pin: scroll-spy keeps updating activeMonthKey normally
+    // throughout, correctly landing on the first month once the scroll
+    // reaches the top, exactly as an ordinary manual scroll-up would.
+    window.scrollTo({ top: 0, behavior: "smooth" });
     if (window.location.hash) {
       history.replaceState(null, "", window.location.pathname + window.location.search);
     }
@@ -677,7 +685,7 @@ export default function EventExplorer({
           type="button"
           onClick={handleBackToTop}
           aria-label="Back to top"
-          className="fixed bottom-4 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-surface-1/95 text-text-secondary shadow-lg backdrop-blur transition-colors hover:text-text-primary sm:bottom-6 sm:right-6"
+          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-surface-1/95 text-text-secondary shadow-lg backdrop-blur transition-colors hover:text-text-primary sm:bottom-6 sm:right-6"
         >
           <svg
             viewBox="0 0 16 16"
