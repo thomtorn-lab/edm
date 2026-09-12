@@ -837,7 +837,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
     return { ...makeEvent(startIso), primaryGenre: genreSlug, subgenres: [genreSlug] };
   }
 
-  it("requirement 1: applying a filter that the current month still matches preserves the current month — no scroll", () => {
+  it("requirement 1: applying a filter that the current month still matches preserves the current month, explicitly scrolling it into view (simplified filter-apply model, 2026-09-12: always scroll, no visibility check)", () => {
     // A second surviving month (Oct) keeps the month-nav bar itself visible
     // after filtering (it hides once only one month remains) so the active
     // highlight stays checkable.
@@ -851,7 +851,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
     selectGenre("techno"); // keeps Aug's and Oct's events, drops Sep's
 
     expect(activeMonthLabel()).toBe("Aug");
-    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
   });
 
   it("requirement 2: current month loses all matches, a LATER month still matches -> auto-scrolls to the nearest later month", () => {
@@ -984,7 +984,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
   });
 
   describe("Production bug fix, 2026-09-12 — Electronic/Other genre filter + month-navigation viewport", () => {
-    it("locked-in scenario: August and November both have an electronic-other event, user is in November, selecting the electronic-other filter keeps November active and never intentionally selects or scrolls to August", () => {
+    it("locked-in scenario: August and November both have an electronic-other event, user is in November, selecting the electronic-other filter keeps November active and explicitly scrolls to it, never August", () => {
       const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
       render(<EventExplorer events={[aug, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
@@ -995,18 +995,18 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
 
       selectGenre("electronic-other"); // the "Electronic / Other" bucket — November's own event matches it
 
-      // November still matches -> stays active. Nothing here should ever
+      // November still matches -> stays active, and is explicitly scrolled
+      // into view (simplified filter-apply model, 2026-09-12: always scroll
+      // the computed target, no visibility check). Nothing here should ever
       // choose August: it's earlier, not later, than November, so it can
       // only ever be a fallback target when NO later month matches AND the
       // active month itself has lost its own match — neither is true here.
       expect(activeMonthLabel()).toBe("Nov");
       expect(activeMonthLabel()).not.toBe("Aug");
-      // Both months' rects are the default "comfortably visible" stub, so
-      // no corrective scroll should fire either.
-      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
     });
 
-    it("real-browser reflow limitation: jsdom cannot model layout, so this simulates a post-filter reflow clamp by directly overriding the active month's bounding rect, and confirms the SAME month is scrolled back into view (never a different one)", () => {
+    it("scrolls the active month's own section back into view when a filter-driven reflow has clamped scroll position away from it", () => {
       const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
       render(<EventExplorer events={[aug, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
@@ -1025,28 +1025,13 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       selectGenre("electronic-other");
 
       // Still the SAME month — the fix never treats this as "pick another
-      // month", only "make sure this one is actually visible".
+      // month", only scrolls back to it.
       expect(activeMonthLabel()).toBe("Nov");
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
     });
 
-    it("does not scroll at all when the active month's section is already visible after filtering — only a genuine displacement triggers the corrective scroll", () => {
-      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[aug, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      // November's rect stays at the default "comfortably visible" stub — no override.
-
-      selectGenre("electronic-other");
-
-      expect(activeMonthLabel()).toBe("Nov");
-      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
-    });
-
-    it("the corrective scroll reuses the programmatic-scroll pin, so scroll-spy cannot fight it mid-scroll and resumes normally once it settles", () => {
+    it("the filter-apply scroll reuses the programmatic-scroll pin, so scroll-spy cannot fight it mid-scroll, and scroll-spy resumes normally once it settles (no separate intent-released lock)", () => {
       const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
       const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "electronic-other");
@@ -1054,29 +1039,19 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       vi.runOnlyPendingTimers();
 
       latestObserver().trigger("2026-11");
-      setSectionRect("2026-11", { top: 2000, bottom: 2300 }); // simulate reflow displacement
 
       selectGenre("electronic-other");
-      expect(activeMonthLabel()).toBe("Nov"); // corrective scroll fired, still the same month
+      expect(activeMonthLabel()).toBe("Nov"); // filter-apply scroll fired, still the same month
 
       // Stale observer data arriving mid-scroll must not win — same pin
       // handleMonthNavClick's own scroll already relies on.
       latestObserver().trigger("2026-08");
       expect(activeMonthLabel()).toBe("Nov");
 
-      // The corrective scroll's own transient pin (isProgrammaticScrollRef)
-      // still releases on a timer, so it no longer blocks the observer once
-      // settled — but the STRUCTURAL context lock armed by the same "stay"
-      // pass (product rule, 2026-09-12) is intent-released, not
-      // timer-released, so it still blocks scroll-spy on its own even after
-      // the corrective scroll's own settle window has passed.
+      // Once the settle window elapses, scroll-spy resumes normally with no
+      // further action required — the simplified model (2026-09-12) has no
+      // separate intent-released lock beyond this transient pin.
       vi.advanceTimersByTime(200);
-      latestObserver().trigger("2026-12");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      // Genuine user scroll intent releases the context lock — scroll-spy
-      // resumes normally.
-      fireEvent.wheel(window);
       latestObserver().trigger("2026-12");
       expect(activeMonthLabel()).toBe("Dec");
     });
@@ -1174,7 +1149,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       expect(activeMonthLabel()).not.toBe("Dec");
     });
 
-    it("6. the active month still has matches -> no jump, no scroll (unaffected by the distance rule)", () => {
+    it("6. the active month still has matches -> no jump to a different month, but still explicitly scrolled to itself (unaffected by the distance rule)", () => {
       const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
       const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
       render(<EventExplorer events={[aug, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
@@ -1184,7 +1159,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       selectGenre("techno"); // both months still match
 
       expect(activeMonthLabel()).toBe("Aug");
-      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
     });
 
     it("7. zero matches anywhere -> no scroll, previous month context preserved (unaffected by the distance rule)", () => {
@@ -1533,7 +1508,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
   });
 
   describe("highest-priority product rule, 2026-09-12 — the active month must never change after a filter if it still has at least one matching event", () => {
-    it("November has a matching event, other months also match -> stays in November with no programmatic scroll to another month", () => {
+    it("November has a matching event, other months also match -> stays in November, explicitly scrolled to it, never a programmatic scroll to another month", () => {
       const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "techno");
       render(<EventExplorer events={[oct, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
@@ -1545,9 +1520,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       selectGenre("techno"); // November still matches, and so does October
 
       expect(activeMonthLabel()).toBe("Nov");
-      // November's section is already visible (default stub), so no
-      // corrective same-month scroll was even needed here.
-      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
     });
 
     it("root-cause regression: a freshly re-created scroll-spy observer's own automatic initial report must not steal the active month away when it still matches (real-browser IntersectionObserver behavior — every newly observed section fires once with its current state; jsdom's mock does not do this automatically, so this test triggers it explicitly to stand in for it)", () => {
@@ -1559,7 +1532,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       latestObserver().trigger("2026-11");
       expect(activeMonthLabel()).toBe("Nov");
 
-      selectGenre("techno"); // November still matches -> the "stay" branch, no scroll needed
+      selectGenre("techno"); // November still matches -> the "stay" branch, explicitly scrolled
       expect(activeMonthLabel()).toBe("Nov");
 
       // The scroll-spy IntersectionObserver was torn down and recreated
@@ -1567,11 +1540,13 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       // browser's freshly created observer always fires once, reporting
       // each newly observed section's CURRENT intersection state, even
       // though nothing actually scrolled. Simulate that automatic report
-      // claiming October is topmost, during the same settle window.
+      // claiming October is topmost, during the same settle window — the
+      // programmatic-scroll pin (armed by the filter-apply scroll itself)
+      // ignores it.
       latestObserver().trigger("2026-10");
 
       expect(activeMonthLabel()).toBe("Nov");
-      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
     });
 
     it("Clear Filters restoring the origin still behaves correctly afterward (unaffected by this fix)", () => {
@@ -1673,7 +1648,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
     });
   });
 
-  describe("structural context lock, 2026-09-12 — supersedes the fixed-150ms-timer approach: preserved context is released ONLY by genuine user navigation intent, never by time", () => {
+  describe("simplified filter-apply model, 2026-09-12 — filter-apply always explicitly scrolls to a deterministic target (current month if still matching, else calendar-closest); no separate intent-released lock", () => {
     function openMobileDrawer() {
       fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     }
@@ -1687,7 +1662,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       fireEvent.click(screen.getByRole("button", { name: /^Show/ }));
     }
 
-    it("1. active month still matches after filter -> a delayed IntersectionObserver initial report (arriving well after any fixed timer could have released a timer-based pin) does NOT change the month — this is the exact scenario that used to reproduce the Production 'lands on February' bug before this fix", () => {
+    it("1. current month still matches -> explicit scroll to the same month, via the mobile draft -> Show N events commit flow", () => {
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
       const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
       render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
@@ -1697,124 +1672,12 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       openMobileDrawer();
       selectMobileGenre("electronic-other");
       tapShowEvents();
-      expect(activeMonthLabel()).toBe("Nov");
-
-      vi.advanceTimersByTime(200); // well past the OLD fixed settle window
-      latestObserver().trigger("2027-02"); // the observer's own delayed automatic report
 
       expect(activeMonthLabel()).toBe("Nov");
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
     });
 
-    it("2. active month still matches after filter -> a delayed browser-like atBottom scroll (arriving well after any fixed timer) does NOT change the month either — same protection, different signal source", () => {
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      openMobileDrawer();
-      selectMobileGenre("electronic-other");
-      tapShowEvents();
-      expect(activeMonthLabel()).toBe("Nov");
-
-      vi.advanceTimersByTime(200);
-      stubScrollGeometry({ atBottom: true });
-      fireEvent.scroll(window);
-
-      expect(activeMonthLabel()).toBe("Nov");
-    });
-
-    it("3. waiting well beyond any plausible timer duration does NOT release the lock by itself — only a genuine user gesture does (proves the protection is structural, not time-based)", () => {
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      selectGenre("electronic-other");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      vi.advanceTimersByTime(60_000); // far beyond any plausible fixed-timer design
-      latestObserver().trigger("2027-02");
-
-      expect(activeMonthLabel()).toBe("Nov");
-    });
-
-    it("4. genuine user scroll intent (wheel) releases the lock -> scroll-spy can update the active month again", () => {
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      selectGenre("electronic-other");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      fireEvent.wheel(window); // genuine user intent
-      latestObserver().trigger("2027-02"); // now a real scroll-spy update
-
-      expect(activeMonthLabel()).toBe("Feb");
-    });
-
-    it("4b. genuine touch-scroll intent (touchstart) also releases the lock", () => {
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      selectGenre("electronic-other");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      fireEvent.touchStart(window);
-      latestObserver().trigger("2027-02");
-
-      expect(activeMonthLabel()).toBe("Feb");
-    });
-
-    it("4c. genuine keyboard scroll intent (ArrowDown) also releases the lock, but typing in the search box does NOT (avoids spurious release while filling in a filter control)", () => {
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      selectGenre("electronic-other");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      // Typing a letter is a keydown too, but not a scroll key — must not release.
-      fireEvent.keyDown(window, { key: "e" });
-      latestObserver().trigger("2027-02");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      // A genuine scroll key does release it.
-      fireEvent.keyDown(window, { key: "ArrowDown" });
-      latestObserver().trigger("2027-02");
-      expect(activeMonthLabel()).toBe("Feb");
-    });
-
-    it("5. an explicit month-nav click releases/overrides the lock correctly — the user's own deliberate navigation always wins", () => {
-      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
-      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
-      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
-      vi.runOnlyPendingTimers();
-
-      latestObserver().trigger("2026-11");
-      selectGenre("electronic-other");
-      expect(activeMonthLabel()).toBe("Nov");
-
-      // The user deliberately taps February in the month nav.
-      fireEvent.click(screen.getByRole("link", { name: "Feb" }));
-      expect(activeMonthLabel()).toBe("Feb");
-
-      // And normal scroll-spy resumes afterward too (nav click doesn't
-      // leave any lingering lock behind).
-      vi.advanceTimersByTime(200);
-      latestObserver().trigger("2026-11");
-      expect(activeMonthLabel()).toBe("Nov");
-    });
-
-    it("6. active month has ZERO matches -> the approved closest-calendar-month reconciliation still works, unaffected by the context lock", () => {
+    it("2. current month has zero matches -> explicit scroll to the calendar-closest matching month", () => {
       const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
       const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
@@ -1825,17 +1688,60 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       selectGenre("techno"); // November drops out -> closest match, October
 
       expect(activeMonthLabel()).toBe("Oct");
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
 
-      // And scroll-spy is NOT stuck locked afterward — the context lock is
-      // only for the "still matches" case, never armed here.
+      // Scroll-spy is free to move again immediately after the settle
+      // window — no separate lock outlives it.
       vi.advanceTimersByTime(200);
       latestObserver().trigger("2027-03");
       expect(activeMonthLabel()).toBe("Mar");
     });
 
-    it("7. Clear Filters still restores the original pre-filter month, unchanged by the context-lock rework", () => {
-      // A second, far-away techno match keeps the nav bar visible once
-      // filtered (it hides once only one month remains).
+    it("3. an equal-distance tie between an earlier and later matching month prefers the later one, and still explicitly scrolls", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Dec");
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
+    });
+
+    it("4. mobile draft filters do not affect the live list before 'Show N events' is tapped", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "house");
+      render(<EventExplorer events={[nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(activeMonthLabel()).toBe("Nov");
+
+      openMobileDrawer();
+      selectMobileGenre("house"); // draft only
+
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("5. Show N events commits the draft exactly once and scrolls to the correct target, not the globally last month", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "electronic-other");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance"); // will be filtered out
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[oct, nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      openMobileDrawer();
+      selectMobileGenre("electronic-other");
+      tapShowEvents();
+
+      expect(activeMonthLabel()).toBe("Oct"); // calendar-closest to November, not February
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    });
+
+    it("6. Clear Filters still returns to the filter-session origin month, unaffected by the simplified filter-apply model", () => {
       const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
       const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
@@ -1850,7 +1756,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       expect(activeMonthLabel()).toBe("Nov");
     });
 
-    it("8. desktop behavior remains correct: the active month is preserved via the same structural lock (not just a mobile-only mechanism), and no code path is mobile-specific", () => {
+    it("7. desktop behavior is identical to mobile: the immediate genre select explicitly scrolls to the current month when it still matches", () => {
       const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
       const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
       render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
@@ -1858,15 +1764,9 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
 
       latestObserver().trigger("2026-11");
       selectGenre("electronic-other"); // desktop select, immediate — no drawer involved
+
       expect(activeMonthLabel()).toBe("Nov");
-
-      vi.advanceTimersByTime(200);
-      latestObserver().trigger("2027-02");
-      expect(activeMonthLabel()).toBe("Nov"); // still protected, exactly like mobile
-
-      fireEvent.wheel(window);
-      latestObserver().trigger("2027-02");
-      expect(activeMonthLabel()).toBe("Feb"); // and releases identically on genuine intent
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
     });
   });
 });
