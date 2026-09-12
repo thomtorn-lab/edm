@@ -155,11 +155,28 @@ export default function EventExplorer({
   const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
   const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
-  // The month the user was viewing the instant a filter session started —
-  // captured once per session (see the capture effect below) so Clear
-  // Filters can return here instead of leaving activeMonthKey wherever
-  // filtering had moved it. Null whenever no filter is currently active.
-  const [filterOriginMonthKey, setFilterOriginMonthKey] = useState<string | null>(null);
+  // Filter-session origin tracking (filter-state architecture rework,
+  // 2026-09-12; React-effect review, same day): the month the user was
+  // viewing the instant a filter session started, so Clear Filters can
+  // return there instead of leaving activeMonthKey wherever filtering had
+  // moved it. Both are plain refs, not React state — capturing/restoring
+  // this never needs to trigger a render on its own, only ever piggybacks
+  // on a render the reconciliation effect below is already handling for
+  // some OTHER reason (`hasActiveFilters`/`groups`/`activeMonthKey`
+  // changing). An earlier version of this used `useState` for the origin,
+  // which meant setting it was itself a dependency change that forced a
+  // second, redundant run of that effect right after the first — a real
+  // duplicate-scroll bug caught in testing. Folding origin capture/restore
+  // into the START of that same effect (see below), driven by refs the
+  // effect reads but never depends on, removes the second effect
+  // invocation entirely rather than papering over it with an incomplete
+  // dependency array.
+  const filterOriginMonthKeyRef = useRef<string | null>(null);
+  // Mirrors `hasActiveFilters` as of the last time the reconciliation
+  // effect actually ran — the only way to detect an edge ("a session just
+  // STARTED" / "a session just ENDED") from inside a single effect without
+  // a second effect or extra state to hold the previous value.
+  const wasFilteredRef = useRef(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
   // `now` starts from serverNow (always correct — see its doc comment
@@ -349,25 +366,6 @@ export default function EventExplorer({
     scheduleScrollSettle();
   }
 
-  // Captures the filter-session origin month (filter-state architecture
-  // rework, 2026-09-12): the instant a filter session starts — hasActiveFilters
-  // flips from false to true — this stashes whatever month was active
-  // BEFORE any filter-driven reconciliation gets a chance to move it, so
-  // Clear Filters (the dedicated restoration effect below) can return there
-  // instead of leaving the user wherever filtering happened to land them.
-  // Guarded to only ever capture once per session (`filterOriginMonthKey
-  // === null`): further filter edits while already filtered — e.g. changing
-  // genre again, or the origin month itself losing/regaining a match — must
-  // never overwrite it. Only the restoration effect below (on Clear Filters)
-  // ever resets it back to null, which is what allows a later, brand-new
-  // filter session to capture a fresh origin.
-  useEffect(() => {
-    if (hasActiveFilters && filterOriginMonthKey === null && activeMonthKey !== null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFilterOriginMonthKey(activeMonthKey);
-    }
-  }, [hasActiveFilters, activeMonthKey, filterOriginMonthKey]);
-
   // Reconciles the active month against `groups` whenever filtering changes
   // which months have any matching event — month navigation itself stays
   // pure navigation (handleMonthNavClick above is the only thing a user
@@ -408,21 +406,60 @@ export default function EventExplorer({
   //   - initial mount (activeMonthKey still null) -> establish the first
   //     month as active with NO scroll: there is nothing to jump away from,
   //     the page is already sitting at its natural starting position
-  // Clearing filters is now its OWN dedicated case — see the filter-origin
-  // restoration effect right below this one — rather than falling under the
-  // first bullet above: every month that was visible while filtered remains
-  // visible once filters are cleared (clearing only adds events back, never
-  // removes any), so the first bullet's "current month still has matches ->
-  // stay" branch would otherwise just leave the user wherever filtering had
-  // moved them (e.g. October) instead of returning to where they started
-  // (November) — exactly the reported Clear Filters bug. This effect steps
-  // aside entirely whenever that restoration is pending; see the guard just
-  // below.
+  //   - a filter session just ENDED (every filter/search control back to
+  //     its default) -> restore activeMonthKey to the filter-session origin
+  //     captured below, instead of falling under the first bullet above:
+  //     every month that was visible while filtered remains visible once
+  //     filters are cleared (clearing only adds events back, never removes
+  //     any), so "current month still has matches -> stay" would otherwise
+  //     just leave the user wherever filtering had moved them (e.g.
+  //     October) instead of returning to where they started (November) —
+  //     exactly the reported Clear Filters bug. Skips the scroll (but still
+  //     restores state) if the origin is already the active, visible month
+  //     — e.g. a filter session where every filter tried matched nothing,
+  //     so activeMonthKey never actually moved.
+  // Filter-session origin capture (the mirror image of the bullet above)
+  // happens first, at the very top of this same effect, the instant a
+  // session STARTS: see the two ref reads/writes immediately below. Folding
+  // capture and reconciliation into one effect — rather than two separate
+  // effects that would each react to the same render — is deliberate: it
+  // guarantees capture-then-reconcile happens as a single atomic pass with
+  // exactly one resulting scroll, with no second effect invocation to
+  // suppress via an incomplete dependency array. See the refs' own doc
+  // comment (near their declarations) for why they're refs, not state.
   useEffect(() => {
-    // A pending filter-origin restoration (Clear Filters) takes priority
-    // over everything below — see the dedicated restoration effect, which
-    // owns this exact transition end to end.
-    if (!hasActiveFilters && filterOriginMonthKey !== null) return;
+    const previouslyFiltered = wasFilteredRef.current;
+    wasFilteredRef.current = hasActiveFilters;
+
+    if (hasActiveFilters && !previouslyFiltered) {
+      // Session starting — capture whatever was active *before* anything
+      // below gets a chance to move it.
+      filterOriginMonthKeyRef.current = activeMonthKey;
+    }
+
+    if (!hasActiveFilters && previouslyFiltered && filterOriginMonthKeyRef.current !== null) {
+      const origin = filterOriginMonthKeyRef.current;
+      filterOriginMonthKeyRef.current = null;
+      if (groups.some((g) => g.monthKey === origin)) {
+        const el = document.getElementById(`month-${origin}`);
+        const alreadyThere = activeMonthKey === origin && el !== null && isSectionVisible(el);
+        if (!alreadyThere) {
+          isProgrammaticScrollRef.current = true;
+          setActiveMonthKey(origin);
+          el?.scrollIntoView({ block: "start", behavior: "smooth" });
+          if (window.location.hash !== `#month-${origin}`) {
+            history.replaceState(null, "", `#month-${origin}`);
+          }
+          scheduleScrollSettle();
+        }
+        return;
+      }
+      // The origin month has no event left at all (e.g. its only event
+      // lapsed into the past while filtered) — nothing sensible to restore
+      // to; fall through to the normal reconciliation below instead, using
+      // `groups`/`activeMonthKey` exactly as they are now.
+    }
+
     if (groups.length === 0) return;
     if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) {
       const el = document.getElementById(`month-${activeMonthKey}`);
@@ -434,7 +471,6 @@ export default function EventExplorer({
       return;
     }
     if (activeMonthKey === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMonthKey(groups[0].monthKey);
       return;
     }
@@ -471,59 +507,18 @@ export default function EventExplorer({
       history.replaceState(null, "", `#month-${target}`);
     }
     scheduleScrollSettle();
-    // filterOriginMonthKey is read (in the guard above) but deliberately
-    // left out of these deps: the only way it changes without `groups`,
-    // `activeMonthKey` or `hasActiveFilters` also changing is the origin-
-    // capture effect setting it right after THIS effect already settled for
-    // the same render — re-running this effect solely for that would repeat
-    // its own isSectionVisible check/scrollIntoView call a second time for
-    // no reason (confirmed by a real duplicate-scroll regression while
-    // building this out). hasActiveFilters flipping is what actually needs
-    // to make this effect step aside, and that's already tracked below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Complete, correct dependency array — every reactive value the effect
+    // reads (`groups`, `activeMonthKey`, `hasActiveFilters`) is listed; no
+    // suppression needed. `filterOriginMonthKeyRef`/`wasFilteredRef` are
+    // refs, not state — React's own rule is that a ref's `.current` is
+    // read fresh on every invocation regardless of the dependency array
+    // (mutating one doesn't trigger a re-render, so it can't be "missing"
+    // from a list of things that do), which is exactly why folding origin
+    // capture/restore into this effect via refs — rather than tracking the
+    // origin as its own piece of React state read by a second effect —
+    // removes the double-invocation problem structurally instead of
+    // instructing the linter to ignore it.
   }, [groups, activeMonthKey, hasActiveFilters]);
-
-  // Restores the filter-session origin month once every filter/search
-  // control is back to its default (Clear Filters — filter-state
-  // architecture rework, 2026-09-12): the reconciliation effect above steps
-  // aside for this exact transition (see its own guard), so this effect is
-  // the sole authority for it — otherwise that effect's "current month
-  // still matches -> stay" branch would just leave the user wherever
-  // filtering had moved them (e.g. October) rather than returning to where
-  // they started (November). Reuses the same isProgrammaticScrollRef/
-  // scheduleScrollSettle pin as every other programmatic scroll here, so
-  // scroll-spy and the bottom-of-page fallback can't fight it mid-scroll.
-  useEffect(() => {
-    if (hasActiveFilters || filterOriginMonthKey === null) return;
-    if (!groups.some((g) => g.monthKey === filterOriginMonthKey)) {
-      // The origin month has no event left at all (e.g. its only event
-      // lapsed into the past while filtered) — nothing sensible to restore
-      // to; just drop the stale origin rather than attempting an impossible
-      // scroll.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFilterOriginMonthKey(null);
-      return;
-    }
-    const el = document.getElementById(`month-${filterOriginMonthKey}`);
-    // If the origin is already the active month AND its section is still
-    // genuinely visible (e.g. a filter session that never actually moved
-    // the user anywhere — every filter tried during it matched nothing, so
-    // the "zero months at all" branch above left activeMonthKey untouched
-    // the whole time), there is nothing to correct — matches this same
-    // "don't scroll for no reason" rule the reconciliation effect's own
-    // isSectionVisible branch applies.
-    const alreadyThere = activeMonthKey === filterOriginMonthKey && el !== null && isSectionVisible(el);
-    if (!alreadyThere) {
-      isProgrammaticScrollRef.current = true;
-      setActiveMonthKey(filterOriginMonthKey);
-      el?.scrollIntoView({ block: "start", behavior: "smooth" });
-      if (window.location.hash !== `#month-${filterOriginMonthKey}`) {
-        history.replaceState(null, "", `#month-${filterOriginMonthKey}`);
-      }
-      scheduleScrollSettle();
-    }
-    setFilterOriginMonthKey(null);
-  }, [groups, hasActiveFilters, filterOriginMonthKey, activeMonthKey]);
 
   useEffect(() => {
     if (groups.length < 2) return;

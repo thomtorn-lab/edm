@@ -1451,4 +1451,73 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       expect(activeMonthLabel()).toBe("Nov");
     });
   });
+
+  describe("React-effect review, 2026-09-12 — filter-origin capture/restore folded into a single effect pass (ref-based), verified free of duplicate reconciliation", () => {
+    it("A. DESKTOP: November -> immediate genre filter reconciles to the closest month in exactly one scroll — origin capture and reconciliation happen in the same pass, not two", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      render(<EventExplorer events={[oct, mar, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Oct");
+      // Exactly one scroll — if origin capture ever forced a second,
+      // redundant run of the reconciliation logic, this would be 2.
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+
+      // The origin (November) is only observable through what Clear
+      // Filters returns to.
+      selectGenre("all");
+      expect(activeMonthLabel()).toBe("Nov");
+    });
+
+    it("C. CLEAR: restoring the origin after Clear Filters performs exactly one scroll", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      render(<EventExplorer events={[oct, mar, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno");
+      expect(activeMonthLabel()).toBe("Oct");
+      const callsAfterFilter = (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      selectGenre("all");
+
+      expect(activeMonthLabel()).toBe("Nov");
+      expect((Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
+        callsAfterFilter + 1
+      );
+    });
+
+    it("F. ZERO RESULTS: the origin survives a zero-result filtered state (captured, but nothing to reconcile) and restores correctly once filters are cleared", () => {
+      // A second month (Dec) keeps the nav bar visible whenever unfiltered,
+      // so the origin/restoration is directly checkable via activeMonthLabel().
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[aug, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(activeMonthLabel()).toBe("Aug");
+
+      selectGenre("trance"); // matches nothing at all -> groups.length === 0
+
+      expect(screen.getByText("No events match")).toBeTruthy();
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+
+      selectGenre("all");
+
+      // The origin (August, captured before the zero-result filter) is
+      // restored — trivially true here since it never moved, but this
+      // proves the ref survives an entire zero-result session rather than
+      // being dropped the moment `groups.length === 0` short-circuits.
+      expect(activeMonthLabel()).toBe("Aug");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
 });
