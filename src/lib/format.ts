@@ -1,4 +1,4 @@
-import { crossesMidnight, getCopenhagenParts, type NightlifeEvent } from "./datetime";
+import { getCopenhagenParts, isMultiDayEvent, type NightlifeEvent } from "./datetime";
 
 const WEEKDAY_ABBR = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -40,17 +40,19 @@ export function formatTimeRangeLabel(event: NightlifeEvent): string {
 }
 
 /**
- * e.g. "SAT 15 AUG" for a same-day event, or "FRI 9 OCT – SAT 10 OCT" when
- * the stored end instant falls on a later Copenhagen calendar date than the
- * start (crossesMidnight — a plain calendar-date comparison, independent of
- * the "nightlife day" cutoff used for filtering/grouping/expiry elsewhere in
- * this codebase). Never inferred from duration or text — the true stored
- * start/end instants decide this, and a missing endDatetime always falls
- * back to the single-date label.
+ * e.g. "SAT 15 AUG" for a same-day event OR a normal overnight event whose
+ * end merely spills into the next Copenhagen calendar date (the time range
+ * already communicates that it runs overnight — see formatTimeRangeLabel).
+ * Only when the event's end instant falls 2+ Copenhagen calendar days after
+ * its start (isMultiDayEvent — a true multi-day event, e.g. a festival) does
+ * this show the full range, e.g. "FRI 9 OCT – SUN 11 OCT". Never inferred
+ * from duration/elapsed-hours or text — the true stored start/end instants,
+ * compared as Copenhagen calendar dates, decide this — and a missing
+ * endDatetime always falls back to the single-date label.
  */
 export function formatRowDateRangeLabel(event: NightlifeEvent): string {
   const start = formatRowDateLabel(event.startDatetime);
-  if (!crossesMidnight(event)) return start;
+  if (!isMultiDayEvent(event)) return start;
   const end = formatRowDateLabel(event.endDatetime as string);
   return `${start} – ${end}`;
 }
@@ -76,14 +78,14 @@ export function formatFullDateLabel(datetime: string): string {
 }
 
 /**
- * e.g. "Saturday 15 August 2026" for a same-day event, or "Friday 9 October
- * 2026 – Sunday 11 October 2026" when the event crosses onto a later
- * Copenhagen calendar date — see formatRowDateRangeLabel for the same rule
- * at the compact row-label grain.
+ * e.g. "Saturday 15 August 2026" for a same-day event OR a normal overnight
+ * event, or "Friday 9 October 2026 – Sunday 11 October 2026" when the event
+ * is a true multi-day event (isMultiDayEvent) — see formatRowDateRangeLabel
+ * for the same rule at the compact row-label grain.
  */
 export function formatFullDateRangeLabel(event: NightlifeEvent): string {
   const start = formatFullDateLabel(event.startDatetime);
-  if (!crossesMidnight(event)) return start;
+  if (!isMultiDayEvent(event)) return start;
   const end = formatFullDateLabel(event.endDatetime as string);
   return `${start} – ${end}`;
 }

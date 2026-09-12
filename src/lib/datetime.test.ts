@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   addDaysToDateKey,
+  calendarDaySpan,
   compareDateKeys,
-  crossesMidnight,
   effectiveEndInstant,
   groupByMonth,
   hasTrustworthyEndDatetime,
   isEventInProgress,
+  isMultiDayEvent,
   isNextWeekend,
   isPastEvent,
   isThisWeekend,
@@ -298,15 +299,64 @@ describe("hasTrustworthyEndDatetime / untrustworthy explicit end times", () => {
   });
 });
 
-describe("crossesMidnight", () => {
-  it("detects an end time on the following calendar day", () => {
-    const event: NightlifeEvent = { startDatetime: "2026-08-15T23:59:00+02:00", endDatetime: "2026-08-16T06:00:00+02:00" };
-    expect(crossesMidnight(event)).toBe(true);
+describe("calendarDaySpan / isMultiDayEvent", () => {
+  it("returns 0 for a same-day event", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: "2026-08-15T23:00:00+02:00" };
+    expect(calendarDaySpan(event)).toBe(0);
+    expect(isMultiDayEvent(event)).toBe(false);
   });
 
-  it("does not flag a same-day event", () => {
-    const event: NightlifeEvent = { startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: "2026-08-15T23:00:00+02:00" };
-    expect(crossesMidnight(event)).toBe(false);
+  it("returns 1 for a normal overnight event ending the next calendar day — not a multi-day event", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-08-15T23:59:00+02:00", endDatetime: "2026-08-16T06:00:00+02:00" };
+    expect(calendarDaySpan(event)).toBe(1);
+    expect(isMultiDayEvent(event)).toBe(false);
+  });
+
+  it("returns 2 and flags multi-day exactly at the 2-calendar-day threshold", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-10-09T22:00:00+02:00", endDatetime: "2026-10-11T02:00:00+02:00" };
+    expect(calendarDaySpan(event)).toBe(2);
+    expect(isMultiDayEvent(event)).toBe(true);
+  });
+
+  it("returns 3+ for an event spanning several days", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-10-09T22:00:00+02:00", endDatetime: "2026-10-12T14:00:00+02:00" };
+    expect(calendarDaySpan(event)).toBe(3);
+    expect(isMultiDayEvent(event)).toBe(true);
+  });
+
+  it("returns 0 when there is no end datetime", () => {
+    expect(calendarDaySpan({ startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: null })).toBe(0);
+    expect(isMultiDayEvent({ startDatetime: "2026-08-15T20:00:00+02:00", endDatetime: null })).toBe(false);
+  });
+
+  it("a month boundary counts as 1 (overnight) when it's just the next calendar day", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-10-31T22:00:00+01:00", endDatetime: "2026-11-01T05:00:00+01:00" };
+    expect(calendarDaySpan(event)).toBe(1);
+    expect(isMultiDayEvent(event)).toBe(false);
+  });
+
+  it("a year boundary counts as 1 (overnight) when it's just the next calendar day", () => {
+    const event: NightlifeEvent = { startDatetime: "2026-12-31T23:00:00+01:00", endDatetime: "2027-01-01T05:00:00+01:00" };
+    expect(calendarDaySpan(event)).toBe(1);
+    expect(isMultiDayEvent(event)).toBe(false);
+  });
+
+  it("DST fall-back trap: elapsed real time is 35h (would floor to 1 under a naive duration/24 check) but the correct Copenhagen calendar-day span is 2 — correctly flagged multi-day", () => {
+    // Fri 23 Oct 22:00 CEST -> Sun 25 Oct 08:00 CET. Denmark's DST fall-back happens overnight
+    // 24->25 Oct 2026 (03:00 CEST -> 02:00 CET), adding an hour mid-span, so elapsed real time
+    // (35h) floors to 1 day under a naive duration-based check — but the true Copenhagen
+    // calendar-day span is 2 (Fri -> Sun), which is what must drive the range display.
+    const event: NightlifeEvent = { startDatetime: "2026-10-23T20:00:00.000Z", endDatetime: "2026-10-25T07:00:00.000Z" };
+    expect(calendarDaySpan(event)).toBe(2);
+    expect(isMultiDayEvent(event)).toBe(true);
+  });
+
+  it("DST spring-forward: a normal overnight event loses an hour (7h elapsed instead of 8h) but still spans exactly 1 calendar day — not multi-day", () => {
+    // Sat 28 Mar 22:00 CET -> Sun 29 Mar 06:00 CEST. Denmark's DST spring-forward happens at
+    // 02:00 -> 03:00 local time overnight 28->29 Mar 2026.
+    const event: NightlifeEvent = { startDatetime: "2026-03-28T21:00:00.000Z", endDatetime: "2026-03-29T04:00:00.000Z" };
+    expect(calendarDaySpan(event)).toBe(1);
+    expect(isMultiDayEvent(event)).toBe(false);
   });
 });
 

@@ -561,7 +561,15 @@ describe("Event detail page — multi-day event date-range display", () => {
     expect(screen.getByText(/^Monday 10 August 2026/).closest("dd")?.textContent).toMatch(/^Monday 10 August 2026/);
   });
 
-  it("shows the full date range when the event ends on a later Copenhagen calendar day", async () => {
+  it("shows the start date only for a normal overnight event ending the next Copenhagen calendar day", async () => {
+    await renderPage(makeEvent({ startDatetime: "2026-10-09T20:00:00.000Z", endDatetime: "2026-10-10T04:00:00.000Z" }));
+    const ddText = screen.getByText(/^Friday 9 October 2026/).closest("dd")?.textContent ?? "";
+    expect(ddText.startsWith("Friday 9 October 2026")).toBe(true);
+    expect(ddText).not.toContain("Saturday");
+    expect(ddText).not.toContain("Friday 9 October 2026 –");
+  });
+
+  it("shows the full date range for a true multi-day event (2+ Copenhagen calendar days later)", async () => {
     await renderPage(makeEvent({ startDatetime: "2026-10-09T20:00:00.000Z", endDatetime: "2026-10-11T03:00:00.000Z" }));
     expect(screen.getByText(/Friday 9 October 2026 – Sunday 11 October 2026/).closest("dd")?.textContent).toMatch(
       /^Friday 9 October 2026 – Sunday 11 October 2026/,
