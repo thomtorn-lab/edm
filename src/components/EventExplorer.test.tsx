@@ -701,6 +701,16 @@ describe("EventExplorer — mobile Filters sheet focus containment (QA follow-up
     expect(screen.queryByRole("dialog", { name: "Filters" })).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
+
+  it("restores focus with preventScroll: true, so restoring focus never yanks the page's scroll position (mobile filter-drawer bug fix, 2026-09-12)", () => {
+    openSheet();
+    const trigger = screen.getByRole("button", { name: /^Filters/ });
+    const focusSpy = vi.spyOn(trigger, "focus");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close filters" }));
+
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+  });
 });
 
 describe("EventExplorer — 'All venues' excludes a venue with only past events (Production bug, 2026-08-29)", () => {
@@ -1184,6 +1194,54 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
 
       expect(activeMonthLabel()).toBe("Sep");
       expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("mobile filter-drawer bug fix, 2026-09-12 — the bottom-of-page fallback must not overwrite an in-flight programmatic scroll target", () => {
+    it("A. pinned-window protection: a bottom-of-page scroll arriving before the settle delay does not overwrite the reconciliation effect's chosen target with the last matching month", () => {
+      // Aug is filtered out, Sep is 1 month from Aug (the nearest match),
+      // Dec is the globally LAST matching month and 4 months from Aug — if
+      // the atBottom branch ever wins this race it forces Dec, exactly the
+      // Production symptom (a filter-driven reflow followed by a stray
+      // bottom-of-page scroll event, e.g. from the mobile drawer closing).
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance"); // will be filtered out
+      const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[aug, sep, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(activeMonthLabel()).toBe("Aug");
+
+      selectGenre("techno"); // pins to Sep (the calendar-nearest match) and starts settling
+      expect(activeMonthLabel()).toBe("Sep");
+
+      // Before the 150ms settle delay elapses, a scroll event reports the
+      // page at its (now much shorter, post-filter) bottom.
+      stubScrollGeometry({ atBottom: true });
+      fireEvent.scroll(window);
+
+      // Sep must still be active — Dec (the last month) must NOT have won.
+      expect(activeMonthLabel()).toBe("Sep");
+      expect(activeMonthLabel()).not.toBe("Dec");
+    });
+
+    it("B. legitimate at-bottom behavior survives once the settle window has elapsed: a genuine bottom-of-page scroll can still activate the last month", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance");
+      const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[aug, sep, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      selectGenre("techno"); // pins to Sep
+      expect(activeMonthLabel()).toBe("Sep");
+
+      vi.advanceTimersByTime(200); // past the settle delay — the pin is released
+
+      // A genuine scroll to the bottom of the page now legitimately
+      // activates the last month, exactly as before this fix.
+      stubScrollGeometry({ atBottom: true });
+      fireEvent.scroll(window);
+
+      expect(activeMonthLabel()).toBe("Dec");
     });
   });
 });

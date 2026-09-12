@@ -190,6 +190,15 @@ export default function EventExplorer({
   // the "Filters" trigger button on close — no external dependency, no
   // general-purpose focus-trap system, just the few lines this one sheet
   // needs.
+  //
+  // The trigger's own focus restoration passes `preventScroll: true` (mobile
+  // filter-drawer bug fix, 2026-09-12): a plain `.focus()` call scrolls its
+  // target into view by default if it isn't already visible, which — right
+  // after a filter selected inside this drawer has already reconciled the
+  // page to a different, deliberately-chosen month — could yank the page
+  // back toward wherever the "Filters" button itself sits. Restoring
+  // keyboard/screen-reader focus here is still required; only the
+  // side-effect scroll that accompanies it by default is suppressed.
   useEffect(() => {
     if (!mobileFiltersOpen) return;
     const dialog = mobileFiltersDialogRef.current;
@@ -226,7 +235,7 @@ export default function EventExplorer({
     const trigger = mobileFiltersTriggerRef.current;
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      trigger?.focus();
+      trigger?.focus({ preventScroll: true });
     };
   }, [mobileFiltersOpen]);
 
@@ -425,12 +434,24 @@ export default function EventExplorer({
   // the last group is unambiguously the one in view, independent of the
   // observer's band geometry — this also doubles as this effect's scroll-end
   // detector for releasing the programmatic-scroll pin above.
+  //
+  // The atBottom branch itself must respect the programmatic-scroll pin
+  // (mobile filter-drawer bug fix, 2026-09-12): closing the mobile filters
+  // sheet right after a filter shrinks the page can produce a stray scroll
+  // event that transiently reads as "at the bottom" while a reconciliation-
+  // or nav-driven scroll is still settling on its own, deliberately chosen
+  // target month. Unlike the IntersectionObserver callback above (which
+  // already ignores stale data while pinned), this branch had no such guard
+  // and would clobber that target with the last matching month. The settle
+  // scheduling just below stays unconditional either way — a genuine
+  // scroll-to-bottom still needs to release the pin once it's the pin's own
+  // scroll that reached the bottom.
   useEffect(() => {
     if (groups.length < 2) return;
     function handleScroll() {
       const doc = document.documentElement;
       const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 4;
-      if (atBottom) {
+      if (atBottom && !isProgrammaticScrollRef.current) {
         const lastKey = groups[groups.length - 1].monthKey;
         setActiveMonthKey((current) => (current === lastKey ? current : lastKey));
       }
