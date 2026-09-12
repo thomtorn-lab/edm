@@ -27,8 +27,17 @@ describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
       "Disco",
       "Electro",
       "Ambient / Experimental",
-      "Other",
+      "Electronic / Other",
     ]);
+  });
+
+  it("electronic-other's filter label matches the public badge's own wording (Production bug fix, 2026-09-12) — an event badged 'Electronic' must be discoverable under this same filter bucket", () => {
+    const bucket = MAIN_GENRES.find((g) => g.slug === "electronic-other")!;
+    expect(bucket.label).toBe("Electronic / Other");
+    // Deliberately not just "Electronic" — that would wrongly imply the
+    // bucket covers every electronic subgenre (Techno, House, Trance, etc.)
+    // rather than only the electronic-other catch-all.
+    expect(bucket.label).not.toBe("Electronic");
   });
 
   it("introduces no new primary user-facing genre labels beyond the fixed 13", () => {

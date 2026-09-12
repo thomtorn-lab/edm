@@ -145,10 +145,29 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   window.scrollTo = vi.fn();
   stubScrollGeometry({ atBottom: false });
+  // jsdom performs no real layout — every element's getBoundingClientRect()
+  // is all zeros by default, which (with innerHeight stubbed to 800 above)
+  // would make isSectionVisible's "rect.bottom > 0" check read every single
+  // section as already scrolled out of view, for every test, regardless of
+  // scenario. Default to an ordinary "visible, comfortably within the
+  // viewport" rect instead — the realistic default — and let individual
+  // tests override a specific section's rect (setSectionRect below) to
+  // simulate the one real-browser case this matters for: a filter-driven
+  // reflow clamping scroll position away from the still-active month.
+  Element.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 300, left: 0, right: 800, width: 800, height: 200, x: 0, y: 100, toJSON: () => "" }) as DOMRect;
 });
 
 function setScrollY(value: number) {
   Object.defineProperty(window, "scrollY", { value, configurable: true });
+}
+
+/** Overrides one month section's own getBoundingClientRect, e.g. to simulate a real-browser reflow clamp having pushed it out of view. */
+function setSectionRect(monthKey: string, rect: Partial<DOMRect>) {
+  const el = document.getElementById(`month-${monthKey}`);
+  if (!el) throw new Error(`no section rendered for month-${monthKey}`);
+  el.getBoundingClientRect = () =>
+    ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => "", ...rect }) as DOMRect;
 }
 
 afterEach(() => {
@@ -950,5 +969,93 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
 
     latestObserver().trigger("2026-10"); // a genuine manual scroll to October
     expect(activeMonthLabel()).toBe("Oct");
+  });
+
+  describe("Production bug fix, 2026-09-12 — Electronic/Other genre filter + month-navigation viewport", () => {
+    it("locked-in scenario: August and November both have an electronic-other event, user is in November, selecting the electronic-other filter keeps November active and never intentionally selects or scrolls to August", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[aug, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("electronic-other"); // the "Electronic / Other" bucket — November's own event matches it
+
+      // November still matches -> stays active. Nothing here should ever
+      // choose August: it's earlier, not later, than November, so it can
+      // only ever be a fallback target when NO later month matches AND the
+      // active month itself has lost its own match — neither is true here.
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(activeMonthLabel()).not.toBe("Aug");
+      // Both months' rects are the default "comfortably visible" stub, so
+      // no corrective scroll should fire either.
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("real-browser reflow limitation: jsdom cannot model layout, so this simulates a post-filter reflow clamp by directly overriding the active month's bounding rect, and confirms the SAME month is scrolled back into view (never a different one)", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[aug, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      // Simulate a real browser having clamped scroll position away from
+      // November's section once the filtered page reflows shorter — jsdom
+      // does no real layout, so this is done by directly overriding the
+      // section's own getBoundingClientRect to report itself well below the
+      // viewport, standing in for what a genuine drastic reflow would do.
+      setSectionRect("2026-11", { top: 2000, bottom: 2300 });
+
+      selectGenre("electronic-other");
+
+      // Still the SAME month — the fix never treats this as "pick another
+      // month", only "make sure this one is actually visible".
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not scroll at all when the active month's section is already visible after filtering — only a genuine displacement triggers the corrective scroll", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[aug, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      // November's rect stays at the default "comfortably visible" stub — no override.
+
+      selectGenre("electronic-other");
+
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("the corrective scroll reuses the programmatic-scroll pin, so scroll-spy cannot fight it mid-scroll and resumes normally once it settles", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "electronic-other");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[aug, nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      setSectionRect("2026-11", { top: 2000, bottom: 2300 }); // simulate reflow displacement
+
+      selectGenre("electronic-other");
+      expect(activeMonthLabel()).toBe("Nov"); // corrective scroll fired, still the same month
+
+      // Stale observer data arriving mid-scroll must not win — same pin
+      // handleMonthNavClick's own scroll already relies on.
+      latestObserver().trigger("2026-08");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      // Once settled, scroll-spy resumes normally.
+      vi.advanceTimersByTime(200);
+      latestObserver().trigger("2026-12");
+      expect(activeMonthLabel()).toBe("Dec");
+    });
   });
 });

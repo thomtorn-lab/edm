@@ -32,6 +32,21 @@ const MODE_EMPTY_TITLE: Record<Exclude<Mode, "all">, string> = {
 
 const DATE_MODES = ["tonight", "weekend", "next-weekend"] as const;
 
+/**
+ * Whether any part of `el` currently falls within the viewport's vertical
+ * span — used only to detect a real browser having clamped scroll position
+ * away from the still-active month's section after a drastic filter-driven
+ * reflow (see the reconciliation effect below). Deliberately the loosest
+ * possible "is it there at all" check, not the IntersectionObserver's own
+ * narrow near-top band — this only ever fires a corrective scroll when the
+ * section isn't visible ANYWHERE on screen, never merely because it's not
+ * hugging the top the way scroll-spy's band expects.
+ */
+function isSectionVisible(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  return rect.bottom > 0 && rect.top < window.innerHeight;
+}
+
 const pillClasses = (active: boolean) =>
   "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors " +
   (active
@@ -282,7 +297,16 @@ export default function EventExplorer({
   // action ever drives), this effect only *reacts* to the current month
   // disappearing out from under the user (filter + month-navigation context
   // behavior, 2026-09-12):
-  //   - current month still has matches -> untouched, no scroll (requirement 1)
+  //   - current month still has matches -> stays the active month; the ONLY
+  //     thing checked is whether its own section is still visibly in the
+  //     viewport (isSectionVisible below). Filtering can shrink the page
+  //     drastically, and a real browser clamps scrollY to the new, shorter
+  //     scrollHeight on its own — with no application code ever asking it
+  //     to — which can leave the still-active month's section scrolled out
+  //     of view even though nothing here changed which month is active. If
+  //     that's happened, this scrolls the SAME month's section back into
+  //     view (never a different one); if it's already visible, nothing
+  //     happens at all (requirement 1's "no scroll" case is unaffected)
   //   - current month has zero matches -> jump to the nearest LATER month
   //     that still matches, or the first (earliest) matching month if none
   //     is later (requirements 2-3) — an actual scroll, not just a
@@ -307,7 +331,15 @@ export default function EventExplorer({
   // active month is always still present and this effect is a no-op.
   useEffect(() => {
     if (groups.length === 0) return;
-    if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) return;
+    if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) {
+      const el = document.getElementById(`month-${activeMonthKey}`);
+      if (el && !isSectionVisible(el)) {
+        isProgrammaticScrollRef.current = true;
+        el.scrollIntoView({ block: "start", behavior: "smooth" });
+        scheduleScrollSettle();
+      }
+      return;
+    }
     if (activeMonthKey === null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMonthKey(groups[0].monthKey);
