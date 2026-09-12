@@ -879,6 +879,36 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
     expect(window.scrollTo).not.toHaveBeenCalled();
   });
 
+  it("regression: a zero-match filter never discards the previous month context, so clearing it restores that same month with no scroll", () => {
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+    const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+    render(<EventExplorer events={[aug, sep, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    // 1. Establish an active month that is NOT the first month.
+    latestObserver().trigger("2026-09");
+    expect(activeMonthLabel()).toBe("Sep");
+
+    // 2. Apply a filter that matches nothing anywhere.
+    selectGenre("trance");
+    expect(screen.getByText("No events match")).toBeTruthy();
+    expect(document.querySelector('nav[aria-label="Jump to month"]')).toBeNull();
+
+    // 3. No scroll occurred.
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+
+    // 4. Clear the filter.
+    selectGenre("all");
+
+    // 5. September's context is preserved (not reset to August, the first month).
+    expect(activeMonthLabel()).toBe("Sep");
+
+    // 6. Clearing never triggers a scroll either.
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+
   it("requirement: no matches anywhere never attempts a scroll", () => {
     const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
     render(<EventExplorer events={[aug]} serverNow="2026-08-01T12:00:00.000Z" />);

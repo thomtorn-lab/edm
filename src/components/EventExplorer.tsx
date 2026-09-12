@@ -289,8 +289,15 @@ export default function EventExplorer({
   //     highlight change, reusing the exact same isProgrammaticScrollRef/
   //     scheduleScrollSettle pin handleMonthNavClick uses so scroll-spy
   //     can't immediately fight it and reassert the old month mid-scroll
-  //   - no months at all -> just clear the highlight, no scroll attempted
-  //     (a scroll target that doesn't exist would be meaningless)
+  //   - no months at all -> leave activeMonthKey exactly as it is (don't
+  //     clear it to null) and don't scroll. The nav bar has nothing to show
+  //     either way (it's gated on groups.length > 1), but the PREVIOUS month
+  //     context must survive a filter that transiently matches nothing, so
+  //     it's simply restored once the filter is relaxed/cleared again —
+  //     clearing to null would instead make that restoration look
+  //     indistinguishable from a fresh initial mount and fall into the next
+  //     bullet's first-month default, discarding context the user never
+  //     asked to lose
   //   - initial mount (activeMonthKey still null) -> establish the first
   //     month as active with NO scroll: there is nothing to jump away from,
   //     the page is already sitting at its natural starting position
@@ -299,13 +306,10 @@ export default function EventExplorer({
   // cleared (clearing only adds events back, never removes any), so the
   // active month is always still present and this effect is a no-op.
   useEffect(() => {
-    if (groups.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveMonthKey(null);
-      return;
-    }
+    if (groups.length === 0) return;
     if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) return;
     if (activeMonthKey === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMonthKey(groups[0].monthKey);
       return;
     }
