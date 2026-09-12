@@ -50,11 +50,10 @@ function event(overrides: Partial<EventRecord> = {}): EventRecord {
 }
 
 describe("getExternalLinks — ticket CTA label", () => {
-  it("labels a Resident Advisor link 'Tickets' when it's the only ticket destination", () => {
+  it("RA guardrail (product rule, 2026-09-12, final correction): a standalone Resident Advisor link with no verified ticketUrl produces no CTA at all — RA is a third-party source, not verified here to have active ticket sales", () => {
     const links = getExternalLinks(event({ residentAdvisorUrl: "https://ra.co/events/2345998" }));
-    const ra = links.find((l) => l.href === "https://ra.co/events/2345998");
-    expect(ra?.label).toBe("Tickets");
-    expect(links.some((l) => l.label === "Resident Advisor")).toBe(false);
+    expect(links.find((l) => l.href === "https://ra.co/events/2345998")).toBeUndefined();
+    expect(links.some((l) => l.label === "Tickets")).toBe(false);
   });
 
   it("labels a Billetto ticket link 'Tickets'", () => {
@@ -67,15 +66,15 @@ describe("getExternalLinks — ticket CTA label", () => {
     expect(links.find((l) => l.href === "https://vega.dk/tickets/tight-loop")?.label).toBe("Tickets");
   });
 
-  it("keeps the Resident Advisor label for the secondary RA reference when a distinct ticketUrl already covers the Tickets CTA", () => {
+  it("an unverified RA reference alongside a distinct real ticketUrl produces no separate RA CTA — only the genuine Tickets destination shows", () => {
     const links = getExternalLinks(
       event({
         ticketUrl: "https://billetto.dk/e/fast-forward-hangaren",
         residentAdvisorUrl: "https://ra.co/events/2345678",
       }),
     );
-    expect(links.find((l) => l.href === "https://billetto.dk/e/fast-forward-hangaren")?.label).toBe("Tickets");
-    expect(links.find((l) => l.href === "https://ra.co/events/2345678")?.label).toBe("Resident Advisor");
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/fast-forward-hangaren", primary: false }]);
+    expect(links.find((l) => l.href === "https://ra.co/events/2345678")).toBeUndefined();
   });
 
   it("collapses to a single Tickets link when ticketUrl and residentAdvisorUrl are the same RA URL", () => {
@@ -139,11 +138,11 @@ describe("getExternalLinks — event-link role classification (Zoumer reference 
     expect(links[0].label).toBe("Tickets");
   });
 
-  it("5. source/discovery URL with no verified first-party or ticketing role -> not mislabeled as either", () => {
+  it("5. source/discovery URL with no verified first-party or ticketing role -> not mislabeled as either (AllEvents here, a non-competitor aggregator — RA/HvadErPå specifically are covered by their own stricter guardrail below, which suppresses even this Source CTA)", () => {
     const links = getExternalLinks(
-      event({ officialEventUrl: "https://ra.co/copenhagen/events", canonicalSourceId: "src-ra-copenhagen" }),
+      event({ officialEventUrl: "https://allevents.in/copenhagen/edm/some-event", canonicalSourceId: "src-allevents-edm" }),
     );
-    expect(links).toEqual([{ label: "Source", href: "https://ra.co/copenhagen/events", primary: true }]);
+    expect(links).toEqual([{ label: "Source", href: "https://allevents.in/copenhagen/edm/some-event", primary: true }]);
   });
 
   it("6. Zoumer reference case -> TICKETS for the Billetto link, not Official event", () => {
@@ -185,6 +184,123 @@ describe("getExternalLinks — event-link role classification (Zoumer reference 
   it("an unresolvable canonicalSourceId doesn't downgrade what's already stored", () => {
     const links = getExternalLinks(event({ officialEventUrl: "https://example.com/x", canonicalSourceId: "src-does-not-exist" }));
     expect(links[0].label).toBe("Official event");
+  });
+});
+
+describe("getExternalLinks — RA/HvadErPå source-role guardrail (product rule, 2026-09-12, final correction)", () => {
+  // RA (Resident Advisor) and HvadErPå are third-party/competitor sources:
+  // RA a specialist ticketing/discovery platform, HvadErPå a discovery
+  // aggregator. Neither is EVER a normal public CTA under ANY label — not
+  // "Official event", not "Tickets", and (unlike an ordinary unrecognized
+  // aggregator) not even a last-resort "Source" CTA. RA may render
+  // "Tickets" ONLY when independently verified (ticketUrl set to the
+  // identical RA URL, e.g. hangarenAdapter.ts's own extraction of the
+  // venue's own "buy tickets" link). HvadErPå may never render "Tickets" at
+  // all. The stored URL/row data itself is untouched — it remains available
+  // via getSourceProvenance (a separate, detail-page-only, non-CTA list —
+  // see its own describe block below).
+
+  it("1. RA URL as officialEventUrl -> never Official event AND not exposed as any normal CTA (not even Source)", () => {
+    const links = getExternalLinks(event({ officialEventUrl: "https://ra.co/events/2461521", canonicalSourceId: null }));
+    expect(links).toEqual([]);
+  });
+
+  it("1b. RA URL as officialEventUrl -> never Official event even under an explicit admin override (overriddenFields) — the one exception to admin-override precedence", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://ra.co/events/2461521",
+        overriddenFields: ["officialEventUrl"],
+        canonicalSourceId: "src-hangaren",
+      }),
+    );
+    expect(links).toEqual([]);
+  });
+
+  it("2. standalone residentAdvisorUrl without a verified ticketUrl -> no public CTA at all (not 'Resident Advisor', not 'Source')", () => {
+    const links = getExternalLinks(event({ residentAdvisorUrl: "https://ra.co/events/2345998" }));
+    expect(links).toEqual([]);
+  });
+
+  it("3. RA page WITH verified active ticket sales (ticketUrl independently set to the identical RA URL, e.g. hangarenAdapter.ts's own venue-verified extraction) -> Tickets", () => {
+    const links = getExternalLinks(
+      event({ ticketUrl: "https://ra.co/events/2461521", residentAdvisorUrl: "https://ra.co/events/2461521" }),
+    );
+    expect(links).toEqual([{ label: "Tickets", href: "https://ra.co/events/2461521", primary: false }]);
+  });
+
+  it("4. HvadErPå URL as officialEventUrl -> no public CTA at all", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://hvaderpaa.dk/da/event/12345/", canonicalSourceId: "src-hvaderpaa" }),
+    );
+    expect(links).toEqual([]);
+  });
+
+  it("4b. HvadErPå URL as officialEventUrl -> no public CTA even under an explicit admin override", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://hvaderpaa.dk/da/event/12345/", overriddenFields: ["officialEventUrl"] }),
+    );
+    expect(links).toEqual([]);
+  });
+
+  it("5. HvadErPå ticketUrl -> no public CTA at all, even if it happened to end up in the ticketUrl field (hand-entry safety net — no adapter ever does this)", () => {
+    const links = getExternalLinks(event({ ticketUrl: "https://hvaderpaa.dk/da/event/12345/" }));
+    expect(links).toEqual([]);
+  });
+
+  it("6. RA/HvadErPå provenance still renders through getSourceProvenance, the separate detail-page-only list — the guardrail affects only the public CTA list, never the underlying source_event_links data", () => {
+    const provenance = getSourceProvenance([
+      { sourceId: "src-ra-copenhagen", sourceUrl: "https://ra.co/events/2345998", role: "official" },
+      { sourceId: "src-hvaderpaa", sourceUrl: "https://hvaderpaa.dk/da/event/12345/", role: "official" },
+    ]);
+    expect(provenance).toEqual([
+      { sourceName: "HvadErPå", sourceUrl: "https://hvaderpaa.dk/da/event/12345/" },
+      { sourceName: "Resident Advisor", sourceUrl: "https://ra.co/events/2345998" },
+    ]);
+  });
+
+  it("6b. an unverified residentAdvisorUrl that produces no public CTA still leaves any distinct otherSourceUrls/Official/Tickets destinations for the SAME event completely unaffected", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/kander",
+        canonicalSourceId: "src-hangaren",
+        residentAdvisorUrl: "https://ra.co/events/9999999", // unverified — distinct from any ticketUrl
+      }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://www.hangaren.dk/events/kander", primary: true }]);
+  });
+
+  it("7. legitimate official venue/promoter URL is unaffected by the guardrail -> still Official event", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://www.hangaren.dk/events/kander", canonicalSourceId: "src-hangaren" }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://www.hangaren.dk/events/kander", primary: true }]);
+  });
+
+  it("8. legitimate ticketing destination (Billetto) is unaffected by the guardrail -> still Tickets", () => {
+    const links = getExternalLinks(event({ ticketUrl: "https://billetto.dk/e/fast-forward-hangaren" }));
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/fast-forward-hangaren", primary: false }]);
+  });
+
+  it("9. an admin override cannot bypass the guardrail for any of the three fields it governs (officialEventUrl for RA, officialEventUrl for HvadErPå, ticketUrl for HvadErPå)", () => {
+    expect(
+      getExternalLinks(event({ officialEventUrl: "https://ra.co/events/1", overriddenFields: ["officialEventUrl"] })),
+    ).toEqual([]);
+    expect(
+      getExternalLinks(event({ officialEventUrl: "https://hvaderpaa.dk/da/event/1/", overriddenFields: ["officialEventUrl"] })),
+    ).toEqual([]);
+    expect(getExternalLinks(event({ ticketUrl: "https://hvaderpaa.dk/da/event/1/", overriddenFields: ["ticketUrl"] }))).toEqual([]);
+  });
+
+  it("a zero-CTA event (only an unverified RA reference, nothing else) renders no links at all rather than falling back to a Source CTA", () => {
+    const links = getExternalLinks(event({ residentAdvisorUrl: "https://ra.co/events/1", otherSourceUrls: [] }));
+    expect(links).toEqual([]);
+  });
+
+  it("hostname matching is exact, not substring — a lookalike domain is never guarded (proves this isn't a naive .includes() check)", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://not-ra.co.evil.example/events/1", canonicalSourceId: null }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://not-ra.co.evil.example/events/1", primary: true }]);
   });
 });
 
@@ -451,17 +567,20 @@ describe("FREE admission CTA", () => {
     expect(isFreeAdmission(event({ priceFrom: 100 }))).toBe(false);
   });
 
-  it("hasTicketDestination is true for either a ticketUrl or a Resident Advisor link", () => {
+  it("hasTicketDestination is true only for a real ticketUrl — an unverified Resident Advisor link alone no longer counts (RA/HvadErPå guardrail, 2026-09-12: it's never shown as a CTA, so it must not silently suppress the FREE badge either)", () => {
     expect(hasTicketDestination(event())).toBe(false);
     expect(hasTicketDestination(event({ ticketUrl: "https://billetto.dk/e/x" }))).toBe(true);
-    expect(hasTicketDestination(event({ residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(true);
+    expect(hasTicketDestination(event({ residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(false);
   });
 
   it("shows FREE only when there is no ticket destination AND free-admission evidence exists", () => {
     expect(showFreeCta(event({ priceFrom: 0 }))).toBe(true);
     expect(showFreeCta(event({ priceFrom: null }))).toBe(false); // missing ticket URL alone must never imply FREE
     expect(showFreeCta(event({ priceFrom: 0, ticketUrl: "https://billetto.dk/e/x" }))).toBe(false); // an actual ticket link still wins
-    expect(showFreeCta(event({ priceFrom: 0, residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(false);
+  });
+
+  it("an unverified RA reference does not suppress FREE — a genuinely free event with only a non-CTA RA reference still shows the FREE badge rather than nothing at all", () => {
+    expect(showFreeCta(event({ priceFrom: 0, residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(true);
   });
 });
 
