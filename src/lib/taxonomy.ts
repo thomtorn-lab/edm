@@ -130,7 +130,15 @@ export const MAIN_GENRES: MainGenreDef[] = [
   { slug: "disco", label: "Disco", shortLabel: "Disco" },
   { slug: "electro", label: "Electro", shortLabel: "Electro" },
   { slug: "ambient-experimental", label: "Ambient / Experimental", shortLabel: "Ambient" },
-  { slug: "electronic-other", label: "Other", shortLabel: "Other" },
+  // Label deliberately matches the public badge's own wording ("Electronic /
+  // Other" — see GENRES' electronic-other entry and displayGenres) rather
+  // than "Other" alone: an event badge reading "Electronic" had no
+  // discoverable match in this filter, since the two surfaces used different
+  // words for the same slug (Production bug report, 2026-09-12). Not
+  // shortened to plain "Electronic" — that would misleadingly suggest this
+  // bucket covers every electronic subgenre (Techno, House, Trance, etc.)
+  // rather than only the electronic-other catch-all.
+  { slug: "electronic-other", label: "Electronic / Other", shortLabel: "Other" },
 ];
 
 const MAIN_GENRE_BY_SLUG = new Map(MAIN_GENRES.map((g) => [g.slug, g]));
