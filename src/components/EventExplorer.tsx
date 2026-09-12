@@ -322,6 +322,16 @@ export default function EventExplorer({
 
   const groups = useMemo(() => groupByMonth(filtered), [filtered]);
 
+  // Remembers the `groups` reference as of the last reconciliation effect
+  // run (product rule, 2026-09-12 — see its use in that effect's "stay"
+  // branch below): `groups` only ever gets a new array identity when
+  // `filtered` actually changes (mode/genre/venueId/query/now/events), NOT
+  // merely because `activeMonthKey` changed on its own (a manual scroll or
+  // nav tap) — so comparing against this ref is how that effect tells "a
+  // filter/search change just happened" apart from "the user just scrolled
+  // or tapped a month," from inside a single effect with no extra state.
+  const lastGroupsRef = useRef(groups);
+
   // Preview count for the mobile drawer's "Show N events" button, computed
   // from the DRAFT genre/venue values (filter-state architecture rework,
   // 2026-09-12) — deliberately a separate memo from `filtered`/`groups`
@@ -428,6 +438,14 @@ export default function EventExplorer({
   // suppress via an incomplete dependency array. See the refs' own doc
   // comment (near their declarations) for why they're refs, not state.
   useEffect(() => {
+    // Did `groups` itself get a new array identity since the last time
+    // this effect ran? True only for a filter/search/now/events-driven
+    // pass, never for a pass triggered solely by `activeMonthKey` changing
+    // on its own (a manual scroll or a month-nav tap) — see the "stay"
+    // branch below for why this distinction matters.
+    const groupsChangedSinceLastRun = groups !== lastGroupsRef.current;
+    lastGroupsRef.current = groups;
+
     const previouslyFiltered = wasFilteredRef.current;
     wasFilteredRef.current = hasActiveFilters;
 
@@ -462,10 +480,33 @@ export default function EventExplorer({
 
     if (groups.length === 0) return;
     if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) {
+      // The active month still has a match — this is the highest-priority
+      // rule (product rule, 2026-09-12): it must never move to a DIFFERENT
+      // month merely because a filter was applied, whether or not its own
+      // section also happens to need a corrective scroll.
       const el = document.getElementById(`month-${activeMonthKey}`);
-      if (el && !isSectionVisible(el)) {
+      const needsCorrectiveScroll = el !== null && !isSectionVisible(el);
+      // Pinning even when no corrective scroll is needed, but ONLY on a
+      // filter/search-driven pass (`groupsChangedSinceLastRun`) — not on
+      // every ordinary manual-scroll-spy update, which reruns this same
+      // "stay" branch just as often but never needs this protection. Why:
+      // the scroll-spy IntersectionObserver effect below also depends on
+      // `groups`, so it tears down and recreates its observer on this exact
+      // same filter-driven render. A freshly created IntersectionObserver
+      // always fires once with each newly observed section's CURRENT
+      // intersection state — real, spec-mandated browser behavior, not
+      // something this app asks for — and without a pin here, that
+      // unsuppressed initial report could hand `activeMonthKey` to whatever
+      // section its own narrow top-band logic currently considers topmost,
+      // silently moving the user away from a month that never stopped
+      // matching. Gating on `groupsChangedSinceLastRun` keeps this from
+      // also pinning (and so briefly ignoring genuine scroll-spy updates)
+      // on every ordinary scroll that merely changes `activeMonthKey` with
+      // `groups` itself untouched, where the observer was never recreated
+      // and this risk doesn't exist.
+      if (needsCorrectiveScroll || groupsChangedSinceLastRun) {
         isProgrammaticScrollRef.current = true;
-        el.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (needsCorrectiveScroll) el!.scrollIntoView({ block: "start", behavior: "smooth" });
         scheduleScrollSettle();
       }
       return;
@@ -509,9 +550,10 @@ export default function EventExplorer({
     scheduleScrollSettle();
     // Complete, correct dependency array — every reactive value the effect
     // reads (`groups`, `activeMonthKey`, `hasActiveFilters`) is listed; no
-    // suppression needed. `filterOriginMonthKeyRef`/`wasFilteredRef` are
-    // refs, not state — React's own rule is that a ref's `.current` is
-    // read fresh on every invocation regardless of the dependency array
+    // suppression needed. `filterOriginMonthKeyRef`/`wasFilteredRef`/
+    // `lastGroupsRef` are refs, not state — React's own rule is that a
+    // ref's `.current` is read fresh on every invocation regardless of the
+    // dependency array
     // (mutating one doesn't trigger a re-render, so it can't be "missing"
     // from a list of things that do), which is exactly why folding origin
     // capture/restore into this effect via refs — rather than tracking the
