@@ -858,7 +858,7 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
   });
 
-  it("requirement 3: current month loses all matches, no LATER month matches -> falls back to the first month with matches", () => {
+  it("requirement 3: current month loses all matches, no LATER month matches -> falls back to the calendar-nearest EARLIER matching month (not simply the earliest one overall — product rule updated 2026-09-12)", () => {
     // Two surviving months (Jul, Aug) keep the nav bar visible after
     // filtering, so the active highlight stays checkable.
     vi.setSystemTime(new Date("2026-07-01T12:00:00.000Z")); // so July itself still counts as upcoming
@@ -875,7 +875,9 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
 
     selectGenre("techno");
 
-    expect(activeMonthLabel()).toBe("Jul"); // no later match exists -> first matching month
+    // Aug is 2 calendar months from Oct, Jul is 3 — Aug wins as the nearer
+    // earlier match, not Jul merely because it's the earliest one overall.
+    expect(activeMonthLabel()).toBe("Aug");
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
   });
 
@@ -1056,6 +1058,132 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       vi.advanceTimersByTime(200);
       latestObserver().trigger("2026-12");
       expect(activeMonthLabel()).toBe("Dec");
+    });
+  });
+
+  describe("product rule update, 2026-09-12 — zero-match reconciliation picks the calendar-CLOSEST matching month in either direction (replaces the earlier forward-only 'nearest later month' rule)", () => {
+    it("1. a nearer EARLIER month beats a much-later month", () => {
+      // Active: November. Matches: October (1 month away) and February (3
+      // months away). October must win — this is the exact Production
+      // scenario (filter + month-navigation follow-up investigation,
+      // 2026-09-12) that motivated the rule change.
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance"); // will be filtered out
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Oct");
+      expect(activeMonthLabel()).not.toBe("Feb");
+    });
+
+    it("2. a nearer LATER month beats a further-away earlier month", () => {
+      // Active: November. Matches: September (2 months away) and December
+      // (1 month away). December must win.
+      const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance"); // will be filtered out
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[sep, nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Dec");
+      expect(activeMonthLabel()).not.toBe("Sep");
+    });
+
+    it("3. an exact tie between an earlier and a later month prefers the LATER month", () => {
+      // Active: November. Matches: October and December, both exactly 1
+      // month away. December (the later one) must win the tie-break.
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance"); // will be filtered out
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Dec");
+    });
+
+    it("4. only EARLIER matches exist -> the nearest earlier month wins, not the earliest one overall", () => {
+      // Active: October. Matches: July (3 months away) and August (2 months
+      // away). August must win.
+      vi.setSystemTime(new Date("2026-07-01T12:00:00.000Z"));
+      const jul = makeGenreEvent("2026-07-10T20:00:00.000Z", "techno");
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+      const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "trance"); // will be filtered out
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "trance"); // will be filtered out
+      render(<EventExplorer events={[jul, aug, sep, oct]} serverNow="2026-07-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-10");
+      expect(activeMonthLabel()).toBe("Oct");
+
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Aug");
+      expect(activeMonthLabel()).not.toBe("Jul");
+    });
+
+    it("5. only LATER matches exist -> the nearest later month wins", () => {
+      // Active: August. Matches: September (1 month away) and December (4
+      // months away). September must win.
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance"); // will be filtered out
+      const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[aug, sep, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(activeMonthLabel()).toBe("Aug");
+
+      selectGenre("techno");
+
+      expect(activeMonthLabel()).toBe("Sep");
+      expect(activeMonthLabel()).not.toBe("Dec");
+    });
+
+    it("6. the active month still has matches -> no jump, no scroll (unaffected by the distance rule)", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[aug, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(activeMonthLabel()).toBe("Aug");
+
+      selectGenre("techno"); // both months still match
+
+      expect(activeMonthLabel()).toBe("Aug");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("7. zero matches anywhere -> no scroll, previous month context preserved (unaffected by the distance rule)", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+      const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[aug, sep]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-09");
+      expect(activeMonthLabel()).toBe("Sep");
+
+      selectGenre("trance"); // matches nothing at all
+
+      expect(document.querySelector('nav[aria-label="Jump to month"]')).toBeNull();
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+
+      selectGenre("all");
+
+      expect(activeMonthLabel()).toBe("Sep");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
 });

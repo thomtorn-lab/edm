@@ -307,12 +307,18 @@ export default function EventExplorer({
   //     that's happened, this scrolls the SAME month's section back into
   //     view (never a different one); if it's already visible, nothing
   //     happens at all (requirement 1's "no scroll" case is unaffected)
-  //   - current month has zero matches -> jump to the nearest LATER month
-  //     that still matches, or the first (earliest) matching month if none
-  //     is later (requirements 2-3) — an actual scroll, not just a
-  //     highlight change, reusing the exact same isProgrammaticScrollRef/
-  //     scheduleScrollSettle pin handleMonthNavClick uses so scroll-spy
-  //     can't immediately fight it and reassert the old month mid-scroll
+  //   - current month has zero matches -> jump to whichever matching month
+  //     is calendar-closest to the previous active month, in EITHER
+  //     direction, ties broken toward the later month (product rule,
+  //     2026-09-12 — a forward-only "nearest later month" rule shipped
+  //     earlier the same day looked correct in isolation but produced a
+  //     jarring far-forward jump in Production whenever the nearest actual
+  //     match happened to fall before the active month, e.g. November ->
+  //     February when October also matched and was much closer) — an
+  //     actual scroll, not just a highlight change, reusing the exact same
+  //     isProgrammaticScrollRef/scheduleScrollSettle pin handleMonthNavClick
+  //     uses so scroll-spy can't immediately fight it and reassert the old
+  //     month mid-scroll
   //   - no months at all -> leave activeMonthKey exactly as it is (don't
   //     clear it to null) and don't scroll. The nav bar has nothing to show
   //     either way (it's gated on groups.length > 1), but the PREVIOUS month
@@ -346,11 +352,29 @@ export default function EventExplorer({
       return;
     }
 
-    // monthKey is a zero-padded "YYYY-MM" string and `groups` is already in
-    // chronological order, so plain string comparison/`find` gives the
-    // nearest later month directly.
-    const nextMatch = groups.find((g) => g.monthKey > activeMonthKey);
-    const target = nextMatch ? nextMatch.monthKey : groups[0].monthKey;
+    // Calendar-month distance, not string/lexicographic distance and not
+    // event counts — `year * 12 + month` turns "how many months apart" into
+    // plain integer subtraction across year boundaries. `groups` carries
+    // `year`/`month` directly (see groupByMonth in datetime.ts); the
+    // previous activeMonthKey is a "YYYY-MM" string, parsed the same way.
+    const activeYear = Number(activeMonthKey.slice(0, 4));
+    const activeMonth = Number(activeMonthKey.slice(5, 7));
+    const activeIndex = activeYear * 12 + activeMonth;
+
+    // Closest match wins regardless of direction; on an exact tie the LATER
+    // month wins (product rule, 2026-09-12). `groups` is already
+    // chronologically ascending, so scanning forward and using `<=` (rather
+    // than strict `<`) naturally lets a later, equally-close candidate
+    // overwrite an earlier one.
+    let target = groups[0].monthKey;
+    let bestDistance = Infinity;
+    for (const g of groups) {
+      const distance = Math.abs(g.year * 12 + g.month - activeIndex);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        target = g.monthKey;
+      }
+    }
 
     isProgrammaticScrollRef.current = true;
     setActiveMonthKey(target);
