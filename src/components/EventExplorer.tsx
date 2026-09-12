@@ -34,13 +34,11 @@ const DATE_MODES = ["tonight", "weekend", "next-weekend"] as const;
 
 /**
  * Whether any part of `el` currently falls within the viewport's vertical
- * span — used only to detect a real browser having clamped scroll position
- * away from the still-active month's section after a drastic filter-driven
- * reflow (see the reconciliation effect below). Deliberately the loosest
- * possible "is it there at all" check, not the IntersectionObserver's own
- * narrow near-top band — this only ever fires a corrective scroll when the
- * section isn't visible ANYWHERE on screen, never merely because it's not
- * hugging the top the way scroll-spy's band expects.
+ * span — used by the Clear Filters origin-restore branch (see the
+ * reconciliation effect below) to skip its own scroll when the restored
+ * origin month is already the active, visible month. Deliberately the
+ * loosest possible "is it there at all" check, not the IntersectionObserver's
+ * own narrow near-top band.
  */
 function isSectionVisible(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
@@ -364,59 +362,9 @@ export default function EventExplorer({
     }, 150);
   }
 
-  // Preserved-month "context lock" (product rule, 2026-09-12 — structural
-  // fix superseding an earlier fixed-timer approach to this exact case):
-  // when a filter is applied and the active month still has a match, that
-  // month must stay the active month until the user GENUINELY indicates
-  // navigation intent — never merely until a timer elapses. A fixed
-  // timer can't outrun real-device reflow time: proven by testing that a
-  // freshly re-created scroll-spy observer's own automatic initial report,
-  // or an equally delayed bottom-of-page scroll, can still arrive after
-  // any fixed window and steal the active month away. Unlike
-  // isProgrammaticScrollRef (which guards one specific in-flight
-  // scrollIntoView animation and releases once it settles), this lock is
-  // released ONLY by an actual user gesture — see the listener effect
-  // right below — or by an explicit navigation action the user took
-  // themselves (handleMonthNavClick, handleBackToTop). It is reset to
-  // false at the top of the reconciliation effect on every run and only
-  // re-armed inside the "stay" branch, so it can never leak into an
-  // unrelated later state (e.g. a subsequent closest-month reconciliation
-  // that deliberately moves to a different month) and permanently disable
-  // scroll-spy there.
-  const contextLockRef = useRef(false);
-
-  // The only thing allowed to release contextLockRef short of an explicit
-  // navigation action: real evidence the user is actually scrolling this
-  // page themselves. Wheel and touchstart cover trackpad/mouse-wheel and
-  // touch-drag scrolling; keydown is scoped to the handful of keys that
-  // conventionally scroll a page (arrows, Page Up/Down, Home/End, Space)
-  // so typing into the search box or a select doesn't spuriously release
-  // it. These listeners are permanent and lightweight (mirrors the
-  // always-on back-to-top scroll listener elsewhere in this component) —
-  // there's no need to attach/detach them around the lock's own on/off
-  // state, since releasing an already-released lock is a harmless no-op.
-  useEffect(() => {
-    function release() {
-      contextLockRef.current = false;
-    }
-    const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
-    function onKeyDown(e: KeyboardEvent) {
-      if (SCROLL_KEYS.has(e.key)) release();
-    }
-    window.addEventListener("wheel", release, { passive: true });
-    window.addEventListener("touchstart", release, { passive: true });
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("wheel", release);
-      window.removeEventListener("touchstart", release);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
-
   function handleMonthNavClick(monthKey: string) {
     const el = document.getElementById(`month-${monthKey}`);
     if (!el) return;
-    contextLockRef.current = false; // explicit navigation always overrides a preserved-context lock
     isProgrammaticScrollRef.current = true;
     setActiveMonthKey(monthKey);
     el.scrollIntoView({ block: "start" }); // no `behavior` -> instant, matching the native anchor jump this replaces
@@ -429,31 +377,27 @@ export default function EventExplorer({
   // Reconciles the active month against `groups` whenever filtering changes
   // which months have any matching event — month navigation itself stays
   // pure navigation (handleMonthNavClick above is the only thing a user
-  // action ever drives), this effect only *reacts* to the current month
-  // disappearing out from under the user (filter + month-navigation context
-  // behavior, 2026-09-12):
-  //   - current month still has matches -> stays the active month; the ONLY
-  //     thing checked is whether its own section is still visibly in the
-  //     viewport (isSectionVisible below). Filtering can shrink the page
-  //     drastically, and a real browser clamps scrollY to the new, shorter
-  //     scrollHeight on its own — with no application code ever asking it
-  //     to — which can leave the still-active month's section scrolled out
-  //     of view even though nothing here changed which month is active. If
-  //     that's happened, this scrolls the SAME month's section back into
-  //     view (never a different one); if it's already visible, nothing
-  //     happens at all (requirement 1's "no scroll" case is unaffected)
-  //   - current month has zero matches -> jump to whichever matching month
-  //     is calendar-closest to the previous active month, in EITHER
-  //     direction, ties broken toward the later month (product rule,
-  //     2026-09-12 — a forward-only "nearest later month" rule shipped
-  //     earlier the same day looked correct in isolation but produced a
-  //     jarring far-forward jump in Production whenever the nearest actual
-  //     match happened to fall before the active month, e.g. November ->
-  //     February when October also matched and was much closer) — an
-  //     actual scroll, not just a highlight change, reusing the exact same
-  //     isProgrammaticScrollRef/scheduleScrollSettle pin handleMonthNavClick
-  //     uses so scroll-spy can't immediately fight it and reassert the old
-  //     month mid-scroll
+  // action ever drives), this effect only *reacts* to a filter/search
+  // change altering which months have a match (product rule, 2026-09-12 —
+  // simplified filter-apply model superseding the earlier context-lock
+  // approach to this same case):
+  //   - a filter/search change just happened (groupsChangedSinceLastRun)
+  //     and the active month still has a match -> target = the active
+  //     month itself
+  //   - otherwise -> target = whichever matching month is calendar-closest
+  //     to the previous active month, in EITHER direction, ties broken
+  //     toward the later month (product rule, 2026-09-12 — a forward-only
+  //     "nearest later month" rule shipped earlier the same day looked
+  //     correct in isolation but produced a jarring far-forward jump in
+  //     Production whenever the nearest actual match happened to fall
+  //     before the active month, e.g. November -> February when October
+  //     also matched and was much closer)
+  //   Either way, once a target is computed for a filter-driven pass, it is
+  //   ALWAYS explicitly scrolled into view and made active — no visibility
+  //   check, no "already there so skip the scroll" branch. The product
+  //   requirement (land on the right month) outranks preserving the exact
+  //   previous pixel position, and passive scroll-spy is deliberately not
+  //   relied on to get this right on its own.
   //   - no months at all -> leave activeMonthKey exactly as it is (don't
   //     clear it to null) and don't scroll. The nav bar has nothing to show
   //     either way (it's gated on groups.length > 1), but the PREVIOUS month
@@ -496,14 +440,6 @@ export default function EventExplorer({
     const groupsChangedSinceLastRun = groups !== lastGroupsRef.current;
     lastGroupsRef.current = groups;
 
-    // Reset every run, before any branch below — see contextLockRef's own
-    // doc comment for why this can never leak into an unrelated branch
-    // (e.g. a closest-month reconciliation that deliberately moves to a
-    // different month must not stay permanently blocked by a stale lock
-    // left over from an earlier, no-longer-applicable "stay" pass). Only
-    // the "stay" branch below re-arms it.
-    contextLockRef.current = false;
-
     const previouslyFiltered = wasFilteredRef.current;
     wasFilteredRef.current = hasActiveFilters;
 
@@ -537,51 +473,34 @@ export default function EventExplorer({
     }
 
     if (groups.length === 0) return;
-    if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) {
-      // The active month still has a match — this is the highest-priority
-      // rule (product rule, 2026-09-12): it must never move to a DIFFERENT
-      // month merely because a filter was applied, whether or not its own
-      // section also happens to need a corrective scroll.
-      const el = document.getElementById(`month-${activeMonthKey}`);
-      const needsCorrectiveScroll = el !== null && !isSectionVisible(el);
-      // Structural context lock, ONLY while an actual filter/search is
-      // active AND this pass changed `groups` (`hasActiveFilters &&
-      // groupsChangedSinceLastRun`) — not on every ordinary manual-
-      // scroll-spy update, which reruns this same "stay" branch just as
-      // often but never needs this protection (`groups` itself is
-      // untouched then, so the observer below was never torn down and
-      // recreated). Requiring `hasActiveFilters` too matters: `groups` also
-      // gets a new array reference from a routine, filter-unrelated `now`
-      // tick (the mount refresh, the 60s interval, a visibility-change
-      // refresh) even while completely unfiltered — harmless under the
-      // OLD timer-released pin (a 150ms blip nobody would notice), but
-      // this lock has no timer to bail it out, so arming it outside an
-      // actual filter session would freeze scroll-spy indefinitely for no
-      // reason (caught by the full test suite: every plain manual-scroll
-      // test failed until this guard was added). This is a structural
-      // lock, not a timer: it's released only by genuine user scroll/
-      // navigation intent (see contextLockRef's own doc comment), because
-      // a fixed timer was proven (by testing) unable to outrun unbounded
-      // real-device reflow time — a freshly re-created scroll-spy
-      // observer's own automatic initial report, or an equally delayed
-      // bottom-of-page scroll, can arrive after ANY fixed window and steal
-      // the active month away.
-      if (hasActiveFilters && groupsChangedSinceLastRun) {
-        contextLockRef.current = true;
-      }
-      // The corrective scroll itself (bringing a reflow-displaced section
-      // back into view) is a separate, narrower concern — not fighting one
-      // specific in-flight scrollIntoView animation — so it still uses the
-      // existing timer-based pin, unrelated to the structural lock above.
-      if (needsCorrectiveScroll) {
-        isProgrammaticScrollRef.current = true;
-        el!.scrollIntoView({ block: "start", behavior: "smooth" });
-        scheduleScrollSettle();
-      }
-      return;
-    }
     if (activeMonthKey === null) {
       setActiveMonthKey(groups[0].monthKey);
+      return;
+    }
+    if (groups.some((g) => g.monthKey === activeMonthKey)) {
+      // The active month still has a match — target stays the active
+      // month itself (product rule, 2026-09-12: this is the highest-
+      // priority rule, it must never move to a DIFFERENT month merely
+      // because a filter was applied). Only a genuine filter/search-driven
+      // pass (hasActiveFilters && groupsChangedSinceLastRun) explicitly
+      // scrolls it into view — gating on that is still required even
+      // though the scroll itself is now unconditional within that gate:
+      // without it, this branch reruns on every ORDINARY manual scroll-spy
+      // update too (any time the IntersectionObserver moves activeMonthKey
+      // to a different, still-matching month re-triggers this effect), and
+      // an unconditional scroll there would fight the user's own scrolling
+      // in a feedback loop. Once gated to an actual filter-apply pass, the
+      // scroll itself has no visibility check — no "already there so skip
+      // it" branch — since the product requirement (land on the right
+      // month) outranks preserving the exact previous pixel position, and
+      // passive scroll-spy is deliberately not relied on to get this right
+      // on its own.
+      if (hasActiveFilters && groupsChangedSinceLastRun) {
+        const el = document.getElementById(`month-${activeMonthKey}`);
+        isProgrammaticScrollRef.current = true;
+        el?.scrollIntoView({ block: "start", behavior: "smooth" });
+        scheduleScrollSettle();
+      }
       return;
     }
 
@@ -640,14 +559,10 @@ export default function EventExplorer({
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // A tap-driven scroll is still settling — its own handler already set
-        // the active month and owns it until scroll position stops moving.
-        // contextLockRef additionally blocks this callback's own automatic
-        // "initial report" (every freshly observed section fires once with
-        // its current state, real browser behavior, not a genuine scroll)
-        // for as long as a filter-preserved month hasn't yet seen genuine
-        // user navigation intent — see contextLockRef's own doc comment.
-        if (isProgrammaticScrollRef.current || contextLockRef.current) return;
+        // A tap-driven or filter-apply-driven scroll is still settling —
+        // its own handler already set the active month and owns it until
+        // scroll position stops moving.
+        if (isProgrammaticScrollRef.current) return;
         const visible = entries.filter((entry) => entry.isIntersecting);
         if (visible.length === 0) return;
         const topMost = visible.reduce((a, b) =>
@@ -687,19 +602,12 @@ export default function EventExplorer({
   // scheduling just below stays unconditional either way — a genuine
   // scroll-to-bottom still needs to release the pin once it's the pin's own
   // scroll that reached the bottom.
-  //
-  // It must also respect contextLockRef (product rule, 2026-09-12): proven
-  // by testing that a delayed, browser/layout-generated scroll event — not
-  // just the observer's own initial report — can arrive after the fixed
-  // settle window and misreport "at the bottom" for the very same reason
-  // (a drastic filter-driven reflow), stealing a still-matching preserved
-  // month away exactly like the observer path. Same fix, same lock.
   useEffect(() => {
     if (groups.length < 2) return;
     function handleScroll() {
       const doc = document.documentElement;
       const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 4;
-      if (atBottom && !isProgrammaticScrollRef.current && !contextLockRef.current) {
+      if (atBottom && !isProgrammaticScrollRef.current) {
         const lastKey = groups[groups.length - 1].monthKey;
         setActiveMonthKey((current) => (current === lastKey ? current : lastKey));
       }
@@ -743,9 +651,6 @@ export default function EventExplorer({
     // month-nav pin: scroll-spy keeps updating activeMonthKey normally
     // throughout, correctly landing on the first month once the scroll
     // reaches the top, exactly as an ordinary manual scroll-up would.
-    // Explicit navigation, so it also releases the context lock (product
-    // rule, 2026-09-12) exactly like handleMonthNavClick.
-    contextLockRef.current = false;
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (window.location.hash) {
       history.replaceState(null, "", window.location.pathname + window.location.search);
