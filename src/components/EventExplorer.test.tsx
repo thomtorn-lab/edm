@@ -290,6 +290,14 @@ describe("EventExplorer — Back to top", () => {
   // layout so it can't assert pixel visibility of the header/H1 itself
   // (verified separately in a real browser), but it can assert the button's
   // own presence/absence and behavior precisely.
+  //
+  // Threshold calibration (Production fix, 2026-09-12): the header+H1 block
+  // measures ~160-190px tall against the real compiled site CSS across
+  // mobile/desktop widths — the previous 480px threshold was ~2.5-3x that,
+  // so the button stayed hidden through a long stretch of scrolling
+  // (including after a single nearby month-nav click) during which the
+  // header/H1 were already gone with no way back. 300px below is
+  // comfortably past the new 240px threshold on any viewport actually seen.
   it("is not rendered at the initial, unscrolled top of the page", () => {
     render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
@@ -417,6 +425,94 @@ describe("EventExplorer — Back to top", () => {
     // click's own settle-timer pin, which only that click itself arms.
     latestObserver().trigger("2026-08");
     expect(screen.getByRole("link", { name: "Aug" }).className).toContain("text-accent");
+  });
+
+  it("Production fix, 2026-09-12: appears at the new, lower calibrated threshold (240px) — the old 480px threshold stayed hidden through this exact range, well after the header/H1 had already scrolled out of view", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(200);
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
+
+    setScrollY(260);
+    fireEvent.scroll(window);
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+  });
+
+  it("appears after a month-navigation click alone, once the resulting scroll position is reported — a moderate jump (well below the old 480px threshold) is enough under the new calibration", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
+    // jsdom's scrollIntoView is a no-op, so the resulting real-browser
+    // scroll position is simulated directly — 300px is a plausible jump to
+    // a nearby month, comfortably below the old 480px threshold (which
+    // would have kept the button hidden here) but above the new one.
+    setScrollY(300);
+    fireEvent.scroll(window);
+
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+  });
+
+  it("still appears and works correctly while a filter is active", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    fireEvent.change(genreSelect, { target: { value: "techno" } });
+
+    setScrollY(300);
+    fireEvent.scroll(window);
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  it("scrolls to the true document top, not merely to the sticky filter/month-nav bar — window.scrollTo is called with top: 0, the same target regardless of scroll depth", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(5000); // deep in the list, far past any sticky element's own offset
+    fireEvent.scroll(window);
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  it("carries distinct mobile vs desktop positioning classes, so it never collides with the mobile search/Filters row or the desktop control row", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(300);
+    fireEvent.scroll(window);
+
+    const button = screen.getByRole("button", { name: "Back to top" });
+    // Mobile: closer to the edge (bottom-[...]/right-4); desktop (sm:):
+    // slightly further in (sm:bottom-6/sm:right-6) — both fixed at the
+    // bottom-right corner, well clear of the sticky top bar and the
+    // bottom-anchored mobile filters sheet trigger.
+    expect(button.className).toContain("right-4");
+    expect(button.className).toContain("sm:bottom-6");
+    expect(button.className).toContain("sm:right-6");
+  });
+
+  it("the mobile filters sheet, at a higher z-layer, still fully covers Back to top when both would otherwise be visible at once", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(300);
+    fireEvent.scroll(window);
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+
+    const backToTop = screen.getByRole("button", { name: "Back to top" });
+    const sheet = screen.getByRole("dialog", { name: "Filters" });
+    expect(Number(sheet.parentElement?.className.match(/z-(\d+)/)?.[1])).toBeGreaterThan(
+      Number(backToTop.className.match(/z-(\d+)/)?.[1])
+    );
   });
 });
 

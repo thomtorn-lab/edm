@@ -632,7 +632,17 @@ export default function EventExplorer({
   // as its own small, independent scroll listener — deliberately not reusing
   // the month-tracking effect above, which only runs once there are 2+
   // months — so this works regardless of month count.
-  const BACK_TO_TOP_THRESHOLD = 480;
+  //
+  // Calibrated to the header+H1 block's own height (Production fix,
+  // 2026-09-12), not an arbitrary round number: that combined block
+  // measures ~160-190px tall across mobile/desktop widths, so this fires
+  // shortly after it has actually scrolled out of view. The previous value
+  // (480px) was roughly 2.5-3x that height, so the button stayed hidden
+  // through a long stretch of scrolling — including after a single
+  // month-nav click to a nearby month, or a moderate manual scroll — during
+  // which the header/H1 were already gone with no way back, which is
+  // exactly the "not visible/useful" Production report this fixes.
+  const BACK_TO_TOP_THRESHOLD = 240;
   useEffect(() => {
     function handleScroll() {
       setShowBackToTop(window.scrollY > BACK_TO_TOP_THRESHOLD);
