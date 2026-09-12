@@ -891,22 +891,22 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
   });
 
-  it("requirement 4: clearing the filter preserves whatever month is currently active — no jump to top, no reset", () => {
+  it("requirement 4 (superseded by the filter-origin product rule, 2026-09-12): clearing every filter control back to default RESTORES the month the user started the filter session in, not wherever filtering had temporarily moved them", () => {
     // A second surviving month (Oct) keeps the nav bar visible post-filter.
     const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance");
     const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
     const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
     render(<EventExplorer events={[aug, sep, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
+    expect(activeMonthLabel()).toBe("Aug"); // the origin the session must later return to
 
-    selectGenre("techno"); // Aug drops out, auto-scrolls to Sep (nearest later match)
+    selectGenre("techno"); // Aug drops out, auto-scrolls to Sep (nearest match)
     expect(activeMonthLabel()).toBe("Sep");
-    const callsAfterFilter = (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls.length;
 
-    selectGenre("all"); // clear the filter — Aug's event is back, but Sep must remain active
+    selectGenre("all"); // clear the filter — Aug's event is back, and Aug (the origin) must become active again
 
-    expect(activeMonthLabel()).toBe("Sep");
-    expect((Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterFilter);
+    expect(activeMonthLabel()).toBe("Aug");
+    expect(Element.prototype.scrollIntoView).toHaveBeenLastCalledWith({ block: "start", behavior: "smooth" });
     expect(window.scrollTo).not.toHaveBeenCalled();
   });
 
@@ -1242,6 +1242,213 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       fireEvent.scroll(window);
 
       expect(activeMonthLabel()).toBe("Dec");
+    });
+  });
+
+  describe("filter-state architecture rework, 2026-09-12 — filter-origin capture + mobile draft state", () => {
+    function openMobileDrawer() {
+      fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    }
+    function mobileGenreSelect(): HTMLSelectElement {
+      return document.getElementById("genre-filter-mobile") as HTMLSelectElement;
+    }
+    function selectMobileGenre(value: string) {
+      fireEvent.change(mobileGenreSelect(), { target: { value } });
+    }
+    function tapShowEvents() {
+      fireEvent.click(screen.getByRole("button", { name: /^Show/ }));
+    }
+
+    it("1. MOBILE: opening the drawer and changing the genre draft does not change the live event groups or active month before 'Show N events' is tapped", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "house");
+      render(<EventExplorer events={[nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(screen.getAllByText("2 events").length).toBeGreaterThan(0);
+
+      openMobileDrawer();
+      selectMobileGenre("house"); // draft only — must not touch the live list behind the (open, covering) sheet
+
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(screen.getAllByText("2 events").length).toBeGreaterThan(0);
+      expect(screen.getByText(nov.title)).toBeTruthy();
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("2. MOBILE: November -> Electronic / Other draft -> 'Show N events' commits the filter and reconciles to the calendar-closest matching month, not the globally last one (the original Production bug scenario)", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "electronic-other");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance"); // will be filtered out
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[oct, nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      openMobileDrawer();
+      selectMobileGenre("electronic-other");
+      tapShowEvents();
+
+      expect(activeMonthLabel()).toBe("Oct");
+      expect(activeMonthLabel()).not.toBe("Feb");
+    });
+
+    it("3. MOBILE: closing/cancelling the drawer without tapping 'Show N events' discards the draft — filters and active month stay exactly as they were, and the next open re-seeds from the real (unchanged) values", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "house");
+      render(<EventExplorer events={[nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      openMobileDrawer();
+      selectMobileGenre("house");
+      fireEvent.click(screen.getByRole("button", { name: "Close filters" })); // cancel, not apply
+
+      expect(screen.getAllByText("2 events").length).toBeGreaterThan(0);
+      expect(activeMonthLabel()).toBe("Nov");
+
+      openMobileDrawer();
+      expect(mobileGenreSelect().value).toBe("all");
+    });
+
+    it("4. FILTER ORIGIN: filtering from November to the calendar-closest match (October) leaves the origin captured as November, not overwritten by the temporary move", () => {
+      // A second, much-farther techno match (Mar 2027) keeps the nav bar
+      // itself visible once filtered (it hides once only one month remains)
+      // without disturbing which month is actually closest to November.
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      render(<EventExplorer events={[oct, mar, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno");
+      expect(activeMonthLabel()).toBe("Oct");
+
+      // The origin is not directly observable except through what Clear
+      // Filters returns to — assert that directly.
+      selectGenre("all");
+      expect(activeMonthLabel()).toBe("Nov");
+    });
+
+    it("5. CLEAR: tapping the actual 'Clear filters' control (not just resetting one select) returns to the filter-session origin month", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      render(<EventExplorer events={[oct, mar, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno");
+      expect(activeMonthLabel()).toBe("Oct");
+
+      fireEvent.click(screen.getAllByRole("button", { name: "Clear filters" })[0]);
+
+      expect(activeMonthLabel()).toBe("Nov");
+    });
+
+    it("6. FILTER ORIGIN: multiple filter edits within the same session never overwrite the original origin month", () => {
+      // A second, much-farther match for each genre (Mar/Apr 2027) keeps
+      // the nav bar visible at every filtered step without changing which
+      // month is actually closest.
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "house");
+      const apr = makeGenreEvent("2027-04-10T20:00:00.000Z", "house");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      render(<EventExplorer events={[oct, mar, dec, apr, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno"); // -> Oct (closest to November)
+      expect(activeMonthLabel()).toBe("Oct");
+
+      selectGenre("house"); // a second edit within the same filtered session -> Dec (closest to October)
+      expect(activeMonthLabel()).toBe("Dec");
+
+      selectGenre("all"); // clear — must still return to the ORIGINAL origin, November
+      expect(activeMonthLabel()).toBe("Nov");
+    });
+
+    it("7. FILTER ORIGIN: after Clear Filters, a brand-new filter session captures a fresh origin from wherever the user is now, not the old one", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "house");
+      const apr = makeGenreEvent("2027-04-10T20:00:00.000Z", "house");
+      render(<EventExplorer events={[oct, mar, nov, apr]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno"); // -> Oct, origin captured as November
+      expect(activeMonthLabel()).toBe("Oct");
+
+      selectGenre("all"); // clear -> back to November, origin cleared
+      expect(activeMonthLabel()).toBe("Nov");
+      vi.advanceTimersByTime(200); // past the restore's own settle delay, so scroll-spy is unpinned again
+
+      // A genuine manual scroll (not a filter) to a different month, then a
+      // brand-new filter session starting from THIS new position.
+      latestObserver().trigger("2026-10");
+      expect(activeMonthLabel()).toBe("Oct");
+
+      selectGenre("house"); // October itself has no house match -> moves to November (closest)
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("all"); // clear -> must return to the NEW origin, October — not the stale November
+      expect(activeMonthLabel()).toBe("Oct");
+    });
+
+    it("8. DESKTOP: the desktop genre select still filters immediately — no draft/commit step involved", () => {
+      const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+      const sep = makeGenreEvent("2026-08-11T20:00:00.000Z", "house");
+      render(<EventExplorer events={[aug, sep]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+      expect(screen.getAllByText("2 events").length).toBeGreaterThan(0);
+
+      selectGenre("techno"); // this describe's own selectGenre() drives the desktop control
+
+      expect(screen.getAllByText("1 event").length).toBeGreaterThan(0);
+      expect(screen.queryByText(sep.title)).toBeNull();
+    });
+
+    it("9. the closest-month tie-break still prefers the later month, unaffected by the filter-origin/draft rework", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno"); // Oct and Dec are both exactly 1 month away
+
+      expect(activeMonthLabel()).toBe("Dec");
+    });
+
+    it("10. the origin restoration on Clear Filters is protected by the programmatic-scroll pin: stale scroll-spy data and an at-bottom scroll mid-settle cannot override it", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      const dec = makeGenreEvent("2026-12-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov, dec]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno"); // -> Dec (tie-break later); November captured as origin
+      expect(activeMonthLabel()).toBe("Dec");
+
+      selectGenre("all"); // clear -> restoring to November
+      expect(activeMonthLabel()).toBe("Nov");
+
+      // Before the settle window elapses, stale scroll-spy data and a
+      // bottom-of-page scroll both arrive — neither may win the pin.
+      latestObserver().trigger("2026-12");
+      stubScrollGeometry({ atBottom: true });
+      fireEvent.scroll(window);
+
+      expect(activeMonthLabel()).toBe("Nov");
     });
   });
 });
