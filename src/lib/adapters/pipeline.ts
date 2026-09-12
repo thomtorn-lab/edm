@@ -18,7 +18,7 @@ import {
   type RelevanceLevel,
 } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
-import { sanitizeExtractedTitle, normalizeExtractedText } from "./htmlExtraction";
+import { sanitizeExtractedTitle, normalizeExtractedText, isLikelyDanish } from "./htmlExtraction";
 import type { RawCandidateEvent } from "./types";
 
 /**
@@ -394,6 +394,34 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   if (raw.relevanceText) raw.relevanceText = normalizeExtractedText(raw.relevanceText);
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });
   raw.artists = raw.artists.map((a) => normalizeExtractedText(a, { singleLine: true }));
+
+  // ENGLISH-ONLY PUBLIC DESCRIPTION GUARD (event description English-only
+  // normalization work package, 2026-09-12): Electronic CPH is an English-
+  // language product — a public description containing Danish must never
+  // reach the site. Pumpehuset's and Poolen's own adapters already guarded
+  // this at the adapter level (2026-08-29, isLikelyDanish); this is the
+  // SAME generalized choke-point treatment the HTML-entity/whitespace
+  // normalization immediately above already got, closing the gap for every
+  // other source (Culture Box, Gravity, Alice, Billetto, KultuNaut,
+  // HvadErPå) that had no such guard at all — a real-data Production audit
+  // (inspectSource.ts's description-language-audit mode) found 49 of 145
+  // published events carrying a Danish description before this fix, the
+  // large majority from sources with no guard whatsoever. No translation:
+  // there is no translation/LLM service anywhere in this codebase today,
+  // and adding one is an explicit product/dependency decision outside this
+  // fix's scope — a Danish description is dropped entirely (never shown),
+  // exactly like Pumpehuset/Poolen's own precedent, rather than fabricated
+  // or shown untranslated. Captures relevanceText from the pre-redaction
+  // description FIRST when an adapter hasn't already supplied its own
+  // separate evidence text, so a negative genre signal in the dropped text
+  // is never silently lost (same order Pumpehuset/Poolen's own guard uses —
+  // see RawCandidateEvent.relevanceText's own doc comment). Running this
+  // after an adapter's own guard (if any) is a safe no-op: raw.description
+  // is already null by the time it gets here for Pumpehuset/Poolen.
+  if (raw.description && isLikelyDanish(raw.description)) {
+    if (!raw.relevanceText) raw.relevanceText = raw.description;
+    raw.description = null;
+  }
 
   // VALIDATION
   const missingFields: string[] = [];

@@ -5,7 +5,7 @@ import { getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/quer
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
-import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
+import { cleanEventTitle, publicDescription, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
@@ -51,11 +51,12 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
-  const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
+  const description = publicDescription(event.description);
+  const jsonLd = buildEventJsonLd({ ...event, title, description }, canonicalUrl);
 
   const calendarInput = {
     title,
-    description: event.description,
+    description,
     startDatetime: event.startDatetime,
     endDatetime: event.endDatetime,
     venue: event.venue,
@@ -134,10 +135,10 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         )}
       </dl>
 
-      {event.description && (
+      {description && (
         <div className="mt-6">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{description}</p>
         </div>
       )}
 

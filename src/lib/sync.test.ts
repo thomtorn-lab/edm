@@ -157,6 +157,19 @@ describe("buildSyncPatch", () => {
     expect(timeChanged).toBe(false);
   });
 
+  it("re-sync stability (event description English-only normalization, 2026-09-12): once the ingestion-time guard has nulled a Danish raw.description, a resync never overwrites an already-stored description with that null — the patch simply omits the field, so the stored value (whatever it is) is left completely untouched run after run, with no repeated mutation", () => {
+    // Mirrors what runIngestionPipeline's English-only guard actually
+    // produces for a Danish source candidate: raw.description is null.
+    const danishSourceNowNulled = raw({ description: null });
+    const { patch } = buildSyncPatch(danishSourceNowNulled, resolved, target({ description: "Vi åbner kl. 15.00." }));
+    expect(patch.description).toBeUndefined();
+  });
+
+  it("does not touch an existing English description when the source's own candidate has an identical description this run", () => {
+    const { patch } = buildSyncPatch(raw({ description: "Hard Bounce, Schranz and Techno." }), resolved, target({ description: "Hard Bounce, Schranz and Techno." }));
+    expect(patch.description).toBeUndefined();
+  });
+
   it("flags a full date change (moved to a different calendar day)", () => {
     const moved = raw({ startDatetime: "2026-08-22T18:00:00.000Z", endDatetime: "2026-08-23T04:00:00.000Z" });
     const { patch, dateChanged, timeChanged } = buildSyncPatch(moved, resolved, target());

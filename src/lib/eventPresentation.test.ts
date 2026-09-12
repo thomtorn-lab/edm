@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
+import { cleanEventTitle, publicDescription, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
 
 describe("shouldShowArtistPreview — suppress when the title already carries the lineup", () => {
   it("suppresses when a per-room lineup title names every artist (real Culture Box shape, no hardcoding)", () => {
@@ -161,5 +161,34 @@ describe("subVenueLabel — structural subVenue field (generalized sub-venue mod
     // function allowed to touch the rendered title) has no third parameter
     // and never reads event.subVenue at all.
     expect(subVenueLabel("Solar Flare", "VEGA", "Store VEGA")).not.toContain(":");
+  });
+});
+
+describe("publicDescription — English-only public description (event description English-only normalization work package, 2026-09-12)", () => {
+  it("English description passes through unchanged", () => {
+    expect(publicDescription("A night of techno and melodic techno.")).toBe("A night of techno and melodic techno.");
+  });
+
+  it("a Danish description (æ/ø/å) is never shown — read-time safety net for an already-stored row, whatever guard existed (or didn't) when it was written", () => {
+    expect(publicDescription("Vi åbner kl. 15.00 og baren bugner af lækre øl.")).toBeNull();
+  });
+
+  it("preserves proper nouns and URLs when the surrounding text is English (the guard only ever hides the WHOLE description, never rewrites what it keeps)", () => {
+    const text = "Resident Advisor calls it essential listening — tickets at https://billetto.dk/e/example, artists include KØBENHAVN and MØ.";
+    // This text legitimately contains Danish letters (KØBENHAVN, MØ) even
+    // though it's otherwise English prose — the same coarse, already-
+    // established heuristic (isLikelyDanish) that accepted this trade-off
+    // for Pumpehuset/Poolen in production applies identically here, so this
+    // is suppressed too, not selectively edited. The point of THIS test is
+    // narrower: when a genuinely English-only description is kept, nothing
+    // in it — proper nouns, URLs — is ever altered.
+    expect(publicDescription(text)).toBeNull();
+    const cleanEnglish = "Resident Advisor calls it essential listening — tickets at https://billetto.dk/e/example.";
+    expect(publicDescription(cleanEnglish)).toBe(cleanEnglish);
+  });
+
+  it("empty description renders as no description, never fabricated placeholder text", () => {
+    expect(publicDescription("")).toBeNull();
+    expect(publicDescription(null)).toBeNull();
   });
 });

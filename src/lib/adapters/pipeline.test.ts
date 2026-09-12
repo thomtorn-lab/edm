@@ -1484,9 +1484,9 @@ describe("generalized discovery-queue genre self-heal (2026-09-06) — authorita
 // clean text without any adapter-specific code.
 describe("runIngestionPipeline — text normalization at the shared choke point", () => {
   it("decodes an &nbsp; entity leaking into description — the real Billetto/Sparkling Sound Festival defect this fixes", () => {
-    const candidate = raw({ description: "musik på&nbsp;KU.BE", relevanceText: null });
+    const candidate = raw({ description: "music at&nbsp;KU.BE", relevanceText: null });
     runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
-    expect(candidate.description).toBe("musik på KU.BE");
+    expect(candidate.description).toBe("music at KU.BE");
   });
 
   it("normalizes relevanceText the same way when the adapter supplies one", () => {
@@ -1523,5 +1523,55 @@ describe("runIngestionPipeline — text normalization at the shared choke point"
     const candidate = raw({ description: null, relevanceText: null });
     expect(() => runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] })).not.toThrow();
     expect(candidate.description).toBeNull();
+  });
+});
+
+describe("runIngestionPipeline — English-only public description guard (event description English-only normalization work package, 2026-09-12)", () => {
+  it("English description passes through unchanged", () => {
+    const candidate = raw({ description: "A night of techno and melodic techno.", relevanceText: null });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBe("A night of techno and melodic techno.");
+  });
+
+  it("a Danish description (æ/ø/å) is dropped to null, never shown publicly, for a source with no adapter-level guard of its own (Culture Box)", () => {
+    const candidate = raw({
+      description: "Vi åbner kl. 15.00 og baren bugner af lækre øl.",
+      relevanceText: null,
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBeNull();
+  });
+
+  it("preserves the dropped Danish text as relevanceText when the adapter supplied no separate evidence text, so a negative genre signal in it is never silently lost", () => {
+    const candidate = raw({
+      description: "Vi spiller kun hiphop, grime og pop til denne fest på Nørrebro.",
+      relevanceText: null,
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBeNull();
+    expect(candidate.relevanceText).toBe("Vi spiller kun hiphop, grime og pop til denne fest på Nørrebro.");
+  });
+
+  it("never overwrites an adapter's own already-supplied relevanceText with the dropped description", () => {
+    const candidate = raw({
+      description: "Vi åbner kl. 15.00 og baren bugner af lækre øl.",
+      relevanceText: "the full English evidence text the adapter already captured",
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBeNull();
+    expect(candidate.relevanceText).toBe("the full English evidence text the adapter already captured");
+  });
+
+  it("is a safe no-op for a source whose own adapter-level guard already nulled the description (Pumpehuset/Poolen precedent) — nothing left to do here", () => {
+    const candidate = raw({ description: null, relevanceText: "already-captured evidence text" });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.description).toBeNull();
+    expect(candidate.relevanceText).toBe("already-captured evidence text");
+  });
+
+  it("an empty/malformed description is left as-is (no fabrication, no crash) — the existing missing-description validation path handles it", () => {
+    const candidate = raw({ description: "", relevanceText: null });
+    expect(() => runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] })).not.toThrow();
+    expect(candidate.description).toBe("");
   });
 });

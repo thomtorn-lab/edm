@@ -1,3 +1,5 @@
+import { isLikelyDanish } from "./adapters/htmlExtraction";
+
 /**
  * Presentation-only helpers for the event listing. Never touches the
  * canonical `title`/`artists` data — these only decide what to render.
@@ -113,4 +115,30 @@ export function shouldShowArtistPreview(title: string, artists: string[]): boole
   // single coincidental match can't masquerade as "effectively all".
   if (total >= 3 && foundCount >= total - 1) return false;
   return true;
+}
+
+/**
+ * The event's description as it should render publicly — English only
+ * (event description English-only normalization work package, 2026-09-12:
+ * Electronic CPH is an English-language product). A read-time safety net
+ * alongside runIngestionPipeline's own ingestion-time guard
+ * (src/lib/adapters/pipeline.ts): that guard stops a NEW Danish description
+ * from ever being stored, but a sync's own patch only ever touches
+ * `description` when the source supplies a non-null value (see
+ * buildSyncPatch in src/lib/sync.ts) — once the ingestion guard nulls a raw
+ * candidate's description, a resync can never retroactively overwrite an
+ * ALREADY-stored Danish description with that null, so any row written
+ * before this fix (or from a future adapter bug) would otherwise keep
+ * showing raw Danish forever. This is the surface that actually protects
+ * those rows, with no backfill/migration needed — same isLikelyDanish
+ * heuristic as ingestion, so nothing that passes at ingestion is ever hidden
+ * here, and an admin-entered English description is never touched. Never
+ * fabricates replacement text — a Danish (or empty) description simply
+ * renders as no description at all, matching Pumpehuset's/Poolen's own
+ * established precedent.
+ */
+export function publicDescription(description: string | null): string | null {
+  if (!description) return null;
+  if (isLikelyDanish(description)) return null;
+  return description;
 }

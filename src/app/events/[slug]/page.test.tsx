@@ -460,6 +460,18 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
+  it("never renders a Danish description publicly (event description English-only normalization, 2026-09-12) — the About block is suppressed entirely, whatever guard existed when the row was stored", async () => {
+    await renderPage(makeEvent({ description: "Vi åbner kl. 15.00 og baren bugner af lækre øl." }));
+    expect(screen.queryByText("About")).toBeNull();
+    expect(screen.queryByText(/åbner/)).toBeNull();
+  });
+
+  it("an admin-entered English description is rendered exactly as stored — the guard only ever suppresses Danish text, never edits or re-checks legitimate English content", async () => {
+    await renderPage(makeEvent({ description: "Admin-corrected: doors at 22:00, techno all night." }));
+    expect(screen.getByText("About")).toBeTruthy();
+    expect(screen.getByText("Admin-corrected: doors at 22:00, techno all night.")).toBeTruthy();
+  });
+
   it("a maximally sparse event (title + date/time + venue only, no genre/description/links/artists) renders its core fields with no empty optional sections", async () => {
     await renderPage(
       makeEvent({
