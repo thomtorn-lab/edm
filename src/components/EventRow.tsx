@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { EventWithVenue } from "@/lib/queries";
-import { formatRowDateLabel, formatTimeRangeLabel } from "@/lib/format";
+import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
@@ -32,7 +32,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
       <div className="flex flex-col gap-2.5 py-4 sm:flex-row sm:items-start sm:gap-5 sm:py-3.5">
         <div className="flex shrink-0 items-baseline gap-2 sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
-            {formatRowDateLabel(event.startDatetime)}
+            {formatRowDateRangeLabel(event)}
           </span>
           <span className="text-xs tabular-nums text-text-tertiary">
             {formatTimeRangeLabel(event)}

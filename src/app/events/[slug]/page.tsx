@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/queries";
-import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
+import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
@@ -95,7 +95,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Date &amp; time</dt>
           <dd className="mt-1 text-sm text-text-primary">
-            {formatFullDateLabel(event.startDatetime)}
+            {formatFullDateRangeLabel(event)}
             <br />
             {formatTimeLabel(event.startDatetime)}
             {event.endDatetime && (

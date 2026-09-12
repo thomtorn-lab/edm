@@ -1,4 +1,4 @@
-import { getCopenhagenParts, type NightlifeEvent } from "./datetime";
+import { crossesMidnight, getCopenhagenParts, type NightlifeEvent } from "./datetime";
 
 const WEEKDAY_ABBR = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -39,6 +39,22 @@ export function formatTimeRangeLabel(event: NightlifeEvent): string {
   return `${start}–${end}`;
 }
 
+/**
+ * e.g. "SAT 15 AUG" for a same-day event, or "FRI 9 OCT – SAT 10 OCT" when
+ * the stored end instant falls on a later Copenhagen calendar date than the
+ * start (crossesMidnight — a plain calendar-date comparison, independent of
+ * the "nightlife day" cutoff used for filtering/grouping/expiry elsewhere in
+ * this codebase). Never inferred from duration or text — the true stored
+ * start/end instants decide this, and a missing endDatetime always falls
+ * back to the single-date label.
+ */
+export function formatRowDateRangeLabel(event: NightlifeEvent): string {
+  const start = formatRowDateLabel(event.startDatetime);
+  if (!crossesMidnight(event)) return start;
+  const end = formatRowDateLabel(event.endDatetime as string);
+  return `${start} – ${end}`;
+}
+
 export function formatMonthAbbr(month: number): string {
   return MONTH_ABBR[month - 1];
 }
@@ -57,6 +73,19 @@ export function formatMonthFull(month: number): string {
 export function formatFullDateLabel(datetime: string): string {
   const parts = getCopenhagenParts(new Date(datetime));
   return `${WEEKDAY_FULL[parts.weekday]} ${parts.day} ${formatMonthFull(parts.month)[0]}${formatMonthFull(parts.month).slice(1).toLowerCase()} ${parts.year}`;
+}
+
+/**
+ * e.g. "Saturday 15 August 2026" for a same-day event, or "Friday 9 October
+ * 2026 – Sunday 11 October 2026" when the event crosses onto a later
+ * Copenhagen calendar date — see formatRowDateRangeLabel for the same rule
+ * at the compact row-label grain.
+ */
+export function formatFullDateRangeLabel(event: NightlifeEvent): string {
+  const start = formatFullDateLabel(event.startDatetime);
+  if (!crossesMidnight(event)) return start;
+  const end = formatFullDateLabel(event.endDatetime as string);
+  return `${start} – ${end}`;
 }
 
 /** Coarse relative time for admin/source-health UI, e.g. "2h ago", "3d ago". */
