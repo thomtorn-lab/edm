@@ -648,6 +648,51 @@ describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", 
   });
 });
 
+describe("EventExplorer — mobile iOS auto-zoom fix (2026-09-12): mobile text inputs/selects render at >= 16px so focusing them never triggers Safari's viewport zoom", () => {
+  afterEach(cleanup);
+
+  const EVENT = makeEvent("2026-08-10T20:00:00.000Z");
+
+  function openMobileDrawer() {
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+  }
+
+  it("the mobile search input renders at text-base (16px), not text-sm (14px)", () => {
+    render(<EventExplorer events={[EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    const mobileSearch = screen.getByPlaceholderText("Search events") as HTMLInputElement;
+    expect(mobileSearch.className).toContain("text-base");
+    expect(mobileSearch.className).not.toMatch(/\btext-sm\b/);
+  });
+
+  it("the mobile filter drawer's Genre and Venue selects render at text-base (16px), not text-sm (14px)", () => {
+    render(<EventExplorer events={[EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    openMobileDrawer();
+
+    const genreSelect = document.getElementById("genre-filter-mobile") as HTMLSelectElement;
+    const venueSelect = document.getElementById("venue-filter-mobile") as HTMLSelectElement;
+
+    expect(genreSelect.className).toContain("text-base");
+    expect(genreSelect.className).not.toMatch(/\btext-sm\b/);
+    expect(venueSelect.className).toContain("text-base");
+    expect(venueSelect.className).not.toMatch(/\btext-sm\b/);
+  });
+
+  it("the desktop search input and Genre/Venue selects are unaffected — still their original (smaller) desktop sizing", () => {
+    render(<EventExplorer events={[EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    const desktopSearch = screen.getByPlaceholderText("Search events, artists, venues");
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const venueSelect = screen.getByLabelText("Venue") as HTMLSelectElement;
+
+    expect(desktopSearch.className).toContain("text-xs");
+    expect(genreSelect.className).toContain("text-xs");
+    expect(venueSelect.className).toContain("text-xs");
+  });
+});
+
 describe("EventExplorer — mobile Filters sheet focus containment (QA follow-up, 2026-08-29)", () => {
   afterEach(cleanup);
 

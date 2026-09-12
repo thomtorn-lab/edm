@@ -727,13 +727,18 @@ export default function EventExplorer({
           {/* ---- Mobile (< sm): search + Filters on one row, scrollable quick filters below ---- */}
           <div className="flex flex-col gap-2 sm:hidden">
             <div className="flex items-center gap-2">
+              {/* text-base (16px), not text-sm: iOS Safari auto-zooms the
+                  viewport on focus for any text input/select below 16px.
+                  leading-5 keeps the line-height (and so the control's
+                  height) identical to the old text-sm — only the font-size
+                  itself crosses the 16px threshold. */}
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search events"
                 aria-label="Search events, artists or venues"
-                className="search-field min-w-0 flex-1 rounded-full border border-border-strong bg-surface-1 px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-text-secondary"
+                className="search-field min-w-0 flex-1 rounded-full border border-border-strong bg-surface-1 px-4 py-2 text-base leading-5 text-text-primary placeholder:text-text-tertiary focus:border-text-secondary"
               />
               <button
                 ref={mobileFiltersTriggerRef}
@@ -898,11 +903,13 @@ export default function EventExplorer({
                   <label htmlFor="genre-filter-mobile" className="mb-1.5 block text-xs font-semibold text-text-secondary">
                     Genre
                   </label>
+                  {/* text-base, not text-sm — same iOS auto-zoom fix as the
+                      mobile search input above. */}
                   <select
                     id="genre-filter-mobile"
                     value={draftGenre}
                     onChange={(e) => setDraftGenre(e.target.value as MainGenreSlug | "all")}
-                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
+                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
                   >
                     <option value="all">All genres</option>
                     {MAIN_GENRES.map((g) => (
@@ -919,7 +926,7 @@ export default function EventExplorer({
                     id="venue-filter-mobile"
                     value={draftVenueId}
                     onChange={(e) => setDraftVenueId(e.target.value)}
-                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
+                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
                   >
                     <option value="all">All venues</option>
                     {venueOptions.map(([id, name]) => (
