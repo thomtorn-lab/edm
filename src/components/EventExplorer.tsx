@@ -47,6 +47,32 @@ function isSectionVisible(el: HTMLElement): boolean {
   return rect.bottom > 0 && rect.top < window.innerHeight;
 }
 
+/**
+ * Shared filter predicate (filter-state architecture rework, 2026-09-12):
+ * pulled out of the `filtered` memo so the mobile drawer's draft preview
+ * count (see `draftFiltered` below) can compute the same result against
+ * draft genre/venue values without duplicating — and risking drifting from
+ * — the actual filter logic.
+ */
+function applyFilters(
+  upcoming: EventWithVenue[],
+  now: Date,
+  mode: Mode,
+  genre: MainGenreSlug | "all",
+  venueId: string | "all",
+  query: string
+): EventWithVenue[] {
+  return upcoming.filter((e) => {
+    if (mode === "tonight" && !isTonight(e, now)) return false;
+    if (mode === "weekend" && !isThisWeekend(e, now)) return false;
+    if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
+    if (genre !== "all" && !e.subgenres.some((s) => mainGenreOf(s) === genre)) return false;
+    if (venueId !== "all" && e.venue.id !== venueId) return false;
+    if (!eventMatchesQuery(e, e.venue, query)) return false;
+    return true;
+  });
+}
+
 const pillClasses = (active: boolean) =>
   "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors " +
   (active
@@ -114,9 +140,43 @@ export default function EventExplorer({
   const [venueId, setVenueId] = useState<string | "all">("all");
   const [query, setQuery] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  // Draft copies of genre/venue, edited only while the mobile filters sheet
+  // is open (filter-state architecture rework, 2026-09-12): the sheet used
+  // to write straight into `genre`/`venueId`, so the live event list behind
+  // it re-filtered, reflowed and reconciled its active month while still
+  // covered and scroll-locked — the root cause of the mobile-only "lands on
+  // the wrong month" Production reports. These are seeded from the real
+  // values when the sheet opens and only ever committed back to them when
+  // "Show N events" is tapped; closing/cancelling any other way just
+  // discards them, since the next open re-seeds from the (untouched) real
+  // values anyway.
+  const [draftGenre, setDraftGenre] = useState<MainGenreSlug | "all">("all");
+  const [draftVenueId, setDraftVenueId] = useState<string | "all">("all");
   const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
   const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
+  // Filter-session origin tracking (filter-state architecture rework,
+  // 2026-09-12; React-effect review, same day): the month the user was
+  // viewing the instant a filter session started, so Clear Filters can
+  // return there instead of leaving activeMonthKey wherever filtering had
+  // moved it. Both are plain refs, not React state — capturing/restoring
+  // this never needs to trigger a render on its own, only ever piggybacks
+  // on a render the reconciliation effect below is already handling for
+  // some OTHER reason (`hasActiveFilters`/`groups`/`activeMonthKey`
+  // changing). An earlier version of this used `useState` for the origin,
+  // which meant setting it was itself a dependency change that forced a
+  // second, redundant run of that effect right after the first — a real
+  // duplicate-scroll bug caught in testing. Folding origin capture/restore
+  // into the START of that same effect (see below), driven by refs the
+  // effect reads but never depends on, removes the second effect
+  // invocation entirely rather than papering over it with an incomplete
+  // dependency array.
+  const filterOriginMonthKeyRef = useRef<string | null>(null);
+  // Mirrors `hasActiveFilters` as of the last time the reconciliation
+  // effect actually ran — the only way to detect an edge ("a session just
+  // STARTED" / "a session just ENDED") from inside a single effect without
+  // a second effect or extra state to hold the previous value.
+  const wasFilteredRef = useRef(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
   // `now` starts from serverNow (always correct — see its doc comment
@@ -255,19 +315,25 @@ export default function EventExplorer({
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [upcoming]);
 
-  const filtered = useMemo(() => {
-    return upcoming.filter((e) => {
-      if (mode === "tonight" && !isTonight(e, now)) return false;
-      if (mode === "weekend" && !isThisWeekend(e, now)) return false;
-      if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
-      if (genre !== "all" && !e.subgenres.some((s) => mainGenreOf(s) === genre)) return false;
-      if (venueId !== "all" && e.venue.id !== venueId) return false;
-      if (!eventMatchesQuery(e, e.venue, query)) return false;
-      return true;
-    });
-  }, [upcoming, now, mode, genre, venueId, query]);
+  const filtered = useMemo(
+    () => applyFilters(upcoming, now, mode, genre, venueId, query),
+    [upcoming, now, mode, genre, venueId, query]
+  );
 
   const groups = useMemo(() => groupByMonth(filtered), [filtered]);
+
+  // Preview count for the mobile drawer's "Show N events" button, computed
+  // from the DRAFT genre/venue values (filter-state architecture rework,
+  // 2026-09-12) — deliberately a separate memo from `filtered`/`groups`
+  // above, not a mutation of them: the live event list and month
+  // reconciliation must stay completely untouched while the sheet is open,
+  // reacting only once the draft is actually committed on tap.
+  const draftFiltered = useMemo(
+    () => applyFilters(upcoming, now, mode, draftGenre, draftVenueId, query),
+    [upcoming, now, mode, draftGenre, draftVenueId, query]
+  );
+
+  const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
 
   // Tapping a month nav item must win immediately (see handleMonthNavClick)
   // and stay pinned while the resulting scroll settles — otherwise the
@@ -340,11 +406,60 @@ export default function EventExplorer({
   //   - initial mount (activeMonthKey still null) -> establish the first
   //     month as active with NO scroll: there is nothing to jump away from,
   //     the page is already sitting at its natural starting position
-  // Clearing filters falls entirely under the first bullet: every month
-  // that was visible while filtered remains visible once filters are
-  // cleared (clearing only adds events back, never removes any), so the
-  // active month is always still present and this effect is a no-op.
+  //   - a filter session just ENDED (every filter/search control back to
+  //     its default) -> restore activeMonthKey to the filter-session origin
+  //     captured below, instead of falling under the first bullet above:
+  //     every month that was visible while filtered remains visible once
+  //     filters are cleared (clearing only adds events back, never removes
+  //     any), so "current month still has matches -> stay" would otherwise
+  //     just leave the user wherever filtering had moved them (e.g.
+  //     October) instead of returning to where they started (November) —
+  //     exactly the reported Clear Filters bug. Skips the scroll (but still
+  //     restores state) if the origin is already the active, visible month
+  //     — e.g. a filter session where every filter tried matched nothing,
+  //     so activeMonthKey never actually moved.
+  // Filter-session origin capture (the mirror image of the bullet above)
+  // happens first, at the very top of this same effect, the instant a
+  // session STARTS: see the two ref reads/writes immediately below. Folding
+  // capture and reconciliation into one effect — rather than two separate
+  // effects that would each react to the same render — is deliberate: it
+  // guarantees capture-then-reconcile happens as a single atomic pass with
+  // exactly one resulting scroll, with no second effect invocation to
+  // suppress via an incomplete dependency array. See the refs' own doc
+  // comment (near their declarations) for why they're refs, not state.
   useEffect(() => {
+    const previouslyFiltered = wasFilteredRef.current;
+    wasFilteredRef.current = hasActiveFilters;
+
+    if (hasActiveFilters && !previouslyFiltered) {
+      // Session starting — capture whatever was active *before* anything
+      // below gets a chance to move it.
+      filterOriginMonthKeyRef.current = activeMonthKey;
+    }
+
+    if (!hasActiveFilters && previouslyFiltered && filterOriginMonthKeyRef.current !== null) {
+      const origin = filterOriginMonthKeyRef.current;
+      filterOriginMonthKeyRef.current = null;
+      if (groups.some((g) => g.monthKey === origin)) {
+        const el = document.getElementById(`month-${origin}`);
+        const alreadyThere = activeMonthKey === origin && el !== null && isSectionVisible(el);
+        if (!alreadyThere) {
+          isProgrammaticScrollRef.current = true;
+          setActiveMonthKey(origin);
+          el?.scrollIntoView({ block: "start", behavior: "smooth" });
+          if (window.location.hash !== `#month-${origin}`) {
+            history.replaceState(null, "", `#month-${origin}`);
+          }
+          scheduleScrollSettle();
+        }
+        return;
+      }
+      // The origin month has no event left at all (e.g. its only event
+      // lapsed into the past while filtered) — nothing sensible to restore
+      // to; fall through to the normal reconciliation below instead, using
+      // `groups`/`activeMonthKey` exactly as they are now.
+    }
+
     if (groups.length === 0) return;
     if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) {
       const el = document.getElementById(`month-${activeMonthKey}`);
@@ -356,7 +471,6 @@ export default function EventExplorer({
       return;
     }
     if (activeMonthKey === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMonthKey(groups[0].monthKey);
       return;
     }
@@ -393,7 +507,18 @@ export default function EventExplorer({
       history.replaceState(null, "", `#month-${target}`);
     }
     scheduleScrollSettle();
-  }, [groups, activeMonthKey]);
+    // Complete, correct dependency array — every reactive value the effect
+    // reads (`groups`, `activeMonthKey`, `hasActiveFilters`) is listed; no
+    // suppression needed. `filterOriginMonthKeyRef`/`wasFilteredRef` are
+    // refs, not state — React's own rule is that a ref's `.current` is
+    // read fresh on every invocation regardless of the dependency array
+    // (mutating one doesn't trigger a re-render, so it can't be "missing"
+    // from a list of things that do), which is exactly why folding origin
+    // capture/restore into this effect via refs — rather than tracking the
+    // origin as its own piece of React state read by a second effect —
+    // removes the double-invocation problem structurally instead of
+    // instructing the linter to ignore it.
+  }, [groups, activeMonthKey, hasActiveFilters]);
 
   useEffect(() => {
     if (groups.length < 2) return;
@@ -501,8 +626,8 @@ export default function EventExplorer({
     }
   }
 
-  const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
   const activeDrawerFilterCount = (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0);
+  const draftDrawerFilterCount = (draftGenre !== "all" ? 1 : 0) + (draftVenueId !== "all" ? 1 : 0);
 
   function clearFilters() {
     setMode("all");
@@ -512,6 +637,29 @@ export default function EventExplorer({
   }
 
   const countLabel = `${filtered.length} event${filtered.length === 1 ? "" : "s"}`;
+  const draftCountLabel = `${draftFiltered.length} event${draftFiltered.length === 1 ? "" : "s"}`;
+
+  // Seeds the draft genre/venue from the currently applied values right as
+  // the mobile sheet opens (filter-state architecture rework, 2026-09-12),
+  // so editing the draft always starts from what's actually applied, and a
+  // stale draft from a previous open-without-applying session never leaks
+  // into a new one.
+  function openMobileFilters() {
+    setDraftGenre(genre);
+    setDraftVenueId(venueId);
+    setMobileFiltersOpen(true);
+  }
+
+  // Commits the draft genre/venue to the real, applied filter state and
+  // closes the sheet — the ONE point where the mobile drawer's edits ever
+  // reach the live event list/month reconciliation, so that reflow only
+  // ever happens once the sheet is already closing, never while it's still
+  // open and covering/scroll-locking the page underneath.
+  function applyMobileFilters() {
+    setGenre(draftGenre);
+    setVenueId(draftVenueId);
+    setMobileFiltersOpen(false);
+  }
 
   const genreSelect = (id: string) => (
     <select
@@ -559,7 +707,7 @@ export default function EventExplorer({
               <button
                 ref={mobileFiltersTriggerRef}
                 type="button"
-                onClick={() => setMobileFiltersOpen(true)}
+                onClick={openMobileFilters}
                 aria-haspopup="dialog"
                 aria-pressed={activeDrawerFilterCount > 0}
                 className={
@@ -721,8 +869,8 @@ export default function EventExplorer({
                   </label>
                   <select
                     id="genre-filter-mobile"
-                    value={genre}
-                    onChange={(e) => setGenre(e.target.value as MainGenreSlug | "all")}
+                    value={draftGenre}
+                    onChange={(e) => setDraftGenre(e.target.value as MainGenreSlug | "all")}
                     className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
                   >
                     <option value="all">All genres</option>
@@ -738,8 +886,8 @@ export default function EventExplorer({
                   </label>
                   <select
                     id="venue-filter-mobile"
-                    value={venueId}
-                    onChange={(e) => setVenueId(e.target.value)}
+                    value={draftVenueId}
+                    onChange={(e) => setDraftVenueId(e.target.value)}
                     className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-sm text-text-primary"
                   >
                     <option value="all">All venues</option>
@@ -752,12 +900,12 @@ export default function EventExplorer({
             </div>
 
             <div className="sticky bottom-0 flex gap-2 border-t border-border bg-surface-1 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              {activeDrawerFilterCount > 0 && (
+              {draftDrawerFilterCount > 0 && (
                 <button
                   type="button"
                   onClick={() => {
-                    setGenre("all");
-                    setVenueId("all");
+                    setDraftGenre("all");
+                    setDraftVenueId("all");
                   }}
                   className="min-h-[2.75rem] flex-1 rounded border border-border-strong text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
                 >
@@ -766,10 +914,10 @@ export default function EventExplorer({
               )}
               <button
                 type="button"
-                onClick={() => setMobileFiltersOpen(false)}
+                onClick={applyMobileFilters}
                 className="min-h-[2.75rem] flex-[2] rounded bg-accent text-xs font-semibold uppercase tracking-wide text-accent-on"
               >
-                Show {countLabel}
+                Show {draftCountLabel}
               </button>
             </div>
           </div>
