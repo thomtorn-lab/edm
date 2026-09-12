@@ -106,6 +106,25 @@ describe("POST /api/suggest-event", () => {
     expect(res.status).toBe(429);
   });
 
+  it("a failed send never partially succeeds — no ok:true response is ever returned when sendEmail rejects, whatever the underlying reason", async () => {
+    sendEmailMock.mockRejectedValueOnce(new Error("Resend rejected the message: some provider error"));
+
+    const res = await POST(makeRequest(VALID_SUBMISSION, "10.0.2.9"));
+
+    expect(res.status).not.toBe(200);
+    const body = await res.json();
+    expect(body.ok).not.toBe(true);
+  });
+
+  it("two separate submissions of identical content each send their own email — no idempotency/dedup key exists, so a double-click or a retried submission produces two emails, not silently deduped (documents current, intentional behavior — there is no stored state to dedupe against)", async () => {
+    const first = await POST(makeRequest(VALID_SUBMISSION, "10.0.2.10"));
+    const second = await POST(makeRequest(VALID_SUBMISSION, "10.0.2.10"));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(sendEmailMock).toHaveBeenCalledTimes(2);
+  });
+
   it("treats an optional note as optional", async () => {
     const withoutNote: Record<string, unknown> = { ...VALID_SUBMISSION };
     delete withoutNote.note;

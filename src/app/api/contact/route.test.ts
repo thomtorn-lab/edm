@@ -95,6 +95,29 @@ describe("POST /api/contact", () => {
     expect(res.status).toBe(429);
   });
 
+  it("a failed send never partially succeeds — no ok:true response is ever returned when sendEmail rejects, whatever the underlying reason", async () => {
+    sendEmailMock.mockRejectedValueOnce(new Error("Resend rejected the message: some provider error"));
+
+    const res = await POST(
+      makeRequest({ name: "Ada", email: "ada@example.com", message: "Hello" }, "10.0.1.8")
+    );
+
+    expect(res.status).not.toBe(200);
+    const body = await res.json();
+    expect(body.ok).not.toBe(true);
+  });
+
+  it("two separate submissions of identical content each send their own email — no idempotency/dedup key exists, so a double-click or a retried submission produces two emails, not silently deduped (documents current, intentional behavior — there is no stored state to dedupe against)", async () => {
+    const submission = { name: "Ada", email: "ada@example.com", message: "Same message twice" };
+
+    const first = await POST(makeRequest(submission, "10.0.1.9"));
+    const second = await POST(makeRequest(submission, "10.0.1.9"));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(sendEmailMock).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects a malformed JSON body with 400", async () => {
     const req = new NextRequest("http://localhost/api/contact", {
       method: "POST",
