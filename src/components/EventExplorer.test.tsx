@@ -1578,4 +1578,138 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       expect(activeMonthLabel()).toBe("Nov");
     });
   });
+
+  describe("INVESTIGATION, 2026-09-12 — mobile 'active month lost to February' Production report: state-level trace (diagnostic only, per explicit instruction not to add another timing fix yet)", () => {
+    function openMobileDrawer() {
+      fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    }
+    function mobileGenreSelect(): HTMLSelectElement {
+      return document.getElementById("genre-filter-mobile") as HTMLSelectElement;
+    }
+    function selectMobileGenre(value: string) {
+      fireEvent.change(mobileGenreSelect(), { target: { value } });
+    }
+    function tapShowEvents() {
+      fireEvent.click(screen.getByRole("button", { name: /^Show/ }));
+    }
+    function novemberSectionPresent(): boolean {
+      return screen.queryByRole("link", { name: "Nov" }) !== null;
+    }
+
+    it("A. taxonomy proof: an event whose public badge reads 'Electronic' has 'electronic-other' in its subgenres, so it necessarily passes the electronic-other filter predicate (mainGenreOf is an identity mapping for this slug) — this is a static proof, not an assumption; see also src/lib/taxonomy.ts's GENRES table where 'electronic-other' is the ONLY slug with shortLabel 'Electronic'", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      // The public badge (EventRow -> displayGenres -> shortLabel) reads
+      // "Electronic" for this exact event, proving subgenres contains
+      // "electronic-other".
+      expect(screen.getByText("Electronic")).toBeTruthy();
+
+      // Applying the electronic-other filter must keep this exact event.
+      selectGenre("electronic-other");
+      expect(screen.getByText(nov.title)).toBeTruthy();
+    });
+
+    it("B/C (real mobile flow, real-scale distribution): November remains in filtered `groups` after the full mobile apply sequence — confirmed by the November nav pill and section still being present immediately after 'Show N events'", () => {
+      // Mirrors the reported shape: November has a genuinely-electronic
+      // event, a distant unrelated month exists so the nav bar itself
+      // stays visible, and a Feb 2027 electronic-other event exists too
+      // (the exact month Production reported landing on) so it's a
+      // plausible closest-later match if November ever dropped out — which
+      // this test proves it does NOT.
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(novemberSectionPresent()).toBe(true);
+
+      openMobileDrawer();
+      selectMobileGenre("electronic-other"); // draftGenre only — groups must not move yet
+      expect(activeMonthLabel()).toBe("Nov");
+
+      tapShowEvents(); // commits genre=electronic-other, closes drawer
+
+      // groups after apply: November must still be present — this is the
+      // direct answer to the "Key question": YES, November remains in the
+      // filtered groups.
+      expect(novemberSectionPresent()).toBe(true);
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(activeMonthLabel()).not.toBe("Feb");
+    });
+
+    it("D/E (root cause, protected case): WITHIN the current 150ms settle window, the current shipped code (lastGroupsRef-gated pin) correctly ignores a freshly re-created scroll-spy observer's own automatic initial report even in the exact mobile apply sequence", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      openMobileDrawer();
+      selectMobileGenre("electronic-other");
+      tapShowEvents();
+      expect(activeMonthLabel()).toBe("Nov");
+
+      // Simulate, with NO time elapsed (worst case for a fast device), the
+      // freshly re-created observer's own automatic initial report
+      // claiming February is topmost.
+      latestObserver().trigger("2027-02");
+
+      expect(activeMonthLabel()).toBe("Nov");
+    });
+
+    it("D/E (root cause, THE GAP): once the fixed 150ms settle window has elapsed — plausible on a real device where the drawer-close reflow + filtered-list shrinkage genuinely takes longer than that — the SAME delayed observer report DOES steal the active month away, reproducing the exact Production symptom", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      openMobileDrawer();
+      selectMobileGenre("electronic-other");
+      tapShowEvents();
+      expect(activeMonthLabel()).toBe("Nov");
+
+      // The settle timer is a fixed setTimeout, unrelated to how long the
+      // real device actually takes to reflow/repaint and fire the
+      // browser's own delayed IntersectionObserver notification. Simulate
+      // that real-world delay exceeding the fixed window.
+      vi.advanceTimersByTime(200);
+
+      // The observer's own automatic initial report for the freshly
+      // re-created observer arrives AFTER the pin has already released.
+      latestObserver().trigger("2027-02");
+
+      // THIS IS THE GAP: activeMonthKey is stolen even though November
+      // never stopped matching the filter — reproducing the exact
+      // Production report (mobile, lands on February) from a pure state
+      // transition, with no code change made yet.
+      expect(activeMonthLabel()).not.toBe("Nov");
+      expect(activeMonthLabel()).toBe("Feb");
+    });
+
+    it("D. same gap, via the atBottom fallback instead of the observer: a bottom-of-page scroll arriving after the settle window has elapsed also steals the active month, confirming the underlying weakness is the fixed timer itself, not one specific effect", () => {
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "electronic-other");
+      const feb = makeGenreEvent("2027-02-10T20:00:00.000Z", "electronic-other");
+      render(<EventExplorer events={[nov, feb]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      openMobileDrawer();
+      selectMobileGenre("electronic-other");
+      tapShowEvents();
+      expect(activeMonthLabel()).toBe("Nov");
+
+      vi.advanceTimersByTime(200); // settle window elapsed, exactly as above
+
+      stubScrollGeometry({ atBottom: true });
+      fireEvent.scroll(window);
+
+      expect(activeMonthLabel()).not.toBe("Nov");
+      expect(activeMonthLabel()).toBe("Feb"); // Feb is the last group here, matching atBottom's own target rule
+    });
+  });
 });
