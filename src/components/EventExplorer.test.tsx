@@ -789,3 +789,136 @@ describe("EventExplorer — 'now' stays fresh without a reload (public event int
     expect(screen.queryByText(event.title)).not.toBeNull();
   });
 });
+
+describe("EventExplorer — filter + month-navigation context behavior (2026-09-12)", () => {
+  afterEach(cleanup);
+
+  function selectGenre(value: string) {
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    fireEvent.change(genreSelect, { target: { value } });
+  }
+
+  function activeMonthLabel(): string {
+    const link = document.querySelector('nav[aria-label="Jump to month"] a.text-accent');
+    if (!link) throw new Error("no month is currently marked active");
+    return link.textContent ?? "";
+  }
+
+  function makeGenreEvent(startIso: string, genreSlug: GenreSlug): EventWithVenue {
+    return { ...makeEvent(startIso), primaryGenre: genreSlug, subgenres: [genreSlug] };
+  }
+
+  it("requirement 1: applying a filter that the current month still matches preserves the current month — no scroll", () => {
+    // A second surviving month (Oct) keeps the month-nav bar itself visible
+    // after filtering (it hides once only one month remains) so the active
+    // highlight stays checkable.
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "trance"); // will be filtered out
+    const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+    render(<EventExplorer events={[aug, sep, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(activeMonthLabel()).toBe("Aug");
+
+    selectGenre("techno"); // keeps Aug's and Oct's events, drops Sep's
+
+    expect(activeMonthLabel()).toBe("Aug");
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("requirement 2: current month loses all matches, a LATER month still matches -> auto-scrolls to the nearest later month", () => {
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance"); // will be filtered out
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+    const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+    render(<EventExplorer events={[aug, sep, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(activeMonthLabel()).toBe("Aug");
+
+    selectGenre("techno");
+
+    expect(activeMonthLabel()).toBe("Sep"); // nearest later month with matches, not Oct
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
+  });
+
+  it("requirement 3: current month loses all matches, no LATER month matches -> falls back to the first month with matches", () => {
+    // Two surviving months (Jul, Aug) keep the nav bar visible after
+    // filtering, so the active highlight stays checkable.
+    vi.setSystemTime(new Date("2026-07-01T12:00:00.000Z")); // so July itself still counts as upcoming
+    const jul = makeGenreEvent("2026-07-10T20:00:00.000Z", "techno");
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "trance"); // will be filtered out
+    const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "trance"); // will be filtered out
+    render(<EventExplorer events={[jul, aug, sep, oct]} serverNow="2026-07-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    // Move to October first (a genuine prior scroll position), then filter it away along with September.
+    latestObserver().trigger("2026-10");
+    expect(activeMonthLabel()).toBe("Oct");
+
+    selectGenre("techno");
+
+    expect(activeMonthLabel()).toBe("Jul"); // no later match exists -> first matching month
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
+  });
+
+  it("requirement 4: clearing the filter preserves whatever month is currently active — no jump to top, no reset", () => {
+    // A second surviving month (Oct) keeps the nav bar visible post-filter.
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance");
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+    const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+    render(<EventExplorer events={[aug, sep, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    selectGenre("techno"); // Aug drops out, auto-scrolls to Sep (nearest later match)
+    expect(activeMonthLabel()).toBe("Sep");
+    const callsAfterFilter = (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    selectGenre("all"); // clear the filter — Aug's event is back, but Sep must remain active
+
+    expect(activeMonthLabel()).toBe("Sep");
+    expect((Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterFilter);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("requirement: no matches anywhere never attempts a scroll", () => {
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+    render(<EventExplorer events={[aug]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    selectGenre("trance"); // matches nothing at all
+
+    expect(screen.getByText("No events match")).toBeTruthy();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    expect(document.querySelector('nav[aria-label="Jump to month"]')).toBeNull();
+  });
+
+  it("month navigation stays navigation only — clicking a month never changes which events are shown", () => {
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "techno");
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "trance");
+    render(<EventExplorer events={[aug, sep]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    expect(screen.getAllByText("2 events").length).toBeGreaterThan(0); // mobile + desktop count labels
+
+    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
+
+    // Still both events, both still rendered — a month-nav tap only scrolls/highlights.
+    expect(screen.getAllByText("2 events").length).toBeGreaterThan(0);
+    expect(screen.getByText(aug.title)).toBeTruthy();
+    expect(screen.getByText(sep.title)).toBeTruthy();
+  });
+
+  it("scroll-spy resumes normally after a filter-triggered auto-scroll settles", () => {
+    const aug = makeGenreEvent("2026-08-10T20:00:00.000Z", "trance");
+    const sep = makeGenreEvent("2026-09-10T20:00:00.000Z", "techno");
+    const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+    render(<EventExplorer events={[aug, sep, oct]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    selectGenre("techno"); // auto-scrolls to Sep, pinning scroll-spy
+    expect(activeMonthLabel()).toBe("Sep");
+
+    vi.advanceTimersByTime(200); // past the settle delay — the pin should now be released
+
+    latestObserver().trigger("2026-10"); // a genuine manual scroll to October
+    expect(activeMonthLabel()).toBe("Oct");
+  });
+});
