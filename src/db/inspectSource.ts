@@ -21,6 +21,7 @@ import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
+import { isLikelyDanish } from "@/lib/adapters/htmlExtraction";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -33,7 +34,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|description-language-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
@@ -1413,6 +1414,75 @@ async function modeTextLeakageAudit(client: Client) {
 }
 
 /**
+ * Event About/description English-only normalization — read-only
+ * Production audit (2026-09-12, run BEFORE any implementation per that
+ * task's explicit instruction). Reports which published events currently
+ * carry a description at all, how many of those trip the same isLikelyDanish
+ * heuristic runIngestionPipeline/eventPresentation.ts's publicDescription
+ * use (æ/ø/å — the one reliable, already-established signal in this
+ * codebase; see htmlExtraction.ts's own doc comment), and which source each
+ * one traces to — so the fix's real-world impact and per-source
+ * responsibility are known before writing a single line of guard code, not
+ * guessed at.
+ */
+async function modeDescriptionLanguageAudit(client: Client) {
+  const events = await client.query(
+    `SELECT e.id, e.slug, e.title, e.description, e.canonical_source_id, s.source_name
+     FROM events e
+     LEFT JOIN sources s ON s.id = e.canonical_source_id
+     WHERE e.published = true`,
+  );
+
+  const bySource = new Map<string, { total: number; withDescription: number; likelyDanish: number }>();
+  const danishFindings: Record<string, unknown>[] = [];
+  let withDescription = 0;
+  let likelyDanish = 0;
+
+  for (const r of events.rows) {
+    const sourceName = (r.source_name as string | null) ?? "(no canonical source)";
+    const bucket = bySource.get(sourceName) ?? { total: 0, withDescription: 0, likelyDanish: 0 };
+    bucket.total += 1;
+    const description = r.description as string | null;
+    if (description) {
+      withDescription += 1;
+      bucket.withDescription += 1;
+      if (isLikelyDanish(description)) {
+        likelyDanish += 1;
+        bucket.likelyDanish += 1;
+        danishFindings.push({
+          id: r.id,
+          slug: r.slug,
+          title: r.title,
+          source: sourceName,
+          canonicalSourceId: r.canonical_source_id,
+          descriptionExcerpt: description.slice(0, 200),
+        });
+      }
+    }
+    bySource.set(sourceName, bucket);
+  }
+
+  section(
+    `DESCRIPTION LANGUAGE AUDIT — summary (${events.rows.length} published events; ${withDescription} have a description; ${likelyDanish} of those are likely Danish)`,
+  );
+  console.log(
+    JSON.stringify(
+      {
+        totalPublished: events.rows.length,
+        withDescription,
+        likelyDanish,
+        bySource: Object.fromEntries(bySource),
+      },
+      null,
+      2,
+    ),
+  );
+
+  section(`DESCRIPTION LANGUAGE AUDIT — likely-Danish findings (${danishFindings.length})`);
+  console.log(JSON.stringify(danishFindings, null, 2));
+}
+
+/**
  * Source-driven cancellation safety — read-only Production audit
  * (2026-09-07, Section 14 of the cancellation-safety work package). Run
  * BEFORE any implementation, per that task's explicit instruction. Reports
@@ -1924,6 +1994,7 @@ async function main() {
     "venue-blocks": modeVenueBlocks,
     "event-integrity": modeEventIntegrity,
     "text-leakage-audit": modeTextLeakageAudit,
+    "description-language-audit": modeDescriptionLanguageAudit,
     "cancellation-audit": modeCancellationAudit,
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
@@ -1942,7 +2013,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, description-language-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit.`,
     );
     process.exit(1);
   }
