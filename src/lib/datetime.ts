@@ -234,9 +234,35 @@ export function groupByMonth<T extends NightlifeEvent>(events: T[]): { monthKey:
     .map(([monthKey, v]) => ({ monthKey, ...v }));
 }
 
-export function crossesMidnight(event: NightlifeEvent): boolean {
-  if (!event.endDatetime) return false;
-  const startKey = getCopenhagenParts(new Date(event.startDatetime));
-  const endKey = getCopenhagenParts(new Date(event.endDatetime));
-  return startKey.day !== endKey.day || startKey.month !== endKey.month || startKey.year !== endKey.year;
+/**
+ * Number of Europe/Copenhagen calendar days between an event's start and end
+ * instants: 0 for a same-day event, 1 for a normal overnight event that
+ * simply spills into the next calendar date, 2+ only for an event that
+ * genuinely spans multiple full calendar days (e.g. a festival). Computed
+ * purely from wall-clock calendar dates via dateKeyToOrdinal (which anchors
+ * each date at local noon in UTC) rather than from elapsed duration, so a
+ * DST transition's extra or missing hour never perturbs the count — a
+ * duration-based day count (e.g. flooring elapsed hours / 24) can silently
+ * drift by a day across a DST boundary; this can't, because it never looks
+ * at elapsed time at all. A missing endDatetime always returns 0.
+ */
+export function calendarDaySpan(event: NightlifeEvent): number {
+  if (!event.endDatetime) return 0;
+  const start = getCopenhagenParts(new Date(event.startDatetime));
+  const end = getCopenhagenParts(new Date(event.endDatetime));
+  const startKey: DateKey = { year: start.year, month: start.month, day: start.day };
+  const endKey: DateKey = { year: end.year, month: end.month, day: end.day };
+  return Math.round((dateKeyToOrdinal(endKey) - dateKeyToOrdinal(startKey)) / 86_400_000);
+}
+
+/**
+ * True only when an event's end instant falls 2 or more Europe/Copenhagen
+ * calendar days after its start — a true multi-day event, as opposed to a
+ * normal overnight club night whose end merely spills into the next
+ * calendar date (calendarDaySpan of 1, which reads as an overnight event,
+ * not a multi-day one). See formatRowDateRangeLabel/formatFullDateRangeLabel
+ * in format.ts, the only place this drives display.
+ */
+export function isMultiDayEvent(event: NightlifeEvent): boolean {
+  return calendarDaySpan(event) >= 2;
 }

@@ -541,7 +541,17 @@ describe("EventRow — multi-day event date-range display", () => {
     expect(screen.getByText("MON 10 AUG")).toBeTruthy();
   });
 
-  it("shows the full date range when the event ends on a later Copenhagen calendar day", () => {
+  it("shows the start date only for a normal overnight event ending the next Copenhagen calendar day", () => {
+    render(
+      <EventRow
+        event={makeEvent({ startDatetime: "2026-10-09T20:00:00.000Z", endDatetime: "2026-10-10T04:00:00.000Z" })}
+      />,
+    );
+    expect(screen.getByText("FRI 9 OCT")).toBeTruthy();
+    expect(screen.queryByText("FRI 9 OCT – SAT 10 OCT")).toBeNull();
+  });
+
+  it("shows the full date range for a true multi-day event (2+ Copenhagen calendar days later)", () => {
     render(
       <EventRow
         event={makeEvent({ startDatetime: "2026-10-09T20:00:00.000Z", endDatetime: "2026-10-11T03:00:00.000Z" })}
