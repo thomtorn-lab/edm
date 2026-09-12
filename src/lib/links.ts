@@ -125,13 +125,16 @@ function officialUrlRole(
  * first-party or ticketing standing over this event — see officialUrlRole
  * above, and any admin-merged `otherSourceUrls`) is a CTA of last resort,
  * never an equal alternative next to a genuine Official event/Tickets
- * destination. Once "Official event", "Tickets" or "Resident Advisor" is
- * present in the list, every "Source" entry is dropped before this function
- * returns (and before `max` truncates) — Source is shown as a CTA only when
- * it's the sole usable public link (spec section 2, rule D). This applies
- * identically wherever this function is called (event cards and the detail
- * page share this one helper — see getSourceProvenance below for the
- * separate, detail-page-only, non-CTA provenance treatment).
+ * destination. Once "Official event" or "Tickets" is present in the list,
+ * every "Source" entry is dropped before this function returns (and before
+ * `max` truncates) — Source is shown as a CTA only when it's the sole
+ * usable public link (spec section 2, rule D). This applies identically
+ * wherever this function is called (event cards and the detail page share
+ * this one helper — see getSourceProvenance below for the separate,
+ * detail-page-only, non-CTA provenance treatment).
+ *
+ * RA/HvadErPå are never even eligible for that last-resort "Source" CTA —
+ * see the guard at the top of this function's body.
  */
 export function getExternalLinks(event: EventRecord, max?: number): ExternalLink[] {
   const seen = new Set<string>();
@@ -150,42 +153,43 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
     links.push({ label, href, primary });
   };
 
-  if (event.officialEventUrl) {
+  // RA/HvadErPå CTA guardrail (product rule, 2026-09-12, final correction):
+  // neither is EVER a normal public CTA — not "Official event", not
+  // "Tickets", and (unlike an ordinary unrecognized aggregator) not even a
+  // last-resort "Source" CTA. Both are competitor/discovery sources; an
+  // unverified link to either must not appear as a public destination under
+  // ANY label. The underlying URL/row data is untouched and remains fully
+  // available for provenance/reference/dedup — see getSourceProvenance
+  // below, which is unaffected by this guard and still surfaces RA/
+  // HvadErPå's own source_event_links rows on the detail page.
+  if (event.officialEventUrl && !isResidentAdvisorUrl(event.officialEventUrl) && !isHvaderpaaUrl(event.officialEventUrl)) {
     const role = officialUrlRole(event);
     add(role === "tickets" ? "Tickets" : role === "unknown" ? "Source" : "Official event", event.officialEventUrl, true);
   }
   // Whichever label the block above used, `add`'s own seen-set collapses an
   // identical ticketUrl into that single entry rather than a duplicate.
   //
-  // HvadErPå guardrail (product rule, 2026-09-12): a discovery aggregator,
-  // never a ticket seller — no adapter ever populates ticketUrl with a
-  // hvaderpaa.dk URL (hvaderpaaAdapter.ts's own classifyOffersUrl only ever
-  // routes ra.co/billetto.dk there), but a hand-entered admin value isn't
-  // guarded by that adapter contract, so this is checked explicitly rather
-  // than trusted merely because it's in the ticketUrl field. Falls back to
-  // Source rather than silently dropping a stored URL.
-  if (event.ticketUrl && isHvaderpaaUrl(event.ticketUrl)) {
-    add("Source", event.ticketUrl);
-  } else {
+  // HvadErPå guardrail: a discovery aggregator, never a ticket seller — no
+  // adapter ever populates ticketUrl with a hvaderpaa.dk URL
+  // (hvaderpaaAdapter.ts's own classifyOffersUrl only ever routes
+  // ra.co/billetto.dk there), but a hand-entered admin value isn't guarded
+  // by that adapter contract, so this is checked explicitly rather than
+  // trusted merely because it's in the ticketUrl field. Dropped entirely
+  // (no CTA at all) rather than falling back to "Source" — see the guard
+  // comment above.
+  if (event.ticketUrl && !isHvaderpaaUrl(event.ticketUrl)) {
     add("Tickets", event.ticketUrl);
   }
-  // RA guardrail (product rule, 2026-09-12): a residentAdvisorUrl is only
-  // ever a genuine, verified ticket destination when the SAME adapter also
-  // set ticketUrl to this exact URL (e.g. hangarenAdapter.ts's own
+  // RA guardrail: a residentAdvisorUrl is NEVER its own public CTA — no
+  // "Resident Advisor" entry, no "Source" fallback. It only ever surfaces
+  // publicly at all when the SAME adapter independently verified it by also
+  // setting ticketUrl to this exact URL (e.g. hangarenAdapter.ts's own
   // extractTicketUrl: the venue's own "buy tickets" link on its own
-  // official page happens to point to RA, so both fields are set to the
-  // identical URL) — that verified case is already fully covered by the
-  // ticketUrl add() immediately above (the identical-URL dedup collapses it
-  // into that single "Tickets" entry, whatever label is passed here). Any
-  // OTHER residentAdvisorUrl — the common case, e.g. hvaderpaaAdapter.ts's
-  // own classifyOffersUrl deliberately never sets ticketUrl for an RA
-  // reference it hasn't independently verified — is RA acting purely as a
-  // discovery/reference source for this event, with no confirmation it has
-  // active ticket sales at all, so it must never render as "Tickets" merely
-  // because ticketUrl happens to be absent (the previous behavior). Always
-  // "Resident Advisor" — its own honest label, never conflated with
-  // "Tickets" or "Official event".
-  add("Resident Advisor", event.residentAdvisorUrl);
+  // official page happens to point to RA) — that verified case is already
+  // fully covered by the ticketUrl add() immediately above (the identical-
+  // URL dedup would collapse a second add() into that same "Tickets" entry
+  // regardless of label, so there is nothing left to add here in either
+  // case: verified is already shown, unverified must not be shown at all).
   // Facebook decision (unified event create/edit model, 2026-09-08): Facebook
   // is no longer a distinct public link role — it was previously always its
   // own separate "Facebook" CTA, never suppressed by the primary-destination
@@ -202,7 +206,7 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
   }
   for (const url of event.otherSourceUrls) add("Source", url);
 
-  const hasPrimaryDestination = links.some((l) => l.label === "Official event" || l.label === "Tickets" || l.label === "Resident Advisor");
+  const hasPrimaryDestination = links.some((l) => l.label === "Official event" || l.label === "Tickets");
   const ctaLinks = hasPrimaryDestination ? links.filter((l) => l.label !== "Source") : links;
 
   return typeof max === "number" ? ctaLinks.slice(0, max) : ctaLinks;
@@ -277,12 +281,18 @@ export function getSourceProvenance(links: SourceLinkForProvenance[]): SourcePro
 }
 
 /**
- * True only when the event has a real ticket-purchase destination
- * (ticketUrl, or a Resident Advisor link standing in for one) — the same
- * two fields that produce the "Tickets" label above.
+ * True only when the event has a real, verified ticket-purchase destination
+ * — `ticketUrl`, the same field that produces the "Tickets" label above.
+ * An unverified `residentAdvisorUrl` alone no longer counts (RA/HvadErPå
+ * guardrail, 2026-09-12): since that link is never shown as a public CTA at
+ * all unless ticketUrl independently verifies it, treating its mere
+ * presence as "has a ticket destination" here would silently suppress the
+ * FREE badge for a genuinely free event with nothing shown in its place —
+ * an empty CTA area is worse than a FREE badge appearing alongside an
+ * unverified RA reference kept only in provenance.
  */
-export function hasTicketDestination(event: Pick<EventRecord, "ticketUrl" | "residentAdvisorUrl">): boolean {
-  return Boolean(event.ticketUrl || event.residentAdvisorUrl);
+export function hasTicketDestination(event: Pick<EventRecord, "ticketUrl">): boolean {
+  return Boolean(event.ticketUrl);
 }
 
 /**
@@ -298,6 +308,6 @@ export function isFreeAdmission(event: Pick<EventRecord, "priceFrom">): boolean 
 }
 
 /** Whether the FREE CTA should be shown in place of a Tickets link. */
-export function showFreeCta(event: Pick<EventRecord, "ticketUrl" | "residentAdvisorUrl" | "priceFrom">): boolean {
+export function showFreeCta(event: Pick<EventRecord, "ticketUrl" | "priceFrom">): boolean {
   return !hasTicketDestination(event) && isFreeAdmission(event);
 }

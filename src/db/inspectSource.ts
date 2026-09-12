@@ -1637,21 +1637,41 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
   // getSourceProvenance in src/lib/links.ts exactly, so this reports what the
   // live site actually renders today for each published event — not a
   // re-derivation, a read-only cross-check against the real implementation.
+  function hostnameOfLocal(url: string | null): string | null {
+    if (!url) return null;
+    try {
+      return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  }
+  const isRaOrHvaderpaaHost = (host: string | null) => host === "ra.co" || host === "hvaderpaa.dk";
+
   const comboExamples: Record<string, Record<string, unknown>[]> = {};
   for (const r of rows.rows) {
     const officialUrl = r.official_event_url as string | null;
     const ticketUrl = r.ticket_url as string | null;
-    const raUrl = r.resident_advisor_url as string | null;
     const otherSourceUrls = (r.other_source_urls as string[] | null) ?? [];
     const sourceType = r.source_type as string | null;
-    const role = officialUrl ? roleForSourceType(sourceType) : null;
+    const officialHost = hostnameOfLocal(officialUrl);
+    const ticketHost = hostnameOfLocal(ticketUrl);
+    // RA/HvadErPå guardrail (product rule, 2026-09-12, final correction):
+    // neither is ever a normal public CTA under any label — not Official,
+    // not Tickets, not even the last-resort Source CTA. Checked ahead of
+    // the ordinary sourceType-derived role, mirroring getExternalLinks.
+    const officialIsCompetitor = isRaOrHvaderpaaHost(officialHost);
+    const role = officialUrl && !officialIsCompetitor ? roleForSourceType(sourceType) : null;
 
-    const hasOfficial = officialUrl !== null && role !== "tickets" && role !== "unknown";
-    const hasTicketsFromTicketUrl = ticketUrl !== null;
-    const hasTicketsFromOfficialUrl = officialUrl !== null && role === "tickets";
-    const hasTicketsFromRa = !hasTicketsFromTicketUrl && raUrl !== null;
-    const hasTickets = hasTicketsFromTicketUrl || hasTicketsFromOfficialUrl || hasTicketsFromRa;
-    const hasSourceFromOfficialUrl = officialUrl !== null && role === "unknown";
+    const hasOfficial = officialUrl !== null && !officialIsCompetitor && role !== "tickets" && role !== "unknown";
+    const hasTicketsFromTicketUrl = ticketUrl !== null && ticketHost !== "hvaderpaa.dk";
+    const hasTicketsFromOfficialUrl = officialUrl !== null && !officialIsCompetitor && role === "tickets";
+    // An unverified residentAdvisorUrl (raUrl set, no independently-verified
+    // ticketUrl) contributes NOTHING to the public CTA combo at all — it is
+    // never shown, under any label, as of the final correction. It remains
+    // visible only in the separate RA/HvadErPå findings section below
+    // (provenance-only).
+    const hasTickets = hasTicketsFromTicketUrl || hasTicketsFromOfficialUrl;
+    const hasSourceFromOfficialUrl = officialUrl !== null && !officialIsCompetitor && role === "unknown";
     const hasAnySourceEntry = hasSourceFromOfficialUrl || otherSourceUrls.length > 0;
     const hasPrimary = hasOfficial || hasTickets;
     const sourceCtaShown = hasAnySourceEntry && !hasPrimary;
@@ -1679,37 +1699,32 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
     ),
   );
 
-  // RA/HvadErPå source-role guardrail audit (product rule, 2026-09-12 — see
-  // src/lib/links.ts's isResidentAdvisorUrl/isHvaderpaaUrl guardrails):
-  // permanent regression check, not a one-off — mirrors the exact same
-  // hostname logic those guardrails use (lowercased, "www." stripped),
-  // read-only cross-check against real Production rows. Flags any published
-  // event where officialEventUrl/ticketUrl is (or ever was, pre-fix) an
-  // RA/HvadErPå URL rendering a role the product rule forbids.
-  function hostnameOf(url: string | null): string | null {
-    if (!url) return null;
-    try {
-      return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
-    } catch {
-      return null;
-    }
-  }
+  // RA/HvadErPå source-role guardrail audit (product rule, 2026-09-12, final
+  // correction — see src/lib/links.ts's isResidentAdvisorUrl/isHvaderpaaUrl
+  // guardrails): permanent regression check, not a one-off — mirrors the
+  // exact same hostname logic those guardrails use (lowercased, "www."
+  // stripped), read-only cross-check against real Production rows. Flags
+  // any published event carrying an RA/HvadErPå URL anywhere these fields —
+  // informational only (none of these render as a public CTA any more,
+  // regardless of which field holds the URL): the row/URL itself is
+  // retained for provenance/reference/dedup, this just surfaces where that
+  // data lives for review.
   const raHvaderpaaFindings: Record<string, unknown>[] = [];
   for (const r of rows.rows) {
     const officialUrl = r.official_event_url as string | null;
     const ticketUrl = r.ticket_url as string | null;
     const raUrl = r.resident_advisor_url as string | null;
-    const officialHost = hostnameOf(officialUrl);
-    const ticketHost = hostnameOf(ticketUrl);
-    const isOfficialRaOrHvaderpaa = officialHost === "ra.co" || officialHost === "hvaderpaa.dk";
+    const officialHost = hostnameOfLocal(officialUrl);
+    const ticketHost = hostnameOfLocal(ticketUrl);
+    const isOfficialRaOrHvaderpaa = isRaOrHvaderpaaHost(officialHost);
     const isTicketHvaderpaa = ticketHost === "hvaderpaa.dk";
-    // Pre-fix behavior: ticketUrl absent, residentAdvisorUrl present ->
-    // rendered "Tickets" unconditionally (the exact bug the guardrail
-    // fixes). Post-fix: "Resident Advisor" unless ticketUrl === raUrl
-    // (verified, e.g. hangarenAdapter.ts), in which case it's still
-    // legitimately "Tickets" via the ticketUrl entry itself.
-    const wasUnverifiedRaShownAsTickets = ticketUrl === null && raUrl !== null;
-    if (isOfficialRaOrHvaderpaa || isTicketHvaderpaa || wasUnverifiedRaShownAsTickets) {
+    // Verified: ticketUrl independently set to the identical RA URL (e.g.
+    // hangarenAdapter.ts) — this one legitimately still renders "Tickets".
+    // Everything else involving an RA/HvadErPå URL renders NO public CTA at
+    // all (final correction) — informational either way.
+    const verifiedRaTicket = ticketUrl !== null && raUrl !== null && ticketUrl === raUrl;
+    const unverifiedRa = raUrl !== null && !verifiedRaTicket;
+    if (isOfficialRaOrHvaderpaa || isTicketHvaderpaa || unverifiedRa) {
       raHvaderpaaFindings.push({
         id: r.id,
         slug: r.slug,
@@ -1722,9 +1737,9 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
         ticketUrlHost: ticketHost,
         residentAdvisorUrl: raUrl,
         issue: [
-          isOfficialRaOrHvaderpaa ? "officialEventUrl is RA/HvadErPå" : null,
-          isTicketHvaderpaa ? "ticketUrl is HvadErPå" : null,
-          wasUnverifiedRaShownAsTickets ? "unverified residentAdvisorUrl rendered as Tickets pre-fix" : null,
+          isOfficialRaOrHvaderpaa ? "officialEventUrl is RA/HvadErPå (no public CTA; provenance only)" : null,
+          isTicketHvaderpaa ? "ticketUrl is HvadErPå (no public CTA; provenance only)" : null,
+          unverifiedRa ? "unverified residentAdvisorUrl (no public CTA; provenance only)" : null,
         ].filter(Boolean),
       });
     }
