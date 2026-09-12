@@ -996,11 +996,30 @@ export default function EventExplorer({
       </div>
 
       {showBackToTop && (
+        // Visual prominence + iPhone/Safari first-tap fix (Production,
+        // 2026-09-12):
+        // - bg-surface-accent (deep, muted purple — see its own token doc
+        //   comment in globals.css) replaces the near-black bg-surface-1,
+        //   and the icon defaults to text-text-primary (near-white) instead
+        //   of the muted text-text-secondary, so the button reads clearly
+        //   against busy event content without becoming a bright/saturated
+        //   accent surface. border-accent-dim/60 gives it a touch more
+        //   definition than the plain neutral border.
+        // - Mobile bottom offset raised from ~1rem to ~5rem: iOS Safari
+        //   reserves a strip along the very bottom of the viewport to
+        //   reveal its own auto-hidden toolbar on tap, and a fixed control
+        //   sitting inside that strip can have its first tap "stolen" by
+        //   the browser chrome instead of reaching the page. Moving the
+        //   button clearly above that strip is the standard fix — no
+        //   viewport/zoom changes, no custom touch handling, nothing that
+        //   interferes with any browser gesture. Desktop (sm:) positioning
+        //   is unchanged; this is a mobile-Safari-specific browser chrome
+        //   behavior, not a desktop concern.
         <button
           type="button"
           onClick={handleBackToTop}
           aria-label="Back to top"
-          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-surface-1/95 text-text-secondary shadow-lg backdrop-blur transition-colors hover:text-text-primary sm:bottom-6 sm:right-6"
+          className="fixed bottom-[max(5rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-accent-dim/60 bg-surface-accent/95 text-text-primary shadow-lg backdrop-blur transition-colors hover:text-accent-strong sm:bottom-6 sm:right-6"
         >
           <svg
             viewBox="0 0 16 16"

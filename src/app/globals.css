@@ -5,6 +5,13 @@
   --surface-1: #121019;
   --surface-2: #1a1722;
   --surface-3: #23202c;
+  /* Deep, muted purple — deliberately between --bg/--surface-* (too
+     near-black to read as "purple") and --accent (too bright/saturated for
+     a persistent floating control). Used only by the Back to top button's
+     background (Production visibility fix, 2026-09-12): noticeably more
+     present than a plain surface tone without becoming a loud accent
+     surface. */
+  --surface-accent: #2b2536;
   --border: rgba(240, 236, 248, 0.09);
   --border-strong: rgba(240, 236, 248, 0.16);
   --text-primary: #f3ede4;
@@ -35,6 +42,7 @@
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
+  --color-surface-accent: var(--surface-accent);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text-primary: var(--text-primary);

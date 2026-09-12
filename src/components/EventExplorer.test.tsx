@@ -373,7 +373,7 @@ describe("EventExplorer — Back to top", () => {
     expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
   });
 
-  it("respects the mobile safe-area inset at the bottom edge (same env(safe-area-inset-bottom) pattern already used by the mobile filters sheet)", () => {
+  it("respects the mobile safe-area inset at the bottom edge, raised above the ~1rem baseline (iPhone/Safari first-tap fix, 2026-09-12: same env(safe-area-inset-bottom) pattern already used by the mobile filters sheet, but with the base offset lifted well clear of Safari's toolbar-reveal strip)", () => {
     render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
 
@@ -381,7 +381,53 @@ describe("EventExplorer — Back to top", () => {
     fireEvent.scroll(window);
 
     const button = screen.getByRole("button", { name: "Back to top" });
-    expect(button.className).toContain("bottom-[max(1rem,env(safe-area-inset-bottom))]");
+    expect(button.className).toContain("bottom-[max(5rem,env(safe-area-inset-bottom))]");
+    expect(button.className).not.toContain("bottom-[max(1rem,env(safe-area-inset-bottom))]");
+  });
+
+  it("Production visibility fix, 2026-09-12: uses the more prominent deep-purple surface token and a near-white icon, not the previous near-black/muted-grey treatment", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    const button = screen.getByRole("button", { name: "Back to top" });
+    const classes = button.className.split(/\s+/);
+    expect(classes).toContain("bg-surface-accent/95");
+    expect(classes).not.toContain("bg-surface-1/95");
+    expect(classes).toContain("text-text-primary");
+    expect(classes).not.toContain("text-text-secondary");
+    expect(classes).toContain("border-accent-dim/60");
+    expect(classes).not.toContain("border-border-strong");
+    // Still understated, not a bright/saturated accent surface — no solid
+    // full-accent background or border (border-accent-dim/60, asserted
+    // above, is the intentionally muted one).
+    expect(classes).not.toContain("bg-accent");
+    expect(classes).not.toContain("border-accent");
+  });
+
+  it("desktop positioning is unchanged by the visibility/mobile-tap fix — still sm:bottom-6/sm:right-6", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+
+    const button = screen.getByRole("button", { name: "Back to top" });
+    expect(button.className).toContain("sm:bottom-6");
+    expect(button.className).toContain("sm:right-6");
+  });
+
+  it("the click/tap handler is unaffected by the styling and positioning changes — still calls window.scrollTo({ top: 0, behavior: 'smooth' })", () => {
+    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+
+    setScrollY(600);
+    fireEvent.scroll(window);
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 
   it("sits at a lower stacking layer (z-40) than the mobile filters sheet (z-50), so an open sheet always covers it rather than the reverse", () => {
