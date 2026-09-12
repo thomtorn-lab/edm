@@ -1520,4 +1520,62 @@ describe("EventExplorer — filter + month-navigation context behavior (2026-09-
       expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
+
+  describe("highest-priority product rule, 2026-09-12 — the active month must never change after a filter if it still has at least one matching event", () => {
+    it("November has a matching event, other months also match -> stays in November with no programmatic scroll to another month", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno"); // November still matches, and so does October
+
+      expect(activeMonthLabel()).toBe("Nov");
+      // November's section is already visible (default stub), so no
+      // corrective same-month scroll was even needed here.
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("root-cause regression: a freshly re-created scroll-spy observer's own automatic initial report must not steal the active month away when it still matches (real-browser IntersectionObserver behavior — every newly observed section fires once with its current state; jsdom's mock does not do this automatically, so this test triggers it explicitly to stand in for it)", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      expect(activeMonthLabel()).toBe("Nov");
+
+      selectGenre("techno"); // November still matches -> the "stay" branch, no scroll needed
+      expect(activeMonthLabel()).toBe("Nov");
+
+      // The scroll-spy IntersectionObserver was torn down and recreated
+      // because `groups` changed (the filter application itself) — a real
+      // browser's freshly created observer always fires once, reporting
+      // each newly observed section's CURRENT intersection state, even
+      // though nothing actually scrolled. Simulate that automatic report
+      // claiming October is topmost, during the same settle window.
+      latestObserver().trigger("2026-10");
+
+      expect(activeMonthLabel()).toBe("Nov");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("Clear Filters restoring the origin still behaves correctly afterward (unaffected by this fix)", () => {
+      const oct = makeGenreEvent("2026-10-10T20:00:00.000Z", "techno");
+      const nov = makeGenreEvent("2026-11-10T20:00:00.000Z", "trance");
+      const mar = makeGenreEvent("2027-03-10T20:00:00.000Z", "techno");
+      render(<EventExplorer events={[oct, nov, mar]} serverNow="2026-08-01T12:00:00.000Z" />);
+      vi.runOnlyPendingTimers();
+
+      latestObserver().trigger("2026-11");
+      selectGenre("techno"); // November drops out -> moves to October (closest)
+      expect(activeMonthLabel()).toBe("Oct");
+
+      selectGenre("all"); // Clear Filters -> restores the original origin, November
+      expect(activeMonthLabel()).toBe("Nov");
+    });
+  });
 });
