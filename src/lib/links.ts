@@ -9,6 +9,36 @@ export interface ExternalLink {
 }
 
 /**
+ * Source-role guardrail, RA/HvadErPå (product rule, 2026-09-12): both are
+ * third-party/competitor sources whose role must never be inferred from
+ * `sourceType`/admin-override alone — see officialUrlRole and
+ * getExternalLinks below for where these are enforced as hard,
+ * unconditional checks, not just the default classifySourceRole path (which
+ * a canonicalSourceId lookup, an admin override, or a hand-entered field can
+ * all bypass). Hostname-based, matching hvaderpaaAdapter.ts's own
+ * classifyOffersUrl exactly (lowercased, "www." stripped) — never a
+ * substring/domain-contains check, which would also match unrelated
+ * lookalike hosts.
+ */
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+const RESIDENT_ADVISOR_HOSTNAMES = new Set(["ra.co"]);
+const HVADERPAA_HOSTNAMES = new Set(["hvaderpaa.dk"]);
+function isResidentAdvisorUrl(url: string): boolean {
+  const h = hostnameOf(url);
+  return h !== null && RESIDENT_ADVISOR_HOSTNAMES.has(h);
+}
+function isHvaderpaaUrl(url: string): boolean {
+  const h = hostnameOf(url);
+  return h !== null && HVADERPAA_HOSTNAMES.has(h);
+}
+
+/**
  * Event-link role classification (public event-integrity follow-up,
  * 2026-09-05 — Zoumer reference case): a URL's role must come from the
  * DESTINATION'S FUNCTION, not merely from which field happened to hold it.
@@ -54,10 +84,27 @@ function classifySourceRole(sourceType: Source["sourceType"]): "official" | "tic
  * has a Tickets/RA link, i.e. the admin's Official Event link visibly
  * "disappears" from the public page. Source-role inference below still
  * applies to every URL an admin has NOT touched (unchanged from before).
+ *
+ * RA/HvadErPå guardrail (product rule, 2026-09-12): checked FIRST, ahead of
+ * even the admin-override branch above — unlike every other URL, these two
+ * hosts must NEVER render "Official event", with no exception. Both are
+ * third-party/competitor sources (RA a specialist ticketing/discovery
+ * platform, HvadErPå a discovery aggregator), never this app's own
+ * first-party record for an event — regardless of how the URL got into
+ * this field (a normal adapter sync, an admin override, or a
+ * discovery-queue merge). Structural sourceType-based classification
+ * (classifySourceRole) already keeps this true for the ordinary adapter
+ * path (RA sources are "specialist-aggregator", HvadErPå "general-
+ * aggregator", both resolving to "unknown" -> "Source"), but that path is
+ * exactly what the admin-override branch below is designed to bypass — so
+ * it needs its own explicit, unconditional check here.
  */
 function officialUrlRole(
-  event: Pick<EventRecord, "canonicalSourceId" | "overriddenFields">,
+  event: Pick<EventRecord, "officialEventUrl" | "canonicalSourceId" | "overriddenFields">,
 ): "official" | "tickets" | "unknown" {
+  if (event.officialEventUrl && (isResidentAdvisorUrl(event.officialEventUrl) || isHvaderpaaUrl(event.officialEventUrl))) {
+    return "unknown";
+  }
   if (event.overriddenFields.includes("officialEventUrl")) return "official";
   if (!event.canonicalSourceId) return "official";
   const source = getSourceById(event.canonicalSourceId);
@@ -109,11 +156,36 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
   }
   // Whichever label the block above used, `add`'s own seen-set collapses an
   // identical ticketUrl into that single entry rather than a duplicate.
-  add("Tickets", event.ticketUrl);
-  // Provider-agnostic CTA (spec section 12): when no dedicated ticketUrl
-  // exists, the Resident Advisor link *is* the ticket destination, so it
-  // must read "Tickets" too rather than leaking the provider's name.
-  add(event.ticketUrl ? "Resident Advisor" : "Tickets", event.residentAdvisorUrl);
+  //
+  // HvadErPå guardrail (product rule, 2026-09-12): a discovery aggregator,
+  // never a ticket seller — no adapter ever populates ticketUrl with a
+  // hvaderpaa.dk URL (hvaderpaaAdapter.ts's own classifyOffersUrl only ever
+  // routes ra.co/billetto.dk there), but a hand-entered admin value isn't
+  // guarded by that adapter contract, so this is checked explicitly rather
+  // than trusted merely because it's in the ticketUrl field. Falls back to
+  // Source rather than silently dropping a stored URL.
+  if (event.ticketUrl && isHvaderpaaUrl(event.ticketUrl)) {
+    add("Source", event.ticketUrl);
+  } else {
+    add("Tickets", event.ticketUrl);
+  }
+  // RA guardrail (product rule, 2026-09-12): a residentAdvisorUrl is only
+  // ever a genuine, verified ticket destination when the SAME adapter also
+  // set ticketUrl to this exact URL (e.g. hangarenAdapter.ts's own
+  // extractTicketUrl: the venue's own "buy tickets" link on its own
+  // official page happens to point to RA, so both fields are set to the
+  // identical URL) — that verified case is already fully covered by the
+  // ticketUrl add() immediately above (the identical-URL dedup collapses it
+  // into that single "Tickets" entry, whatever label is passed here). Any
+  // OTHER residentAdvisorUrl — the common case, e.g. hvaderpaaAdapter.ts's
+  // own classifyOffersUrl deliberately never sets ticketUrl for an RA
+  // reference it hasn't independently verified — is RA acting purely as a
+  // discovery/reference source for this event, with no confirmation it has
+  // active ticket sales at all, so it must never render as "Tickets" merely
+  // because ticketUrl happens to be absent (the previous behavior). Always
+  // "Resident Advisor" — its own honest label, never conflated with
+  // "Tickets" or "Official event".
+  add("Resident Advisor", event.residentAdvisorUrl);
   // Facebook decision (unified event create/edit model, 2026-09-08): Facebook
   // is no longer a distinct public link role — it was previously always its
   // own separate "Facebook" CTA, never suppressed by the primary-destination

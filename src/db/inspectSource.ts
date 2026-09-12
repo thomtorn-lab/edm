@@ -1678,6 +1678,59 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
       2,
     ),
   );
+
+  // RA/HvadErPå source-role guardrail audit (product rule, 2026-09-12 — see
+  // src/lib/links.ts's isResidentAdvisorUrl/isHvaderpaaUrl guardrails):
+  // permanent regression check, not a one-off — mirrors the exact same
+  // hostname logic those guardrails use (lowercased, "www." stripped),
+  // read-only cross-check against real Production rows. Flags any published
+  // event where officialEventUrl/ticketUrl is (or ever was, pre-fix) an
+  // RA/HvadErPå URL rendering a role the product rule forbids.
+  function hostnameOf(url: string | null): string | null {
+    if (!url) return null;
+    try {
+      return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  }
+  const raHvaderpaaFindings: Record<string, unknown>[] = [];
+  for (const r of rows.rows) {
+    const officialUrl = r.official_event_url as string | null;
+    const ticketUrl = r.ticket_url as string | null;
+    const raUrl = r.resident_advisor_url as string | null;
+    const officialHost = hostnameOf(officialUrl);
+    const ticketHost = hostnameOf(ticketUrl);
+    const isOfficialRaOrHvaderpaa = officialHost === "ra.co" || officialHost === "hvaderpaa.dk";
+    const isTicketHvaderpaa = ticketHost === "hvaderpaa.dk";
+    // Pre-fix behavior: ticketUrl absent, residentAdvisorUrl present ->
+    // rendered "Tickets" unconditionally (the exact bug the guardrail
+    // fixes). Post-fix: "Resident Advisor" unless ticketUrl === raUrl
+    // (verified, e.g. hangarenAdapter.ts), in which case it's still
+    // legitimately "Tickets" via the ticketUrl entry itself.
+    const wasUnverifiedRaShownAsTickets = ticketUrl === null && raUrl !== null;
+    if (isOfficialRaOrHvaderpaa || isTicketHvaderpaa || wasUnverifiedRaShownAsTickets) {
+      raHvaderpaaFindings.push({
+        id: r.id,
+        slug: r.slug,
+        title: r.title,
+        venue: r.venue_name,
+        canonicalSource: r.source_name,
+        officialEventUrl: officialUrl,
+        officialEventUrlHost: officialHost,
+        ticketUrl,
+        ticketUrlHost: ticketHost,
+        residentAdvisorUrl: raUrl,
+        issue: [
+          isOfficialRaOrHvaderpaa ? "officialEventUrl is RA/HvadErPå" : null,
+          isTicketHvaderpaa ? "ticketUrl is HvadErPå" : null,
+          wasUnverifiedRaShownAsTickets ? "unverified residentAdvisorUrl rendered as Tickets pre-fix" : null,
+        ].filter(Boolean),
+      });
+    }
+  }
+  section(`LINK-ROLE AUDIT — RA/HvadErPå source-role guardrail (${raHvaderpaaFindings.length} of ${rows.rows.length} published events affected)`);
+  console.log(JSON.stringify(raHvaderpaaFindings, null, 2));
 }
 
 const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
