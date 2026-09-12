@@ -245,18 +245,6 @@ export default function EventExplorer({
 
   const groups = useMemo(() => groupByMonth(filtered), [filtered]);
 
-  // Track which month is currently in view so mobile month nav can highlight it.
-  useEffect(() => {
-    if (groups.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveMonthKey(null);
-      return;
-    }
-    if (!activeMonthKey || !groups.some((g) => g.monthKey === activeMonthKey)) {
-      setActiveMonthKey(groups[0].monthKey);
-    }
-  }, [groups, activeMonthKey]);
-
   // Tapping a month nav item must win immediately (see handleMonthNavClick)
   // and stay pinned while the resulting scroll settles — otherwise the
   // IntersectionObserver below, reacting to whatever happens to be in the
@@ -287,6 +275,60 @@ export default function EventExplorer({
     }
     scheduleScrollSettle();
   }
+
+  // Reconciles the active month against `groups` whenever filtering changes
+  // which months have any matching event — month navigation itself stays
+  // pure navigation (handleMonthNavClick above is the only thing a user
+  // action ever drives), this effect only *reacts* to the current month
+  // disappearing out from under the user (filter + month-navigation context
+  // behavior, 2026-09-12):
+  //   - current month still has matches -> untouched, no scroll (requirement 1)
+  //   - current month has zero matches -> jump to the nearest LATER month
+  //     that still matches, or the first (earliest) matching month if none
+  //     is later (requirements 2-3) — an actual scroll, not just a
+  //     highlight change, reusing the exact same isProgrammaticScrollRef/
+  //     scheduleScrollSettle pin handleMonthNavClick uses so scroll-spy
+  //     can't immediately fight it and reassert the old month mid-scroll
+  //   - no months at all -> leave activeMonthKey exactly as it is (don't
+  //     clear it to null) and don't scroll. The nav bar has nothing to show
+  //     either way (it's gated on groups.length > 1), but the PREVIOUS month
+  //     context must survive a filter that transiently matches nothing, so
+  //     it's simply restored once the filter is relaxed/cleared again —
+  //     clearing to null would instead make that restoration look
+  //     indistinguishable from a fresh initial mount and fall into the next
+  //     bullet's first-month default, discarding context the user never
+  //     asked to lose
+  //   - initial mount (activeMonthKey still null) -> establish the first
+  //     month as active with NO scroll: there is nothing to jump away from,
+  //     the page is already sitting at its natural starting position
+  // Clearing filters falls entirely under the first bullet: every month
+  // that was visible while filtered remains visible once filters are
+  // cleared (clearing only adds events back, never removes any), so the
+  // active month is always still present and this effect is a no-op.
+  useEffect(() => {
+    if (groups.length === 0) return;
+    if (activeMonthKey && groups.some((g) => g.monthKey === activeMonthKey)) return;
+    if (activeMonthKey === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveMonthKey(groups[0].monthKey);
+      return;
+    }
+
+    // monthKey is a zero-padded "YYYY-MM" string and `groups` is already in
+    // chronological order, so plain string comparison/`find` gives the
+    // nearest later month directly.
+    const nextMatch = groups.find((g) => g.monthKey > activeMonthKey);
+    const target = nextMatch ? nextMatch.monthKey : groups[0].monthKey;
+
+    isProgrammaticScrollRef.current = true;
+    setActiveMonthKey(target);
+    const el = document.getElementById(`month-${target}`);
+    el?.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (window.location.hash !== `#month-${target}`) {
+      history.replaceState(null, "", `#month-${target}`);
+    }
+    scheduleScrollSettle();
+  }, [groups, activeMonthKey]);
 
   useEffect(() => {
     if (groups.length < 2) return;
