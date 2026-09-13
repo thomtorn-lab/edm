@@ -44,11 +44,21 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
             back to text-xs at sm+ — leading-4 pins the line-height to
             text-xs's own default (1rem) so the control's height stays
             identical at every breakpoint; only the font-size crosses the
-            16px threshold on mobile. */}
+            16px threshold on mobile.
+            Mobile visual-weight refinement (2026-09-13): the 16px-safe
+            mobile text reads heavier than the old 12px chip, so font-
+            weight/letter-spacing/horizontal padding are each nudged down
+            ONE step on mobile only (font-medium, tracking-normal, px-2.5),
+            restored to their original desktop values at sm+ (font-
+            semibold, tracking-wide, px-3) — the exact same base+sm:
+            override pattern as the font-size fix above. Vertical padding
+            (py-1.5) and the control's line-height are untouched, so the
+            already-shipped mobile touch-target height (~30px) is
+            unaffected — only visual weight changes, not size. */}
         <select
           value={country}
           onChange={(e) => setCountry(e.target.value)}
-          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-4 sm:text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border-strong bg-surface-1 px-2.5 py-1.5 sm:px-3 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All countries</option>
           {countries.map((c) => (
@@ -58,7 +68,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
         <select
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-4 sm:text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border-strong bg-surface-1 px-2.5 py-1.5 sm:px-3 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All months</option>
           {months.map((m) => (
@@ -68,7 +78,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
         <select
           value={genre}
           onChange={(e) => setGenre(e.target.value as GenreSlug | "all")}
-          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-4 sm:text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border-strong bg-surface-1 px-2.5 py-1.5 sm:px-3 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All genres</option>
           {genres.map((g) => (
