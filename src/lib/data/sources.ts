@@ -559,6 +559,48 @@ export const SOURCES: Source[] = [
       "Registered following a three-round read-only viability probe (HVADERPAA — NARROW TECHNICAL VIABILITY PROBE, closed 'B. BUILD RECOMMENDED WITH CONDITIONS'): every current/upcoming event at 14 candidate venues was individually opened and classified against the same EDM relevance rule every other source uses (electronic DANCE music must be central/defining — never inferred from the venue alone in either direction). Of 30 raw events inspected, 23 were relevant and 21 were genuinely incremental (zero existing Production coverage, verified live via venue-events cross-check), but 100% of that incremental value came from just 5 of the 14 venues — Den Anden Side (9), MODULE (4), Jolene (4), Baggen (2), and Klub Werkstatt (2, EXCLUDED here — see below). The other 9 probed venues (RUST, H15, Halvandet, Pylonen, Bolsjefabrikken, Mayhem, Hotel Cecil, UnderWerket, Basement) contributed zero incremental events — several (UnderWerket, Basement's one candidate, H15's two non-Sunrave candidates) are hardcore/metal/jazz/wellness-class events with an explicit non-electronic genre stated in their own description text, not judgment calls. Klub Werkstatt is deliberately excluded from Phase 1 despite its 2 genuinely-incremental HvadErPå events: it already has its own dedicated first-party adapter (src-klub-werkstatt in this same file) from an earlier onboarding pass, whose current 0-event Production state is a separate problem to investigate directly rather than mask by adding a second source for the same venue. Phase 1 is therefore scoped to exactly Den Anden Side, MODULE, Jolene and Baggen's own venue pages (never the site-wide feed, never any venue outside this allowlist even if hvaderpaa's markup referenced one — see hvaderpaaAdapter.ts's own ALLOWED_VENUES/isAllowedVenueName guard). Technical reliability is fully confirmed: clean, consistent schema.org Event/ItemList JSON-LD across every one of ~50 live fetches across all three probe rounds, GET-only, no auth/JS-rendering barrier. No event sampled anywhere in the probe ever carried a genuine event-specific Official Event URL in its own offers.url (always Resident Advisor, a ticket platform, or absent) — officialEventUrl is therefore always the hvaderpaa event page itself (Source role only, structurally guaranteed never to render 'Official event' by this source's general-aggregator sourceType), and offers.url is classified role-by-destination rather than trusted merely for being in that field: ra.co -> residentAdvisorUrl, billetto.dk -> ticketUrl, anything else (songkick.com, bandsintown.com, etc.) -> neither. H15's one relevant probe event (SUNRAVE SESSIONS /// 4.0) was found already present in Production via src-billetto (exact title+date match) — real, live evidence that dedup against existing sources works and one more reason H15 stays out of Phase 1's allowlist regardless.",
   },
 
+  // ---- Pylonen: first-party venue, discovery-only ----
+  {
+    id: "src-pylonen",
+    lastCompleteSyncAt: null,
+    sourceName: "Pylonen",
+    publicName: "Pylonen",
+    sourceType: "official-venue",
+    baseUrl: "https://pylonen.horse",
+    // Discovery only, despite being a genuine first-party venue source (see
+    // src/lib/adapters/pylonenAdapter.ts's own module doc comment for the
+    // full technical picture): the venue's own homepage embeds its full
+    // programme as a bare HTML list with no structured data behind it (no
+    // custom REST post type, no events sitemap, no JSON-LD) and only a
+    // minority of items ever get their own real detail page — electronic
+    // relevance genuinely cannot be determined from a bare title alone for
+    // most of the programme, so this can never be an ingestion/verification/
+    // link source the way Hangaren/Culture Box/Pumpehuset are.
+    roles: ["discovery"],
+    adapter: "pylonen-html",
+    trustLevel: "medium",
+    // NEVER true — src/db/sync.ts's sourceAutoPublishAllowed gate enforces
+    // this regardless of what the shared pipeline would otherwise decide,
+    // same as src-kultunaut/src-hvaderpaa. Product decision (Pylonen source-
+    // gap audit, 2026-09-13): the venue MUST be covered in Discovery Queue
+    // even though automated publication isn't reliable enough to trust.
+    autoPublish: false,
+    // No cancelled/postponed signal exists anywhere in Pylonen's markup —
+    // "none" means src/db/sync.ts's cancellation-safety gate never acts on
+    // this source at all; an item disappearing from the homepage is never
+    // treated as a cancellation (explicit product instruction).
+    cancellationPolicy: "none",
+    syncFrequency: "every 6h",
+    active: true,
+    lastSuccessfulSync: null,
+    lastAttemptedSync: null,
+    lastError: null,
+    eventsFound: 0,
+    eventsUpdated: 0,
+    integrationNote:
+      "Registered following the Pylonen source-gap audit (2026-09-13): the venue (v-pylonen, already registered 2026-08-29 as registry/curated-guide data only — see venueCoverageExpansion.ts) had zero events from any source despite a real, live 24-item upcoming programme on its own site, confirmed via live inspect-source checks (venue-events: 1 manually-added event, 0 from any adapter; discovery-queue-venues: zero pending rows anywhere referencing Pylonen/Christians Brygge/Langebro). Technical findings: robots.txt fully permissive, server-rendered WordPress with no JS-rendering barrier, but no structured programme data of any kind (wp-json/wp/v2/types confirmed only stock WP post types, no events sitemap, no JSON-LD on the homepage or the one real event page fetched) — only 1 of 24 live-sampled programme items carried its own detail-page URL; the rest are bare title+date list entries with no description/genre/ticket evidence. That one linked item (BØLLEBAS) carries a real first-party description confirming genuine hardcore/electronic content, and the venue's own editorial profile independently names a Pleasure Control day-party series and a Fluid Sound Collective residency as its electronic programming — real electronic content exists here, but the source's own data is too thin to auto-classify most of it. Product decision: cover it as discovery-only rather than not at all, or building a fragile title-only auto-publish heuristic — every item enters Discovery Queue at whatever confidence the shared pipeline's existing evidence rules produce (title-only items typically medium/low via the same deterministic-mapping fallback every other source already uses, never adapter-invented), and a human decides. See pylonenAdapter.ts's own module doc comment for the full identity/link-role/cancellation design and its one documented limitation (a bare item's Discovery Queue identity changes, a one-time event, if it later gains its own real detail page).",
+  },
+
   // ---- Eventbrite: supplemental discovery only ----
   {
     id: "src-eventbrite",

@@ -1,0 +1,72 @@
+name: Sync Pylonen
+
+# Scheduling entry point for the Pylonen discovery-only adapter
+# (src/lib/adapters/pylonenAdapter.ts). Calls the deployed app's
+# POST /api/sync/pylonen on a fixed schedule, matching
+# src/lib/data/sources.ts's `syncFrequency` for src-pylonen ("every 6h").
+#
+# Same structure/safety model as sync-hvaderpaa.yml and friends — see
+# README.md's "Scheduling" section. This source is discovery-only
+# (autoPublish: false, enforced in src/db/sync.ts) — every sync here can
+# only ever create/refresh Discovery Queue rows, never a published event,
+# no matter what the shared pipeline itself would otherwise decide — see
+# pylonenAdapter.ts's own module doc comment for the full technical/identity
+# design behind this.
+#
+# SYNC_BASE_URL / SYNC_TRIGGER_TOKEN / VERCEL_AUTOMATION_BYPASS_SECRET are
+# shared repository-level secrets/variable already configured for the other
+# sync-*.yml workflows. Cron offset (:40) doesn't collide with Hangaren
+# (:00), ALICE (:05), Poolen (:15), Gravity (:20), Culture Box (:30),
+# KultuNaut (:35), Billetto (:45), Pumpehuset (:50) or HvadErPå (:55).
+
+on:
+  schedule:
+    - cron: "40 */6 * * *"
+  workflow_dispatch: {} # manual re-trigger, e.g. the first post-merge sync or a retry after a fix
+
+concurrency:
+  group: sync-pylonen
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Pylonen sync
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set."
+            exit 1
+          fi
+          if [ -z "${SYNC_TRIGGER_TOKEN}" ]; then
+            echo "::error::Repository secret SYNC_TRIGGER_TOKEN is not set."
+            exit 1
+          fi
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is not set."
+            exit 1
+          fi
+
+          http_code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 120 \
+            -o /tmp/sync-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/sync/pylonen")
+
+          echo "HTTP status: ${http_code}"
+          echo "Response:"
+          cat /tmp/sync-response.json
+          echo
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Pylonen sync returned HTTP ${http_code} — see response body above."
+            exit 1
+          fi

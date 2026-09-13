@@ -16,6 +16,7 @@ import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangar
 import { createPoolenAdapter, POOLEN_SOURCE_ID } from "@/lib/adapters/poolenAdapter";
 import { createPumpehusetAdapter, PUMPEHUSET_SOURCE_ID } from "@/lib/adapters/pumpehusetAdapter";
 import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvaderpaaAdapter";
+import { createPylonenAdapter, PYLONEN_SOURCE_ID } from "@/lib/adapters/pylonenAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -431,6 +432,12 @@ const DRY_RUN_ADAPTERS: Record<string, () => SourceAdapter> = {
   // the real Production DB's existing venues/events, compared against the
   // 21-incremental-event probe baseline, before the source is ever enabled.
   [HVADERPAA_SOURCE_ID]: createHvaderpaaAdapter,
+  // Pylonen discovery-only source (Pylonen source-gap audit, 2026-09-13):
+  // registered so the required pre-merge read-only dry-run can run against
+  // LIVE pylonen.horse data and the real Production DB's existing venues/
+  // events (venue resolution, dedup, decision/hold-reason breakdown) before
+  // the source is ever enabled.
+  [PYLONEN_SOURCE_ID]: createPylonenAdapter,
 };
 
 /**
