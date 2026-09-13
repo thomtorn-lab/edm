@@ -160,22 +160,46 @@ describe("EventRow — genre display and ticket/free CTA", () => {
   });
 });
 
-describe("EventRow — clickability affordance (Round 13: brighten-only title, non-purple)", () => {
+describe("EventRow — clickability affordance (Round 13: brighten-only title, non-purple; superseded 2026-09-13 — brighten alone was imperceptible against the near-white --text-primary token, so an underline-reveal affordance was added to match the venue link below it)", () => {
   afterEach(cleanup);
 
-  it("gives the event title link a slight brighten on hover/focus, no purple color change, no underline, and a pointer cursor", () => {
+  it("still links the event title to the correct individual event URL", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.getAttribute("href")).toBe("/events/test-event");
+  });
+
+  it("gives the event title link a brighten + underline-reveal affordance on hover/focus, no purple color change, and a pointer cursor", () => {
     render(<EventRow event={makeEvent()} />);
     const titleLink = screen.getByRole("link", { name: /Test Event/ });
     const classes = titleLink.className.split(/\s+/);
-    expect(titleLink.getAttribute("href")).toBe("/events/test-event");
     expect(classes).toContain("hover:brightness-110");
     expect(classes).toContain("focus-visible:brightness-110");
     expect(classes).toContain("cursor-pointer");
+    expect(classes).toContain("underline");
+    expect(classes).toContain("decoration-transparent");
+    expect(classes).toContain("hover:decoration-current");
+    expect(classes).toContain("focus-visible:decoration-current");
     expect(classes).not.toContain("hover:text-accent");
     expect(classes).not.toContain("focus-visible:text-accent");
     expect(classes).not.toContain("hover:text-accent-strong");
     expect(classes).not.toContain("focus-visible:text-accent-strong");
-    expect(titleLink.className).not.toContain("underline");
+  });
+
+  it("gives a subtle tap/active affordance for touch devices, where :hover never fires", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.className.split(/\s+/)).toContain("active:decoration-current");
+  });
+
+  it("the title link's clickable area is not reduced — still a block-level element spanning its column, still allowed up to two lines on desktop", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    const classes = titleLink.className.split(/\s+/);
+    expect(classes).toContain("block");
+    expect(classes).toContain("sm:line-clamp-2");
+    expect(classes).not.toContain("inline");
+    expect(classes).not.toContain("truncate");
   });
 
   it("gives the venue name link a brighten + subtle underline on hover/focus, no purple color change, linking to the venue page", () => {
@@ -225,6 +249,47 @@ describe("EventRow — no whole-row hover affordance (Round 10)", () => {
     const row = li?.firstElementChild as HTMLElement;
     expect(row.className).not.toContain("group-hover");
     expect(row.className).not.toContain("bg-surface-1");
+  });
+});
+
+describe("EventRow — title-link affordance change introduces no nested-interactive ambiguity (2026-09-13)", () => {
+  afterEach(cleanup);
+
+  it("the title link contains no nested link or button — no interactive elements inside an interactive element", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.querySelector("a")).toBeNull();
+    expect(titleLink.querySelector("button")).toBeNull();
+  });
+
+  it("Official event / Tickets CTAs remain separate elements from the title link, opening in a new tab independently", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          officialEventUrl: "https://venue.example.com/event",
+          ticketUrl: "https://billetto.dk/e/x",
+        })}
+      />,
+    );
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    const officialEvent = screen.getByRole("link", { name: /Official event/i });
+    const tickets = screen.getByRole("link", { name: /Tickets/i });
+
+    expect(titleLink.contains(officialEvent)).toBe(false);
+    expect(officialEvent.contains(titleLink)).toBe(false);
+    expect(titleLink.contains(tickets)).toBe(false);
+    expect(officialEvent.getAttribute("href")).toBe("https://venue.example.com/event");
+    expect(officialEvent.getAttribute("target")).toBe("_blank");
+    expect(tickets.getAttribute("href")).toBe("https://billetto.dk/e/x");
+    expect(tickets.getAttribute("target")).toBe("_blank");
+  });
+
+  it("the Add to calendar control remains a separate button, independent of the title link", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    const calendarButton = screen.getByRole("button", { name: /Add to calendar/i });
+    expect(titleLink.contains(calendarButton)).toBe(false);
+    expect(calendarButton.contains(titleLink)).toBe(false);
   });
 });
 
