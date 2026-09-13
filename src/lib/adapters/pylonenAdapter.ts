@@ -48,21 +48,21 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * party runs three times in the current programme) correctly get three
  * distinct identities.
  *
- * KNOWN LIMITATION (documented, not silently swallowed): once a bare item
- * genuinely gains its own real event page, `officialEventUrl` becomes
- * non-null and the shared dedup key (`officialEventUrl ?? sourceUrl`)
- * switches from the synthetic identity to that real URL — a one-time
- * discontinuity the shared sync/pipeline layer has no generalized
- * "pending-row reattachment" mechanism for (that layer only ever fuzzy-
- * rematches against already-PUBLISHED events, never against other pending
- * Discovery Queue rows — see src/lib/adapters/pipeline.ts's dedup step).
- * The old synthetic-keyed pending row is left in place (never deleted;
- * simply stops being refreshed, visible via its own frozen lastSeenAt — the
- * same "stale" signal the rest of the admin tooling already surfaces) and a
- * new row is created under the real-URL identity. This is a narrow, rare
- * edge case — most items never gain a page at all — and is the honest limit
- * of "reattach where safely possible" without changing the shared dedup-key
- * formula every other source also depends on.
+ * IDENTITY STABILITY ACROSS THE BARE -> DETAIL-PAGE LIFECYCLE (Pylonen DQ
+ * identity stabilization, 2026-09-13 — supersedes an earlier documented
+ * limitation here): a bare item genuinely can gain its own real event page
+ * between syncs, and Pylonen's own publishing model makes this a routine,
+ * expected transition rather than a rare edge case. Every candidate below
+ * sets `stableSourceUrl: true` (see RawCandidateEvent.stableSourceUrl's own
+ * doc comment) specifically so src/db/sync.ts's dedup key formula keeps
+ * trusting THIS synthetic `sourceUrl` as identity even once a real
+ * `officialEventUrl` appears — the same real-world event's Discovery Queue
+ * row never re-keys, never orphans, and never spawns a duplicate. The real
+ * URL is not lost: it still reaches the row as admin-visible "Official
+ * Event" metadata (discoveryQueue.probableOfficialEventUrl) via a dedicated
+ * self-heal in src/lib/sync.ts's buildDiscoveryQueueClassificationPatch,
+ * exactly once it's first seen, and stays protected by that row's own
+ * overriddenFields like every other admin-editable field.
  *
  * LINK ROLES: an item's own real detail page (`<a href>` in the programme
  * list, same-host-checked) becomes `officialEventUrl` — a genuine first-
@@ -256,6 +256,11 @@ export async function parsePylonenHomepage(
         priceFrom: null,
         genreHint,
         genreConfidenceHint,
+        // See this module's own "IDENTITY STABILITY ACROSS THE BARE ->
+        // DETAIL-PAGE LIFECYCLE" doc comment — this synthetic sourceUrl is
+        // this candidate's stable identity even once officialEventUrl above
+        // becomes non-null on a later sync.
+        stableSourceUrl: true,
       });
     } catch {
       // A single malformed record must never take down the whole sync.

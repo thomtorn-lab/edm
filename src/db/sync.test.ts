@@ -161,6 +161,7 @@ const {
   applySourceCancellationUnpublish,
   applySourceCancellationRestore,
   createEvent,
+  applyDiscoveryClassificationUpdate,
 } = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 
@@ -580,6 +581,157 @@ describe("Ignore Persistence — an explicitly ignored candidate never spawns a 
 
     expect(insertDiscoveryItem).not.toHaveBeenCalled();
     expect(result.queuedForReview).toBe(0);
+  });
+});
+
+/**
+ * Pylonen DQ identity stabilization (2026-09-13): a Pylonen homepage
+ * programme item can start out as a bare list entry (no officialEventUrl)
+ * and later gain a real first-party event-detail page for the SAME
+ * real-world event. pylonenAdapter.ts sets `stableSourceUrl: true` on every
+ * candidate specifically so this run's dedupKey computation (see
+ * src/db/sync.ts, just above the `match` check) keeps trusting the
+ * candidate's own synthetic sourceUrl as identity even once officialEventUrl
+ * appears — the row never re-keys, so it can't orphan and duplicate. The
+ * real URL still reaches the row as admin-visible metadata via
+ * buildDiscoveryQueueClassificationPatch's OFFICIAL-EVENT-URL ENRICHMENT
+ * self-heal (src/lib/sync.ts). Mirrors the Ignore Persistence describe
+ * block's own mockThreeSelects pattern above (same three sequential
+ * db.select() calls runSourceSyncLocked always makes: sourceEventLinks,
+ * pending discoveryQueue, ignored discoveryQueue).
+ */
+describe("Pylonen DQ identity stability across the bare -> detail-page lifecycle (Pylonen DQ identity stabilization, 2026-09-13)", () => {
+  function mockThreeSelects(linksResult: unknown[], pendingResult: unknown[], ignoredResult: unknown[]) {
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once(linksResult))
+      .mockImplementationOnce(() => once(pendingResult))
+      .mockImplementationOnce(() => once(ignoredResult));
+  }
+
+  const SYNTHETIC_URL = "https://pylonen.horse/#pylonen-2026-09-19-myrk";
+  const DETAIL_URL = "https://pylonen.horse/myrk/";
+
+  function bareMyrk(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return {
+      ...rawCandidate,
+      sourceId: "src-pylonen",
+      title: "Myrk",
+      description: null,
+      artists: [],
+      venueName: "Pylonen",
+      sourceUrl: SYNTHETIC_URL,
+      officialEventUrl: null,
+      genreHint: "techno",
+      genreConfidenceHint: "high",
+      stableSourceUrl: true,
+      ...overrides,
+    };
+  }
+
+  function pendingRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "dq-myrk",
+      sourceUrl: SYNTHETIC_URL,
+      status: "pending",
+      predictedGenre: "techno",
+      genreConfidence: "high",
+      overriddenFields: [],
+      overallConfidence: "medium",
+      missingFields: [],
+      probableSubVenue: null,
+      suspectedDuplicateOfEventId: null,
+      venueResolvedDecision: null,
+      venueResolvedHoldReason: null,
+      holdReason: null,
+      probableTicketUrl: null,
+      probableOfficialEventUrl: null,
+      ...overrides,
+    };
+  }
+
+  it("1. a bare item creates exactly one DQ identity, keyed on its synthetic sourceUrl, with a null Official Event URL", async () => {
+    mockThreeSelects([], [], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk()]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    const inserted = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(inserted.sourceUrl).toBe(SYNTHETIC_URL);
+    expect(inserted.probableOfficialEventUrl).toBeNull();
+  });
+
+  it("2. a repeated bare sync refreshes the same identity — no new row is created, the existing row's lastSeenAt is bumped instead", async () => {
+    mockThreeSelects([], [pendingRow()], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk()]));
+    vi.setSystemTime(new Date("2026-09-14T10:00:00Z"));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith(
+      "dq-myrk",
+      expect.objectContaining({ lastSeenAt: new Date("2026-09-14T10:00:00Z") }),
+    );
+  });
+
+  it("3. the same item later gaining a real officialEventUrl still resolves to the SAME DQ identity — dedupKey stays the synthetic sourceUrl, never re-keys to the newly-appeared URL", async () => {
+    mockThreeSelects([], [pendingRow()], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ officialEventUrl: DETAIL_URL })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    // Resolved via the SAME pending row (dq-myrk) the bare item queued —
+    // never a fresh insert under the new URL.
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-myrk", expect.anything());
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("4. officialEventUrl enriches the existing candidate's row as admin-visible Official Event metadata", async () => {
+    mockThreeSelects([], [pendingRow()], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ officialEventUrl: DETAIL_URL })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith(
+      "dq-myrk",
+      expect.objectContaining({ probableOfficialEventUrl: DETAIL_URL }),
+    );
+  });
+
+  it("5. no second pending DQ row is ever created once officialEventUrl appears for an already-pending candidate", async () => {
+    mockThreeSelects([], [pendingRow()], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ officialEventUrl: DETAIL_URL })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("6. an ignored item remains ignored after gaining officialEventUrl — identity stays stable, so ignore persistence's dedupKey lookup still matches", async () => {
+    mockThreeSelects(
+      [],
+      [],
+      [{ id: "dq-myrk-old", sourceUrl: SYNTHETIC_URL, status: "ignored", sourceId: "src-pylonen" }],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ officialEventUrl: DETAIL_URL })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(applyDiscoveryClassificationUpdate).not.toHaveBeenCalled();
+  });
+
+  it("7. two genuinely different Pylonen events (distinct title+date) get two distinct DQ identities, never merged", async () => {
+    mockThreeSelects([], [], []);
+    const other = bareMyrk({
+      title: "Adam/Shaan Fest",
+      sourceUrl: "https://pylonen.horse/#pylonen-2026-12-12-adam-shaan-fest",
+    });
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk(), other]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(2);
+    const urls = vi.mocked(insertDiscoveryItem).mock.calls.map((c) => c[0].sourceUrl);
+    expect(new Set(urls).size).toBe(2);
   });
 });
 

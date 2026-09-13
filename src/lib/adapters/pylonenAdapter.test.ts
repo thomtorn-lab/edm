@@ -55,6 +55,12 @@ describe("Pylonen adapter — programme parsing", () => {
       // Cancellation is unsupported for this source — never invented true or false.
       expect(r.cancelledHint).toBeUndefined();
       expect(r.soldOutHint).toBeUndefined();
+      // Pylonen DQ identity stabilization, 2026-09-13 — every candidate's
+      // own sourceUrl is a stable per-candidate identity in its own right
+      // (see RawCandidateEvent.stableSourceUrl's own doc comment), so
+      // src/db/sync.ts's dedup key must never re-key off a later-appearing
+      // officialEventUrl for this source.
+      expect(r.stableSourceUrl).toBe(true);
     }
   });
 });
@@ -103,14 +109,18 @@ describe("Pylonen adapter — deterministic synthetic identity", () => {
     expect(occurrences[0].sourceUrl).not.toBe(occurrences[1].sourceUrl);
   });
 
-  it("a real event-detail URL becomes the dedup key (officialEventUrl ?? sourceUrl), taking priority over the synthetic identity", async () => {
+  it("a real event-detail URL is still captured as officialEventUrl, but never displaces the synthetic sourceUrl as this candidate's identity (Pylonen DQ identity stabilization, 2026-09-13 — see src/db/sync.ts's dedupKey computation, which reads stableSourceUrl before falling back to officialEventUrl ?? sourceUrl)", async () => {
     const results = await parsePylonenHomepage(HOMEPAGE_HTML, async (url) =>
       url === "https://pylonen.horse/bollebass/" ? BOLLEBASS_HTML : null,
     );
     const bollebas = results.find((r) => r.title === "BØLLEBAS")!;
     expect(bollebas.officialEventUrl).toBe("https://pylonen.horse/bollebass/");
-    const dedupKey = bollebas.officialEventUrl ?? bollebas.sourceUrl;
-    expect(dedupKey).toBe("https://pylonen.horse/bollebass/");
+    expect(bollebas.stableSourceUrl).toBe(true);
+    expect(bollebas.sourceUrl.startsWith(`${PYLONEN_BASE_URL}/#pylonen-2026-11-06-`)).toBe(true);
+    // The effective dedupKey (computed in src/db/sync.ts, not here) is this
+    // candidate's own sourceUrl, not officialEventUrl — see
+    // src/db/sync.test.ts's own dedicated identity-stability describe block
+    // for full end-to-end coverage of that computation.
   });
 });
 

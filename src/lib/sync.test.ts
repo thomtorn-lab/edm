@@ -418,6 +418,7 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     venueResolvedHoldReason: null,
     holdReason: null,
     probableTicketUrl: null,
+    probableOfficialEventUrl: null,
     ...overrides,
   };
 }
