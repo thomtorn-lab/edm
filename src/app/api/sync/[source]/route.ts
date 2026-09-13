@@ -9,6 +9,7 @@ import { createAliceAdapter, ALICE_SOURCE_ID } from "@/lib/adapters/aliceAdapter
 import { createGravityAdapter, GRAVITY_SOURCE_ID } from "@/lib/adapters/gravityAdapter";
 import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
 import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvaderpaaAdapter";
+import { createPylonenAdapter, PYLONEN_SOURCE_ID } from "@/lib/adapters/pylonenAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 
 /**
@@ -36,6 +37,11 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   // integrationNote in src/lib/data/sources.ts for the full probe evidence
   // behind this Phase 1 scope.
   hvaderpaa: { sourceId: HVADERPAA_SOURCE_ID, displayName: "HvadErPå", create: createHvaderpaaAdapter },
+  // Discovery only — first-party venue source with no structured programme
+  // data (see pylonenAdapter.ts's own module doc comment and src-pylonen's
+  // integrationNote in src/lib/data/sources.ts). Same autoPublish:false
+  // enforcement as kultunaut/hvaderpaa above.
+  pylonen: { sourceId: PYLONEN_SOURCE_ID, displayName: "Pylonen", create: createPylonenAdapter },
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {

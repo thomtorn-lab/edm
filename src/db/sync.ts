@@ -300,7 +300,18 @@ async function runSourceSyncLocked(
 
       const linkedEventId = raw.officialEventUrl ? (linkedByUrl.get(raw.officialEventUrl) ?? null) : null;
       const match = findSyncMatch(linkedEventId, result.duplicateOfEventId, result.duplicateConfidence);
-      const dedupKey = raw.officialEventUrl ?? raw.sourceUrl;
+      // Pylonen DQ identity stabilization, 2026-09-13: a source can declare
+      // its own sourceUrl a stable per-candidate identity in its own right
+      // (RawCandidateEvent.stableSourceUrl) specifically because it may gain
+      // a real officialEventUrl for the SAME candidate on a later sync — the
+      // default formula below would otherwise re-key that candidate's
+      // dedupKey out from under an already-pending row the moment that URL
+      // appears, orphaning it and spawning a duplicate. Every other adapter
+      // leaves stableSourceUrl unset and gets the exact prior behavior. This
+      // can never affect `linkedEventId` above (already computed, and always
+      // reads raw.officialEventUrl directly) — matching against an
+      // already-published event is untouched for every source.
+      const dedupKey = raw.stableSourceUrl ? raw.sourceUrl : (raw.officialEventUrl ?? raw.sourceUrl);
 
       if (match) {
         const existing = existingById.get(match.eventId);
@@ -561,6 +572,11 @@ async function runSourceSyncLocked(
             // run's own re-parse of the exact same page, straight from the
             // adapter (already same-host-filtered by isSameHost).
             ticketUrl: raw.ticketUrl,
+            // Pylonen DQ identity stabilization, 2026-09-13 — see
+            // buildDiscoveryQueueClassificationPatch's own OFFICIAL-EVENT-URL
+            // ENRICHMENT doc comment. This run's own fresh extraction,
+            // straight from the adapter, independent of dedupKey.
+            officialEventUrl: raw.officialEventUrl,
           },
           {
             status: existingPending.status,
@@ -575,6 +591,7 @@ async function runSourceSyncLocked(
             venueResolvedHoldReason: existingPending.venueResolvedHoldReason as HoldReason,
             holdReason: existingPending.holdReason as HoldReason,
             probableTicketUrl: existingPending.probableTicketUrl,
+            probableOfficialEventUrl: existingPending.probableOfficialEventUrl,
           },
         );
         // lastSeenAt is unconditional — this candidate's own sourceUrl was
@@ -623,6 +640,14 @@ async function runSourceSyncLocked(
         // (admin/manual-event work package, 2026-08-24).
         probableEnd: raw.endDatetime ? new Date(raw.endDatetime) : null,
         probableTicketUrl: raw.ticketUrl,
+        // Pylonen DQ identity stabilization, 2026-09-13 — for a source with
+        // stableSourceUrl set, sourceUrl (== dedupKey, just below) is the
+        // row's identity, not a real officialEventUrl for display; this is
+        // what lets the "Official Event" link still show the genuine
+        // first-party URL from the very first sync it's seen, same as any
+        // other source's officialEventUrl. Every other adapter's
+        // officialEventUrl either equals dedupKey already or is null here.
+        probableOfficialEventUrl: raw.officialEventUrl,
         probableFree: raw.priceFrom === 0,
         probableVenueName: raw.venueName,
         probableSubVenue: result.resolvedSubVenue,

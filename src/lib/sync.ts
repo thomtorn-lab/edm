@@ -324,6 +324,15 @@ export interface DiscoveryQueueTarget {
    *  buildDiscoveryQueueClassificationPatch's own doc comment for the exact
    *  bug this reverses. */
   probableTicketUrl: string | null;
+  /** Currently stored probable_official_event_url (Pylonen DQ identity
+   *  stabilization, 2026-09-13) — the admin-visible "Official Event" URL
+   *  candidate, tracked separately from this row's own dedup identity so a
+   *  source whose sourceUrl is itself the stable identity (see
+   *  RawCandidateEvent.stableSourceUrl) can still surface a genuine
+   *  officialEventUrl once one appears, without that appearance ever
+   *  re-keying the row. See buildDiscoveryQueueClassificationPatch's own
+   *  OFFICIAL-EVENT-URL ENRICHMENT self-heal below. */
+  probableOfficialEventUrl: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -432,6 +441,17 @@ export interface DiscoveryQueueClassification {
    * code-only fix can never reach retroactively.
    */
   ticketUrl?: string | null;
+  /**
+   * This run's freshly re-extracted officialEventUrl (Pylonen DQ identity
+   * stabilization, 2026-09-13) — straight from the adapter, independent of
+   * whatever this row's own dedup identity is keyed on (see
+   * RawCandidateEvent.stableSourceUrl). Optional and defaults to undefined
+   * so every pre-existing call site keeps compiling and behaving exactly as
+   * before: omitting it never touches probableOfficialEventUrl. Unlike
+   * ticketUrl's self-heal above, this is SET-only (never clears a stored
+   * value) — see buildDiscoveryQueueClassificationPatch's own doc comment.
+   */
+  officialEventUrl?: string | null;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -448,6 +468,8 @@ export interface DiscoveryQueueClassificationPatch {
   holdReason?: HoldReason;
   /** See DiscoveryQueueClassification.ticketUrl / DiscoveryQueueTarget.probableTicketUrl's own doc comments for the self-heal semantics this carries. May be explicitly null to clear a stale same-host URL; omitted (undefined) always means "don't touch it". */
   probableTicketUrl?: string | null;
+  /** See DiscoveryQueueClassification.officialEventUrl / DiscoveryQueueTarget.probableOfficialEventUrl's own doc comments for the self-heal semantics this carries. Only ever set (never null) — omitted (undefined) always means "don't touch it". */
+  probableOfficialEventUrl?: string | null;
 }
 
 /**
@@ -682,6 +704,37 @@ export function buildDiscoveryQueueClassificationPatch(
     existing.probableTicketUrl !== null
   ) {
     patch.probableTicketUrl = null;
+  }
+
+  // OFFICIAL-EVENT-URL ENRICHMENT (Pylonen DQ identity stabilization,
+  // 2026-09-13). A source can register a stable per-candidate identity in
+  // its own sourceUrl (RawCandidateEvent.stableSourceUrl) specifically
+  // because most of its events have no officialEventUrl at all when first
+  // seen — Pylonen's homepage programme list is the motivating case: a bare
+  // item is queued under its synthetic sourceUrl identity, and the SAME
+  // real-world event can later gain a genuine first-party event-detail page
+  // between syncs. Because dedupKey for such a source never moves off that
+  // stable sourceUrl (see src/db/sync.ts), the newly-appeared
+  // officialEventUrl would otherwise never reach the row at all once it's
+  // already pending — this is how it still gets surfaced, as admin-visible
+  // "Official Event" metadata (discoveryQueue.probableOfficialEventUrl,
+  // already preferred over sourceUrl by publishDiscoveryItem), without ever
+  // touching the row's identity or creating a second row. Deliberately
+  // SET-only — the opposite direction from the ticket-url self-heal above —
+  // because a source either has no reliable officialEventUrl signal
+  // (fresh.officialEventUrl omitted/undefined; every adapter that never
+  // sets stableSourceUrl behaves exactly as before) or a real detail page
+  // that, once published, doesn't get un-published: there's no equivalent
+  // "explicit null means genuinely gone" signal to trust here the way a
+  // same-host ticket-link re-parse provides. Same overriddenFields guard as
+  // every other self-heal in this function, so an admin's own hand-entered
+  // Official Event URL is never clobbered by a later sync.
+  if (
+    !existing.overriddenFields.includes("probableOfficialEventUrl") &&
+    fresh.officialEventUrl != null &&
+    fresh.officialEventUrl !== existing.probableOfficialEventUrl
+  ) {
+    patch.probableOfficialEventUrl = fresh.officialEventUrl;
   }
 
   return patch;

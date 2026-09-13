@@ -907,6 +907,16 @@ export async function applyDiscoveryClassificationUpdate(
      * own doc comment for the exact bug this reverses.
      */
     probableTicketUrl?: string | null;
+    /**
+     * OFFICIAL-EVENT-URL ENRICHMENT (Pylonen DQ identity stabilization,
+     * 2026-09-13) — set-only (never null) once a fresh adapter parse finds a
+     * genuine officialEventUrl for a row whose own identity doesn't move
+     * when that URL appears (RawCandidateEvent.stableSourceUrl); omitting
+     * the key entirely still means "don't touch it". See
+     * src/lib/sync.ts::buildDiscoveryQueueClassificationPatch's own doc
+     * comment.
+     */
+    probableOfficialEventUrl?: string | null;
   },
 ) {
   if (Object.keys(patch).length === 0) return;

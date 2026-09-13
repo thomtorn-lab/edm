@@ -96,6 +96,35 @@ export interface RawCandidateEvent {
    * hints above; omitted or null whenever cancelledHint isn't true.
    */
   cancellationEvidence?: string | null;
+  /**
+   * True when THIS candidate's own `sourceUrl` is already a stable, unique
+   * per-candidate identity in its own right — never a shared listing-page
+   * URL every candidate from the source reuses (Pylonen DQ identity
+   * stabilization, 2026-09-13). Every other adapter's `sourceUrl` is the
+   * latter (e.g. HANGAREN_EVENTS_URL, identical across every Hangaren
+   * candidate), which is exactly why src/db/sync.ts's dedup key formula
+   * normally prefers `officialEventUrl` over `sourceUrl` — for those
+   * adapters, officialEventUrl is the only thing that can identify one
+   * candidate apart from another. Pylonen's adapter (pylonenAdapter.ts)
+   * builds a deterministic synthetic identity into `sourceUrl` itself
+   * (canonical venue + normalized title + Europe/Copenhagen local date)
+   * specifically because most of its events have no stable
+   * `officialEventUrl` at all — and, crucially, a bare item can gain a real
+   * one between syncs for the SAME real-world event. Without this flag, that
+   * transition would flip the dedup key from sourceUrl to the newly-
+   * appeared officialEventUrl and orphan the existing pending Discovery
+   * Queue row instead of enriching it (see src/db/sync.ts's dedupKey
+   * computation and src/lib/sync.ts's officialEventUrl self-heal in
+   * buildDiscoveryQueueClassificationPatch, which is how the real URL still
+   * reaches the row as admin-visible metadata without touching identity).
+   * Optional; omitted/false is the existing default behavior
+   * (`officialEventUrl ?? sourceUrl`) every other adapter already relies on
+   * — this can never affect matching against an already-PUBLISHED event
+   * (that path, src/db/sync.ts's `linkedByUrl` lookup, always reads
+   * `raw.officialEventUrl` directly, independent of this flag or dedupKey),
+   * so it changes nothing about duplicate handling for any other source.
+   */
+  stableSourceUrl?: boolean;
 }
 
 export interface SourceAdapter {
