@@ -37,10 +37,18 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
+        {/* text-base (16px) on mobile, not text-xs (12px): iOS Safari
+            auto-zooms the viewport on focus for any select below 16px. No
+            sm:hidden split exists here (unlike EventExplorer's mobile/
+            desktop pair), so the same element is bumped to 16px and reset
+            back to text-xs at sm+ — leading-4 pins the line-height to
+            text-xs's own default (1rem) so the control's height stays
+            identical at every breakpoint; only the font-size crosses the
+            16px threshold on mobile. */}
         <select
           value={country}
           onChange={(e) => setCountry(e.target.value)}
-          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-4 sm:text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All countries</option>
           {countries.map((c) => (
@@ -50,7 +58,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
         <select
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-4 sm:text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All months</option>
           {months.map((m) => (
@@ -60,7 +68,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
         <select
           value={genre}
           onChange={(e) => setGenre(e.target.value as GenreSlug | "all")}
-          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-4 sm:text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All genres</option>
           {genres.map((g) => (

@@ -8,8 +8,15 @@ type FieldErrors = Partial<
   Record<"eventName" | "date" | "venue" | "eventUrl" | "contactEmail", string>
 >;
 
+// text-base (16px) on mobile, not text-sm (14px): iOS Safari auto-zooms the
+// viewport on focus for any text/url/email input or textarea below 16px. No
+// mobile/desktop element split exists in this form, so the same fields are
+// bumped to 16px and reset back to text-sm at sm+ — leading-5 pins the
+// line-height to text-sm's own default (1.25rem) at every breakpoint, so
+// each field's height stays identical; only the font-size crosses the 16px
+// threshold on mobile.
 const inputClasses =
-  "mt-1 w-full rounded border border-border-strong bg-surface-1 px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent";
+  "mt-1 w-full rounded border border-border-strong bg-surface-1 px-3 py-2 text-base leading-5 sm:text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent";
 const labelClasses = "block text-xs font-semibold uppercase tracking-wide text-text-secondary";
 const errorClasses = "mt-1 text-xs text-status-bad";
 const DEFAULT_ERROR_MESSAGE = "Something went wrong sending your suggestion. Please try again in a moment.";

@@ -70,3 +70,35 @@ describe("SuggestEventForm", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("SuggestEventForm — mobile iOS auto-zoom fix (2026-09-13): every field renders at >= 16px on mobile so focusing it never triggers Safari's viewport zoom, while desktop keeps its original text-sm size", () => {
+  afterEach(cleanup);
+
+  function allFields() {
+    return [
+      screen.getByLabelText("Event name"),
+      screen.getByLabelText("Date"),
+      screen.getByLabelText("Venue"),
+      screen.getByLabelText("Event URL"),
+      screen.getByLabelText("Contact email"),
+      screen.getByLabelText(/Note/),
+    ];
+  }
+
+  it("every field renders mobile-effective text-base (16px), not a bare text-sm (14px)", () => {
+    render(<SuggestEventForm />);
+    for (const field of allFields()) {
+      const classes = field.className.split(/\s+/);
+      expect(classes).toContain("text-base");
+      expect(classes).not.toContain("text-sm");
+    }
+  });
+
+  it("every field still carries sm:text-sm — desktop's original 14px size is unchanged, only overridden below the sm breakpoint", () => {
+    render(<SuggestEventForm />);
+    for (const field of allFields()) {
+      const classes = field.className.split(/\s+/);
+      expect(classes).toContain("sm:text-sm");
+    }
+  });
+});
