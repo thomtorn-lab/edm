@@ -3,6 +3,7 @@ import { classifyVenueBlock, isDiscoveryRowCurrent } from "./sync";
 import { isPastEvent } from "./datetime";
 import { resolveVenue } from "./normalize";
 import type { DuplicateCandidate } from "./dedup";
+import { isManualReviewSource } from "./data/sources";
 
 /**
  * Admin Discovery Queue cleanup/actionable views, 2026-09-06. The single
@@ -48,7 +49,10 @@ export interface AdminQueueClassifiable {
 /**
  * Precedence (documented, not incidental — Section 11 of the admin
  * Discovery Queue cleanup brief): PAST/STALE -> VENUE_BLOCKED -> REJECTED ->
- * INSUFFICIENT -> NEEDS_REVIEW. ADMIN_UNPUBLISHED and PUBLISHED aren't
+ * INSUFFICIENT -> NEEDS_REVIEW, except that a manual-review source (Pylonen
+ * DQ UX bug, 2026-09-13 — see isManualReviewSource's own doc comment) skips
+ * straight from REJECTED to NEEDS_REVIEW, never landing in INSUFFICIENT.
+ * ADMIN_UNPUBLISHED and PUBLISHED aren't
  * decided here at all — they're a different table (events.adminUnpublishReason)
  * and a different discoveryQueue status (published/merged) respectively, so
  * they can never contend with a pending row for a category the way these
@@ -125,17 +129,28 @@ export function classifyAdminQueueRow(
   // review a candidate the source itself already retracted, but the row is
   // never deleted (see src/db/sync.ts's own doc comment on this signal).
   if (item.holdReason === "negative_relevance" || item.holdReason === "source_cancelled") return "rejected";
-  if (item.holdReason === "incomplete_data" || item.holdReason === "low_confidence" || item.holdReason === "no_genre_evidence") {
-    return "insufficient";
+
+  // MANUAL-REVIEW SOURCE ROUTING (Pylonen DQ UX bug, 2026-09-13) — see
+  // isManualReviewSource's own doc comment for the full reasoning. Reached
+  // AFTER rejected (a real evidence-based rejection is never busywork for a
+  // human, manual-review source or not) and BEFORE the insufficient-evidence
+  // checks below, so it only ever suppresses INSUFFICIENT — every earlier
+  // category (past_stale/venue_blocked/rejected) still applies exactly as
+  // for any other source. item.sourceId is narrowed non-null here by the
+  // admin-originated early return above.
+  if (!isManualReviewSource(item.sourceId)) {
+    if (item.holdReason === "incomplete_data" || item.holdReason === "low_confidence" || item.holdReason === "no_genre_evidence") {
+      return "insufficient";
+    }
+    // Legacy fallback: a row inserted/last classified before discoveryQueue's
+    // holdReason column existed carries holdReason=null forever until its next
+    // sync self-heals it (deliberately never backfilled — see the column's own
+    // doc comment). overallConfidence's own "low" tier already means "the
+    // pipeline decision was hold" (see buildDiscoveryQueueClassificationPatch),
+    // so treat that combination as insufficient rather than letting an
+    // unclassified legacy row default into the actionable queue.
+    if (item.holdReason === null && item.overallConfidence === "low") return "insufficient";
   }
-  // Legacy fallback: a row inserted/last classified before discoveryQueue's
-  // holdReason column existed carries holdReason=null forever until its next
-  // sync self-heals it (deliberately never backfilled — see the column's own
-  // doc comment). overallConfidence's own "low" tier already means "the
-  // pipeline decision was hold" (see buildDiscoveryQueueClassificationPatch),
-  // so treat that combination as insufficient rather than letting an
-  // unclassified legacy row default into the actionable queue.
-  if (item.holdReason === null && item.overallConfidence === "low") return "insufficient";
 
   return "needs_review";
 }

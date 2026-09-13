@@ -783,6 +783,46 @@ export function isTrustedElectronicSource(sourceId: string): boolean {
 }
 
 /**
+ * Manual-review routing (Pylonen DQ UX bug, 2026-09-13). A PRODUCT-ROUTING
+ * property, same shape/precedent as TRUSTED_ELECTRONIC_SOURCE_IDS immediately
+ * above: a static, code-level declaration, never Production DB state, and
+ * fully known at classification time from the sourceId alone (see
+ * src/lib/adminQueue.ts::classifyAdminQueueRow, the only consumer). Says the
+ * SOURCE ITSELF is intentionally, permanently a human-triage feed — every
+ * candidate it produces is meant to reach a person, evidence gaps and all —
+ * never that any individual candidate's evidence is actually sufficient.
+ *
+ * src-pylonen is the motivating (and, as of this writing, only) case: its
+ * own adapter deliberately extracts nothing beyond title/date for a bare
+ * programme item (see pylonenAdapter.ts's own module doc comment — the
+ * source's own publishing model makes richer automated evidence impossible
+ * for most items), so almost every candidate it produces genuinely lands on
+ * holdReason "incomplete_data"/"no_genre_evidence" — a real, honest evidence
+ * gap, not a bug. Left to the ordinary classifyAdminQueueRow precedence,
+ * every one of those rows silently piles into INSUFFICIENT EVIDENCE (a tab
+ * nobody works from day to day, alongside ~300 genuinely low-value rows from
+ * other sources) instead of NEEDS REVIEW — defeating the entire reason this
+ * source exists: it was onboarded discovery-only, specifically so a human
+ * reviews it, not so its weak-evidence candidates disappear into a queue
+ * that's never checked. This flag only ever changes WHERE a pending row is
+ * displayed; it never touches predictedGenre/overallConfidence/holdReason
+ * themselves (still the real, honest values a reviewer sees on the row) and
+ * never affects autoPublish, which src-pylonen's own registration already
+ * keeps false regardless.
+ *
+ * Deliberately opt-in and narrow, exactly like TRUSTED_ELECTRONIC_SOURCE_IDS:
+ * every other source (including every other discovery-only/autoPublish:false
+ * source — KultuNaut, HvadErPå) keeps its ordinary INSUFFICIENT EVIDENCE
+ * routing unless it's explicitly added here too. A genuine evidence gap on a
+ * non-opted-in source is still exactly that — not busywork to hand a human.
+ */
+const MANUAL_REVIEW_SOURCE_IDS: ReadonlySet<string> = new Set(["src-pylonen"]);
+
+export function isManualReviewSource(sourceId: string): boolean {
+  return MANUAL_REVIEW_SOURCE_IDS.has(sourceId);
+}
+
+/**
  * Cancellation-signal trust classification (source-driven cancellation
  * safety, 2026-09-07) — reads real per-source registry metadata
  * (Source.cancellationPolicy, see its own doc comment in src/lib/types.ts)
