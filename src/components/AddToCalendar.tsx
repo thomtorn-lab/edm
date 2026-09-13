@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl, type CalendarEventInput } from "@/lib/ics";
+import { googleCalendarUrl, outlookCalendarUrl, type CalendarEventInput } from "@/lib/ics";
 
 function CalendarIcon() {
   return (
@@ -27,12 +27,12 @@ function CalendarIcon() {
  */
 export default function AddToCalendar({
   event,
-  filename,
+  icsHref,
   label = "Add to calendar",
   compact = false,
 }: {
   event: CalendarEventInput;
-  filename: string;
+  icsHref: string;
   label?: string;
   compact?: boolean;
 }) {
@@ -115,8 +115,7 @@ export default function AddToCalendar({
             </a>
             <a
               role="menuitem"
-              href={icsDataUrl(event)}
-              download={filename}
+              href={icsHref}
               onClick={() => setOpen(false)}
               className="block rounded px-3 py-2.5 text-sm text-text-primary hover:bg-surface-3"
             >

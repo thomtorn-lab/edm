@@ -636,6 +636,28 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
   });
 });
 
+describe("Event detail page — Apple Calendar / ICS uses a real HTTP endpoint, not a data: URL (mobile fix, 2026-09-13)", () => {
+  afterEach(cleanup);
+
+  it("Apple Calendar / ICS points at the real per-event ICS route", async () => {
+    await renderPage(makeEvent({ slug: "warehouse-night" }));
+    const icsLink = screen.getByRole("link", { name: /Apple Calendar/i });
+    expect(icsLink.getAttribute("href")).toBe("/events/warehouse-night/calendar.ics");
+    expect(icsLink.getAttribute("href")).not.toMatch(/^data:/);
+    expect(icsLink.getAttribute("download")).toBeNull();
+  });
+
+  it("Google Calendar and Outlook links remain unchanged by the ICS fix", async () => {
+    await renderPage(makeEvent());
+    const google = screen.getByRole("link", { name: /Google Calendar/i });
+    const outlook = screen.getByRole("link", { name: /Outlook/i });
+    expect(google.getAttribute("href")).toContain("https://calendar.google.com/calendar/render");
+    expect(outlook.getAttribute("href")).toContain("https://outlook.live.com/calendar/0/deeplink/compose");
+    expect(google.getAttribute("target")).toBe("_blank");
+    expect(outlook.getAttribute("target")).toBe("_blank");
+  });
+});
+
 describe("Event detail page — multi-day event date-range display", () => {
   afterEach(cleanup);
 
