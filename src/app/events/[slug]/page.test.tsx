@@ -553,7 +553,7 @@ describe("Event detail page — suppress redundant artist preview when the title
   });
 });
 
-describe("Event detail page — Share button (2026-09-13; relocated below Genre + short native share text, 2026-09-13 follow-up)", () => {
+describe("Event detail page — Share button (2026-09-13; relocated below Genre, 2026-09-13 follow-up; text field removed, 2026-09-13 follow-up)", () => {
   afterEach(() => {
     cleanup();
     Object.defineProperty(window.navigator, "share", { value: undefined, configurable: true, writable: true });
@@ -585,7 +585,7 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre 
     expect(screen.getByRole("button", { name: "Share Warehouse Night" })).toBeTruthy();
   });
 
-  it("4. navigator.share receives exactly the event title, 'title on Electronic CPH' text, and the clean canonical URL — no query/filter parameters regardless of the event's own slug", async () => {
+  it("4. navigator.share receives exactly the event title and the clean canonical URL — no text field, no query/filter parameters regardless of the event's own slug", async () => {
     const shareMock = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, "share", { value: shareMock, configurable: true, writable: true });
     await renderPage(makeEvent({ title: "Warehouse Night", slug: "warehouse-night-2026" }));
@@ -599,12 +599,11 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre 
     expect(shareMock).toHaveBeenCalledTimes(1);
     expect(shareMock).toHaveBeenCalledWith({
       title: "Warehouse Night",
-      text: "Warehouse Night on Electronic CPH",
       url: "https://electroniccph.com/events/warehouse-night-2026",
     });
   });
 
-  it("5. the native share payload never includes the event description/lineup", async () => {
+  it("5. the native share payload contains exactly title/url and never includes the event description/lineup", async () => {
     const shareMock = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, "share", { value: shareMock, configurable: true, writable: true });
     await renderPage(
@@ -621,9 +620,8 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre 
     });
 
     const payload = shareMock.mock.calls[0][0] as ShareData;
-    expect(Object.keys(payload).sort()).toEqual(["text", "title", "url"]);
-    expect(payload.text).not.toContain("lineup");
-    expect(payload.text).not.toContain("A long description");
+    expect(Object.keys(payload).sort()).toEqual(["title", "url"]);
+    expect((payload as { text?: string }).text).toBeUndefined();
   });
 
   it("does not alter the existing Official event/Tickets/Add to calendar CTAs", async () => {
