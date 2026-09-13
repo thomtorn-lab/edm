@@ -97,6 +97,33 @@ describe("PUBLIC_VENUE_LABEL_OVERRIDES / publicVenueLabel — Jolene/Baggen publ
   });
 });
 
+describe("Den Anden Side — venue address correction (2026-09-13): canonical address matches denandenside.com's own current listing, not the obsolete Krudtløbsvej entry", () => {
+  it("has the corrected Axel Torv address, not the obsolete Krudtløbsvej one", () => {
+    const dennAndenSide = VENUES.find((v) => v.id === "v-den-anden-side");
+    expect(dennAndenSide?.address).toBe("Axel Torv 5, 1609 Copenhagen");
+    expect(dennAndenSide?.postalCode).toBe("1609");
+    expect(dennAndenSide?.address).not.toContain("Krudtløbsvej");
+  });
+
+  it("never reintroduces the obsolete Krudtløbsvej address anywhere in the venue registry", () => {
+    for (const venue of VENUES) {
+      expect(venue.address).not.toContain("Krudtløbsvej");
+    }
+  });
+
+  it("the Google Maps link for Den Anden Side is built from the corrected address", () => {
+    const dennAndenSide = VENUES.find((v) => v.id === "v-den-anden-side");
+    expect(googleMapsUrl(dennAndenSide!.address)).toBe(
+      "https://www.google.com/maps/search/?api=1&query=Axel%20Torv%205%2C%201609%20Copenhagen",
+    );
+  });
+
+  it("unrelated venues (e.g. Culture Box, Hangaren) keep their own address unchanged", () => {
+    expect(VENUES.find((v) => v.id === "v-culture-box")?.address).toBe("Kronprinsessegade 54A, 1306 København K");
+    expect(VENUES.find((v) => v.id === "v-hangaren")?.address).toBe("Refshalevej 185, 1432 København K");
+  });
+});
+
 describe("googleMapsUrl — venue address linking (backlog)", () => {
   it("builds a keyless Google Maps search URL from a venue's address", () => {
     expect(googleMapsUrl("Kronprinsessegade 54A, 1306 København K")).toBe(
