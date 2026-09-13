@@ -109,6 +109,18 @@ on:
       dedup_url:
         description: "Candidate official event URL, optional (dedup-simulate mode only)"
         required: false
+      detail_category:
+        description: "admin-queue-audit mode only, optional: one of needs_review, venue_blocked, insufficient, rejected, past_stale — prints the full per-row field set (venue resolution, holdReason, genre evidence, description presence, links, etc.) for every row in that one category, not just id/title/sourceId. Diagnostic-only, never changes classification or writes anything."
+        required: false
+      detail_source:
+        description: "admin-queue-audit mode only, optional: further narrows the detail_category dump to one source id (e.g. src-billetto)."
+        required: false
+      detail_limit:
+        description: "admin-queue-audit mode only, optional: caps the number of detail_category rows printed, for paging through a large category across multiple runs."
+        required: false
+      detail_offset:
+        description: "admin-queue-audit mode only, optional: skips this many detail_category rows (deterministic id order) before printing — combine with detail_limit to page exhaustively."
+        required: false
 
 permissions:
   contents: read
@@ -177,6 +189,10 @@ jobs:
           [ -n "${{ inputs.dedup_start }}" ] && args+=(--start="${{ inputs.dedup_start }}")
           [ -n "${{ inputs.dedup_url }}" ] && args+=(--url="${{ inputs.dedup_url }}")
           [ -n "${{ inputs.table }}" ] && args+=(--table="${{ inputs.table }}")
+          [ -n "${{ inputs.detail_category }}" ] && args+=(--detail-category="${{ inputs.detail_category }}")
+          [ -n "${{ inputs.detail_source }}" ] && args+=(--detail-source="${{ inputs.detail_source }}")
+          [ -n "${{ inputs.detail_limit }}" ] && args+=(--detail-limit="${{ inputs.detail_limit }}")
+          [ -n "${{ inputs.detail_offset }}" ] && args+=(--detail-offset="${{ inputs.detail_offset }}")
           if [ "${{ inputs.mode }}" = "reachability" ]; then
             node --import tsx src/db/inspectSource.ts "${args[@]}"
           else
