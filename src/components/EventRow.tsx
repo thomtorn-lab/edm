@@ -46,6 +46,16 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
           >
             {title}
             <span className="font-normal text-text-secondary-strong">{lineup}</span>
+            {/* Discreet internal-navigation cue, mobile only (desktop already
+                has the hover/focus underline as its affordance): a plain →
+                distinguishes this as Electronic CPH's own event-detail page,
+                never the ↗ glyph used for Official event/Tickets/Source,
+                which always means "leaves the site". Purely decorative — the
+                link's accessible name stays the title (+ lineup); no-underline
+                keeps the hover-decoration line from drawing through the glyph. */}
+            <span aria-hidden="true" className="ml-1 font-normal text-text-secondary-strong no-underline sm:hidden">
+              →
+            </span>
           </Link>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link

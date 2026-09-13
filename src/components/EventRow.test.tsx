@@ -218,6 +218,56 @@ describe("EventRow — clickability affordance (Round 13: brighten-only title, n
   });
 });
 
+describe("EventRow — mobile internal-navigation arrow on the event title (2026-09-13)", () => {
+  afterEach(cleanup);
+
+  it("includes a plain → (never the external ↗) inside the title link", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.textContent).toContain("→");
+    expect(titleLink.textContent).not.toContain("↗");
+  });
+
+  it("the arrow is decorative — aria-hidden, and excluded from the link's accessible name", () => {
+    render(<EventRow event={makeEvent()} />);
+    // Exact match: if the arrow leaked into the accessible name computation,
+    // this exact-string query would fail to find the link at all.
+    const titleLink = screen.getByRole("link", { name: "Test Event" });
+    const arrow = titleLink.querySelector('[aria-hidden="true"]');
+    expect(arrow).not.toBeNull();
+    expect(arrow?.textContent).toBe("→");
+  });
+
+  it("the arrow is hidden at sm: and above — desktop keeps the underline as its only affordance", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: "Test Event" });
+    const arrow = titleLink.querySelector('[aria-hidden="true"]') as HTMLElement;
+    expect(arrow.className.split(/\s+/)).toContain("sm:hidden");
+  });
+
+  it("uses a muted secondary tone, not the bright primary title color — never visually dominant", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: "Test Event" });
+    const arrow = titleLink.querySelector('[aria-hidden="true"]') as HTMLElement;
+    const classes = arrow.className.split(/\s+/);
+    expect(classes).toContain("text-text-secondary-strong");
+    expect(classes).not.toContain("text-text-primary");
+  });
+
+  it("still resolves to the correct event-detail URL with the arrow present", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.getAttribute("href")).toBe("/events/test-event");
+  });
+
+  it("does not add a second link or button — the arrow is part of the single title link, not a separate control", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    expect(titleLink.querySelector("a")).toBeNull();
+    expect(titleLink.querySelector("button")).toBeNull();
+  });
+});
+
 describe("EventRow — hover color actually reaches the visible text (Round 11)", () => {
   afterEach(cleanup);
 
@@ -323,8 +373,12 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
 
   it("renders no lineup text at all when the event has no artists", () => {
     render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
+    // Accessible-name match still excludes the decorative mobile arrow (see
+    // the "mobile internal-navigation arrow" describe block) — only the
+    // lineup itself is under test here.
     const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
-    expect(titleLink.textContent).toBe("HYGGELIT SHOWCASE");
+    expect(titleLink.textContent).not.toContain("/");
+    expect(titleLink.textContent?.startsWith("HYGGELIT SHOWCASE")).toBe(true);
   });
 });
 
