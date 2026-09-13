@@ -9,6 +9,7 @@ import {
   type AdminQueueClassifiable,
 } from "./adminQueue";
 import type { DiscoveryQueueItem, EventRecord, Source, Venue } from "./types";
+import { getSourceById } from "./data/sources";
 
 /**
  * Admin Discovery Queue cleanup/actionable views, 2026-09-06 (Section 15 of
@@ -186,6 +187,95 @@ describe("classifyAdminQueueRow — admin-originated rows (unified event create/
     expect(
       classifyAdminQueueRow(row({ sourceId: "src-test", venueResolvedDecision: "review_queue" }), SYNC),
     ).toBe("venue_blocked");
+  });
+});
+
+describe("classifyAdminQueueRow — manual-review source routing (Pylonen DQ UX bug, 2026-09-13): a source flagged isManualReviewSource surfaces every pending candidate in NEEDS REVIEW, even a genuinely weak-evidence one that would otherwise land in INSUFFICIENT EVIDENCE — a tab nobody works from day to day", () => {
+  it("1. a weak-evidence Pylonen candidate (holdReason no_genre_evidence) appears in NEEDS_REVIEW, not INSUFFICIENT", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", holdReason: "no_genre_evidence" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("1b. the same routing applies to holdReason incomplete_data — the actual real-world Pylonen shape (23 of 24 live rows)", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", holdReason: "incomplete_data" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("2. the row's own holdReason is never rewritten by this routing — the true insufficient-evidence diagnosis is still there for a reviewer to see, only the TAB changes", () => {
+    const pylonenRow = row({ sourceId: "src-pylonen", holdReason: "no_genre_evidence", overallConfidence: "low" });
+    expect(classifyAdminQueueRow(pylonenRow, SYNC)).toBe("needs_review");
+    // classifyAdminQueueRow is a pure classifier — it returns a category, it
+    // never mutates its input. The exact same holdReason/overallConfidence
+    // values a real admin-UI row would display are still sitting right here.
+    expect(pylonenRow.holdReason).toBe("no_genre_evidence");
+    expect(pylonenRow.overallConfidence).toBe("low");
+  });
+
+  it("3. src-pylonen's own autoPublish registration is untouched by this routing change — still false, exactly as the Pylonen discovery-only implementation requires", () => {
+    expect(getSourceById("src-pylonen")?.autoPublish).toBe(false);
+  });
+
+  it("4. an unrelated source's weak-evidence candidate does NOT suddenly appear in Needs Review — the routing is opt-in per source, never global", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-kultunaut", holdReason: "no_genre_evidence" }), SYNC),
+    ).toBe("insufficient");
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-billetto", holdReason: "incomplete_data" }), SYNC),
+    ).toBe("insufficient");
+  });
+
+  it("5. every other classification path for a manual-review source is unchanged — a real rejection is still REJECTED, and PAST_STALE/VENUE_BLOCKED still take precedence exactly as for any other source", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", holdReason: "negative_relevance" }), SYNC),
+    ).toBe("rejected");
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", lastSeenAt: "2026-09-01T00:00:00+02:00" }), SYNC),
+    ).toBe("past_stale");
+    expect(
+      classifyAdminQueueRow(
+        row({ sourceId: "src-pylonen", venueResolvedDecision: "review_queue", holdReason: "incomplete_data" }),
+        SYNC,
+      ),
+    ).toBe("venue_blocked");
+  });
+
+  it("legacy null-holdReason low-confidence noise from a manual-review source also surfaces in Needs Review (same suppression as the ordinary holdReason branch)", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", holdReason: null, overallConfidence: "low" }), SYNC),
+    ).toBe("needs_review");
+  });
+});
+
+describe("groupAdminQueueRows — manual-review source routing only ever surfaces genuinely PENDING rows (Pylonen DQ UX bug, 2026-09-13)", () => {
+  it("6. an ignored Pylonen candidate does not appear in Needs Review — it was never pending in the first place (admin/page.tsx pre-filters to status === 'pending' before calling groupAdminQueueRows, same contract the pre-existing 'moved out of the pending set' test documents above)", () => {
+    const items = [discoveryItem({ id: "dq-pylonen-1", sourceId: "src-pylonen", holdReason: "no_genre_evidence" })];
+    const pendingOnly = items.filter((i) => i.status === "pending");
+    const groups = groupAdminQueueRows(pendingOnly, new Map([["src-pylonen", "2026-09-06T10:00:00+02:00"]]), NOW);
+    expect(groups.needs_review.map((i) => i.id)).toEqual(["dq-pylonen-1"]);
+
+    const ignored = [
+      discoveryItem({ id: "dq-pylonen-2", sourceId: "src-pylonen", holdReason: "no_genre_evidence", status: "ignored" }),
+    ];
+    const ignoredPendingOnly = ignored.filter((i) => i.status === "pending");
+    const groupsAfterIgnore = groupAdminQueueRows(
+      ignoredPendingOnly,
+      new Map([["src-pylonen", "2026-09-06T10:00:00+02:00"]]),
+      NOW,
+    );
+    expect(groupsAfterIgnore.needs_review).toEqual([]);
+  });
+
+  it("7. an already-published/merged Pylonen candidate does not appear in Needs Review — same pending-only contract, covering both resolved statuses", () => {
+    for (const status of ["published", "merged"] as const) {
+      const resolved = [
+        discoveryItem({ id: `dq-pylonen-${status}`, sourceId: "src-pylonen", holdReason: "no_genre_evidence", status }),
+      ];
+      const pendingOnly = resolved.filter((i) => i.status === "pending");
+      const groups = groupAdminQueueRows(pendingOnly, new Map([["src-pylonen", "2026-09-06T10:00:00+02:00"]]), NOW);
+      expect(groups.needs_review).toEqual([]);
+    }
   });
 });
 
