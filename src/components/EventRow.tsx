@@ -104,7 +104,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
               {isFree && <span className="font-semibold text-text-primary">Free</span>}
             </div>
           )}
-          <AddToCalendar event={calendarInput} filename={`${event.slug}.ics`} />
+          <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
         </div>
       </div>
     </li>

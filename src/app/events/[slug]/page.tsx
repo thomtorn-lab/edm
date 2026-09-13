@@ -6,7 +6,7 @@ import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
-import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
+import { googleCalendarUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
@@ -62,8 +62,6 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
     venue: event.venue,
     eventUrl: canonicalUrl,
   };
-  const icsFilename = `${event.slug}.ics`;
-
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <script
@@ -208,7 +206,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <a href={outlookCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Outlook<span className="sr-only"> (opens in a new tab)</span>
           </a>
-          <a href={icsDataUrl(calendarInput)} download={icsFilename} className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
+          <a href={`/events/${event.slug}/calendar.ics`} className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Apple Calendar / ICS
           </a>
         </div>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import EventRow from "./EventRow";
 import type { EventWithVenue } from "@/lib/queries";
 import type { GenreSlug } from "@/lib/taxonomy";
@@ -340,6 +340,27 @@ describe("EventRow — title-link affordance change introduces no nested-interac
     const calendarButton = screen.getByRole("button", { name: /Add to calendar/i });
     expect(titleLink.contains(calendarButton)).toBe(false);
     expect(calendarButton.contains(titleLink)).toBe(false);
+  });
+});
+
+describe("EventRow — Apple Calendar / ICS uses a real HTTP endpoint, not a data: URL (mobile fix, 2026-09-13)", () => {
+  afterEach(cleanup);
+
+  it("Apple Calendar / ICS points at the real per-event ICS route", () => {
+    render(<EventRow event={makeEvent({ slug: "test-event" })} />);
+    fireEvent.click(screen.getByRole("button", { name: /Add to calendar/i }));
+    const icsLink = screen.getByRole("menuitem", { name: /Apple Calendar/i });
+    expect(icsLink.getAttribute("href")).toBe("/events/test-event/calendar.ics");
+    expect(icsLink.getAttribute("href")).not.toMatch(/^data:/);
+  });
+
+  it("Google Calendar and Outlook links remain unchanged by the ICS fix", () => {
+    render(<EventRow event={makeEvent()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Add to calendar/i }));
+    const google = screen.getByRole("menuitem", { name: /Google Calendar/i });
+    const outlook = screen.getByRole("menuitem", { name: /Outlook/i });
+    expect(google.getAttribute("href")).toContain("https://calendar.google.com/calendar/render");
+    expect(outlook.getAttribute("href")).toContain("https://outlook.live.com/calendar/0/deeplink/compose");
   });
 });
 

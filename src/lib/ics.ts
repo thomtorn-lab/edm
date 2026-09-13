@@ -57,11 +57,6 @@ export function buildIcsFile(input: CalendarEventInput): string {
   return lines.join("\r\n");
 }
 
-export function icsDataUrl(input: CalendarEventInput): string {
-  const content = buildIcsFile(input);
-  return `data:text/calendar;charset=utf-8,${encodeURIComponent(content)}`;
-}
-
 function googleDateParam(date: Date): string {
   return toIcsUtc(date);
 }
