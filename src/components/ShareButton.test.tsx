@@ -48,23 +48,23 @@ describe("ShareButton", () => {
     expect(screen.getByRole("button", { name: "Share Warehouse Night" })).toBeTruthy();
   });
 
-  it("3. supported navigator.share receives the exact event title and canonical URL", async () => {
+  it("3. supported navigator.share receives the exact event title, short share text, and canonical URL", async () => {
     const shareMock = vi.fn().mockResolvedValue(undefined);
     setNavigatorShare(shareMock);
     render(<ShareButton title={TITLE} url={URL} />);
     await clickShare();
     expect(shareMock).toHaveBeenCalledTimes(1);
-    expect(shareMock).toHaveBeenCalledWith({ title: TITLE, url: URL });
+    expect(shareMock).toHaveBeenCalledWith({ title: TITLE, text: "Test Event on Electronic CPH", url: URL });
   });
 
-  it("4. never includes a description/text field in the native share payload", async () => {
+  it("4. the payload contains exactly title/text/url — never a description/lineup, and the text is never the description", async () => {
     const shareMock = vi.fn().mockResolvedValue(undefined);
     setNavigatorShare(shareMock);
     render(<ShareButton title={TITLE} url={URL} />);
     await clickShare();
     const payload = shareMock.mock.calls[0][0] as ShareData;
-    expect(Object.keys(payload).sort()).toEqual(["title", "url"]);
-    expect((payload as { text?: string }).text).toBeUndefined();
+    expect(Object.keys(payload).sort()).toEqual(["text", "title", "url"]);
+    expect(payload.text).toBe("Test Event on Electronic CPH");
   });
 
   it("5. native-share cancellation shows no error UI and no success UI", async () => {

@@ -20,6 +20,14 @@ function ShareIcon() {
  * this component never reads window.location or any query/filter state
  * itself, so the shared link is always the clean canonical one regardless
  * of how the visitor arrived at the page.
+ *
+ * The native payload's `text` field is a short, fixed "<title> on Electronic
+ * CPH" line, never the event description/lineup — deliberately NOT an
+ * attempt to force any target's email subject or message body layout; the
+ * Web Share spec leaves it entirely up to whatever app the user picks
+ * (Mail, Messages, WhatsApp, ...) to decide how title/text/url map into its
+ * own compose UI. The clipboard fallback is unaffected: it only ever copies
+ * the bare canonical `url`.
  */
 export default function ShareButton({ title, url, className = "" }: { title: string; url: string; className?: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "manual">("idle");
@@ -56,7 +64,7 @@ export default function ShareButton({ title, url, className = "" }: { title: str
   async function handleClick() {
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
-        await navigator.share({ title, url });
+        await navigator.share({ title, text: `${title} on Electronic CPH`, url });
       } catch {
         // Cancelled, or the share sheet failed for any other reason: the
         // native UI already communicated whatever happened, so we show
