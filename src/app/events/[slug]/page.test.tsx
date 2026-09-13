@@ -553,27 +553,42 @@ describe("Event detail page — suppress redundant artist preview when the title
   });
 });
 
-describe("Event detail page — Share button (2026-09-13)", () => {
+describe("Event detail page — Share button (2026-09-13; relocated below Genre + short native share text, 2026-09-13 follow-up)", () => {
   afterEach(() => {
     cleanup();
     Object.defineProperty(window.navigator, "share", { value: undefined, configurable: true, writable: true });
   });
 
-  it("1. renders a Share button in the action area alongside Add to calendar", async () => {
+  it("1. Share is no longer part of the Add to calendar action row", async () => {
     await renderPage(makeEvent());
-    expect(screen.getByRole("button", { name: /^Share /i })).toBeTruthy();
-    expect(screen.getByText("Add to calendar")).toBeTruthy();
+    const calendarSection = screen.getByText("Add to calendar").closest("div");
+    const shareButton = screen.getByRole("button", { name: /^Share /i });
+    expect(calendarSection?.contains(shareButton)).toBe(false);
   });
 
-  it("2. the Share button's accessible name contains the event's (cleaned) title", async () => {
+  it("2. Share renders immediately after Genre in the event metadata section, ahead of About/Links/Add to calendar", async () => {
+    await renderPage(
+      makeEvent({ description: "Some description.", officialEventUrl: "https://venue.example.com/event" }),
+    );
+    const genreDt = screen.getByText("Genre");
+    const shareButton = screen.getByRole("button", { name: /^Share /i });
+    const aboutHeading = screen.getByText("About");
+    const addToCalendarHeading = screen.getByText("Add to calendar");
+
+    expect(genreDt.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("3. the Share button's accessible name contains the event's (cleaned) title", async () => {
     await renderPage(makeEvent({ title: "Warehouse Night" }));
     expect(screen.getByRole("button", { name: "Share Warehouse Night" })).toBeTruthy();
   });
 
-  it("13. shares the clean canonical event URL, with no query/filter parameters, regardless of the event's own slug", async () => {
+  it("4. navigator.share receives exactly the event title, 'title on Electronic CPH' text, and the clean canonical URL — no query/filter parameters regardless of the event's own slug", async () => {
     const shareMock = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, "share", { value: shareMock, configurable: true, writable: true });
-    await renderPage(makeEvent({ slug: "warehouse-night-2026" }));
+    await renderPage(makeEvent({ title: "Warehouse Night", slug: "warehouse-night-2026" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /^Share /i }));
@@ -582,9 +597,33 @@ describe("Event detail page — Share button (2026-09-13)", () => {
     });
 
     expect(shareMock).toHaveBeenCalledTimes(1);
-    const payload = shareMock.mock.calls[0][0] as { title: string; url: string };
-    expect(payload.url).toBe("https://electroniccph.com/events/warehouse-night-2026");
-    expect(payload.url).not.toContain("?");
+    expect(shareMock).toHaveBeenCalledWith({
+      title: "Warehouse Night",
+      text: "Warehouse Night on Electronic CPH",
+      url: "https://electroniccph.com/events/warehouse-night-2026",
+    });
+  });
+
+  it("5. the native share payload never includes the event description/lineup", async () => {
+    const shareMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "share", { value: shareMock, configurable: true, writable: true });
+    await renderPage(
+      makeEvent({
+        title: "Warehouse Night",
+        description: "A long description with lineup details that must never be shared.",
+      }),
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Share /i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const payload = shareMock.mock.calls[0][0] as ShareData;
+    expect(Object.keys(payload).sort()).toEqual(["text", "title", "url"]);
+    expect(payload.text).not.toContain("lineup");
+    expect(payload.text).not.toContain("A long description");
   });
 
   it("does not alter the existing Official event/Tickets/Add to calendar CTAs", async () => {

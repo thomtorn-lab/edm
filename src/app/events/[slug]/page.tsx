@@ -135,6 +135,14 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         )}
       </dl>
 
+      <div className="mt-6">
+        <ShareButton
+          title={title}
+          url={canonicalUrl}
+          className="inline-flex items-center gap-1.5 rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
+        />
+      </div>
+
       {event.description && (
         <div className="mt-6">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
@@ -203,11 +211,6 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <a href={icsDataUrl(calendarInput)} download={icsFilename} className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Apple Calendar / ICS
           </a>
-          <ShareButton
-            title={title}
-            url={canonicalUrl}
-            className="inline-flex items-center gap-1.5 rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
-          />
         </div>
       </div>
 
