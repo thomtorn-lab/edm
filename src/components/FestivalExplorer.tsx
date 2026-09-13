@@ -51,14 +51,26 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
             ONE step on mobile only (font-medium, tracking-normal, px-2.5),
             restored to their original desktop values at sm+ (font-
             semibold, tracking-wide, px-3) — the exact same base+sm:
-            override pattern as the font-size fix above. Vertical padding
-            (py-1.5) and the control's line-height are untouched, so the
-            already-shipped mobile touch-target height (~30px) is
-            unaffected — only visual weight changes, not size. */}
+            override pattern as the font-size fix above.
+            Final mobile compactness polish (2026-09-13, follow-up): still
+            felt a little large/heavy at py-1.5 + border-border-strong, so
+            the border switches to the dimmer --border token on mobile only,
+            restored to its original desktop value at sm+
+            (sm:border-border-strong) — same base+sm: pattern throughout.
+            Final review adjustment (2026-09-13): vertical padding stays at
+            py-1.5 on mobile (never dropped to py-1) — 26px total height was
+            technically above the WCAG 2.2 AA 24px minimum but still felt
+            unnecessarily cramped for a mobile select's touch target; the
+            lighter visual weight comes entirely from the border, font-
+            weight, tracking, and horizontal-padding levers above. Mobile
+            height: 6px+6px padding + 16px line-height (leading-4) + 1px+1px
+            border = 30px (still well short of any accidental shrink toward
+            the 16px iOS-zoom threshold, which only concerns font-size, left
+            untouched). */}
         <select
           value={country}
           onChange={(e) => setCountry(e.target.value)}
-          className="rounded-full border border-border-strong bg-surface-1 px-2.5 py-1.5 sm:px-3 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border bg-surface-1 px-2.5 py-1.5 sm:border-border-strong sm:px-3 sm:py-1.5 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All countries</option>
           {countries.map((c) => (
@@ -68,7 +80,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
         <select
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-full border border-border-strong bg-surface-1 px-2.5 py-1.5 sm:px-3 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border bg-surface-1 px-2.5 py-1.5 sm:border-border-strong sm:px-3 sm:py-1.5 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All months</option>
           {months.map((m) => (
@@ -78,7 +90,7 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
         <select
           value={genre}
           onChange={(e) => setGenre(e.target.value as GenreSlug | "all")}
-          className="rounded-full border border-border-strong bg-surface-1 px-2.5 py-1.5 sm:px-3 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
+          className="rounded-full border border-border bg-surface-1 px-2.5 py-1.5 sm:border-border-strong sm:px-3 sm:py-1.5 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
         >
           <option value="all">All genres</option>
           {genres.map((g) => (
