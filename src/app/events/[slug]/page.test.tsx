@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EventWithVenue } from "@/lib/queries";
 import type { GenreSlug } from "@/lib/taxonomy";
 
@@ -550,6 +550,52 @@ describe("Event detail page — suppress redundant artist preview when the title
   it("still shows the grey artist line for a non-Culture-Box event whose title never names the artists (no regression)", async () => {
     await renderPage(makeEvent({ title: "Test Event", artists: ["DJ Alpha", "DJ Beta"] }));
     expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
+  });
+});
+
+describe("Event detail page — Share button (2026-09-13)", () => {
+  afterEach(() => {
+    cleanup();
+    Object.defineProperty(window.navigator, "share", { value: undefined, configurable: true, writable: true });
+  });
+
+  it("1. renders a Share button in the action area alongside Add to calendar", async () => {
+    await renderPage(makeEvent());
+    expect(screen.getByRole("button", { name: /^Share /i })).toBeTruthy();
+    expect(screen.getByText("Add to calendar")).toBeTruthy();
+  });
+
+  it("2. the Share button's accessible name contains the event's (cleaned) title", async () => {
+    await renderPage(makeEvent({ title: "Warehouse Night" }));
+    expect(screen.getByRole("button", { name: "Share Warehouse Night" })).toBeTruthy();
+  });
+
+  it("13. shares the clean canonical event URL, with no query/filter parameters, regardless of the event's own slug", async () => {
+    const shareMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "share", { value: shareMock, configurable: true, writable: true });
+    await renderPage(makeEvent({ slug: "warehouse-night-2026" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Share /i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(shareMock).toHaveBeenCalledTimes(1);
+    const payload = shareMock.mock.calls[0][0] as { title: string; url: string };
+    expect(payload.url).toBe("https://electroniccph.com/events/warehouse-night-2026");
+    expect(payload.url).not.toContain("?");
+  });
+
+  it("does not alter the existing Official event/Tickets/Add to calendar CTAs", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
+    );
+    expect(screen.getByText(/Official event/i)).toBeTruthy();
+    expect(screen.getByText(/Tickets/i)).toBeTruthy();
+    expect(screen.getByText("Google Calendar")).toBeTruthy();
+    expect(screen.getByText("Outlook")).toBeTruthy();
+    expect(screen.getByText("Apple Calendar / ICS")).toBeTruthy();
   });
 });
 

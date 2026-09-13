@@ -10,6 +10,7 @@ import { googleCalendarUrl, icsDataUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
+import ShareButton from "@/components/ShareButton";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -202,6 +203,11 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <a href={icsDataUrl(calendarInput)} download={icsFilename} className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Apple Calendar / ICS
           </a>
+          <ShareButton
+            title={title}
+            url={canonicalUrl}
+            className="inline-flex items-center gap-1.5 rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
+          />
         </div>
       </div>
 
