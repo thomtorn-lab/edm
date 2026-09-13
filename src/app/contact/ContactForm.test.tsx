@@ -69,3 +69,26 @@ describe("ContactForm", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("ContactForm — mobile iOS auto-zoom fix (2026-09-13): Name/Email/Message all render at >= 16px on mobile so focusing them never triggers Safari's viewport zoom, while desktop keeps its original text-sm size", () => {
+  afterEach(cleanup);
+
+  it("Name, Email and Message all render mobile-effective text-base (16px), not a bare text-sm (14px)", () => {
+    render(<ContactForm />);
+    const fields = [screen.getByLabelText("Name"), screen.getByLabelText("Email"), screen.getByLabelText("Message")];
+    for (const field of fields) {
+      const classes = field.className.split(/\s+/);
+      expect(classes).toContain("text-base");
+      expect(classes).not.toContain("text-sm");
+    }
+  });
+
+  it("Name, Email and Message all still carry sm:text-sm — desktop's original 14px size is unchanged, only overridden below the sm breakpoint", () => {
+    render(<ContactForm />);
+    const fields = [screen.getByLabelText("Name"), screen.getByLabelText("Email"), screen.getByLabelText("Message")];
+    for (const field of fields) {
+      const classes = field.className.split(/\s+/);
+      expect(classes).toContain("sm:text-sm");
+    }
+  });
+});
