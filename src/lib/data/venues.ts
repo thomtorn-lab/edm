@@ -57,9 +57,14 @@ export const VENUES: Venue[] = [
     slug: "den-anden-side",
     name: "Den Anden Side",
     aliases: ["DAS", "Den Anden Side Copenhagen", "Den Anden Side Amager"],
-    address: "Krudtløbsvej 8, 2300 København S",
+    // Corrected 2026-09-13 to match denandenside.com's own current address
+    // (was previously "Krudtløbsvej 8, 2300 København S" — no historical
+    // record of that ever being correct; this is a data-entry correction,
+    // not a venue relocation). See src/db/fixVenueAddress.ts for the
+    // matching already-seeded Production row correction.
+    address: "Axel Torv 5, 1609 Copenhagen",
     city: "Copenhagen",
-    postalCode: "2300",
+    postalCode: "1609",
     websiteUrl: "https://www.denandenside.com/",
     description:
       "Amager club and event space spanning house, techno and everything adjacent, from intimate club nights to larger showcases.",
