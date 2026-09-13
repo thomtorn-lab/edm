@@ -42,7 +42,7 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
         <div className="min-w-0 flex-1">
           <Link
             href={`/events/${event.slug}`}
-            className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary transition-[filter] duration-150 hover:brightness-110 focus-visible:brightness-110 sm:line-clamp-2"
+            className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:line-clamp-2"
           >
             {title}
             <span className="font-normal text-text-secondary-strong">{lineup}</span>
