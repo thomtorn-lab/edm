@@ -116,7 +116,7 @@ describe("FestivalExplorer — mobile visual-weight refinement (2026-09-13): the
   });
 });
 
-describe("FestivalExplorer — final mobile compactness polish (2026-09-13 follow-up): vertical padding and border weight are trimmed on mobile only, still 16px-safe, desktop untouched", () => {
+describe("FestivalExplorer — final mobile compactness polish (2026-09-13 follow-up, final review adjustment): border weight is trimmed on mobile only, vertical padding stays at py-1.5, still 16px-safe, desktop untouched", () => {
   afterEach(cleanup);
 
   it("mobile text stays 16px-safe (text-base, not text-xs) even after the compactness pass", () => {
@@ -130,17 +130,17 @@ describe("FestivalExplorer — final mobile compactness polish (2026-09-13 follo
     }
   });
 
-  it("mobile vertical padding is reduced one step (py-1, not py-1.5)", () => {
+  it("mobile vertical padding stays at py-1.5 (final review adjustment: not reduced to py-1)", () => {
     render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
     const selects = screen.getAllByRole("combobox");
     for (const select of selects) {
       const classes = select.className.split(/\s+/);
-      expect(classes).toContain("py-1");
-      expect(classes).not.toContain("py-1.5");
+      expect(classes).toContain("py-1.5");
+      expect(classes).not.toContain("py-1");
     }
   });
 
-  it("desktop restores the original vertical padding via sm:py-1.5, unaffected by the mobile reduction", () => {
+  it("desktop keeps the same vertical padding via sm:py-1.5, unaffected by the mobile lightening", () => {
     render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
     const selects = screen.getAllByRole("combobox");
     for (const select of selects) {
