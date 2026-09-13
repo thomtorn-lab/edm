@@ -63,3 +63,54 @@ describe("FestivalExplorer — mobile iOS auto-zoom fix (2026-09-13): the Countr
     }
   });
 });
+
+describe("FestivalExplorer — mobile visual-weight refinement (2026-09-13): the 16px-safe filter selects read lighter/more compact on mobile without dropping below 16px, while desktop is completely unaffected", () => {
+  afterEach(cleanup);
+
+  it("mobile drops to font-medium (not the heavier font-semibold) and tracking-normal (not tracking-wide), while text-base (16px) is preserved", () => {
+    render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
+    const selects = screen.getAllByRole("combobox");
+    for (const select of selects) {
+      const classes = select.className.split(/\s+/);
+      expect(classes).toContain("text-base");
+      expect(classes).toContain("font-medium");
+      expect(classes).not.toContain("font-semibold");
+      expect(classes).toContain("tracking-normal");
+      expect(classes).not.toContain("tracking-wide");
+    }
+  });
+
+  it("mobile horizontal padding is reduced (px-2.5, not px-3) while vertical padding (py-1.5) — and so the control's touch-target height — is unchanged", () => {
+    render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
+    const selects = screen.getAllByRole("combobox");
+    for (const select of selects) {
+      const classes = select.className.split(/\s+/);
+      expect(classes).toContain("px-2.5");
+      expect(classes).not.toContain("px-3");
+      expect(classes).toContain("py-1.5");
+      expect(classes).toContain("leading-4");
+    }
+  });
+
+  it("desktop restores the exact original weight/tracking/padding via sm: overrides — sm:font-semibold, sm:tracking-wide, sm:px-3 — so desktop styling is completely unaffected by the mobile refinement", () => {
+    render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
+    const selects = screen.getAllByRole("combobox");
+    for (const select of selects) {
+      const classes = select.className.split(/\s+/);
+      expect(classes).toContain("sm:font-semibold");
+      expect(classes).toContain("sm:tracking-wide");
+      expect(classes).toContain("sm:px-3");
+    }
+  });
+
+  it("border radius and colors are untouched — still rounded-full, text-text-secondary, hover:text-text-primary", () => {
+    render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
+    const selects = screen.getAllByRole("combobox");
+    for (const select of selects) {
+      const classes = select.className.split(/\s+/);
+      expect(classes).toContain("rounded-full");
+      expect(classes).toContain("text-text-secondary");
+      expect(classes).toContain("hover:text-text-primary");
+    }
+  });
+});
