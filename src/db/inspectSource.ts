@@ -38,6 +38,10 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
+ *     [--detail-category=<needs_review|venue_blocked|insufficient|rejected|past_stale>
+ *      --detail-source=<sourceId> --detail-limit=<n> --detail-offset=<n>]  (admin-queue-audit only, optional —
+ *      prints the full per-row field set, not just id/title/sourceId, for every row in one category;
+ *      diagnostic-only, never changes classification or writes anything)
  *
  * Also runnable via: npm run db:inspect-source -- --mode=... [...]
  *
@@ -1106,18 +1110,38 @@ async function modeVenueBlocks(client: Client) {
  * plus published/merged and admin-unpublished counts alongside them so the
  * whole picture prints in one run.
  */
-async function modeAdminQueueAudit(client: Client) {
+async function modeAdminQueueAudit(client: Client, args: Record<string, string | boolean>) {
   const rows = await client.query(`
     SELECT
       dq.id, dq.probable_title, dq.probable_start, dq.probable_end, dq.missing_fields,
       dq.overall_confidence, dq.hold_reason, dq.venue_resolved_decision, dq.last_seen_at,
-      dq.status, dq.source_id, s.last_complete_sync_at
+      dq.status, dq.source_id, s.last_complete_sync_at,
+      dq.probable_venue_name, dq.probable_sub_venue, dq.predicted_genre, dq.genre_confidence,
+      dq.detected_lineup, dq.description, dq.probable_official_event_url, dq.probable_ticket_url,
+      dq.suspected_duplicate_of_event_id, dq.source_url, dq.created_at
     FROM discovery_queue dq
     LEFT JOIN sources s ON s.id = dq.source_id
     WHERE dq.status IN ('pending', 'published', 'merged')
     ORDER BY dq.created_at DESC
   `);
   const now = new Date();
+
+  // Diagnostic-only detail dump (Insufficient Evidence complete-audit
+  // request, 2026-09-13) — the existing {id, title, sourceId} summary below
+  // is unchanged and still runs by default; passing --detail-category=<cat>
+  // additionally prints the FULL field set for every row landing in that one
+  // category, so an exhaustive (not sampled) read-only audit is possible.
+  // --detail-source/--detail-limit/--detail-offset optionally narrow/paginate
+  // the detail dump only — never the classification itself, never a write.
+  const detailCategory = typeof args["detail-category"] === "string" ? (args["detail-category"] as AdminQueueCategory) : null;
+  const detailSource = typeof args["detail-source"] === "string" ? args["detail-source"] : null;
+  const detailLimit = typeof args["detail-limit"] === "string" ? Number(args["detail-limit"]) : null;
+  const detailOffset = typeof args["detail-offset"] === "string" ? Number(args["detail-offset"]) : 0;
+  let venues: Venue[] = [];
+  if (detailCategory) {
+    const venueRows = await client.query("SELECT * FROM venues");
+    venues = venueRows.rows.map(rowToVenue);
+  }
 
   const pending = rows.rows.filter((r) => r.status === "pending");
   const published = rows.rows.filter((r) => r.status === "published");
@@ -1130,6 +1154,7 @@ async function modeAdminQueueAudit(client: Client) {
     rejected: [],
     past_stale: [],
   };
+  const detailRows: Record<string, unknown>[] = [];
   for (const r of pending) {
     const lastCompleteSyncAt = r.last_complete_sync_at ? new Date(r.last_complete_sync_at as string).toISOString() : null;
     const category = classifyAdminQueueRow(
@@ -1146,6 +1171,35 @@ async function modeAdminQueueAudit(client: Client) {
       { lastCompleteSyncAt, now },
     );
     groups[category].push({ id: r.id, title: r.probable_title, sourceId: r.source_id });
+
+    if (detailCategory && category === detailCategory) {
+      if (detailSource && r.source_id !== detailSource) continue;
+      const venueName = r.probable_venue_name as string | null;
+      const resolved = venueName ? resolveVenue(venueName, venues) : undefined;
+      detailRows.push({
+        id: r.id,
+        sourceId: r.source_id,
+        title: r.probable_title,
+        probableVenueName: venueName,
+        resolvedVenueName: resolved ? resolved.venue.name : null,
+        resolvedSubVenue: resolved ? (resolved.subVenue ?? null) : null,
+        probableStart: r.probable_start,
+        holdReason: r.hold_reason,
+        overallConfidence: r.overall_confidence,
+        predictedGenre: r.predicted_genre,
+        genreConfidence: r.genre_confidence,
+        detectedLineup: r.detected_lineup,
+        missingFields: r.missing_fields,
+        hasDescription: !!(r.description as string | null) && (r.description as string).trim().length > 0,
+        sourceUrl: r.source_url,
+        probableOfficialEventUrl: r.probable_official_event_url,
+        probableTicketUrl: r.probable_ticket_url,
+        suspectedDuplicateOfEventId: r.suspected_duplicate_of_event_id,
+        status: r.status,
+        createdAt: r.created_at,
+        lastSeenAt: r.last_seen_at,
+      });
+    }
   }
 
   const adminUnpublished = await client.query(
@@ -1182,6 +1236,17 @@ async function modeAdminQueueAudit(client: Client) {
 
   section(`Unpublished by admin (${adminUnpublished.rows.length}) — exact rows`);
   console.log(JSON.stringify(adminUnpublished.rows, null, 2));
+
+  if (detailCategory) {
+    // Deterministic order (id) so --detail-limit/--detail-offset pages are
+    // stable and combinable across multiple runs into one exhaustive set.
+    detailRows.sort((a, b) => ((a.id as string) < (b.id as string) ? -1 : (a.id as string) > (b.id as string) ? 1 : 0));
+    const page = detailLimit != null ? detailRows.slice(detailOffset, detailOffset + detailLimit) : detailRows.slice(detailOffset);
+    section(
+      `DETAIL DUMP — category=${detailCategory}${detailSource ? ` source=${detailSource}` : ""} — ${page.length} of ${detailRows.length} matching rows (offset=${detailOffset}${detailLimit != null ? `, limit=${detailLimit}` : ""})`,
+    );
+    console.log(JSON.stringify(page, null, 2));
+  }
 }
 
 /**
