@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deterministicGenreFromText, hasRichGenreEvidence, refineGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, hasExplicitDjOrRaveSignal, hasRichGenreEvidence, refineGenreFromText } from "./deterministicGenreMapping";
 
 describe("deterministicGenreFromText", () => {
   it("maps the standalone word 'psy' to psytrance", () => {
@@ -268,6 +268,40 @@ describe("Dubstep/Hardstyle/Rawstyle/Hardcore automation (genre taxonomy audit f
     it("still returns null (electronic-other territory) for text with no keyword match at all", () => {
       expect(deterministicGenreFromText("An evening with a live band and no other description")).toBeNull();
     });
+  });
+});
+
+describe("hasExplicitDjOrRaveSignal (Discovery Queue positive-signal routing, 2026-09-14)", () => {
+  it("matches a bare 'DJ' mention", () => {
+    expect(hasExplicitDjOrRaveSignal("Friday Night with DJ Mareld")).toBe(true);
+  });
+
+  it("matches 'DJ set'", () => {
+    expect(hasExplicitDjOrRaveSignal("A DJ set to close the night")).toBe(true);
+  });
+
+  it("matches plural 'DJs'", () => {
+    expect(hasExplicitDjOrRaveSignal("Local DJs all night long")).toBe(true);
+  });
+
+  it("matches 'rave'/'raves'", () => {
+    expect(hasExplicitDjOrRaveSignal("Warehouse Rave: Season Opener")).toBe(true);
+    expect(hasExplicitDjOrRaveSignal("Underground raves all summer")).toBe(true);
+  });
+
+  it("does not match 'dj' inside 'adjacent' — no word boundary exists on either side of the substring", () => {
+    expect(hasExplicitDjOrRaveSignal("The adjacent building is closed")).toBe(false);
+  });
+
+  it("does not match 'rave' inside 'brave', 'grave', 'gravel', or 'craving'", () => {
+    expect(hasExplicitDjOrRaveSignal("A brave new exhibition opens")).toBe(false);
+    expect(hasExplicitDjOrRaveSignal("Graveside stories: a walking tour")).toBe(false);
+    expect(hasExplicitDjOrRaveSignal("Gravel paths and garden talks")).toBe(false);
+    expect(hasExplicitDjOrRaveSignal("Craving more: a food market")).toBe(false);
+  });
+
+  it("returns false for unrelated prose with no DJ/rave word at all", () => {
+    expect(hasExplicitDjOrRaveSignal("An evening of poetry and quiet conversation")).toBe(false);
   });
 });
 

@@ -19,6 +19,7 @@ import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvad
 import { createPylonenAdapter, PYLONEN_SOURCE_ID } from "@/lib/adapters/pylonenAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
 import type { Source, Venue } from "@/lib/types";
+import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
@@ -1167,6 +1168,9 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
         probableEnd: r.probable_end ? new Date(r.probable_end as string).toISOString() : null,
         lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at as string).toISOString() : null,
         sourceId: (r.source_id as string | null) ?? null,
+        probableTitle: r.probable_title as string,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
       },
       { lastCompleteSyncAt, now },
     );

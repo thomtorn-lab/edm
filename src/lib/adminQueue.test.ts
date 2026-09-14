@@ -42,6 +42,13 @@ function row(overrides: Partial<AdminQueueClassifiable> = {}): AdminQueueClassif
     // admin-originated (sourceId: null) path has its own dedicated describe
     // block below.
     sourceId: "src-test",
+    // No positive review signal by default — every existing precedence test
+    // in this file exercises category precedence unrelated to the
+    // 2026-09-14 positive-signal exception, which has its own dedicated
+    // describe block below.
+    probableTitle: "An Event",
+    detectedLineup: [],
+    predictedGenre: null,
     ...overrides,
   };
 }
@@ -248,6 +255,145 @@ describe("classifyAdminQueueRow — manual-review source routing (Pylonen DQ UX 
   });
 });
 
+describe("classifyAdminQueueRow — positive-signal routing exception (Discovery Queue routing, 2026-09-14 exhaustive 294-row audit follow-up)", () => {
+  it("1. an otherwise-INSUFFICIENT row with a resolved predictedGenre surfaces in NEEDS_REVIEW", () => {
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "incomplete_data", predictedGenre: "techno" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("2. an otherwise-INSUFFICIENT row with an explicit bare 'DJ' mention in the title surfaces in NEEDS_REVIEW", () => {
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Friday Night with DJ Mareld" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("3. an explicit 'DJ set' mention (in the title or the lineup) surfaces in NEEDS_REVIEW", () => {
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "A DJ set to close the night" }), SYNC),
+    ).toBe("needs_review");
+    expect(
+      classifyAdminQueueRow(
+        row({ holdReason: "no_genre_evidence", probableTitle: "Friday Social", detectedLineup: ["Anders (DJ set)"] }),
+        SYNC,
+      ),
+    ).toBe("needs_review");
+  });
+
+  it("4. explicit 'rave' evidence surfaces in NEEDS_REVIEW under the validated word-boundary matching semantics", () => {
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "incomplete_data", probableTitle: "Warehouse Rave: Season Opener" }), SYNC),
+    ).toBe("needs_review");
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "incomplete_data", probableTitle: "Underground raves all summer" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("5. a weak row with no positive evidence at all (bare title, empty lineup, no predictedGenre) remains INSUFFICIENT", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ holdReason: "no_genre_evidence", probableTitle: "Rebirthing Breathwork Workshop", detectedLineup: [] }),
+        SYNC,
+      ),
+    ).toBe("insufficient");
+  });
+
+  it("6. a resolved venue alone (venueResolvedDecision null, i.e. already resolved) does not, on its own, rescue an otherwise-INSUFFICIENT row — the audit explicitly rejected 'resolved venue => NEEDS_REVIEW' for false positives", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ holdReason: "incomplete_data", venueResolvedDecision: null, probableTitle: "Private Function" }),
+        SYNC,
+      ),
+    ).toBe("insufficient");
+  });
+
+  it("7. an obvious non-electronic event at a resolved venue is unaffected by this exception — it still resolves per the existing REJECTED/INSUFFICIENT logic, never promoted by venue resolution or an incidental partial-word match", () => {
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "negative_relevance", probableTitle: "Jazz Trio Evening" }), SYNC),
+    ).toBe("rejected");
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Classical Chamber Recital" }), SYNC),
+    ).toBe("insufficient");
+  });
+
+  it("8. PAST/STALE precedence still wins over a strong positive signal — the exception is only ever reached once every earlier tier has already been decided", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ predictedGenre: "techno", probableTitle: "DJ Set", lastSeenAt: "2026-09-01T00:00:00+02:00" }),
+        SYNC, // lastSeenAt predates SYNC.lastCompleteSyncAt -> stale
+      ),
+    ).toBe("past_stale");
+  });
+
+  it("9. REJECTED precedence still wins over a strong positive signal", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ holdReason: "negative_relevance", predictedGenre: "techno", probableTitle: "DJ Set" }),
+        SYNC,
+      ),
+    ).toBe("rejected");
+  });
+
+  it("10. this exception is reached only for genuinely pending rows — groupAdminQueueRows never even calls the classifier for a non-pending row (admin/page.tsx pre-filters to status === 'pending', same contract the manual-review-source describe block above already documents); a strong positive signal cannot resurrect an ignored/published/merged/rejected row into Needs Review", () => {
+    // classifyAdminQueueRow itself has no notion of "ignored" — that filtering
+    // happens one layer up (see groupAdminQueueRows's own doc comment and the
+    // Pylonen describe block's test #6 above), so this is a structural
+    // guarantee, not a case the classifier itself could get wrong.
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "negative_relevance", predictedGenre: "house" }), SYNC),
+    ).toBe("rejected");
+  });
+
+  it("11. src-pylonen's existing manual-review routing is completely unchanged by this exception — it already reaches NEEDS_REVIEW before the positive-signal check is ever consulted, with or without a positive signal", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", holdReason: "no_genre_evidence", predictedGenre: null, probableTitle: "Untitled" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("12. classifyAdminQueueRow is a pure classifier — routing a row into NEEDS_REVIEW via the positive-signal exception never mutates holdReason, overallConfidence, or predictedGenre on the input", () => {
+    const positiveRow = row({ holdReason: "no_genre_evidence", overallConfidence: "low", predictedGenre: null, probableTitle: "DJ night" });
+    expect(classifyAdminQueueRow(positiveRow, SYNC)).toBe("needs_review");
+    expect(positiveRow.holdReason).toBe("no_genre_evidence");
+    expect(positiveRow.overallConfidence).toBe("low");
+    expect(positiveRow.predictedGenre).toBeNull();
+  });
+
+  describe("DJ/rave text-matching false-positive boundaries (reuses deterministicGenreMapping.ts's word-boundary convention, never a loose substring rule)", () => {
+    it("'adjacent' does not contain a DJ signal", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "The adjacent building is closed" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'brave', 'grave', 'gravel', and 'craving' do not contain a rave signal", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "A brave new exhibition opens" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Graveside stories: a walking tour" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Gravel paths and garden talks" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Craving more: a food market" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("unrelated prose with no DJ/rave word at all stays INSUFFICIENT", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "An evening of poetry and quiet conversation" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("bare source identity alone is not a positive signal — an otherwise-weak row from a normally-trusted source still needs its own evidence", () => {
+      expect(
+        classifyAdminQueueRow(row({ sourceId: "src-billetto", holdReason: "no_genre_evidence", probableTitle: "Private Function" }), SYNC),
+      ).toBe("insufficient");
+    });
+  });
+});
+
 describe("groupAdminQueueRows — manual-review source routing only ever surfaces genuinely PENDING rows (Pylonen DQ UX bug, 2026-09-13)", () => {
   it("6. an ignored Pylonen candidate does not appear in Needs Review — it was never pending in the first place (admin/page.tsx pre-filters to status === 'pending' before calling groupAdminQueueRows, same contract the pre-existing 'moved out of the pending set' test documents above)", () => {
     const items = [discoveryItem({ id: "dq-pylonen-1", sourceId: "src-pylonen", holdReason: "no_genre_evidence" })];
@@ -403,7 +549,11 @@ describe("groupAdminQueueRows", () => {
     const items = [
       discoveryItem({ id: "dq-needs-review" }),
       discoveryItem({ id: "dq-venue-blocked", venueResolvedDecision: "auto_publish", holdReason: "incomplete_data" }),
-      discoveryItem({ id: "dq-insufficient", holdReason: "no_genre_evidence" }),
+      // predictedGenre: null override (2026-09-14 positive-signal routing) —
+      // discoveryItem's own default predictedGenre: "techno" now legitimately
+      // qualifies as a positive signal, so this fixture must null it out to
+      // stay a genuinely weak-evidence row for this grouping test.
+      discoveryItem({ id: "dq-insufficient", holdReason: "no_genre_evidence", predictedGenre: null }),
       discoveryItem({ id: "dq-rejected", holdReason: "negative_relevance" }),
       discoveryItem({ id: "dq-stale", lastSeenAt: "2026-09-01T00:00:00+02:00" }),
     ];
@@ -458,8 +608,8 @@ describe("groupAdminQueueRows", () => {
 
   it("Insufficient sorts by freshest evidence (lastSeenAt) first", () => {
     const items = [
-      discoveryItem({ id: "dq-older", holdReason: "no_genre_evidence", lastSeenAt: "2026-09-06T10:00:00+02:00" }),
-      discoveryItem({ id: "dq-newer", holdReason: "no_genre_evidence", lastSeenAt: "2026-09-06T20:00:00+02:00" }),
+      discoveryItem({ id: "dq-older", holdReason: "no_genre_evidence", lastSeenAt: "2026-09-06T10:00:00+02:00", predictedGenre: null }),
+      discoveryItem({ id: "dq-newer", holdReason: "no_genre_evidence", lastSeenAt: "2026-09-06T20:00:00+02:00", predictedGenre: null }),
     ];
     const sourceSync = new Map([["src-test", "2026-09-06T10:00:00+02:00"]]);
     const groups = groupAdminQueueRows(items, sourceSync, NOW);

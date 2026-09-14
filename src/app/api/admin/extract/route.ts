@@ -224,6 +224,9 @@ export async function POST(request: NextRequest) {
       probableEnd: raw.endDatetime,
       lastSeenAt: now.toISOString(),
       sourceId: null,
+      probableTitle: inserted.probableTitle,
+      detectedLineup: result.normalizedArtists,
+      predictedGenre: inserted.predictedGenre,
     },
     { lastCompleteSyncAt: null, now },
   );

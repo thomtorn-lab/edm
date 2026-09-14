@@ -4,6 +4,7 @@ import { isPastEvent } from "./datetime";
 import { resolveVenue } from "./normalize";
 import type { DuplicateCandidate } from "./dedup";
 import { isManualReviewSource } from "./data/sources";
+import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 
 /**
  * Admin Discovery Queue cleanup/actionable views, 2026-09-06. The single
@@ -44,6 +45,38 @@ export interface AdminQueueClassifiable {
    * this function's own "ADMIN-ORIGINATED ROWS" doc comment.
    */
   sourceId: DiscoveryQueueItem["sourceId"];
+  /** Used only by the positive-review-signal exception below — never
+   *  re-derives evidence/confidence, only decides ROUTING. */
+  probableTitle: DiscoveryQueueItem["probableTitle"];
+  detectedLineup: DiscoveryQueueItem["detectedLineup"];
+  predictedGenre: DiscoveryQueueItem["predictedGenre"];
+}
+
+/**
+ * Discovery Queue positive-signal routing (2026-09-14, exhaustive 294-row
+ * Insufficient Evidence audit follow-up): the audit tested "resolved venue
+ * => NEEDS_REVIEW" and rejected it for producing too many false positives,
+ * then validated a narrower rule against the full population — 10 rows
+ * moved, 10/10 genuinely review-worthy, 0 false positives, 0 ambiguous —
+ * which this function implements exactly. A row qualifies when EITHER:
+ *   (a) predictedGenre already resolved to a specific GenreSlug (the
+ *       pipeline found real genre evidence; holdReason still says
+ *       "insufficient" only because of some OTHER missing field, e.g. no
+ *       resolved date), OR
+ *   (b) the row's own title/lineup text contains explicit DJ/rave-type
+ *       evidence (hasExplicitDjOrRaveSignal — word-boundary matched, reused
+ *       from deterministicGenreMapping.ts rather than a new loose substring
+ *       rule, so "adjacent"/"brave"/"gravel"-style false positives are
+ *       structurally impossible, not just avoided by convention).
+ * This is a ROUTING decision only — it never mutates predictedGenre,
+ * overallConfidence, or holdReason; a row that qualifies still carries
+ * whatever holdReason the pipeline gave it, just surfaced somewhere a human
+ * will actually see it.
+ */
+function hasStrongPositiveReviewSignal(item: AdminQueueClassifiable): boolean {
+  if (item.predictedGenre != null) return true;
+  const text = `${item.probableTitle} ${item.detectedLineup.join(" ")}`;
+  return hasExplicitDjOrRaveSignal(text);
 }
 
 /**
@@ -140,7 +173,11 @@ export function classifyAdminQueueRow(
   // admin-originated early return above.
   if (!isManualReviewSource(item.sourceId)) {
     if (item.holdReason === "incomplete_data" || item.holdReason === "low_confidence" || item.holdReason === "no_genre_evidence") {
-      return "insufficient";
+      // Positive-signal exception (2026-09-14 audit follow-up) — see
+      // hasStrongPositiveReviewSignal's own doc comment. Reached only once a
+      // row would otherwise land in INSUFFICIENT; holdReason/overallConfidence/
+      // predictedGenre are read here, never written.
+      return hasStrongPositiveReviewSignal(item) ? "needs_review" : "insufficient";
     }
     // Legacy fallback: a row inserted/last classified before discoveryQueue's
     // holdReason column existed carries holdReason=null forever until its next
@@ -148,8 +185,11 @@ export function classifyAdminQueueRow(
     // doc comment). overallConfidence's own "low" tier already means "the
     // pipeline decision was hold" (see buildDiscoveryQueueClassificationPatch),
     // so treat that combination as insufficient rather than letting an
-    // unclassified legacy row default into the actionable queue.
-    if (item.holdReason === null && item.overallConfidence === "low") return "insufficient";
+    // unclassified legacy row default into the actionable queue — unless the
+    // same positive-signal exception above applies.
+    if (item.holdReason === null && item.overallConfidence === "low") {
+      return hasStrongPositiveReviewSignal(item) ? "needs_review" : "insufficient";
+    }
   }
 
   return "needs_review";
