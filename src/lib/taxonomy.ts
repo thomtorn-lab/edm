@@ -78,11 +78,19 @@ export function getGenre(slug: GenreSlug): GenreDef {
 
 /**
  * Approved public genre GROUPING taxonomy (Electronic CPH data-quality work
- * package, Workstream B): a fixed set of 13 broad categories, used for the
+ * package, Workstream B): a fixed set of 12 broad categories, used for the
  * genre FILTER (EventExplorer.tsx) and for filter-inheritance — a specific
  * subgenre like "melodic-techno" is discoverable both under its own exact
  * label (search — see search.ts) and under its broader group ("Techno" in
  * the filter dropdown), via mainGenreOf/GENRE_TO_MAIN below.
+ *
+ * Every slug here MUST appear as a value in GENRE_TO_MAIN (enforced by
+ * taxonomy.test.ts) — a filter group with no GenreSlug that ever maps to it
+ * is a dead option that permanently returns zero events. "breaks" was
+ * removed for exactly this reason (genre taxonomy audit, 2026-09-14): no
+ * GenreSlug for it was ever added, no adapter or admin surface could ever
+ * produce one, and Production/Discovery Queue data confirmed zero events
+ * used it.
  *
  * This grouping is NOT used for the public-facing genre badge (see
  * displayGenres below) — that always shows the precise admin-selected/
@@ -103,7 +111,6 @@ export type MainGenreSlug =
   | "psytrance"
   | "drum-and-bass"
   | "garage-bass"
-  | "breaks"
   | "hardstyle-hardcore"
   | "disco"
   | "electro"
@@ -125,7 +132,6 @@ export const MAIN_GENRES: MainGenreDef[] = [
   { slug: "psytrance", label: "Psytrance", shortLabel: "Psytrance" },
   { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "Drum & Bass" },
   { slug: "garage-bass", label: "UK Garage / Bass Music", shortLabel: "Garage / Bass" },
-  { slug: "breaks", label: "Breaks", shortLabel: "Breaks" },
   { slug: "hardstyle-hardcore", label: "Hardstyle / Hardcore", shortLabel: "Hardstyle / Hardcore" },
   { slug: "disco", label: "Disco", shortLabel: "Disco" },
   { slug: "electro", label: "Electro", shortLabel: "Electro" },

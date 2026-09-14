@@ -561,6 +561,37 @@ describe("applyAdminEventEdit — generic PATCH bypass safety (admin unpublish/c
   });
 });
 
+describe("applyAdminEventEdit — primaryGenre/subgenres lockstep (genre taxonomy audit, 2026-09-14)", () => {
+  it("derives subgenres=[primaryGenre] when a patch sets primaryGenre alone — the exact gap that let primaryGenre='electronic-other'/subgenres=[] reach Production", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { primaryGenre: "electronic-other" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.primaryGenre).toBe("electronic-other");
+    expect(patch.subgenres).toEqual(["electronic-other"]);
+  });
+
+  it("does not override an explicitly-provided subgenres value — a caller that already sends both fields together (e.g. EventManager.tsx) keeps full control", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { primaryGenre: "techno", subgenres: ["melodic-techno"] });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.primaryGenre).toBe("techno");
+    expect(patch.subgenres).toEqual(["melodic-techno"]);
+  });
+
+  it("does not touch subgenres for an edit that never touches primaryGenre", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [] }]];
+
+    await applyAdminEventEdit("e-1", { title: "Corrected Title" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch).not.toHaveProperty("subgenres");
+  });
+});
+
 describe("applyAdminEventEdit — event-level link editing (officialEventUrl/ticketUrl, 2026-09-07)", () => {
   it("adds an Official Event URL where none existed and marks the field overridden", async () => {
     selectResults = [[{ id: "e-1", overriddenFields: [] }]];
