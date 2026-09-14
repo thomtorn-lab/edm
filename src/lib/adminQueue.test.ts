@@ -290,9 +290,14 @@ describe("classifyAdminQueueRow — positive-signal routing exception (Discovery
   });
 
   it("5. a weak row with no positive evidence at all (bare title, empty lineup, no predictedGenre) remains INSUFFICIENT", () => {
+    // Title deliberately neutral against BOTH the positive-signal exception
+    // AND the 2026-09-14 high-precision negative-relevance rule below (that
+    // rule's own dedicated describe block re-uses "Rebirthing Breathwork
+    // Workshop" — the title this test used before that rule existed — to
+    // show it now correctly routes to REJECTED instead).
     expect(
       classifyAdminQueueRow(
-        row({ holdReason: "no_genre_evidence", probableTitle: "Rebirthing Breathwork Workshop", detectedLineup: [] }),
+        row({ holdReason: "no_genre_evidence", probableTitle: "Private Function", detectedLineup: [] }),
         SYNC,
       ),
     ).toBe("insufficient");
@@ -391,6 +396,312 @@ describe("classifyAdminQueueRow — positive-signal routing exception (Discovery
         classifyAdminQueueRow(row({ sourceId: "src-billetto", holdReason: "no_genre_evidence", probableTitle: "Private Function" }), SYNC),
       ).toBe("insufficient");
     });
+  });
+});
+
+describe("classifyAdminQueueRow — high-precision negative-relevance rule (2026-09-14 minimal-first-implementation follow-up to the atomic-predicate safety check)", () => {
+  describe("every approved predicate family rejects, holdReason no_genre_evidence", () => {
+    it("A. guided tour — rundvisning / omvisning", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Rundvisning på slottet" }), SYNC),
+      ).toBe("rejected");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Omvisning i samlingen" }), SYNC),
+      ).toBe("rejected");
+    });
+
+    it("B. wellness — specific modality only", () => {
+      for (const title of [
+        "Breathwork evening",
+        "Rebirthing session",
+        "Guided meditation",
+        "Mindfulness for beginners",
+        "Klangbad ceremony",
+      ]) {
+        expect(classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: title }), SYNC)).toBe("rejected");
+      }
+    });
+
+    it("C. food/drink — specific validated phrases only", () => {
+      for (const title of [
+        "En champagneoplevelse i byen",
+        "Champagne cruise on the harbour",
+        "Winebattle: red vs white",
+        "A tasting of Nordic spirits",
+        "Suppefestival på Torvet",
+        "Gin festival 2026",
+        "Sparkling wine festival",
+        "Coteaux Champenois evening",
+      ]) {
+        expect(classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: title }), SYNC)).toBe("rejected");
+      }
+    });
+
+    it("D. craft — narrow explicit medium only", () => {
+      for (const title of ["Hækle-aften", "Broderi workshop", "Mosaik for alle", "Akvarel i haven", "Filt til børn"]) {
+        expect(classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: title }), SYNC)).toBe("rejected");
+      }
+    });
+
+    it("E. children's programming — explicit validated phrases only", () => {
+      for (const title of ["Børnefilmklub søndag", "Børneshowet kl. 11", "Baby massage kursus", "Dyrenes karneval", "Julegåden 2026"]) {
+        expect(classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: title }), SYNC)).toBe("rejected");
+      }
+    });
+
+    it("F. basketball — exact anchored 'BC COPENHAGEN vs.' fixture only", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "BC COPENHAGEN vs. Bakken Bears" }), SYNC),
+      ).toBe("rejected");
+    });
+
+    it("G. dating — activitydating / speeddating / speedfriending", () => {
+      for (const title of ["Activitydating night", "Speeddating for singles", "Speedfriending mixer"]) {
+        expect(classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: title }), SYNC)).toBe("rejected");
+      }
+    });
+
+    it("H. communal dining — fællesspisning only", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Fællesspisning i gården" }), SYNC),
+      ).toBe("rejected");
+    });
+
+    it("I. improv theatre — improteater only", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Improteater aften" }), SYNC),
+      ).toBe("rejected");
+    });
+
+    it("J. planetarium — exact 'planetarieshow live' only", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Planetarieshow LIVE: Solsystemet" }), SYNC),
+      ).toBe("rejected");
+    });
+
+    it("K. business — hackathon / corporate wellbeing / data activation only", () => {
+      for (const title of ["Company hackathon weekend", "Corporate wellbeing day", "Data activation summit"]) {
+        expect(classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: title }), SYNC)).toBe("rejected");
+      }
+    });
+
+    it("the pre-existing 'Rebirthing Breathwork Workshop' example (used before this rule existed to illustrate a weak row with no positive evidence) now correctly rejects instead of sitting in INSUFFICIENT", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Rebirthing Breathwork Workshop" }), SYNC),
+      ).toBe("rejected");
+    });
+  });
+
+  describe("positive evidence always wins first — never rejected via this rule", () => {
+    it("predictedGenre resolved => NEEDS_REVIEW even though the title also matches a negative-relevance phrase", () => {
+      expect(
+        classifyAdminQueueRow(
+          row({ holdReason: "no_genre_evidence", probableTitle: "Rundvisning + DJ afterparty", predictedGenre: "techno" }),
+          SYNC,
+        ),
+      ).toBe("needs_review");
+    });
+
+    it("explicit DJ/rave text => NEEDS_REVIEW even though the title also matches a negative-relevance phrase", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Mindfulness rave with DJ set" }), SYNC),
+      ).toBe("needs_review");
+      expect(
+        classifyAdminQueueRow(
+          row({ holdReason: "no_genre_evidence", probableTitle: "Fællesspisning + rave afterwards" }),
+          SYNC,
+        ),
+      ).toBe("needs_review");
+    });
+
+    it("deterministic electronic genre evidence in the lineup => NEEDS_REVIEW, negative-content rule never reached", () => {
+      expect(
+        classifyAdminQueueRow(
+          row({ holdReason: "no_genre_evidence", probableTitle: "Broderi workshop", detectedLineup: ["DJ Anders"] }),
+          SYNC,
+        ),
+      ).toBe("needs_review");
+    });
+  });
+
+  describe("word-boundary safety", () => {
+    it("'filt' does not match inside a longer word", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "A new Instagram filter workshop" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'baby massage' requires the full phrase, not a bare 'baby' or 'massage' mention", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Baby shower celebration" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Massage therapy open house" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'activitydating'/'speeddating' require the compound word, not bare 'dating'", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Online dating panel discussion" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("the basketball anchor requires the exact start-of-title fixture text — a mid-title mention or a different team format does not match", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Tonight: BC COPENHAGEN vs. Bakken Bears" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "bc copenhagen vs. Bakken Bears" }), SYNC),
+      ).toBe("insufficient");
+    });
+  });
+
+  describe("deliberate non-matches — tokens explicitly excluded from this narrowed first implementation", () => {
+    it("'recharge' (bare wellness token) does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Sunday Recharge Session" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'mental frihed' does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Mental frihed workshop" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("bare 'gourmet' does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Gourmet evening at the harbour" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("bare 'festival' and 'tasting' outside the validated phrases do not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Street food festival" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Whisky tasting evening" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("generic 'improv'/'impro-' does not reject (collides with musical-improvisation contexts)", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Improv comedy night" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Impro-jazz session" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'brand experience' does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "A new brand experience pop-up" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'masterclass' does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Piano masterclass" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'kursus' does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Fotografi kursus" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("'tribute' does not reject — confirmed risky via real 'Coldplay Tribute'/'Prince Tribute' Production data (a genre-agnostic naming convention)", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Coldplay Tribute Night" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("generic 'comedy' / 'stand-up' do not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Comedy night at the club" }), SYNC),
+      ).toBe("insufficient");
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Stand-up showcase" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("church/classical concert wording does not reject on its own", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Julekoncert i kirken" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("venue identity alone (no content signal at all) does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Event at Trinitatis Kirke" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("generic bare 'vs' (not the anchored basketball fixture) does not reject", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Team A vs Team B: charity match" }), SYNC),
+      ).toBe("insufficient");
+    });
+  });
+
+  describe("scope — applies only to holdReason incomplete_data / no_genre_evidence, never low_confidence or the legacy null branch", () => {
+    it("holdReason incomplete_data with matching negative content rejects", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "incomplete_data", probableTitle: "Rundvisning på museet" }), SYNC),
+      ).toBe("rejected");
+    });
+
+    it("holdReason low_confidence with matching negative content is NOT rejected by this rule — stays INSUFFICIENT", () => {
+      expect(
+        classifyAdminQueueRow(row({ holdReason: "low_confidence", probableTitle: "Rundvisning på museet" }), SYNC),
+      ).toBe("insufficient");
+    });
+
+    it("the legacy holdReason===null && overallConfidence==='low' branch is untouched by this rule — stays INSUFFICIENT even with matching negative content", () => {
+      expect(
+        classifyAdminQueueRow(
+          row({ holdReason: null, overallConfidence: "low", probableTitle: "Rundvisning på museet" }),
+          SYNC,
+        ),
+      ).toBe("insufficient");
+    });
+  });
+
+  it("PAST/STALE and VENUE_BLOCKED precedence still win over a matching negative-relevance signal", () => {
+    expect(
+      classifyAdminQueueRow(
+        row({ holdReason: "no_genre_evidence", probableTitle: "Rundvisning", lastSeenAt: "2026-09-01T00:00:00+02:00" }),
+        SYNC, // stale
+      ),
+    ).toBe("past_stale");
+    expect(
+      classifyAdminQueueRow(
+        row({ holdReason: "no_genre_evidence", probableTitle: "Rundvisning", venueResolvedDecision: "review_queue" }),
+        SYNC,
+      ),
+    ).toBe("venue_blocked");
+  });
+
+  it("Pylonen (manual-review source) routing is completely unchanged — a matching negative-relevance title still lands in NEEDS_REVIEW, never REJECTED via this rule", () => {
+    expect(
+      classifyAdminQueueRow(row({ sourceId: "src-pylonen", holdReason: "no_genre_evidence", probableTitle: "Rundvisning på museet" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("PR #80 Needs Review positive-signal routing is unaffected by this rule's presence for a genuinely unrelated row", () => {
+    expect(
+      classifyAdminQueueRow(row({ holdReason: "incomplete_data", probableTitle: "Friday Night with DJ Mareld" }), SYNC),
+    ).toBe("needs_review");
+  });
+
+  it("classifyAdminQueueRow is a pure classifier — routing a row into REJECTED via this rule never mutates holdReason, overallConfidence, predictedGenre, or any other input field", () => {
+    const negativeRow = row({ holdReason: "no_genre_evidence", overallConfidence: "medium", predictedGenre: null, probableTitle: "Rundvisning på slottet" });
+    expect(classifyAdminQueueRow(negativeRow, SYNC)).toBe("rejected");
+    expect(negativeRow.holdReason).toBe("no_genre_evidence");
+    expect(negativeRow.overallConfidence).toBe("medium");
+    expect(negativeRow.predictedGenre).toBeNull();
+    expect(negativeRow.probableTitle).toBe("Rundvisning på slottet");
   });
 });
 
