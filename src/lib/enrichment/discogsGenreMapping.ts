@@ -24,6 +24,30 @@ function normalizeToken(s: string): string {
 // consistency, and no "hard-house" slug exists in the taxonomy — adding one
 // is out of scope for this MVP. electronic-other (confirmed electronic, no
 // specific matching subgenre) is the correct fallback.
+// Dubstep/Hardstyle/Rawstyle/Hardcore automation, 2026-09-14: "Dubstep" and
+// "Hardstyle" are established, unambiguous Discogs Electronic-genre style
+// tags — added below. "Rawstyle" deliberately has NO entry here: unlike
+// "Hard House" (see the comment above), this isn't a reviewed-and-rejected
+// case, it's genuine uncertainty — Discogs' controlled vocabulary does not
+// appear to expose "Rawstyle" as a style distinct from "Hardstyle", and
+// per this file's own "do not guess" standard, an unconfirmed style string
+// is left out rather than invented. Rawstyle is still reachable — just via
+// deterministicGenreMapping.ts's text-based path, not this one.
+//
+// "hardcore": Discogs' controlled vocabulary genuinely disambiguates this
+// from Billetto's own unsafe "hardcore" subcategory (see billettoAdapter.ts's
+// module doc comment for that real hardcore-punk false positive): Discogs
+// tags a hardcore-PUNK release under the Rock genre with its OWN distinct
+// style string, "Hardcore Punk" — never the bare "Hardcore" string, which
+// Discogs reserves for the Electronic-genre style (gabber/uptempo/etc.
+// lineage). Exact (normalized) matching against `release.styles` means
+// "Hardcore Punk" normalizes to "hardcorepunk", never colliding with
+// "hardcore" — the two are different tokens by construction, not by luck.
+// "Gabber" and "Frenchcore" are likewise established, unambiguous Discogs
+// Electronic styles. "Uptempo Hardcore" / "Industrial Hardcore" are NOT
+// added — unconfirmed as their own distinct Discogs style strings (both are
+// commonly just tagged "Hardcore" on Discogs), so left to the deterministic
+// text path rather than guessed here.
 const STYLE_TO_GENRE_SLUG_RAW: Record<string, GenreSlug> = {
   techno: "techno",
   "hard techno": "hard-techno",
@@ -46,6 +70,11 @@ const STYLE_TO_GENRE_SLUG_RAW: Record<string, GenreSlug> = {
   dnb: "drum-and-bass",
   garage: "garage",
   "uk garage": "garage",
+  dubstep: "dubstep",
+  hardstyle: "hardstyle",
+  hardcore: "hardcore",
+  gabber: "hardcore",
+  frenchcore: "hardcore",
   electro: "electro",
   disco: "disco",
   ambient: "ambient-experimental",

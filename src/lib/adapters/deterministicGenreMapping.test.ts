@@ -180,6 +180,97 @@ describe("hasRichGenreEvidence (gap 4D, KultuNaut publish work package, 2026-09-
   });
 });
 
+describe("Dubstep/Hardstyle/Rawstyle/Hardcore automation (genre taxonomy audit follow-up, 2026-09-14)", () => {
+  describe("deterministicGenreFromText", () => {
+    it("matches bare 'dubstep'", () => {
+      expect(deterministicGenreFromText("A night of heavy dubstep")).toBe("dubstep");
+    });
+
+    it("matches bare 'hardstyle'", () => {
+      expect(deterministicGenreFromText("Hardstyle till sunrise")).toBe("hardstyle");
+    });
+
+    it("matches bare 'rawstyle'", () => {
+      expect(deterministicGenreFromText("A rawstyle showcase")).toBe("rawstyle");
+    });
+
+    it("matches 'raw hardstyle' as rawstyle too", () => {
+      expect(deterministicGenreFromText("Raw hardstyle all night")).toBe("rawstyle");
+    });
+
+    it("resolves rawstyle over the broader hardstyle family when both words appear (specific-before-general precedence)", () => {
+      expect(deterministicGenreFromText("Rawstyle / Hardstyle night")).toBe("rawstyle");
+      expect(deterministicGenreFromText("Hardstyle & Rawstyle showcase")).toBe("rawstyle");
+    });
+
+    it("resolves dubstep over the broader garage-bass fallback when both words appear", () => {
+      expect(deterministicGenreFromText("Garage and dubstep all night")).toBe("dubstep");
+    });
+
+    it("resolves the explicit electronic-hardcore compound phrases to hardcore", () => {
+      expect(deterministicGenreFromText("A night of hardcore techno")).toBe("hardcore");
+      expect(deterministicGenreFromText("Industrial hardcore showcase")).toBe("hardcore");
+      expect(deterministicGenreFromText("Electronic hardcore all night")).toBe("hardcore");
+      expect(deterministicGenreFromText("Uptempo hardcore till sunrise")).toBe("hardcore");
+      expect(deterministicGenreFromText("A gabber rave")).toBe("hardcore");
+      expect(deterministicGenreFromText("Frenchcore till dawn")).toBe("hardcore");
+    });
+
+    it("does NOT resolve a bare, uncontextualized 'hardcore' mention to the hardcore genre (no bare pattern was added — only the explicit compound phrases above)", () => {
+      expect(deterministicGenreFromText("A hardcore night")).toBeNull();
+    });
+
+    it("does NOT resolve 'hardcore punk' to hardcore (real Billetto false-positive precedent: 'KÆMPE MOSHPIT VOL. 11', see billettoAdapter.test.ts)", () => {
+      expect(deterministicGenreFromText("Kæmpe moshpit vol. 11 — en aften med hardcore, punk og støj.")).toBeNull();
+      expect(deterministicGenreFromText("A hardcore punk show tonight")).toBeNull();
+    });
+
+    it("does NOT resolve 'hardcore metal' to hardcore", () => {
+      expect(deterministicGenreFromText("A hardcore metal gig")).toBeNull();
+    });
+  });
+
+  describe("refineGenreFromText", () => {
+    it("promotes a category-level 'techno' hint to hardcore when the text explicitly says 'hardcore techno'", () => {
+      expect(refineGenreFromText("techno", "Tonight: hardcore techno all night long.")).toBe("hardcore");
+    });
+
+    it("leaves a genuine techno hint as techno when the text has no hardcore-specific evidence", () => {
+      expect(refineGenreFromText("techno", "A night of driving techno.")).toBe("techno");
+    });
+
+    it("promotes a category-level 'hardstyle' hint to rawstyle when the text explicitly says 'rawstyle'", () => {
+      expect(refineGenreFromText("hardstyle", "Tonight is a rawstyle special.")).toBe("rawstyle");
+    });
+
+    it("leaves a genuine hardstyle hint as hardstyle when the text has no rawstyle-specific evidence", () => {
+      expect(refineGenreFromText("hardstyle", "A night of euphoric hardstyle.")).toBe("hardstyle");
+    });
+
+    it("promotes a category-level 'garage' hint to dubstep when the text explicitly says 'dubstep'", () => {
+      expect(refineGenreFromText("garage", "Garage roots, dubstep sound.")).toBe("dubstep");
+    });
+
+    it("leaves a genuine garage hint as garage when the text has no dubstep-specific evidence", () => {
+      expect(refineGenreFromText("garage", "UK garage all night.")).toBe("garage");
+    });
+  });
+
+  describe("existing Techno/Garage/Electronic-Other mappings stay unregressed", () => {
+    it("still matches plain 'techno' with no hardcore-specific text nearby", () => {
+      expect(deterministicGenreFromText("A pure techno night at the warehouse")).toBe("techno");
+    });
+
+    it("still matches plain 'garage' with no dubstep-specific text nearby", () => {
+      expect(deterministicGenreFromText("A UK garage session")).toBe("garage");
+    });
+
+    it("still returns null (electronic-other territory) for text with no keyword match at all", () => {
+      expect(deterministicGenreFromText("An evening with a live band and no other description")).toBeNull();
+    });
+  });
+});
+
 describe("refineGenreFromText (genre precision, Workstream B)", () => {
   it("distinguishes Trance vs Psytrance: refines a generic 'trance' category to psytrance when the event's own text says so (Infected Mushroom-type evidence)", () => {
     expect(refineGenreFromText("trance", "Infected Mushroom brings their legendary psytrance sound to Copenhagen.")).toBe(
