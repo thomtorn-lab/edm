@@ -289,18 +289,26 @@ describe("classifyAdminQueueRow — positive-signal routing exception (Discovery
     ).toBe("needs_review");
   });
 
-  it("5. a weak row with no positive evidence at all (bare title, empty lineup, no predictedGenre) remains INSUFFICIENT", () => {
-    // Title deliberately neutral against BOTH the positive-signal exception
-    // AND the 2026-09-14 high-precision negative-relevance rule below (that
-    // rule's own dedicated describe block re-uses "Rebirthing Breathwork
-    // Workshop" — the title this test used before that rule existed — to
-    // show it now correctly routes to REJECTED instead).
+  it("5. a weak row with no positive evidence at all (bare title, empty lineup, no predictedGenre) — 'Rebirthing Breathwork Workshop' now correctly REJECTS under the 2026-09-14 high-precision negative-relevance rule below, rather than sitting in INSUFFICIENT", () => {
+    // This fixture originally asserted "insufficient" — written before the
+    // negative-relevance rule existed, back when that was true for every
+    // weak row regardless of content. The title itself was never wrong: it
+    // is a genuine, unremarkable wellness-workshop listing, and "breathwork"
+    // + "rebirthing" are both explicitly-approved Category B predicates (see
+    // the negative-relevance describe block's own doc comment). Once that
+    // rule shipped, THIS row is exactly the kind of high-precision, no-
+    // positive-evidence noise it was built to catch — so the fixture is kept
+    // exactly as it always was, and only the expected outcome is corrected
+    // to match what is now genuinely the right classification. (For "no
+    // positive evidence AND no negative-content match -> stays INSUFFICIENT"
+    // coverage, see test #6 immediately below, which already exercises that
+    // case with an unrelated neutral title.)
     expect(
       classifyAdminQueueRow(
-        row({ holdReason: "no_genre_evidence", probableTitle: "Private Function", detectedLineup: [] }),
+        row({ holdReason: "no_genre_evidence", probableTitle: "Rebirthing Breathwork Workshop", detectedLineup: [] }),
         SYNC,
       ),
-    ).toBe("insufficient");
+    ).toBe("rejected");
   });
 
   it("6. a resolved venue alone (venueResolvedDecision null, i.e. already resolved) does not, on its own, rescue an otherwise-INSUFFICIENT row — the audit explicitly rejected 'resolved venue => NEEDS_REVIEW' for false positives", () => {
@@ -485,11 +493,6 @@ describe("classifyAdminQueueRow — high-precision negative-relevance rule (2026
       }
     });
 
-    it("the pre-existing 'Rebirthing Breathwork Workshop' example (used before this rule existed to illustrate a weak row with no positive evidence) now correctly rejects instead of sitting in INSUFFICIENT", () => {
-      expect(
-        classifyAdminQueueRow(row({ holdReason: "no_genre_evidence", probableTitle: "Rebirthing Breathwork Workshop" }), SYNC),
-      ).toBe("rejected");
-    });
   });
 
   describe("positive evidence always wins first — never rejected via this rule", () => {
