@@ -154,6 +154,31 @@ const DANCE_CLUB_CONTEXT_RE =
   /\b(?:dance\s?floors?|club\s?nights?|nightclubs?|raves?|clubbing|underground\s+clubs?|dansegulv(?:et)?|klubnat(?:ter)?|open[\s-]?air\s+part(?:y|ies)|soundsystems?|sound\s+systems?|dj\s+sets?)\b/i;
 
 /**
+ * Explicit DJ/rave-type evidence in an event's own title or lineup text
+ * (Discovery Queue positive-signal routing, 2026-09-14 exhaustive audit
+ * follow-up) — reused by adminQueue.ts's classifyAdminQueueRow to decide
+ * whether an otherwise-INSUFFICIENT row has strong enough positive evidence
+ * to surface in NEEDS REVIEW for a human look, without touching the row's
+ * own evidence/confidence/holdReason data. Deliberately narrower in PURPOSE
+ * than DANCE_CLUB_CONTEXT_RE above (that regex only ever informs a
+ * confidence TIER for a genre that has already resolved; this one is asked
+ * to justify surfacing a row with NO resolved genre at all) but broader in
+ * MATCH than its own "dj sets?" fragment — the audit validated a bare
+ * "DJ"/"DJs" mention as real evidence on its own, not only "DJ set". Word
+ * boundaries throughout are what keeps this safe: \bdjs?\b does not match
+ * inside "adjacent" (no boundary exists between the 'a' and 'd', or between
+ * the 'j' and the following 'a' — "dj" is never flanked by a boundary on
+ * both sides there), and \braves?\b does not match inside "brave"/"grave"/
+ * "craving"/"gravel" for the identical reason. See this file's own test
+ * suite for the exact false-positive regression cases validated against.
+ */
+export const DJ_OR_RAVE_SIGNAL_RE = /\bdjs?\b|\braves?\b/i;
+
+export function hasExplicitDjOrRaveSignal(text: string): boolean {
+  return DJ_OR_RAVE_SIGNAL_RE.test(text);
+}
+
+/**
  * Counts every KEYWORD_MAP match in `text` (not just distinct genre
  * families) — deliberately permissive about double-counting an overlapping
  * pair like "hard techno" also matching the bare "techno" pattern, since the
