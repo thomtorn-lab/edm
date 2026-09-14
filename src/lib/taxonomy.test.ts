@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENRES, MAIN_GENRES, displayGenres, getGenre, mainGenreOf } from "./taxonomy";
+import { GENRES, MAIN_GENRES, displayGenres, getGenre, mainGenreOf, type MainGenreSlug } from "./taxonomy";
 
 describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
   it("never exposes 'D&B' anywhere — Drum & Bass is always spelled out, including in dense/short labels", () => {
@@ -22,13 +22,19 @@ describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
       "Psytrance",
       "Drum & Bass",
       "UK Garage / Bass Music",
-      "Breaks",
       "Hardstyle / Hardcore",
       "Disco",
       "Electro",
       "Ambient / Experimental",
       "Electronic / Other",
     ]);
+  });
+
+  it("every MainGenreSlug exposed by the public filter is reachable from at least one GenreSlug (genre taxonomy audit, 2026-09-14) — a filter option with no GenreSlug ever mapping to it permanently returns zero events; this is exactly how 'Breaks' went dead", () => {
+    const reachable = new Set<MainGenreSlug>(GENRES.map((g) => mainGenreOf(g.slug)));
+    for (const main of MAIN_GENRES) {
+      expect(reachable.has(main.slug)).toBe(true);
+    }
   });
 
   it("electronic-other's filter label matches the public badge's own wording (Production bug fix, 2026-09-12) — an event badged 'Electronic' must be discoverable under this same filter bucket", () => {
@@ -40,8 +46,8 @@ describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
     expect(bucket.label).not.toBe("Electronic");
   });
 
-  it("introduces no new primary user-facing genre labels beyond the fixed 13", () => {
-    expect(MAIN_GENRES).toHaveLength(13);
+  it("introduces no new primary user-facing genre labels beyond the fixed 12", () => {
+    expect(MAIN_GENRES).toHaveLength(12);
   });
 });
 

@@ -71,11 +71,23 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   const touchedFields = Object.keys(patch);
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
   const clearsAdminUnpublish = patch.published === true && existing.adminUnpublishReason != null;
+  // primaryGenre/subgenres lockstep (genre taxonomy audit, 2026-09-14): public
+  // consumers (displayGenres, the Genre filter) read subgenres only, never
+  // primaryGenre directly. The two fields are independently listed in
+  // EDITABLE_EVENT_FIELDS, so a patch could in principle touch one without
+  // the other — every existing caller already sends both together, but
+  // nothing enforced that. A patch that sets primaryGenre without also
+  // setting subgenres has subgenres derived from it here, the same way
+  // db/sync.ts and publishDiscoveryItem already keep the two in lockstep on
+  // their own write paths.
+  const derivedSubgenres =
+    patch.primaryGenre != null && !("subgenres" in patch) ? { subgenres: [patch.primaryGenre] } : {};
 
   await db
     .update(events)
     .set({
       ...patch,
+      ...derivedSubgenres,
       ...(clearsAdminUnpublish ? { adminUnpublishReason: null, adminUnpublishNote: null, adminUnpublishedAt: null } : {}),
       overriddenFields,
       manualOverride: true,
