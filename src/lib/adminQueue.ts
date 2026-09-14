@@ -80,6 +80,65 @@ function hasStrongPositiveReviewSignal(item: AdminQueueClassifiable): boolean {
 }
 
 /**
+ * Discovery Queue high-precision negative-relevance routing (2026-09-14,
+ * minimal-first-implementation follow-up to the 283-row Insufficient audit
+ * and its atomic-predicate safety check). Each alternative below is a
+ * deliberately NARROWED subset of the full Tier 1 set that safety check
+ * produced — every token here was re-reviewed against the explicit
+ * requirement that it be "semantically strong" on its own, with anything
+ * generic enough to plausibly co-occur with a real electronic-music event
+ * (bare "gourmet"/"festival"/"tasting", bare "improv"/"impro-", "brand
+ * experience", "recharge", "mental frihed", "tegning") deliberately left
+ * out — see this module's test file for the exact non-match cases those
+ * exclusions protect. Never includes venue-only predicates, church rules,
+ * classical-concert wording, "tribute", "masterclass", "kursus", generic
+ * comedy/stand-up, generic workshop/theatre, generic festival wording, or
+ * any source-based rejection (Billetto included) — those remain deliberately
+ * manual / a future, separately-approved Tier 2 change, not something this
+ * function may grow into on its own.
+ *
+ * Categories (matched case-insensitively against title+lineup text, except
+ * F which is start-anchored against the raw, un-lowercased title):
+ *   A. guided tour (rundvisning/omvisning)
+ *   B. wellness — explicit modality only (breathwork/rebirthing/meditation/
+ *      mindfulness/klangbad)
+ *   C. food/drink — explicit validated phrases only, never bare gourmet/
+ *      festival/tasting
+ *   D. craft — explicit medium only (hækle/broderi/mosaik/akvarel/filt);
+ *      "filt" kept (narrow, no musical-context collision found), "tegning"
+ *      excluded (collides with "live drawing + DJ" nightlife event formats)
+ *   E. children's programming — explicit validated phrases only
+ *   F. basketball — exact anchored "BC COPENHAGEN vs." only, never bare "vs"
+ *   G. dating — activitydating/speeddating/speedfriending
+ *   H. communal dining — fællesspisning only
+ *   I. improv theatre — improteater only, never bare improv/impro- (those
+ *      collide with musical-improvisation contexts)
+ *   J. planetarium — exact "planetarieshow live" only
+ *   K. business — hackathon/corporate wellbeing/data activation only, never
+ *      "brand experience"
+ */
+const HIGH_PRECISION_NEGATIVE_CONTENT_RE =
+  /\brundvisning\b|\bomvisning\b|breathwork|rebirthing|meditation|mindfulness|klangbad|champagneoplevelse|champagne cruise|winebattle|tasting of|suppefestival|gin festival|sparkling wine festival|coteaux champenois|hækle|broderi|mosaik|akvarel|\bfilt\b|børnefilmklub|børneshowet|\bbaby massage\b|dyrenes karneval|julegåden|\bactivitydating\b|\bspeeddating\b|speedfriending|fællesspisning|improteater|planetarieshow live|hackathon|corporate wellbeing|data activation/i;
+
+const BASKETBALL_FIXTURE_RE = /^BC COPENHAGEN vs\./;
+
+/**
+ * Reads only title/lineup text (case-insensitive for everything except the
+ * anchored basketball fixture check, which is matched against the raw,
+ * un-lowercased title since "BC COPENHAGEN vs." is itself already exact
+ * casing) — never source/venue identity, per this rule's explicit scope: a
+ * venue or source alone is never sufficient signal (see the atomic-predicate
+ * safety check's church-venue/ALICE findings this rule deliberately avoids
+ * repeating).
+ */
+function hasHighPrecisionNegativeRelevanceSignal(item: AdminQueueClassifiable): boolean {
+  const title = item.probableTitle;
+  if (BASKETBALL_FIXTURE_RE.test(title)) return true;
+  const text = `${title} ${item.detectedLineup.join(" ")}`;
+  return HIGH_PRECISION_NEGATIVE_CONTENT_RE.test(text);
+}
+
+/**
  * Precedence (documented, not incidental — Section 11 of the admin
  * Discovery Queue cleanup brief): PAST/STALE -> VENUE_BLOCKED -> REJECTED ->
  * INSUFFICIENT -> NEEDS_REVIEW, except that a manual-review source (Pylonen
@@ -176,8 +235,23 @@ export function classifyAdminQueueRow(
       // Positive-signal exception (2026-09-14 audit follow-up) — see
       // hasStrongPositiveReviewSignal's own doc comment. Reached only once a
       // row would otherwise land in INSUFFICIENT; holdReason/overallConfidence/
-      // predictedGenre are read here, never written.
-      return hasStrongPositiveReviewSignal(item) ? "needs_review" : "insufficient";
+      // predictedGenre are read here, never written. Always checked FIRST,
+      // ahead of the negative-relevance rule below — strong electronic
+      // evidence must win regardless of what else the title/lineup text
+      // contains.
+      if (hasStrongPositiveReviewSignal(item)) return "needs_review";
+      // High-precision negative-relevance rule (2026-09-14 minimal-first-
+      // implementation follow-up) — see hasHighPrecisionNegativeRelevanceSignal's
+      // own doc comment. Deliberately scoped narrower than the positive-signal
+      // exception above: only "incomplete_data"/"no_genre_evidence" rows are
+      // eligible, never "low_confidence" (a row the pipeline actively found
+      // SOME genre evidence for, just not enough to be confident, is exactly
+      // the case this conservative first pass avoids touching) and never the
+      // legacy holdReason===null branch below. Pure routing — never mutates
+      // holdReason/overallConfidence/predictedGenre/source data.
+      const negativeRuleApplies = item.holdReason === "incomplete_data" || item.holdReason === "no_genre_evidence";
+      if (negativeRuleApplies && hasHighPrecisionNegativeRelevanceSignal(item)) return "rejected";
+      return "insufficient";
     }
     // Legacy fallback: a row inserted/last classified before discoveryQueue's
     // holdReason column existed carries holdReason=null forever until its next
