@@ -59,4 +59,41 @@ describe("mapDiscogsEvidenceToGenre", () => {
     expect(result.matchedStyles).toEqual([]);
     expect(result.confirmedElectronic).toBe(true);
   });
+
+  describe("Dubstep/Hardstyle/Rawstyle/Hardcore automation (genre taxonomy audit follow-up, 2026-09-14)", () => {
+    it("maps the 'Dubstep' style", () => {
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Dubstep"] }]).genre).toBe("dubstep");
+    });
+
+    it("maps the 'Hardstyle' style", () => {
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Hardstyle"] }]).genre).toBe("hardstyle");
+    });
+
+    it("maps the bare 'Hardcore' style to hardcore (Discogs' Electronic-genre gabber/uptempo lineage style, distinct from 'Hardcore Punk')", () => {
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Hardcore"] }]).genre).toBe("hardcore");
+    });
+
+    it("maps 'Gabber' and 'Frenchcore' to hardcore", () => {
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Gabber"] }]).genre).toBe("hardcore");
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Frenchcore"] }]).genre).toBe("hardcore");
+    });
+
+    it("does NOT map 'Hardcore Punk' to hardcore — exact normalized matching keeps it a distinct, unmapped token (real Billetto false-positive precedent, see billettoAdapter.ts)", () => {
+      const result = mapDiscogsEvidenceToGenre([{ genres: ["Rock"], styles: ["Hardcore Punk"] }]);
+      expect(result.genre).toBeNull();
+      expect(result.matchedStyles).toEqual([]);
+    });
+
+    it("does NOT guess a 'Rawstyle' mapping — no distinct Discogs style token is confirmed, so it falls through to electronic-other rather than being invented", () => {
+      const result = mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Rawstyle"] }]);
+      expect(result.genre).toBe("electronic-other");
+      expect(result.matchedStyles).toEqual([]);
+      expect(result.confirmedElectronic).toBe(true);
+    });
+
+    it("does NOT guess 'Uptempo Hardcore' / 'Industrial Hardcore' as distinct Discogs style tokens — left unmapped here, reachable only via the deterministic text path", () => {
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Uptempo Hardcore"] }]).matchedStyles).toEqual([]);
+      expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Industrial Hardcore"] }]).matchedStyles).toEqual([]);
+    });
+  });
 });

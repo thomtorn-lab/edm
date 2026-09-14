@@ -1,6 +1,32 @@
 import type { GenreSlug } from "../taxonomy";
 
+/**
+ * Electronic hardcore signals (Dubstep/Hardstyle/Rawstyle/Hardcore automation,
+ * 2026-09-14 — genre taxonomy audit follow-up): deliberately COMPOUND
+ * phrases/unambiguous genre names only. A bare "hardcore" is never matched
+ * here — the codebase already documents a real false-positive precedent
+ * (billettoAdapter.ts's own doc comment: a hardcore-PUNK show, "KÆMPE
+ * MOSHPIT VOL. 11", tagged Billetto's native "hardcore" subcategory) that
+ * this deliberately does not reopen. "gabber" and "frenchcore" are genre
+ * names with no other common meaning in event listing text; the rest pair
+ * "hardcore" with an explicit electronic-context word so "hardcore punk" and
+ * "hardcore metal" (real DQ/Production risk shapes) never match — see
+ * deterministicGenreMapping.test.ts's own regression tests for both. Listed
+ * before every other pattern so a compound match (e.g. "industrial hardcore")
+ * is never swallowed by a broader bare pattern later in this array (e.g.
+ * plain "industrial").
+ */
+const HARDCORE_KEYWORD_MAP: [RegExp, GenreSlug][] = [
+  [/\bhardcore\s?techno\b/i, "hardcore"],
+  [/\bindustrial\s+hardcore\b/i, "hardcore"],
+  [/\belectronic\s+hardcore\b/i, "hardcore"],
+  [/\buptempo\s+hardcore\b/i, "hardcore"],
+  [/\bgabber\b/i, "hardcore"],
+  [/\bfrenchcore\b/i, "hardcore"],
+];
+
 const KEYWORD_MAP: [RegExp, GenreSlug][] = [
+  ...HARDCORE_KEYWORD_MAP,
   [/\bhard\s?techno\b/i, "hard-techno"],
   [/\bindustrial\b/i, "industrial"],
   [/\bmelodic\s?techno\b/i, "melodic-techno"],
@@ -15,6 +41,15 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bpsy\b/i, "psytrance"],
   [/\btrance\b(?!-\w)(?!\s+state\b)/i, "trance"],
   [/\bd\s?&\s?b\b|drum\s?(and|&)\s?bass\b|\bdnb\b/i, "drum-and-bass"],
+  // Rawstyle before Hardstyle before Dubstep before Garage — each pair is a
+  // specific-before-general precedence (Dubstep/Hardstyle/Rawstyle/Hardcore
+  // automation, 2026-09-14): "rawstyle" text must resolve to rawstyle, not
+  // the broader hardstyle family it belongs to (see GENRE_REFINEMENTS below
+  // for the second-pass equivalent when genre came from a non-text hint);
+  // "dubstep" must not be swallowed by the broader garage-bass fallback.
+  [/\brawstyle\b|\braw\s+hardstyle\b/i, "rawstyle"],
+  [/\bhardstyle\b/i, "hardstyle"],
+  [/\bdubstep\b/i, "dubstep"],
   [/\bgarage\b/i, "garage"],
   [/\belectro\b/i, "electro"],
   [/\bdisco\b/i, "disco"],
@@ -180,6 +215,13 @@ const GENRE_REFINEMENTS: Partial<Record<GenreSlug, [RegExp, GenreSlug][]>> = {
     [/\bpsy\b/i, "psytrance"],
   ],
   techno: [
+    // "hardcore techno" first — more specific than the bare "hard techno" /
+    // "industrial" patterns below, and hardcore techno is genuinely its own
+    // genre despite containing the word "techno" (Dubstep/Hardstyle/
+    // Rawstyle/Hardcore automation, 2026-09-14): a category-level "techno"
+    // hint from a non-text source, refined against text that explicitly
+    // says "hardcore techno", must promote to hardcore, not stay techno.
+    [/\bhardcore\s?techno\b/i, "hardcore"],
     [/\bhard\s?techno\b/i, "hard-techno"],
     [/\bindustrial\b/i, "industrial"],
     [/\bmelodic\s?techno\b/i, "melodic-techno"],
@@ -191,6 +233,15 @@ const GENRE_REFINEMENTS: Partial<Record<GenreSlug, [RegExp, GenreSlug][]>> = {
     [/\bprogressive\s?house\b/i, "progressive-house"],
     [/\bafro\s?house\b/i, "afro-house"],
   ],
+  // Rawstyle-over-Hardstyle and Dubstep-over-Garage second-pass refinement
+  // (Dubstep/Hardstyle/Rawstyle/Hardcore automation, 2026-09-14): mirrors
+  // the same specific-before-general precedence KEYWORD_MAP already applies
+  // on a single deterministicGenreFromText call, for the case where genre
+  // instead came from a non-text hint (an adapter's own official-metadata
+  // tag, Discogs enrichment) and only the pipeline's full relevance text
+  // carries the more specific word.
+  hardstyle: [[/\brawstyle\b|\braw\s+hardstyle\b/i, "rawstyle"]],
+  garage: [[/\bdubstep\b/i, "dubstep"]],
 };
 
 export function refineGenreFromText(genre: GenreSlug, text: string): GenreSlug {
