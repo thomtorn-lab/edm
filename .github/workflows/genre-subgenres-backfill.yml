@@ -1,0 +1,74 @@
+name: Genre Subgenres Backfill
+
+# One-time, deliberately temporary workflow (genre taxonomy audit follow-up,
+# 2026-09-14). Mirrors this repo's established one-time-correction pattern
+# (vega-venue-model-cleanup.yml, tonser-cleanup.yml): added, run once, then
+# removed. Runs src/db/genreSubgenresBackfill.ts, which fixes the 4 published
+# events carrying primaryGenre="electronic-other"/subgenres=[] via the
+# existing applyAdminEventEdit() write path — no migration, no other field
+# touched, no destructive action.
+#
+# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) or "apply" (writes)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: "apply mode only: type BACKFILL-ELECTRONIC-OTHER-SUBGENRES to confirm the writes."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: genre-subgenres-backfill
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run genre subgenres backfill
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          node --env-file=.env.local --import tsx src/db/genreSubgenresBackfill.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
