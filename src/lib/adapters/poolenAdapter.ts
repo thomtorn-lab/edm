@@ -13,7 +13,7 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * lists every upcoming show with a title, calendar date and a link to its
  * own detail page, but the doors/show TIME, price, full description (the
  * text genre evidence lives here) and support-artist lineup only exist on
- * each event's own /da/koncerter/<slug>/ page. So this adapter fetches the
+ * each event's own /concerts/<slug>/ page. So this adapter fetches the
  * programme page once, then fetches each listed event's detail page (with
  * the same retry-once-on-5xx courtesy as the single-page adapters) to
  * assemble a complete RawCandidateEvent. A detail-page failure drops only
@@ -36,12 +36,23 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * source already goes through.
  *
  * "Outside" is Poolen's own outdoor extension of the same physical venue on
- * Refshaleøen (its programme teasers even use a distinct purple style for
- * it), not a separate venue — events there are still tagged venueName
- * "Poolen" (with "Poolen Outside" registered as an alias in
+ * Refshaleøen, not a separate venue — events there are still tagged
+ * venueName "Poolen" (with "Poolen Outside" registered as an alias in
  * src/lib/data/venues.ts) rather than inventing a second venue record; the
  * "– Outside" distinction is preserved in the event's own title text, which
  * is exactly how the venue itself presents it.
+ *
+ * Markup rewrite (2026-09-17): Poolen relaunched its site between two
+ * scheduled syncs (last success 2026-09-16 11:42 UTC, first failure 17:02
+ * UTC the same day), replacing the old `component-event-teaser`/`boxify`/
+ * `text__h2` programme markup and `component-08`/`text__h0` detail-page
+ * markup with a new `pc-shows__*` / `pc-concert__*` BEM-style structure, and
+ * moving detail pages from `/da/koncerter/<slug>/` to `/concerts/<slug>/`.
+ * The new markup exposes both the show date (`<time datetime="YYYY-MM-DD">`)
+ * and, on detail pages, doors/show times as clean `<dt>/<dd>` facts — no
+ * more free-text Danish date/status-line parsing needed. The programme list
+ * itself no longer carries a per-item image; each event's image is now read
+ * from its own detail page instead (`.pc-concert__media img`).
  */
 
 export const POOLEN_SOURCE_ID = "src-poolen";
@@ -49,41 +60,9 @@ export const POOLEN_BASE_URL = "https://poolen.dk";
 export const POOLEN_PROGRAM_URL = "https://poolen.dk/da/";
 const POOLEN_VENUE_NAME = "Poolen";
 
-const MONTH_NAMES: Record<string, number> = {
-  // Detail pages mix Danish and English month spellings inconsistently
-  // (a translation-plugin quirk, not a real distinction) — both accepted.
-  januar: 1, january: 1,
-  februar: 2, february: 2,
-  marts: 3, march: 3,
-  april: 4,
-  maj: 5, may: 5,
-  juni: 6, june: 6,
-  juli: 7, july: 7,
-  august: 8,
-  september: 9,
-  oktober: 10, october: 10,
-  november: 11,
-  december: 12,
-};
-
-/** "22 august 2026" / "18. july 2026" -> {year:2026, month:7, day:18}. Null on anything unrecognized — never guessed. */
-function parseDanishDate(text: string): DateKey | null {
-  const match = text
-    .trim()
-    .toLowerCase()
-    .match(/^(\d{1,2})\.?\s+([a-zæøå]+)\s+(\d{4})$/);
-  if (!match) return null;
-  const [, dayText, monthText, yearText] = match;
-  const month = MONTH_NAMES[monthText];
-  if (!month) return null;
-  const day = Number(dayText);
-  if (day < 1 || day > 31) return null;
-  return { year: Number(yearText), month, day };
-}
-
-/** "19.00" / "18.30" -> {hour, minute}. Null on anything unrecognized. */
+/** "20:00" / "21.00" -> {hour, minute}. Both separators appear on real pages. Null on anything unrecognized. */
 function parseClockTime(text: string): { hour: number; minute: number } | null {
-  const match = text.trim().match(/^(\d{1,2})\.(\d{2})$/);
+  const match = text.trim().match(/^(\d{1,2})[.:](\d{2})$/);
   if (!match) return null;
   const hour = Number(match[1]);
   const minute = Number(match[2]);
@@ -91,57 +70,58 @@ function parseClockTime(text: string): { hour: number; minute: number } | null {
   return { hour, minute };
 }
 
-/** "250 Kr." -> 250. Null when no amount is present. */
+/** "295 kr. inkl. gebyr" / "From 363 kr. inkl. gebyr" -> 295 / 363. Null when no amount is present. */
 function parsePriceKr(text: string): number | null {
   const match = text.match(/(\d+)\s*kr\.?/i);
   return match ? Number(match[1]) : null;
+}
+
+/** "2026-09-19" -> {year:2026, month:9, day:19}. Null on anything unrecognized — never guessed. */
+function parseIsoDate(text: string): DateKey | null {
+  const match = text.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
 }
 
 export interface PoolenProgramEntry {
   title: string;
   detailUrl: string;
   ticketUrl: string | null;
-  imageUrl: string | null;
+  /** Raw ISO date from the programme page's own `<time datetime="...">` — not yet parsed/validated. */
   dateText: string | null;
 }
 
 /**
- * Parses the programme page's repeated `.component-event-teaser` blocks.
- * Each has three `.boxify > h2` labels in a fixed order — title, Danish
- * weekday name (unused; redundant with the date), calendar date — followed
- * by an optional lineup label the codebase doesn't need at this stage
- * (support acts are re-derived from each detail page instead, where they
- * carry their own structure). The weekday name is intentionally skipped
- * rather than parsed — it's decorative, and the calendar date fully
- * determines the day regardless of what label the site puts on it.
+ * Parses the programme page's `<ol class="pc-shows__list"><li class="pc-shows__item ...">`
+ * entries. Each item carries the title/link (`.pc-shows__title` /
+ * `.pc-shows__title-text`), a machine-readable date (`.pc-shows__when`'s own
+ * `datetime` attribute), and a ticket action that is either a `<a
+ * class="pc-shows__action ...">` link or, for a cancelled/sold-out show, a
+ * plain `<span class="pc-shows__action ...">` status badge instead (no
+ * `href` at all) — status detection itself happens on the detail page
+ * (see parsePoolenEventDetailHtml), so a missing `<a>` here just means
+ * ticketUrl stays null for that entry.
  */
 export function parsePoolenProgramHtml(html: string): PoolenProgramEntry[] {
-  const blocks = html.match(/<section class="component component-event-teaser default-grid">[\s\S]*?<\/section>/g) ?? [];
+  const blocks = html.match(/<li class="pc-shows__item[^"]*"[^>]*>[\s\S]*?<\/li>/g) ?? [];
   const results: PoolenProgramEntry[] = [];
 
   for (const block of blocks) {
     try {
-      const detailMatch = block.match(/<a href="(https:\/\/poolen\.dk\/da\/koncerter\/[^"]+)" class="btn btn--boxed-black">/);
-      if (!detailMatch) continue; // malformed block — skip, never take down the whole sync
-      const detailUrl = detailMatch[1];
+      const hrefMatch = block.match(/<a class="pc-shows__title" href="([^"]+)"/);
+      if (!hrefMatch) continue; // malformed block — skip, never take down the whole sync
+      const detailUrl = hrefMatch[1];
 
-      const labels = [...block.matchAll(/<div class="boxify [\w-]+">\s*<h2 class="text__h2">([^<]*)<\/h2>/g)].map((m) =>
-        decodeHtmlEntities(m[1]).trim(),
-      );
-      const title = labels[0];
+      const titleMatch = block.match(/<span class="pc-shows__title-text">([^<]*)<\/span>/);
+      const title = titleMatch ? decodeHtmlEntities(titleMatch[1]).trim() : "";
       if (!title) continue;
-      const dateText = labels[2] ?? null;
 
-      const ticketMatch = block.match(/<a href="([^"]+)" target="_blank" class="btn btn--boxed-grey">/);
-      const imageMatch = block.match(/background-image:\s*url\('([^']+)'\)/);
+      const dateMatch = block.match(/<time class="pc-shows__when" datetime="([^"]+)"/);
+      const dateText = dateMatch ? dateMatch[1] : null;
 
-      results.push({
-        title,
-        detailUrl,
-        ticketUrl: ticketMatch ? ticketMatch[1] : null,
-        imageUrl: imageMatch ? imageMatch[1] : null,
-        dateText,
-      });
+      const ticketMatch = block.match(/<a\s+class="pc-shows__action[^"]*"\s*href="([^"]+)"/);
+
+      results.push({ title, detailUrl, ticketUrl: ticketMatch ? ticketMatch[1] : null, dateText });
     } catch {
       // A single malformed record must never take down the whole sync.
       continue;
@@ -158,111 +138,93 @@ export function parsePoolenProgramHtml(html: string): PoolenProgramEntry[] {
  * per-record contract; nothing here is ever guessed.
  */
 export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEntry, sourceUrl = POOLEN_PROGRAM_URL): RawCandidateEvent {
-  const titleMatch = html.match(/<h1 class="text__h0 text__headline">([\s\S]*?)<\/h1>/);
+  const titleMatch = html.match(/<h1 class="pc-concert__title">([\s\S]*?)<\/h1>/);
   const title = titleMatch ? decodeHtmlEntities(titleMatch[1]).replace(/\s+/g, " ").trim() : entry.title;
   if (!title) throw new Error(`Poolen detail page has no title (${entry.detailUrl})`);
 
-  const heroMatch = html.match(/<section class="component component-08">([\s\S]*?)<\/section>/);
-  if (!heroMatch) throw new Error(`Poolen detail page is missing its event-info section (${entry.detailUrl})`);
-  const heroHtml = heroMatch[1];
+  // The info box (date/facts/ticket action) and the body/prose that follows
+  // it are two adjacent, reliably-ordered blocks — sliced between their own
+  // opening markers rather than balancing nested divs, same approach the
+  // pre-relaunch parser used for its own left/right column split.
+  const infoStart = html.indexOf('<div class="pc-concert__info');
+  const bodyStart = infoStart === -1 ? -1 : html.indexOf('<div class="pc-concert__body', infoStart);
+  if (infoStart === -1 || bodyStart === -1) throw new Error(`Poolen detail page is missing its event-info section (${entry.detailUrl})`);
+  const infoHtml = html.slice(infoStart, bodyStart);
 
-  const rightColMarker = '<div class="row-start-1 gap-6 lg:pl-20 lg:row-auto lg:pl-0 single-event-info">';
-  const rightColIdx = heroHtml.indexOf(rightColMarker);
-  if (rightColIdx === -1) throw new Error(`Poolen detail page is missing its date/price info box (${entry.detailUrl})`);
-  const leftColHtml = heroHtml.slice(0, rightColIdx);
-  const rightColHtml = heroHtml.slice(rightColIdx + rightColMarker.length);
+  const dateAttrMatch = infoHtml.match(/<time datetime="([^"]+)"/);
+  const dateKey = dateAttrMatch ? parseIsoDate(dateAttrMatch[1]) : null;
+  if (!dateKey) throw new Error(`Poolen detail page has an unparseable date (${entry.detailUrl})`);
 
-  // The description div's own opening tag is a unique substring within the
-  // left column (the only OTHER "text__content"-classed element is a <p>
-  // with an extra modifier class, "text__content text__content--large"),
-  // and the left column already ends exactly at the info-box boundary
-  // above — so everything after it is the full bio, without needing to
-  // balance the nested <div class="player"> iframe wrapper inside it.
-  const descMarker = '<div class="text__content">';
-  const descIdx = leftColHtml.indexOf(descMarker);
-  const descriptionHtml = descIdx === -1 ? "" : leftColHtml.slice(descIdx + descMarker.length);
+  const facts: Record<string, string> = {};
+  for (const factMatch of infoHtml.matchAll(/<dt>([^<]+)<\/dt>\s*<dd>([^<]*)<\/dd>/g)) {
+    facts[decodeHtmlEntities(factMatch[1]).trim()] = decodeHtmlEntities(factMatch[2]).trim();
+  }
+
+  // Doors time is the event's real start (consistent with how Culture
+  // Box's door hours are treated as the event's start); show start, when
+  // earlier stated as identical or later, isn't a second instant worth a
+  // separate field RawCandidateEvent doesn't have — it's already implied
+  // by the stored description text for anyone who wants the detail.
+  const doorsTime = facts["Doors"] ? parseClockTime(facts["Doors"]) : null;
+  const showTime = facts["Show"] ? parseClockTime(facts["Show"]) : null;
+  const openTime = doorsTime ?? showTime;
+  if (!openTime) throw new Error(`Poolen detail page has no doors/show time (${entry.detailUrl})`);
+  const startDatetime = copenhagenWallClockToUtc(dateKey, openTime.hour, openTime.minute).toISOString();
+
+  const priceFrom = facts["Price"] ? parsePriceKr(facts["Price"]) : null;
+
+  // The ticket action is either a real ticket link, or — for a cancelled or
+  // sold-out show — a plain status badge with no href at all. Conservative,
+  // same as the pre-relaunch parser: only the unambiguous "Cancelled"/"Sold
+  // out" values are trusted as hints, nothing else is guessed.
+  const ticketLinkMatch = infoHtml.match(/<a\s+class="pc-concert__action[^"]*"\s*href="([^"]+)"/);
+  const ticketUrl = ticketLinkMatch ? ticketLinkMatch[1] : entry.ticketUrl;
+  const statusMatch = infoHtml.match(/<span class="pc-concert__action[^"]*">\s*([^<]+?)\s*<\/span>/);
+  const statusText = statusMatch ? statusMatch[1].trim().toLowerCase() : null;
+  const soldOutHint = statusText === "sold out" ? true : null;
+  const cancelledHint = statusText === "cancelled" ? true : null;
+
+  // The event's own image now lives on its detail page only — the
+  // programme list stopped carrying per-item images in the relaunch.
+  // Scoped to the hero figure specifically: earlier `<img>` tags on the
+  // page (e.g. a sponsor logo in the header) are not the event's image.
+  const mediaMatch = html.match(/<figure class="pc-concert__media">([\s\S]*?)<\/figure>/);
+  const imgMatch = mediaMatch ? mediaMatch[1].match(/<img[^>]+src="([^"]+)"/) : null;
+  const imageUrl = imgMatch ? imgMatch[1] : null;
+
+  // The description prose sits between its own opening marker and whichever
+  // comes first: a support-artists block, or the always-present Lockers
+  // section — same bounded-slice approach as the info box above.
+  const proseMarker = '<div class="pc-concert__prose">';
+  const proseIdx = html.indexOf(proseMarker, bodyStart);
+  let descriptionHtml = "";
+  if (proseIdx !== -1) {
+    const supportIdx = html.indexOf('<div class="pc-concert__support">', proseIdx);
+    const lockersIdx = html.indexOf("pc-concert__lockers", proseIdx);
+    const boundaries = [supportIdx, lockersIdx].filter((i) => i !== -1);
+    const proseEnd = boundaries.length > 0 ? Math.min(...boundaries) : html.length;
+    descriptionHtml = html.slice(proseIdx + proseMarker.length, proseEnd);
+  }
   const fullDescriptionText = htmlToText(descriptionHtml).replace(/\n/g, " ").trim();
   // English-language guard (pre-launch QA audit, 2026-08-29 — Poolen's own
-  // body text is sometimes Danish, and Electronic CPH is English-language
-  // with no runtime translation; same rule Pumpehuset already applies).
-  // Genre resolution below still uses the real, untruncated
-  // fullDescriptionText as evidence regardless — this only decides what's
-  // shown.
+  // body text used to sometimes be Danish; the site is now English-first
+  // post-relaunch, but the guard is harmless to keep and still protects
+  // against any residual Danish copy). Genre resolution below still uses
+  // the real, untruncated fullDescriptionText as evidence regardless — this
+  // only decides what's shown.
   const description = !fullDescriptionText
     ? null
     : isLikelyDanish(fullDescriptionText)
       ? null
       : truncateAtBoundary(fullDescriptionText, 600);
 
-  const rightColLines = htmlToText(rightColHtml).split("\n");
-  // The right column can carry a ticket-availability/status badge
-  // ("Udsolgt", "Aflyst", "Få tilbage", "Flyttet") as its own line, and on
-  // at least some pages it renders BEFORE the date line rather than after
-  // it — real Production evidence (QA follow-up, 2026-08-29): the date
-  // parser received the literal strings "Få tilbage" and "Aflyst" for real
-  // events, because the code blindly trusted rightColLines[0] to always be
-  // the date. Fixed structurally, not with title-specific exceptions: scan
-  // for the first line that actually matches parseDanishDate's tight,
-  // anchored "13. december 2026" shape (nothing else in this column — price,
-  // times, address — can accidentally match that shape), collecting any
-  // recognized status-label line encountered along the way as lifecycle
-  // evidence instead of discarding or misreading it. Mirrors Pumpehuset's
-  // conservative ticket_status handling: only the unambiguous "udsolgt"/
-  // "aflyst" values are trusted; "få tilbage" (few left) is deliberately NOT
-  // sold out, and "flyttet" (moved) is left to the ordinary reschedule
-  // detection instead of guessed.
-  let soldOutHint: boolean | null = null;
-  let cancelledHint: boolean | null = null;
-  let dateKey: DateKey | null = null;
-  for (const line of rightColLines) {
-    const normalized = line.trim().toLowerCase();
-    if (normalized === "udsolgt") {
-      soldOutHint = true;
-      continue;
-    }
-    if (normalized === "aflyst") {
-      cancelledHint = true;
-      continue;
-    }
-    const parsed = parseDanishDate(line);
-    if (parsed) {
-      dateKey = parsed;
-      break;
-    }
-  }
-  if (!dateKey) {
-    throw new Error(
-      `Poolen detail page has an unparseable date "${rightColLines[0] ?? entry.dateText ?? ""}" (${entry.detailUrl})`,
-    );
-  }
-
-  const doorsIdx = rightColLines.findIndex((l) => /^dørene åbner$/i.test(l));
-  const showIdx = rightColLines.findIndex((l) => /^show start$/i.test(l));
-  const doorsTime = doorsIdx !== -1 ? parseClockTime(rightColLines[doorsIdx + 1] ?? "") : null;
-  const showTime = showIdx !== -1 ? parseClockTime(rightColLines[showIdx + 1] ?? "") : null;
-  // Doors time is the event's real start (consistent with how Culture
-  // Box's door hours are treated as the event's start); show start, when
-  // earlier stated as identical or later, isn't a second instant worth a
-  // separate field RawCandidateEvent doesn't have — it's already implied
-  // by the stored description text for anyone who wants the detail.
-  const openTime = doorsTime ?? showTime;
-  if (!openTime) throw new Error(`Poolen detail page has no doors/show time (${entry.detailUrl})`);
-  const startDatetime = copenhagenWallClockToUtc(dateKey, openTime.hour, openTime.minute).toISOString();
-
-  const priceIdx = rightColLines.findIndex((l) => /^pris$/i.test(l));
-  const priceFrom = priceIdx !== -1 ? parsePriceKr(rightColLines[priceIdx + 1] ?? "") : null;
-
-  const ticketMatch = rightColHtml.match(/<a class="inline-block text-box-black" href="([^"]+)"/);
-  const ticketUrl = ticketMatch ? ticketMatch[1] : entry.ticketUrl;
-
-  // Support-artist names live outside the component-08 hero entirely, in a
-  // later `.support-artists` block bounded by the section it sits inside.
-  const supportMatch = html.match(/<div class="support-artists">([\s\S]*?)<\/section>/);
-  const supportArtists = supportMatch
-    ? [...supportMatch[1].matchAll(/<div class="text__headline text__headline--size-3 grid">\s*([^<]+?)\s*<\/div>/g)].map((m) =>
-        decodeHtmlEntities(m[1]).trim(),
-      )
-    : [];
+  // Support-artist names live in their own `.pc-concert__band` sections,
+  // each with a `.pc-concert__band-name` heading — a distinct class from
+  // the unrelated "Related shows" list further down the page, so no
+  // bounding is needed to avoid picking those up.
+  const supportArtists = [...html.matchAll(/<h2 class="pc-concert__band-name">([^<]+)<\/h2>/g)].map((m) =>
+    decodeHtmlEntities(m[1]).trim(),
+  );
   // The headliner's own name for lineup/enrichment purposes, not the
   // display title — "Omar S – Outside" is a real artist plus a venue-area
   // suffix, and a Discogs lookup for "Omar S – Outside" would just fail.
@@ -294,7 +256,7 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     ticketUrl,
     facebookUrl: null,
     residentAdvisorUrl: null,
-    imageUrl: entry.imageUrl,
+    imageUrl,
     priceFrom,
     genreHint,
     genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
@@ -306,7 +268,7 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     relevanceText: fullDescriptionText || null,
     soldOutHint,
     cancelledHint,
-    cancellationEvidence: cancelledHint ? 'Poolen status badge "Aflyst"' : null,
+    cancellationEvidence: cancelledHint ? 'Poolen status badge "Cancelled"' : null,
   };
 }
 
@@ -340,9 +302,9 @@ async function fetchWithRetry(fetchImpl: typeof fetch, url: string, retryDelayMs
 }
 
 /**
- * Fetches the programme page, then every listed event's own detail page
- * (a short delay between each, out of politeness — this is ~25 requests
- * per sync, not one). A programme-page failure is a genuine source failure
+ * Fetches the programme page, then every listed event's own detail page (a
+ * short delay between each, out of politeness — this is ~30 requests per
+ * sync, not one). A programme-page failure is a genuine source failure
  * (thrown, same as Hangaren/Culture Box). A single detail-page failure
  * drops only that one event — logged, never thrown — so one broken page
  * never takes down an otherwise-healthy sync; it's picked up again next run.

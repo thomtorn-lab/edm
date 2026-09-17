@@ -10,56 +10,62 @@ import {
 } from "./poolenAdapter";
 
 /**
- * All four fixtures are real, unmodified pages saved directly from Poolen's
- * public website (poolen.dk) and supplied by the user after this session's
- * own network egress was confirmed unable to reach the domain — not
- * fabricated. poolen-program.html is the live programme listing;
- * poolen-event-electronic.html (Hernan Cattaneo), poolen-event-non-electronic.html
- * (Swae Lee) and poolen-event-outside.html (Omar S, on Poolen's "Outside"
- * extension) are three real per-event detail pages chosen to exercise
- * exactly the classification cases that matter: a genuinely electronic
- * artist whose own bio never uses a specific subgenre word, a genuinely
- * non-electronic (hip-hop/pop) artist, and an explicit techno/house event
- * on the venue's outdoor sub-area.
+ * All fixtures are real, unmodified pages captured directly from Poolen's
+ * public website (poolen.dk) on 2026-09-17, via the read-only reachability
+ * mode of .github/workflows/inspect-source.yml — after Poolen relaunched
+ * its site with new `pc-shows__*`/`pc-concert__*` markup (see the doc
+ * comment on poolenAdapter.ts). poolen-program.html is the live programme
+ * listing (33 real upcoming shows, including a cancelled one, a sold-out
+ * one, and two "Outside" sub-venue ones); poolen-event-electronic.html
+ * (Kevin de Vries & Massano — explicit "melodic techno" bio evidence),
+ * poolen-event-non-electronic.html (Ca7riel y Paco Amoroso — a genuinely
+ * non-electronic trap/rock/pop bio), poolen-event-outside.html (R&B
+ * Lovers – Outside, on Poolen's outdoor extension), poolen-event-cancelled
+ * .html (Goran Bregović — real "Cancelled" status badge, no ticket link)
+ * and poolen-event-with-support.html (Niarn — a real support-artist
+ * section and "Few tix left" marquee flag) are five real per-event detail
+ * pages chosen to exercise exactly the cases that matter.
  */
 const FIXTURES_DIR = path.join(__dirname, "__fixtures__");
 const PROGRAM_HTML = readFileSync(path.join(FIXTURES_DIR, "poolen-program.html"), "utf-8");
 const ELECTRONIC_HTML = readFileSync(path.join(FIXTURES_DIR, "poolen-event-electronic.html"), "utf-8");
 const NON_ELECTRONIC_HTML = readFileSync(path.join(FIXTURES_DIR, "poolen-event-non-electronic.html"), "utf-8");
 const OUTSIDE_HTML = readFileSync(path.join(FIXTURES_DIR, "poolen-event-outside.html"), "utf-8");
+const CANCELLED_HTML = readFileSync(path.join(FIXTURES_DIR, "poolen-event-cancelled.html"), "utf-8");
+const WITH_SUPPORT_HTML = readFileSync(path.join(FIXTURES_DIR, "poolen-event-with-support.html"), "utf-8");
 
 describe("parsePoolenProgramHtml", () => {
   const entries = parsePoolenProgramHtml(PROGRAM_HTML);
 
   it("discovers every real event teaser on the programme page", () => {
-    expect(entries.length).toBe(26);
+    expect(entries.length).toBe(33);
   });
 
-  it("extracts title, detail URL, ticket URL, image URL and date text for a plain entry", () => {
-    const bingo = entries.find((e) => e.title === "Bingo Loco");
-    expect(bingo).toEqual<PoolenProgramEntry>({
-      title: "Bingo Loco",
-      detailUrl: "https://poolen.dk/da/koncerter/bingo-loco-7/",
-      ticketUrl: "https://eu.bingoloco.com/copenhagen",
-      imageUrl: "https://poolen.dk/wp-content/uploads/Bingo-Loco-2.jpg",
-      dateText: "22 august 2026",
+  it("extracts title, detail URL, ticket URL and the machine-readable date for a plain entry", () => {
+    const niarn = entries.find((e) => e.title === "Niarn");
+    expect(niarn).toEqual<PoolenProgramEntry>({
+      title: "Niarn",
+      detailUrl: "https://poolen.dk/concerts/niarn/",
+      ticketUrl: "https://secure.tickster.com/7cwak39ey6pecvc",
+      dateText: "2026-09-19",
     });
   });
 
-  it("handles an entry with a support-lineup label without corrupting title/date extraction (skips the weekday label correctly)", () => {
-    const teletech = entries.find((e) => e.title === "Teletech");
-    expect(teletech?.dateText).toBe("18 december 2026");
-    expect(teletech?.detailUrl).toBe("https://poolen.dk/da/koncerter/teletech-2/");
+  it("discovers the 'Outside' styled entry like any other — no special-cased structure — and decodes its HTML entities", () => {
+    const outside = entries.find((e) => e.detailUrl.includes("rb-lovers-outside-2"));
+    expect(outside?.title).toBe("R&B Lovers – Outside");
+    expect(outside?.dateText).toBe("2027-05-29");
   });
 
-  it("discovers the 'Outside' styled entry like any other — no special-cased structure", () => {
-    const jasho = entries.find((e) => e.detailUrl.includes("jasho-club"));
-    expect(jasho?.title).toBe("Jasho Club vol. 5: The Comeback – Outside");
-    expect(jasho?.dateText).toBe("12 september 2026");
+  it("leaves ticketUrl null for a cancelled entry (status badge, not a ticket link)", () => {
+    const goran = entries.find((e) => e.title === "Goran Bregović");
+    expect(goran?.ticketUrl).toBeNull();
+    expect(goran?.detailUrl).toBe("https://poolen.dk/concerts/goran-bregovic/");
   });
 
-  it("decodes HTML entities in titles (e.g. Ca7riel y Paco Amoroso's & and Kevin de Vries & Massano)", () => {
-    expect(entries.some((e) => e.title === "Kevin de Vries & Massano")).toBe(true);
+  it("leaves ticketUrl null for a sold-out entry too", () => {
+    const omahLay = entries.find((e) => e.title === "Omah Lay");
+    expect(omahLay?.ticketUrl).toBeNull();
   });
 
   it("never produces two entries pointing at the same detail page (adapter-level duplicate guard)", () => {
@@ -68,315 +74,244 @@ describe("parsePoolenProgramHtml", () => {
   });
 });
 
-describe("parsePoolenEventDetailHtml — electronic event with no specific-subgenre keyword", () => {
+describe("parsePoolenEventDetailHtml — electronic event with an explicit specific-subgenre keyword", () => {
   const entry: PoolenProgramEntry = {
-    title: "Hernan Cattaneo",
-    detailUrl: "https://poolen.dk/da/koncerter/hernan-cattaneo/",
+    title: "Kevin de Vries & Massano",
+    detailUrl: "https://poolen.dk/concerts/kevin-de-vries-massano/",
     ticketUrl: null,
-    imageUrl: "https://poolen.dk/wp-content/uploads/Hernan-Cattaneo.jpg",
-    dateText: null,
+    dateText: "2026-10-02",
   };
   const event = parsePoolenEventDetailHtml(ELECTRONIC_HTML, entry);
 
   it("parses title, venue and provenance", () => {
-    expect(event.title).toBe("Hernan Cattaneo");
+    expect(event.title).toBe("Kevin de Vries & Massano");
     expect(event.venueName).toBe("Poolen");
     expect(event.sourceId).toBe("src-poolen");
     expect(event.officialEventUrl).toBe(entry.detailUrl);
   });
 
-  it("converts the doors-time date/time to the correct Copenhagen-local UTC instant (18 Jul 2026, 19:00 CEST)", () => {
-    expect(event.startDatetime).toBe("2026-07-18T17:00:00.000Z"); // 19:00 CEST = UTC+2
+  it("converts the doors-time date/time to the correct Copenhagen-local UTC instant (2 Oct 2026, 22:00 CEST, period-separated)", () => {
+    expect(event.startDatetime).toBe("2026-10-02T20:00:00.000Z");
     expect(event.endDatetime).toBeNull(); // never stated on this site — never invented
   });
 
-  it("extracts price and the detail page's own ticket link (pretix), not a guessed one", () => {
-    expect(event.priceFrom).toBe(250);
-    expect(event.ticketUrl).toBe("https://pretix.eu/Distriktsouth/DS2026/");
+  it("extracts a 'From X kr.' price and the detail page's own ticket link, not a guessed one", () => {
+    expect(event.priceFrom).toBe(363);
+    expect(event.ticketUrl).toBe("https://secure.tickster.com/j67gvutmnrgtf9j?c=6c52ydp");
   });
 
-  it("builds the artists list from the headliner plus support acts", () => {
-    expect(event.artists).toEqual(["Hernan Cattaneo", "Tim Andresen"]);
+  it("has no support acts on this real page — artists is just the headliner", () => {
+    expect(event.artists).toEqual(["Kevin de Vries & Massano"]);
   });
 
-  it("is genuinely electronic evidence (the venue's own text explicitly says 'electronic'/'elektronisk') but states no specific subgenre — tagged electronic-other, not a guessed genre, still at official-description/high confidence", () => {
-    expect(event.genreHint).toBe("electronic-other");
+  it("resolves the specific subgenre stated explicitly in the venue's own text, at high confidence", () => {
+    expect(event.genreHint).toBe("melodic-techno");
     expect(event.genreConfidenceHint).toBe("high");
   });
 
-  it("does not publish a Danish-language description (QA audit, 2026-08-29: this real fixture's own bio is Danish) — genre classification is unaffected since it still runs on the raw text", () => {
-    expect(event.description).toBeNull();
-    expect(event.genreHint).toBe("electronic-other");
-  });
-});
-
-describe("parsePoolenEventDetailHtml — ticket-status badge line must not be misread as the date (QA follow-up, 2026-08-29)", () => {
-  // Real Production evidence: the date parser received the literal strings
-  // "Få tilbage" and "Aflyst" for real events (Vercel runtime logs), because
-  // the prior code blindly trusted the FIRST line of the right column to
-  // always be the date. This fixture reproduces that exact shape using the
-  // real right-column markup (the "lowercase text__h3 as-typed pb-6" div
-  // that ELECTRONIC_HTML's own real date lives in, confirmed against that
-  // fixture) with one extra status-badge div of that same class inserted
-  // immediately before the real date div — the real reported strings, in
-  // the real reported position, not a fabricated selector.
-  function withStatusBadge(status: string): string {
-    return ELECTRONIC_HTML.replace(
-      '<div class="lowercase text__h3 as-typed pb-6">',
-      `<div class="lowercase text__h3 as-typed pb-6">${status}</div><div class="lowercase text__h3 as-typed pb-6">`,
-    );
-  }
-
-  const entry: PoolenProgramEntry = {
-    title: "Test Artist",
-    detailUrl: "https://poolen.dk/da/koncerter/test-artist/",
-    ticketUrl: null,
-    imageUrl: null,
-    dateText: null,
-  };
-
-  it('"Aflyst" before the date line is recognized as cancelledHint, and the real date is still found (not thrown as unparseable)', () => {
-    const event = parsePoolenEventDetailHtml(withStatusBadge("Aflyst"), entry);
-    expect(event.cancelledHint).toBe(true);
-    expect(event.soldOutHint).toBeNull();
-    expect(event.startDatetime).toBeTruthy();
+  it("pulls the event image from the detail page's own hero figure (the programme list no longer carries images)", () => {
+    expect(event.imageUrl).toBe("https://poolen.dk/wp-content/uploads/kvdmas-web-1600x838.jpg");
   });
 
-  it('"Få tilbage" (few left) before the date line is recognized but carries NO sold-out hint — the same conservative rule Pumpehuset already applies', () => {
-    const event = parsePoolenEventDetailHtml(withStatusBadge("Få tilbage"), entry);
-    expect(event.soldOutHint).toBeNull();
-    expect(event.cancelledHint).toBeNull();
-    expect(event.startDatetime).toBeTruthy();
-  });
-
-  it('"Udsolgt" (sold out) before the date line is recognized as soldOutHint', () => {
-    const event = parsePoolenEventDetailHtml(withStatusBadge("Udsolgt"), entry);
-    expect(event.soldOutHint).toBe(true);
-    expect(event.cancelledHint).toBeNull();
-    expect(event.startDatetime).toBeTruthy();
-  });
-
-  it("an ordinary event with no status badge still resolves soldOutHint/cancelledHint as null (no false positives)", () => {
-    const event = parsePoolenEventDetailHtml(ELECTRONIC_HTML, entry);
-    expect(event.soldOutHint).toBeNull();
-    expect(event.cancelledHint).toBeNull();
-  });
-
-  it("still throws when no line in the right column is a real date at all (genuine structural failure, not swallowed)", () => {
-    const noDateHtml = ELECTRONIC_HTML.replace(
-      '<div class="lowercase text__h3 as-typed pb-6">\n\t\t                                18. july 2026\t\t                            </div>',
-      '<div class="lowercase text__h3 as-typed pb-6">Aflyst</div>',
-    );
-    expect(() => parsePoolenEventDetailHtml(noDateHtml, entry)).toThrow(/unparseable date/);
+  it("publishes the real English-language description (no Danish-guard false positive)", () => {
+    expect(event.description).toBeTruthy();
+    expect(event.description).toContain("melodic techno");
   });
 });
 
 describe("parsePoolenEventDetailHtml — non-electronic event must not be published solely for being at Poolen", () => {
   const entry: PoolenProgramEntry = {
-    title: "Swae Lee",
-    detailUrl: "https://poolen.dk/da/koncerter/swae-lee/",
+    title: "Ca7riel y Paco Amoroso",
+    detailUrl: "https://poolen.dk/concerts/ca7riel-paco-amoroso/",
     ticketUrl: null,
-    imageUrl: "https://poolen.dk/wp-content/uploads/Swae-Lee.jpg",
-    dateText: null,
+    dateText: "2026-09-25",
   };
   const event = parsePoolenEventDetailHtml(NON_ELECTRONIC_HTML, entry);
 
   it("parses the real fields correctly", () => {
-    expect(event.title).toBe("Swae Lee");
+    expect(event.title).toBe("Ca7riel y Paco Amoroso");
     expect(event.venueName).toBe("Poolen");
-    expect(event.startDatetime).toBe("2026-08-17T16:30:00.000Z"); // 18:30 CEST
-    expect(event.priceFrom).toBe(390);
-    expect(event.ticketUrl).toBe("https://www.ticketmaster.dk/event/508093953?language=da-dk");
-    expect(event.artists).toEqual(["Swae Lee", "Max Felix"]);
+    expect(event.startDatetime).toBe("2026-09-25T16:30:00.000Z"); // 18:30 CEST
+    expect(event.priceFrom).toBe(445);
+    expect(event.ticketUrl).toBe("https://www.ticketmaster.dk/event/1665380278?language=da-dk&#038;brand=dk_livenation");
   });
 
-  it("resolves no genre hint at all — the bio is genuinely hip-hop/pop/R&B text with no electronic keyword anywhere", () => {
+  it("resolves no genre hint at all — the bio is genuinely trap/rock/pop/experimental text with no electronic keyword anywhere", () => {
     expect(event.genreHint).toBeNull();
     expect(event.genreConfidenceHint).toBeNull();
+  });
+});
+
+describe("parsePoolenEventDetailHtml — cancelled event (real 'Cancelled' status badge, no ticket link)", () => {
+  const entry: PoolenProgramEntry = {
+    title: "Goran Bregović",
+    detailUrl: "https://poolen.dk/concerts/goran-bregovic/",
+    ticketUrl: null,
+    dateText: "2026-11-06",
+  };
+  const event = parsePoolenEventDetailHtml(CANCELLED_HTML, entry);
+
+  it("is recognized as cancelled, with the real status badge text as evidence", () => {
+    expect(event.cancelledHint).toBe(true);
+    expect(event.soldOutHint).toBeNull();
+    expect(event.cancellationEvidence).toBe('Poolen status badge "Cancelled"');
+  });
+
+  it("still resolves date/time correctly (period-separated facts, CET after Danish DST ends)", () => {
+    expect(event.startDatetime).toBe("2026-11-06T19:00:00.000Z"); // 20:00 CET = UTC+1
+  });
+
+  it("has no ticket URL — the ticket action is a status badge, not a link, and the programme entry had none either", () => {
+    expect(event.ticketUrl).toBeNull();
   });
 });
 
 describe("parsePoolenEventDetailHtml — Outside event stays tagged to the real Poolen venue", () => {
   const entry: PoolenProgramEntry = {
-    title: "Omar S – Outside",
-    detailUrl: "https://poolen.dk/da/koncerter/omar-s-outside/",
+    title: "R&B Lovers – Outside",
+    detailUrl: "https://poolen.dk/concerts/rb-lovers-outside-2/",
     ticketUrl: null,
-    imageUrl: "https://poolen.dk/wp-content/uploads/Omar-S-web-2560x1588.jpeg",
-    dateText: null,
+    dateText: "2027-05-29",
   };
   const event = parsePoolenEventDetailHtml(OUTSIDE_HTML, entry);
 
   it("keeps the site's own '– Outside' title text but never invents a separate venue", () => {
-    expect(event.title).toBe("Omar S – Outside");
+    expect(event.title).toBe("R&B Lovers – Outside");
     expect(event.venueName).toBe("Poolen");
   });
 
   it("strips the '– Outside' suffix only from the artist name used for lineup/enrichment, not the title", () => {
-    expect(event.artists).toEqual(["Omar S", "Waqar", "Harrison Heat", "Téa Cirkeline"]);
+    expect(event.artists).toEqual(["R&B Lovers"]);
   });
 
-  it("converts 13 May 2026, 20:00 CEST correctly (a different month than the other two fixtures)", () => {
-    expect(event.startDatetime).toBe("2026-05-13T18:00:00.000Z"); // 20:00 CEST = UTC+2
+  it("converts 29 May 2027, 15:00 CEST correctly (period-separated facts, a different year than the other fixtures)", () => {
+    expect(event.startDatetime).toBe("2027-05-29T13:00:00.000Z");
   });
 
-  it("resolves a specific subgenre (techno) from the venue's own text — the strongest possible evidence, still high confidence, not published on venue alone", () => {
-    expect(event.genreHint).toBe("techno");
-    expect(event.genreConfidenceHint).toBe("high");
-  });
-
-  it("extracts the billet.to ticket link and price", () => {
-    expect(event.ticketUrl).toBe("https://billet.to/1879768-poolens-website-omars");
-    expect(event.priceFrom).toBe(230);
+  it("extracts the real billetto ticket link and price", () => {
+    expect(event.ticketUrl).toBe("https://billetto.dk/en/e/outdoor-90s-00s-r-b-festival-copenhagen-billetter-1982682");
+    expect(event.priceFrom).toBe(250);
   });
 });
 
-describe("parsePoolenEventDetailHtml — missing/optional fields", () => {
-  it("falls back to the show-start time when doors time is absent", () => {
-    const withoutDoors = ELECTRONIC_HTML.replace(
-      /Dørene åbner\s*<\/div>\s*<div class="text__headline text__headline--size-4 text__headline--size-4--bold grid">\s*19\.00\s*<\/div>/,
-      "",
-    );
-    const entry: PoolenProgramEntry = {
-      title: "Hernan Cattaneo",
-      detailUrl: "https://poolen.dk/da/koncerter/hernan-cattaneo/",
-      ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
-    };
-    const event = parsePoolenEventDetailHtml(withoutDoors, entry);
-    expect(event.startDatetime).toBe("2026-07-18T19:00:00.000Z"); // 21:00 CEST show start
+describe("parsePoolenEventDetailHtml — support-artist extraction and colon-separated times (real fixture)", () => {
+  const entry: PoolenProgramEntry = {
+    title: "Niarn",
+    detailUrl: "https://poolen.dk/concerts/niarn/",
+    ticketUrl: "https://secure.tickster.com/7cwak39ey6pecvc",
+    dateText: "2026-09-19",
+  };
+  const event = parsePoolenEventDetailHtml(WITH_SUPPORT_HTML, entry);
+
+  it("builds the artists list from the headliner plus a real support act", () => {
+    expect(event.artists).toEqual(["Niarn", "Flammen"]);
   });
 
-  it("falls back to the program entry's own ticket URL when the detail page's ticket link is missing", () => {
-    const withoutTicket = ELECTRONIC_HTML.replace(
-      /<a class="inline-block text-box-black" href="[^"]+" target='_blank'>/,
-      `<a class="inline-block text-box-black" target='_blank'>`,
-    );
-    const entry: PoolenProgramEntry = {
-      title: "Hernan Cattaneo",
-      detailUrl: "https://poolen.dk/da/koncerter/hernan-cattaneo/",
-      ticketUrl: "https://eu.bingoloco.com/copenhagen",
-      imageUrl: null,
-      dateText: null,
-    };
-    const event = parsePoolenEventDetailHtml(withoutTicket, entry);
-    expect(event.ticketUrl).toBe("https://eu.bingoloco.com/copenhagen");
+  it("parses colon-separated doors/show times (20:00 CEST) just as reliably as period-separated ones", () => {
+    expect(event.startDatetime).toBe("2026-09-19T18:00:00.000Z");
   });
 
-  it("throws (never guesses) when the date is genuinely missing or unparseable — the caller skips a single bad record and continues", () => {
-    const withoutDate = ELECTRONIC_HTML.replace(
-      /<div class="lowercase text__h3 as-typed pb-6">\s*18\. july 2026\s*<\/div>/,
-      `<div class="lowercase text__h3 as-typed pb-6"></div>`,
-    );
-    const entry: PoolenProgramEntry = {
-      title: "Hernan Cattaneo",
-      detailUrl: "https://poolen.dk/da/koncerter/hernan-cattaneo/",
-      ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
-    };
-    expect(() => parsePoolenEventDetailHtml(withoutDate, entry)).toThrow();
-  });
-
-  it("still returns a valid event with an empty artists tail when there are no support acts (Swae Lee's page has exactly one)", () => {
-    const entry: PoolenProgramEntry = {
-      title: "Swae Lee",
-      detailUrl: "https://poolen.dk/da/koncerter/swae-lee/",
-      ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
-    };
-    const withoutSupport = NON_ELECTRONIC_HTML.replace(/<div class="support-artists">[\s\S]*?<\/section>/, "</section>");
-    const event = parsePoolenEventDetailHtml(withoutSupport, entry);
-    expect(event.artists).toEqual(["Swae Lee"]);
+  it("a 'Few tix left' marquee flag near the hero image is not mistaken for a sold-out/cancelled status — only the ticket area's own badge counts", () => {
+    expect(event.soldOutHint).toBeNull();
+    expect(event.cancelledHint).toBeNull();
+    expect(event.ticketUrl).toBe("https://secure.tickster.com/7cwak39ey6pecvc");
   });
 });
 
-describe("parsePoolenEventDetailHtml — generic 'experimental' wording is not electronic evidence", () => {
-  // Real detail-page structure (from the electronic fixture), with only the
-  // bio paragraph swapped for the actual text captured from Poolen's live
-  // Ca7riel y Paco Amoroso page during Preview validation: a genre-crossing
-  // trap/rock/pop bio that happens to use the word "experimental" with no
-  // mention of electronic music anywhere. This must not resolve to
-  // ambient-experimental — Electronic CPH's inclusion rule requires
-  // electronic music to be CENTRAL to an event, and a generic word can't
-  // establish that on its own.
-  const CA7RIEL_BIO_HTML =
-    "<h3>CA7RIEL &amp; Paco Amoroso — FREE SPIRITS World Tour</h3>\n" +
-    "<p>CA7RIEL &amp; Paco Amoroso follow the release of their new album FREE SPIRITS with the announcement of the " +
-    "FREE SPIRITS World Tour, an extensive tour that will bring the Argentine duo to Poolen. On FREE SPIRITS, " +
-    "CA7RIEL &amp; Paco Amoroso expand their already unpredictable blend of trap, rock, pop and experimental " +
-    "elements into something bigger, sharper and more emotionally open without losing the humour, volatility " +
-    "and musicianship that have made them one of Latin America's most talked-about acts.</p>\n";
-  const genericExperimentalHtml = ELECTRONIC_HTML.replace(
-    /<h3>For første gang[\s\S]*?feststemning\.<\/p>\n/,
-    CA7RIEL_BIO_HTML,
-  );
+describe("parsePoolenEventDetailHtml — genre resolution tiers (real page, bio paragraph swapped for controlled text — same technique as every other adapter's genre-tier tests)", () => {
+  const PROSE_MARKER = '<div class="pc-concert__prose">';
+  const proseStart = NON_ELECTRONIC_HTML.indexOf(PROSE_MARKER) + PROSE_MARKER.length;
+  const supportOrLockersIdx = NON_ELECTRONIC_HTML.indexOf("pc-concert__lockers", proseStart);
+  const originalProse = NON_ELECTRONIC_HTML.slice(proseStart, supportOrLockersIdx);
 
-  it("replacement actually took effect (no longer contains the original Danish bio sentence)", () => {
-    expect(genericExperimentalHtml).not.toContain("indflydelsesrige skikkelser inden for elektronisk musik");
-    expect(genericExperimentalHtml).toContain("experimental elements");
-  });
+  function withProse(bioHtml: string): string {
+    return NON_ELECTRONIC_HTML.slice(0, proseStart) + bioHtml + NON_ELECTRONIC_HTML.slice(proseStart + originalProse.length);
+  }
 
-  it("resolves no genre hint — 'experimental' alone, with no electronic-music context, is not credible electronic evidence", () => {
-    const entry: PoolenProgramEntry = {
-      title: "Ca7riel y Paco Amoroso",
-      detailUrl: "https://poolen.dk/da/koncerter/ca7riel-paco-amoroso/",
-      ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
-    };
-    const event = parsePoolenEventDetailHtml(genericExperimentalHtml, entry);
+  const entry: PoolenProgramEntry = {
+    title: "Test Artist",
+    detailUrl: "https://poolen.dk/concerts/test-artist/",
+    ticketUrl: null,
+    dateText: "2026-09-25",
+  };
+
+  it("resolves no genre hint — generic 'experimental' wording alone, with no electronic-music context, is not credible electronic evidence", () => {
+    const event = parsePoolenEventDetailHtml(
+      withProse("<p>An unpredictable blend of trap, rock, pop and experimental elements.</p>"),
+      entry,
+    );
     expect(event.genreHint).toBeNull();
     expect(event.genreConfidenceHint).toBeNull();
   });
 
-  it("still resolves ambient-experimental when the bio explicitly ties 'experimental' to electronic music", () => {
-    const explicitElectronicHtml = ELECTRONIC_HTML.replace(
-      /<h3>For første gang[\s\S]*?feststemning\.<\/p>\n/,
-      "<h3>An evening of experimental electronic music</h3>\n<p>Deep, forward-leaning experimental electronic soundscapes.</p>\n",
-    );
-    const entry: PoolenProgramEntry = {
-      title: "Test Artist",
-      detailUrl: "https://poolen.dk/da/koncerter/test-artist/",
-      ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
-    };
-    const event = parsePoolenEventDetailHtml(explicitElectronicHtml, entry);
+  it("resolves ambient-experimental when the bio explicitly ties 'experimental' to electronic music", () => {
+    const event = parsePoolenEventDetailHtml(withProse("<p>Deep, forward-leaning experimental electronic soundscapes.</p>"), entry);
     expect(event.genreHint).toBe("ambient-experimental");
     expect(event.genreConfidenceHint).toBe("high");
   });
 
-  it("still resolves ambient-experimental from a bare, unambiguous 'ambient' mention", () => {
-    const ambientHtml = ELECTRONIC_HTML.replace(
-      /<h3>For første gang[\s\S]*?feststemning\.<\/p>\n/,
-      "<h3>A night of ambient textures</h3>\n<p>Slow-building ambient sets to close out the night.</p>\n",
-    );
-    const entry: PoolenProgramEntry = {
-      title: "Test Artist",
-      detailUrl: "https://poolen.dk/da/koncerter/test-artist-2/",
-      ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
-    };
-    const event = parsePoolenEventDetailHtml(ambientHtml, entry);
-    expect(event.genreHint).toBe("ambient-experimental");
+  it("resolves electronic-other from an explicit but non-specific 'electronic' mention — real evidence, not a guessed subgenre", () => {
+    const event = parsePoolenEventDetailHtml(withProse("<p>An evening of electronic music at Poolen.</p>"), entry);
+    expect(event.genreHint).toBe("electronic-other");
     expect(event.genreConfidenceHint).toBe("high");
+  });
+});
+
+describe("parsePoolenEventDetailHtml — missing/optional fields", () => {
+  const entry: PoolenProgramEntry = {
+    title: "Kevin de Vries & Massano",
+    detailUrl: "https://poolen.dk/concerts/kevin-de-vries-massano/",
+    ticketUrl: null,
+    dateText: "2026-10-02",
+  };
+
+  it("falls back to the show-start time when doors time is absent", () => {
+    const withoutDoors = ELECTRONIC_HTML.replace(/<dt>Doors<\/dt>\s*<dd>22\.00<\/dd>/, "");
+    const event = parsePoolenEventDetailHtml(withoutDoors, entry);
+    expect(event.startDatetime).toBe("2026-10-02T20:00:00.000Z"); // show time is also 22.00 on this real fixture
+  });
+
+  it("falls back to the programme entry's own ticket URL when the detail page's ticket link is missing", () => {
+    const withoutTicket = ELECTRONIC_HTML.replace(
+      /<a\s+class="pc-concert__action pc-chip pc-chip--pink"\s*href="[^"]+"/,
+      `<a class="pc-concert__action pc-chip pc-chip--pink" href="#"`,
+    ).replace('href="#"', "");
+    const entryWithFallback: PoolenProgramEntry = { ...entry, ticketUrl: "https://example.com/fallback-ticket" };
+    const event = parsePoolenEventDetailHtml(withoutTicket, entryWithFallback);
+    expect(event.ticketUrl).toBe("https://example.com/fallback-ticket");
+  });
+
+  it("throws (never guesses) when the date is genuinely missing or unparseable — the caller skips a single bad record and continues", () => {
+    const withoutDate = ELECTRONIC_HTML.replace(/<time datetime="2026-10-02">/, "<time>");
+    expect(() => parsePoolenEventDetailHtml(withoutDate, entry)).toThrow(/unparseable date/);
+  });
+
+  it("throws when neither doors nor show time is present", () => {
+    const withoutTimes = ELECTRONIC_HTML.replace(/<dt>Doors<\/dt>\s*<dd>22\.00<\/dd>/, "").replace(/<dt>Show<\/dt>\s*<dd>22\.00<\/dd>/, "");
+    expect(() => parsePoolenEventDetailHtml(withoutTimes, entry)).toThrow(/no doors\/show time/);
+  });
+
+  it("still returns a valid event with an empty artists tail when there are no support acts", () => {
+    const event = parsePoolenEventDetailHtml(NON_ELECTRONIC_HTML, {
+      title: "Ca7riel y Paco Amoroso",
+      detailUrl: "https://poolen.dk/concerts/ca7riel-paco-amoroso/",
+      ticketUrl: null,
+      dateText: "2026-09-25",
+    });
+    expect(event.artists).toEqual(["Ca7riel y Paco Amoroso"]);
   });
 });
 
 describe("parsePoolenEventDetailHtml — determinism (idempotency at the adapter level)", () => {
   it("parsing the same real page twice yields byte-identical results", () => {
     const entry: PoolenProgramEntry = {
-      title: "Omar S – Outside",
-      detailUrl: "https://poolen.dk/da/koncerter/omar-s-outside/",
+      title: "Niarn",
+      detailUrl: "https://poolen.dk/concerts/niarn/",
       ticketUrl: null,
-      imageUrl: null,
-      dateText: null,
+      dateText: "2026-09-19",
     };
-    const first = parsePoolenEventDetailHtml(OUTSIDE_HTML, entry);
-    const second = parsePoolenEventDetailHtml(OUTSIDE_HTML, entry);
+    const first = parsePoolenEventDetailHtml(WITH_SUPPORT_HTML, entry);
+    const second = parsePoolenEventDetailHtml(WITH_SUPPORT_HTML, entry);
     expect(second).toEqual(first);
   });
 });
@@ -390,98 +325,87 @@ describe("createPoolenAdapter — orchestration (programme fetch + per-event det
     };
   }
 
-  it("fetches the programme page then every listed event's own detail page, never the robots-relevant risk of a single combined request", async () => {
+  it("fetches the programme page then every listed event's own detail page, never one combined request", async () => {
     // A tiny programme page with just two teasers, both of which have real
     // detail fixtures, keeps this test fast while still exercising the
-    // real two-stage fetch orchestration end to end.
+    // real two-stage fetch orchestration end to end, using the real
+    // pc-shows__* markup shape.
     const miniProgram = `
-      <section class="component component-event-teaser default-grid">
-        <div class="boxed-grid">
-          <div class="image-wrapper" onclick="window.location.href='https://poolen.dk/da/koncerter/hernan-cattaneo/';" style="background-image: url('https://poolen.dk/wp-content/uploads/Hernan-Cattaneo.jpg');">
-            <div class="inline"><span class="inline">
-              <div class="boxify light-yellow"><h2 class="text__h2">Hernan Cattaneo</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">Lørdag</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">18 july 2026</h2></div>
-            </span></div>
-            <div class="cta-container">
-              <a href="https://pretix.eu/Distriktsouth/DS2026/" target="_blank" class="btn btn--boxed-grey">KØB BILLET</a>
-              <a href="https://poolen.dk/da/koncerter/hernan-cattaneo/" class="btn btn--boxed-black">MERE INFO</a>
-            </div>
+      <ol class="pc-shows__list" data-scroll-highlight>
+        <li class="pc-shows__item is-hl-yellow" data-highlight-row>
+          <div class="pc-shows__main">
+            <a class="pc-shows__title" href="https://poolen.dk/concerts/kevin-de-vries-massano/">
+              <span class="pc-shows__title-text">Kevin de Vries &#038; Massano</span>
+            </a>
+            <time class="pc-shows__when" datetime="2026-10-02">
+              <span class="pc-shows__date pc-shows__date--compact">Fri 2 Oct</span>
+            </time>
           </div>
-        </div>
-      </section>
-      <section class="component component-event-teaser default-grid">
-        <div class="boxed-grid">
-          <div class="image-wrapper" onclick="window.location.href='https://poolen.dk/da/koncerter/swae-lee/';" style="background-image: url('https://poolen.dk/wp-content/uploads/Swae-Lee.jpg');">
-            <div class="inline"><span class="inline">
-              <div class="boxify light-yellow"><h2 class="text__h2">Swae Lee</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">Mandag</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">17 august 2026</h2></div>
-            </span></div>
-            <div class="cta-container">
-              <a href="https://www.ticketmaster.dk/event/508093953?language=da-dk" target="_blank" class="btn btn--boxed-grey">KØB BILLET</a>
-              <a href="https://poolen.dk/da/koncerter/swae-lee/" class="btn btn--boxed-black">MERE INFO</a>
-            </div>
+          <a class="pc-shows__action pc-chip pc-chip--pink" href="https://secure.tickster.com/j67gvutmnrgtf9j?c=6c52ydp" target="_blank" rel="noopener">
+            Buy tix
+          </a>
+        </li>
+        <li class="pc-shows__item is-hl-yellow" data-highlight-row>
+          <div class="pc-shows__main">
+            <a class="pc-shows__title" href="https://poolen.dk/concerts/ca7riel-paco-amoroso/">
+              <span class="pc-shows__title-text">Ca7riel y Paco Amoroso</span>
+            </a>
+            <time class="pc-shows__when" datetime="2026-09-25">
+              <span class="pc-shows__date pc-shows__date--compact">Fri 25 Sep</span>
+            </time>
           </div>
-        </div>
-      </section>
+          <a class="pc-shows__action pc-chip pc-chip--pink" href="https://www.ticketmaster.dk/event/1665380278" target="_blank" rel="noopener">
+            Buy tix
+          </a>
+        </li>
+      </ol>
     `;
     const fetchImpl = fetchImplFor({
       [POOLEN_PROGRAM_URL]: miniProgram,
-      "https://poolen.dk/da/koncerter/hernan-cattaneo/": ELECTRONIC_HTML,
-      "https://poolen.dk/da/koncerter/swae-lee/": NON_ELECTRONIC_HTML,
+      "https://poolen.dk/concerts/kevin-de-vries-massano/": ELECTRONIC_HTML,
+      "https://poolen.dk/concerts/ca7riel-paco-amoroso/": NON_ELECTRONIC_HTML,
     });
     const adapter = createPoolenAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
 
     expect(candidates).toHaveLength(2);
-    expect(candidates.map((c) => c.title).sort()).toEqual(["Hernan Cattaneo", "Swae Lee"]);
+    expect(candidates.map((c) => c.title).sort()).toEqual(["Ca7riel y Paco Amoroso", "Kevin de Vries & Massano"]);
     expect(candidates.every((c) => c.sourceId === "src-poolen")).toBe(true);
   });
 
   it("a single failing detail-page fetch drops only that one event — never the whole sync", async () => {
     const miniProgram = `
-      <section class="component component-event-teaser default-grid">
-        <div class="boxed-grid">
-          <div class="image-wrapper" onclick="window.location.href='https://poolen.dk/da/koncerter/hernan-cattaneo/';" style="background-image: url('https://poolen.dk/wp-content/uploads/Hernan-Cattaneo.jpg');">
-            <div class="inline"><span class="inline">
-              <div class="boxify light-yellow"><h2 class="text__h2">Hernan Cattaneo</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">Lørdag</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">18 july 2026</h2></div>
-            </span></div>
-            <div class="cta-container">
-              <a href="https://pretix.eu/Distriktsouth/DS2026/" target="_blank" class="btn btn--boxed-grey">KØB BILLET</a>
-              <a href="https://poolen.dk/da/koncerter/hernan-cattaneo/" class="btn btn--boxed-black">MERE INFO</a>
-            </div>
+      <ol class="pc-shows__list" data-scroll-highlight>
+        <li class="pc-shows__item is-hl-yellow" data-highlight-row>
+          <div class="pc-shows__main">
+            <a class="pc-shows__title" href="https://poolen.dk/concerts/kevin-de-vries-massano/">
+              <span class="pc-shows__title-text">Kevin de Vries &#038; Massano</span>
+            </a>
+            <time class="pc-shows__when" datetime="2026-10-02"></time>
           </div>
-        </div>
-      </section>
-      <section class="component component-event-teaser default-grid">
-        <div class="boxed-grid">
-          <div class="image-wrapper" onclick="window.location.href='https://poolen.dk/da/koncerter/broken-page/';" style="background-image: url('');">
-            <div class="inline"><span class="inline">
-              <div class="boxify light-yellow"><h2 class="text__h2">Broken Page Event</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">Mandag</h2></div>
-              <div class="boxify yellow"><h2 class="text__h2">20 august 2026</h2></div>
-            </span></div>
-            <div class="cta-container">
-              <a href="https://example.com/tickets" target="_blank" class="btn btn--boxed-grey">KØB BILLET</a>
-              <a href="https://poolen.dk/da/koncerter/broken-page/" class="btn btn--boxed-black">MERE INFO</a>
-            </div>
+          <a class="pc-shows__action pc-chip pc-chip--pink" href="https://secure.tickster.com/j67gvutmnrgtf9j?c=6c52ydp" target="_blank" rel="noopener">Buy tix</a>
+        </li>
+        <li class="pc-shows__item is-hl-yellow" data-highlight-row>
+          <div class="pc-shows__main">
+            <a class="pc-shows__title" href="https://poolen.dk/concerts/broken-page/">
+              <span class="pc-shows__title-text">Broken Page Event</span>
+            </a>
+            <time class="pc-shows__when" datetime="2026-08-20"></time>
           </div>
-        </div>
-      </section>
+          <a class="pc-shows__action pc-chip pc-chip--pink" href="https://example.com/tickets" target="_blank" rel="noopener">Buy tix</a>
+        </li>
+      </ol>
     `;
     const fetchImpl = fetchImplFor({
       [POOLEN_PROGRAM_URL]: miniProgram,
-      "https://poolen.dk/da/koncerter/hernan-cattaneo/": ELECTRONIC_HTML,
+      "https://poolen.dk/concerts/kevin-de-vries-massano/": ELECTRONIC_HTML,
       // "broken-page" deliberately has no entry -> fetchImplFor returns 404 for it
     });
     const adapter = createPoolenAdapter(fetchImpl as unknown as typeof fetch, 0, 0);
     const candidates = await adapter.fetchCandidates();
 
     expect(candidates).toHaveLength(1);
-    expect(candidates[0].title).toBe("Hernan Cattaneo");
+    expect(candidates[0].title).toBe("Kevin de Vries & Massano");
   });
 
   it("throws a descriptive error (source failure, not zero-events) when the programme page itself can't be fetched", async () => {
