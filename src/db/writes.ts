@@ -4,6 +4,7 @@ import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks, venues } from "./schema";
 import { venueRowToRecord } from "./mappers";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
+import { isEndAfterStart, END_BEFORE_START_ERROR } from "../lib/datetime";
 import { assessDuplicate } from "../lib/dedup";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
@@ -67,6 +68,20 @@ export type EventEditPatch = Partial<Pick<EventInsert, EditableEventField>>;
 export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch) {
   const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!existing) throw new Error(`Event ${eventId} not found`);
+
+  // Ended-event write-path integrity (2026-09-20): only checked when this
+  // patch actually touches start/end — an unrelated edit (title, genre...)
+  // to an already-malformed pre-existing row must never be blocked by it.
+  // Rejects outright rather than "fixing" the value; see isEndAfterStart's
+  // own doc comment for why an automatic +1 day would be wrong as often as
+  // it's right.
+  if ("startDatetime" in patch || "endDatetime" in patch) {
+    const effectiveStart = "startDatetime" in patch ? patch.startDatetime : existing.startDatetime;
+    const effectiveEnd = "endDatetime" in patch ? patch.endDatetime : existing.endDatetime;
+    if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
+      throw new Error(END_BEFORE_START_ERROR);
+    }
+  }
 
   const touchedFields = Object.keys(patch);
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
@@ -648,6 +663,14 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
   if (!item) throw new Error(`Discovery item ${queueId} not found`);
   if (item.status !== "pending") throw new Error(`Discovery item ${queueId} already ${item.status}`);
   if (!item.probableStart) throw new Error("Cannot publish without a resolved date/time");
+  // Ended-event write-path integrity (2026-09-20) — belt-and-suspenders at
+  // the actual events-table write boundary, in case a bad probableEnd ever
+  // reaches discovery_queue through some path other than the edit route
+  // above (e.g. a future one). Never reachable today via the admin edit UI,
+  // which already rejects this at updateDiscoveryItem.
+  if (!isEndAfterStart(item.probableStart, item.probableEnd)) {
+    throw new Error(END_BEFORE_START_ERROR);
+  }
 
   // Admin unpublish safety (2026-09-06): publishing this item would create
   // a BRAND NEW event row — if it's a suspected duplicate of an event an
@@ -839,6 +862,16 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
   const [existing] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, id)).limit(1);
   if (!existing) throw new Error(`Discovery item ${id} not found`);
   if (existing.status !== "pending") throw new Error(`Discovery item ${id} already ${existing.status}`);
+
+  // Ended-event write-path integrity (2026-09-20) — same rule and same
+  // "only when this patch touches start/end" scoping as applyAdminEventEdit.
+  if ("probableStart" in patch || "probableEnd" in patch) {
+    const effectiveStart = "probableStart" in patch ? patch.probableStart : existing.probableStart;
+    const effectiveEnd = "probableEnd" in patch ? patch.probableEnd : existing.probableEnd;
+    if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
+      throw new Error(END_BEFORE_START_ERROR);
+    }
+  }
 
   const missingFields = existing.missingFields.filter((f) => {
     if (f.startsWith("date") && patch.probableStart) return false;

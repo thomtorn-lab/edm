@@ -6,6 +6,7 @@ import {
   effectiveEndInstant,
   groupByMonth,
   hasTrustworthyEndDatetime,
+  isEndAfterStart,
   isEventInProgress,
   isMultiDayEvent,
   isNextWeekend,
@@ -296,6 +297,34 @@ describe("hasTrustworthyEndDatetime / untrustworthy explicit end times", () => {
     const festival: NightlifeEvent = { startDatetime: "2026-10-09T22:00:00+02:00", endDatetime: "2026-10-11T05:00:00+02:00" }; // 31h
     expect(hasTrustworthyEndDatetime(festival)).toBe(true);
     expect(effectiveEndInstant(festival).toISOString()).toBe(new Date("2026-10-11T05:00:00+02:00").toISOString());
+  });
+});
+
+describe("isEndAfterStart (ended-event write-path integrity, 2026-09-20)", () => {
+  it("accepts an end strictly after start", () => {
+    expect(isEndAfterStart("2026-09-19T22:00:00Z", "2026-09-20T04:00:00Z")).toBe(true);
+  });
+
+  it("rejects an end equal to start", () => {
+    expect(isEndAfterStart("2026-09-19T22:00:00Z", "2026-09-19T22:00:00Z")).toBe(false);
+  });
+
+  it("rejects an end before start — the ASCEND/Disco Express shape (same calendar date, earlier clock time)", () => {
+    expect(isEndAfterStart("2026-09-19T17:00:00Z", "2026-09-19T00:00:00Z")).toBe(false);
+  });
+
+  it("accepts a start with no end at all (null or undefined)", () => {
+    expect(isEndAfterStart("2026-09-19T22:00:00Z", null)).toBe(true);
+    expect(isEndAfterStart("2026-09-19T22:00:00Z", undefined)).toBe(true);
+  });
+
+  it("accepts an overnight event whose end carries the following calendar date", () => {
+    expect(isEndAfterStart("2026-09-19T20:00:00Z", "2026-09-20T02:00:00Z")).toBe(true);
+  });
+
+  it("works with Date instances, not just ISO strings", () => {
+    expect(isEndAfterStart(new Date("2026-09-19T22:00:00Z"), new Date("2026-09-20T04:00:00Z"))).toBe(true);
+    expect(isEndAfterStart(new Date("2026-09-19T22:00:00Z"), new Date("2026-09-19T02:00:00Z"))).toBe(false);
   });
 });
 
