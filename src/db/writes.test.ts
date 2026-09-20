@@ -746,6 +746,28 @@ describe("applyAdminEventEdit — end-before-start write-path guard (ended-event
     );
     expect(updateSetMock).not.toHaveBeenCalled();
   });
+
+  it("validates a start-only patch against an unchanged existing end — rejects a new start that reaches or passes it (PR review, 2026-09-20: the mirror image of the end-only case above, proving the guard can't be bypassed by editing one field at a time)", async () => {
+    selectResults = [
+      [{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await expect(applyAdminEventEdit("e-1", { startDatetime: new Date("2026-09-20T02:00:00Z") })).rejects.toThrow(
+      END_BEFORE_START_ERROR,
+    );
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a start-only patch that still precedes the unchanged existing end", async () => {
+    selectResults = [
+      [{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await applyAdminEventEdit("e-1", { startDatetime: new Date("2026-09-19T21:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.startDatetime).toEqual(new Date("2026-09-19T21:00:00Z"));
+  });
 });
 
 describe("updateDiscoveryItem — end-before-start write-path guard (ended-event write-path integrity, 2026-09-20)", () => {
@@ -821,6 +843,28 @@ describe("updateDiscoveryItem — end-before-start write-path guard (ended-event
 
     const patch = updateSetMock.mock.calls[0][0];
     expect(patch.probableTitle).toBe("Corrected Title");
+  });
+
+  it("validates a probableStart-only patch against an unchanged existing probableEnd — rejects a new start that reaches or passes it (PR review, 2026-09-20: DQ mirror of the applyAdminEventEdit start-only case)", async () => {
+    selectResults = [
+      [{ ...pending, probableStart: new Date("2026-09-19T20:00:00Z"), probableEnd: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await expect(
+      updateDiscoveryItem("dq-1", { probableStart: new Date("2026-09-20T02:00:00Z") }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a probableStart-only patch that still precedes the unchanged existing probableEnd", async () => {
+    selectResults = [
+      [{ ...pending, probableStart: new Date("2026-09-19T20:00:00Z"), probableEnd: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await updateDiscoveryItem("dq-1", { probableStart: new Date("2026-09-19T21:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.probableStart).toEqual(new Date("2026-09-19T21:00:00Z"));
   });
 });
 

@@ -1309,8 +1309,7 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
   const rows = await client.query(
     `SELECT e.id, e.slug, e.title, e.description, e.start_datetime, e.end_datetime,
             e.published, e.admin_unpublish_reason, e.admin_unpublished_at,
-            e.official_event_url, e.ticket_url, e.resident_advisor_url, e.canonical_source_id,
-            e.manual_override, e.overridden_fields, e.created_at, e.updated_at,
+            e.official_event_url, e.ticket_url, e.canonical_source_id,
             v.name AS venue_name, s.source_name
      FROM events e
      LEFT JOIN venues v ON v.id = e.venue_id
@@ -1361,10 +1360,8 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
     const bucket = sourceBreakdown.get(sourceKey)!;
 
     let suspicious: string | null = null;
-    let deltaHours: number | null = null;
     if (end && start) {
       const diffHours = (end.getTime() - start.getTime()) / 3_600_000;
-      deltaHours = Number(diffHours.toFixed(1));
       if (diffHours < 0) suspicious = `end_before_start(${diffHours.toFixed(1)}h)`;
       else if (diffHours > 18) suspicious = `end_over_18h_after_start(${diffHours.toFixed(1)}h)`;
     }
@@ -1378,10 +1375,8 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
       title,
       venue: r.venue_name,
       source: r.source_name,
-      canonicalSourceId: r.canonical_source_id,
       startDatetime: r.start_datetime,
       endDatetime: r.end_datetime,
-      deltaHours,
       hasEndDatetime: end != null,
       suspicious,
       published: r.published,
@@ -1389,11 +1384,6 @@ async function modeEventIntegrity(client: Client, args: Record<string, string | 
       adminUnpublishedAt: r.admin_unpublished_at,
       officialEventUrl: r.official_event_url,
       ticketUrl: r.ticket_url,
-      residentAdvisorUrl: r.resident_advisor_url,
-      manualOverride: r.manual_override,
-      overriddenFields: r.overridden_fields,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
       // description omitted from the default bulk scan (can be long across
       // hundreds of rows) but included once the row set is already
       // title-scoped down to a handful (generalized text normalization
