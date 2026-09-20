@@ -190,6 +190,31 @@ export function hasTrustworthyEndDatetime(event: NightlifeEvent): boolean {
 }
 
 /**
+ * The one message shown to an admin/API caller when a submitted endDatetime
+ * doesn't come after its startDatetime (ended-event write-path integrity,
+ * 2026-09-20) — centralized so the write paths that can create this defect
+ * (Discovery Queue edit, published-event edit, Discovery Queue publish) all
+ * show the same actionable guidance instead of three slightly different
+ * messages.
+ */
+export const END_BEFORE_START_ERROR =
+  "End time must be later than start time. If the event ends after midnight, select the following calendar date.";
+
+/**
+ * True when there's nothing to check (no end given) or end is strictly
+ * after start. False — the one case a write path must reject outright,
+ * never silently "fix" by adding a day: real Production data includes both
+ * a plain same-day date-entry slip (the end date left on the start's own
+ * calendar day for a past-midnight event) and a genuinely mistyped date
+ * days away from the intended one — see hasTrustworthyEndDatetime's own
+ * doc comment on why no automatic correction can tell those apart.
+ */
+export function isEndAfterStart(startDatetime: Date | string, endDatetime: Date | string | null | undefined): boolean {
+  if (endDatetime == null) return true;
+  return new Date(endDatetime).getTime() > new Date(startDatetime).getTime();
+}
+
+/**
  * The instant an event is considered over for archival purposes. Falls back
  * to 06:00 on the day following its nightlife day when no trustworthy end
  * time is known, since Copenhagen club nights routinely run to that hour.

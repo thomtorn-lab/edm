@@ -57,10 +57,12 @@ const {
   adminRepublishEvent,
   publishDiscoveryItem,
   applyAdminEventEdit,
+  updateDiscoveryItem,
   applySourceCancellationUnpublish,
   applySourceCancellationRestore,
   adminOverrideSourceCancellation,
 } = await import("./writes");
+const { END_BEFORE_START_ERROR } = await import("../lib/datetime");
 
 const item = {
   id: "dq-abc123",
@@ -667,5 +669,257 @@ describe("applyAdminEventEdit — event-level link editing (officialEventUrl/tic
     expect(patchB.overriddenFields).toEqual(expect.arrayContaining(["title", "officialEventUrl"]));
     expect(patchB.officialEventUrl).toBe("https://b.example.com");
     expect(patchA.officialEventUrl).toBe("https://a.example.com");
+  });
+});
+
+describe("applyAdminEventEdit — end-before-start write-path guard (ended-event write-path integrity, 2026-09-20)", () => {
+  it("accepts a patch where the new end is after the new start", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T22:00:00Z"), endDatetime: null }]];
+
+    await applyAdminEventEdit("e-1", {
+      startDatetime: new Date("2026-09-19T22:00:00Z"),
+      endDatetime: new Date("2026-09-20T04:00:00Z"),
+    });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.endDatetime).toEqual(new Date("2026-09-20T04:00:00Z"));
+  });
+
+  it("rejects a patch where the new end equals the new start", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T22:00:00Z"), endDatetime: null }]];
+
+    await expect(
+      applyAdminEventEdit("e-1", {
+        startDatetime: new Date("2026-09-19T22:00:00Z"),
+        endDatetime: new Date("2026-09-19T22:00:00Z"),
+      }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a patch where the new end is before the new start — the exact ASCEND/Disco Express shape (same calendar day, end clock-time earlier than start)", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T17:00:00Z"), endDatetime: null }]];
+
+    await expect(
+      applyAdminEventEdit("e-1", {
+        startDatetime: new Date("2026-09-19T17:00:00Z"),
+        endDatetime: new Date("2026-09-19T00:00:00Z"),
+      }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts an overnight event whose end carries the following calendar date", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: null }]];
+
+    await applyAdminEventEdit("e-1", { endDatetime: new Date("2026-09-20T02:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.endDatetime).toEqual(new Date("2026-09-20T02:00:00Z"));
+  });
+
+  it("accepts a patch that sets a start with no end at all", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: null }]];
+
+    await applyAdminEventEdit("e-1", { startDatetime: new Date("2026-09-19T21:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.startDatetime).toEqual(new Date("2026-09-19T21:00:00Z"));
+  });
+
+  it("is never consulted for an edit that touches neither startDatetime nor endDatetime, even against an already-malformed existing row — an unrelated field edit on one of the known-bad Production rows must not be blocked by it", async () => {
+    selectResults = [
+      [{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T17:00:00Z"), endDatetime: new Date("2026-09-19T00:00:00Z") }],
+    ];
+
+    await applyAdminEventEdit("e-1", { title: "Corrected Title" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.title).toBe("Corrected Title");
+  });
+
+  it("validates the effective end against an unchanged existing start when only endDatetime is patched", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: null }]];
+
+    await expect(applyAdminEventEdit("e-1", { endDatetime: new Date("2026-09-19T18:00:00Z") })).rejects.toThrow(
+      END_BEFORE_START_ERROR,
+    );
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("validates a start-only patch against an unchanged existing end — rejects a new start that reaches or passes it (PR review, 2026-09-20: the mirror image of the end-only case above, proving the guard can't be bypassed by editing one field at a time)", async () => {
+    selectResults = [
+      [{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await expect(applyAdminEventEdit("e-1", { startDatetime: new Date("2026-09-20T02:00:00Z") })).rejects.toThrow(
+      END_BEFORE_START_ERROR,
+    );
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a start-only patch that still precedes the unchanged existing end", async () => {
+    selectResults = [
+      [{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-09-19T20:00:00Z"), endDatetime: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await applyAdminEventEdit("e-1", { startDatetime: new Date("2026-09-19T21:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.startDatetime).toEqual(new Date("2026-09-19T21:00:00Z"));
+  });
+});
+
+describe("updateDiscoveryItem — end-before-start write-path guard (ended-event write-path integrity, 2026-09-20)", () => {
+  const pending = {
+    id: "dq-1",
+    status: "pending",
+    overriddenFields: [] as string[],
+    missingFields: ["date"] as string[],
+    probableStart: null as Date | null,
+    probableEnd: null as Date | null,
+    probableTitle: "Test Event",
+    probableVenueName: null as string | null,
+  };
+
+  it("accepts probableEnd after probableStart", async () => {
+    selectResults = [[{ ...pending }]];
+
+    await updateDiscoveryItem("dq-1", {
+      probableStart: new Date("2026-09-19T22:00:00Z"),
+      probableEnd: new Date("2026-09-20T04:00:00Z"),
+    });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.probableEnd).toEqual(new Date("2026-09-20T04:00:00Z"));
+  });
+
+  it("rejects probableEnd equal to probableStart", async () => {
+    selectResults = [[{ ...pending }]];
+
+    await expect(
+      updateDiscoveryItem("dq-1", {
+        probableStart: new Date("2026-09-19T22:00:00Z"),
+        probableEnd: new Date("2026-09-19T22:00:00Z"),
+      }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects probableEnd before probableStart", async () => {
+    selectResults = [[{ ...pending }]];
+
+    await expect(
+      updateDiscoveryItem("dq-1", {
+        probableStart: new Date("2026-09-19T20:00:00Z"),
+        probableEnd: new Date("2026-09-19T02:00:00Z"),
+      }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts an overnight probableEnd on the following calendar date", async () => {
+    selectResults = [[{ ...pending, probableStart: new Date("2026-09-19T20:00:00Z") }]];
+
+    await updateDiscoveryItem("dq-1", { probableEnd: new Date("2026-09-20T02:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.probableEnd).toEqual(new Date("2026-09-20T02:00:00Z"));
+  });
+
+  it("accepts probableStart set with no probableEnd", async () => {
+    selectResults = [[{ ...pending }]];
+
+    await updateDiscoveryItem("dq-1", { probableStart: new Date("2026-09-19T20:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.probableStart).toEqual(new Date("2026-09-19T20:00:00Z"));
+  });
+
+  it("does not run the guard for a patch touching neither probableStart nor probableEnd", async () => {
+    selectResults = [[{ ...pending, probableStart: new Date("2026-09-19T20:00:00Z"), probableEnd: new Date("2026-09-19T02:00:00Z") }]];
+
+    await updateDiscoveryItem("dq-1", { probableTitle: "Corrected Title" });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.probableTitle).toBe("Corrected Title");
+  });
+
+  it("validates a probableStart-only patch against an unchanged existing probableEnd — rejects a new start that reaches or passes it (PR review, 2026-09-20: DQ mirror of the applyAdminEventEdit start-only case)", async () => {
+    selectResults = [
+      [{ ...pending, probableStart: new Date("2026-09-19T20:00:00Z"), probableEnd: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await expect(
+      updateDiscoveryItem("dq-1", { probableStart: new Date("2026-09-20T02:00:00Z") }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a probableStart-only patch that still precedes the unchanged existing probableEnd", async () => {
+    selectResults = [
+      [{ ...pending, probableStart: new Date("2026-09-19T20:00:00Z"), probableEnd: new Date("2026-09-20T02:00:00Z") }],
+    ];
+
+    await updateDiscoveryItem("dq-1", { probableStart: new Date("2026-09-19T21:00:00Z") });
+
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.probableStart).toEqual(new Date("2026-09-19T21:00:00Z"));
+  });
+});
+
+describe("publishDiscoveryItem — end-before-start write-path guard (ended-event write-path integrity, 2026-09-20) — cannot bypass the DQ-edit guard by publishing directly", () => {
+  const basePending = {
+    id: "dq-1",
+    status: "pending",
+    probableTitle: "Test Event",
+    probableSubVenue: null as string | null,
+    detectedLineup: [] as string[],
+    predictedGenre: "techno",
+    genreConfidence: "high",
+    probableFree: false,
+    overallConfidence: "medium",
+    sourceId: null as string | null,
+    sourceUrl: "https://example.com/event",
+    suspectedDuplicateOfEventId: null,
+    probableTicketUrl: null as string | null,
+    probableOfficialEventUrl: null as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    description: null as string | null,
+    overriddenFields: [] as string[],
+  };
+
+  it("rejects publish when probableEnd is before probableStart, even though updateDiscoveryItem's own guard was never exercised", async () => {
+    selectResults = [
+      [
+        {
+          ...basePending,
+          probableStart: new Date("2026-09-19T17:00:00Z"),
+          probableEnd: new Date("2026-09-19T00:00:00Z"),
+        },
+      ],
+    ];
+
+    await expect(publishDiscoveryItem("dq-1", "v-copenhill")).rejects.toThrow(END_BEFORE_START_ERROR);
+  });
+
+  it("still publishes normally when probableEnd is absent", async () => {
+    selectResults = [[{ ...basePending, probableStart: new Date("2026-09-19T17:00:00Z"), probableEnd: null }]];
+
+    await expect(publishDiscoveryItem("dq-1", "v-copenhill")).resolves.toBeDefined();
+  });
+
+  it("still publishes normally when probableEnd is a valid overnight end", async () => {
+    selectResults = [
+      [
+        {
+          ...basePending,
+          probableStart: new Date("2026-09-19T20:00:00Z"),
+          probableEnd: new Date("2026-09-20T02:00:00Z"),
+        },
+      ],
+    ];
+
+    await expect(publishDiscoveryItem("dq-1", "v-copenhill")).resolves.toBeDefined();
   });
 });
