@@ -2006,6 +2006,65 @@ async function modeLinkRoleAudit(client: Client, args: Record<string, string | b
   console.log(JSON.stringify(raHvaderpaaFindings, null, 2));
 }
 
+/**
+ * Read-only migration pre-flight check (YouTube Artist Preview post-merge
+ * migration, 2026-09-25) — determines EXACTLY which local migration
+ * file(s) `npm run db:migrate` would apply against whatever database this
+ * runs against, without applying anything. Mirrors drizzle-orm's own
+ * pg-core migrate() logic exactly (node_modules/drizzle-orm/pg-core/
+ * dialect.js): it reads the single most-recently-applied migration's
+ * `created_at` from `drizzle.__drizzle_migrations` (drizzle-kit's default
+ * migrations-tracking schema/table — never overridden in this repo's
+ * drizzle.config.ts), then applies every LOCAL migration file whose
+ * journal `when` timestamp is greater than that. Reproducing that exact
+ * comparison here — rather than just counting rows — is what lets this
+ * mode answer "would migrate() apply ONLY 0018, or would it also catch up
+ * on something earlier?" before any write is attempted.
+ */
+async function modeMigrationStatus(client: Client, _args: Record<string, string | boolean>) {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const path = await import("node:path");
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const journal = JSON.parse(readFileSync(path.join(here, "migrations", "meta", "_journal.json"), "utf-8")) as {
+    entries: { idx: number; tag: string; when: number }[];
+  };
+
+  section("Migration pre-flight status — read-only");
+  console.log(`Local migration journal: ${journal.entries.length} entries (0000..${String(journal.entries.length - 1).padStart(4, "0")}), latest = "${journal.entries[journal.entries.length - 1].tag}"`);
+
+  let rows;
+  try {
+    rows = await client.query(`SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1`);
+  } catch (err) {
+    console.log(`Could not query drizzle.__drizzle_migrations (schema/table may not exist yet on a brand-new database): ${err instanceof Error ? err.message : String(err)}`);
+    console.log(`If this table genuinely doesn't exist, drizzle-kit migrate would create it and apply ALL ${journal.entries.length} local migrations — that is NOT the expected state for an already-running Production database and should be investigated before proceeding.`);
+    return;
+  }
+
+  if (rows.rows.length === 0) {
+    console.log("drizzle.__drizzle_migrations exists but has zero rows — migrate() would apply ALL local migrations. NOT the expected state for an already-running Production database.");
+    return;
+  }
+
+  const lastApplied = rows.rows[0] as { id: number; hash: string; created_at: string };
+  const lastAppliedMillis = Number(lastApplied.created_at);
+  console.log(`Last applied migration recorded in Production: id=${lastApplied.id} hash=${lastApplied.hash} created_at=${lastAppliedMillis} (${new Date(lastAppliedMillis).toISOString()})`);
+
+  const pending = journal.entries.filter((e) => e.when > lastAppliedMillis).sort((a, b) => a.when - b.when);
+  console.log(`Pending migrations (would be applied by \`npm run db:migrate\`): ${pending.length}`);
+  for (const e of pending) {
+    console.log(`  - ${e.tag} (when=${e.when}, ${new Date(e.when).toISOString()})`);
+  }
+  if (pending.length === 0) {
+    console.log("Nothing pending — Production is already fully up to date.");
+  } else if (pending.length === 1 && pending[0].tag === "0018_material_shinobi_shaw") {
+    console.log('SAFE: exactly one pending migration, and it is "0018_material_shinobi_shaw" (the YouTube Artist Preview cache table) — nothing unrelated would be applied.');
+  } else {
+    console.log("NOT SAFE to proceed without review: pending migrations include something other than exactly 0018_material_shinobi_shaw alone.");
+  }
+}
+
 const DB_INTEGRITY_ALLOWED_TABLES = ["venues", "sources", "events", "discovery_queue", "source_event_links", "sync_locks"];
 
 async function modeDbIntegrity(client: Client, args: Record<string, string | boolean>) {
@@ -2190,6 +2249,7 @@ async function main() {
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
     "youtube-preview-backfill-plan": modeYoutubePreviewBackfillPlan,
+    "migration-status": modeMigrationStatus,
   };
 
   if (mode === "reachability") {
@@ -2206,7 +2266,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, migration-status.`,
     );
     process.exit(1);
   }
