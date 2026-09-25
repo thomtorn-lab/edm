@@ -679,7 +679,15 @@ async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, st
   let accepted = 0;
   let abstained = 0;
   let failed = 0;
-  for (const name of artistNames) {
+  for (const [i, name] of artistNames.entries()) {
+    // A small pacing delay between artists — confirmed live (2026-09-25)
+    // that ~30 rapid sequential lookups can trip YouTube's short-window
+    // rate limit even though youtubeClient.ts now retries a 429 with
+    // backoff; spacing requests out here avoids relying on that retry
+    // budget for a batch this size. Production ingestion (one event's
+    // lineup at a time) never approaches this rate naturally, so this is
+    // a dry-run-only concern.
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 500));
     try {
       const result = await matchArtistYoutubePreview(name, youtubeClient);
       if (result.status === "accepted") {

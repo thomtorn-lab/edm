@@ -48,26 +48,44 @@ function requireApiKey(): string {
   return key;
 }
 
+const RATE_LIMIT_RETRY_DELAYS_MS = [1000, 2000]; // confirmed live, 30-artist benchmark re-validation (2026-09-25): a burst of ~30 rapid sequential lookups can trip YouTube's short-window rate limit (HTTP 429) well before the daily quota is anywhere near exhausted
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * The composed URL (key included) lives only in this function's local
  * `url` variable, passed straight to fetch() — never assigned anywhere a
  * caller could log or an error message could echo (errors below reference
  * `path`, never `url`), mirroring inspectSource.ts's own with-credentials
  * discipline for this exact API.
+ *
+ * Retries a 429 (rate limit) with a short backoff, up to
+ * RATE_LIMIT_RETRY_DELAYS_MS.length times — never any other status, and
+ * never a second retry beyond that fixed, small budget. Without this, a
+ * transient rate-limit during ingestion would silently degrade a real
+ * artist match to "no preview" rather than the temporary condition it
+ * actually is.
  */
 async function youtubeGet(path: string, params: Record<string, string>, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
   const key = requireApiKey();
   const url = new URL(`${YOUTUBE_BASE_URL}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   url.searchParams.set("key", key);
-  const res = await fetch(url.toString(), {
-    headers: { "user-agent": USER_AGENT },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) {
-    throw new Error(`YouTube API request failed: HTTP ${res.status} for ${path}`);
+
+  let lastStatus = 0;
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
+    const res = await fetch(url.toString(), {
+      headers: { "user-agent": USER_AGENT },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.ok) return res.json();
+    lastStatus = res.status;
+    if (res.status !== 429 || attempt === RATE_LIMIT_RETRY_DELAYS_MS.length) break;
+    await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
   }
-  return res.json();
+  throw new Error(`YouTube API request failed: HTTP ${lastStatus} for ${path}`);
 }
 
 /**
