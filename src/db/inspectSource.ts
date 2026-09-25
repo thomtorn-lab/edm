@@ -717,30 +717,38 @@ async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, st
 
 /**
  * Read-only projection (automated Artist Preview V1 merge review,
- * 2026-09-25, item 2): how many currently-published events/distinct artist
- * names exist right now, so the deployment/backfill impact can be sized
- * before the backfill script (src/db/youtubePreviewBackfill.ts) is ever
- * run. Never touches artist_youtube_preview_cache — that table may not
- * even exist yet on whatever database this runs against (pre-merge), and
- * this mode doesn't need it to answer "how many artists would need a
- * one-time backfill": before this feature's migration ships, that number
- * is definitionally 100% of them, since matching only ever runs at
- * createEvent for a NEW event (src/db/writes.ts) — no existing published
- * event has ever gone through it.
+ * 2026-09-25, item 2; revised same day, item 3, to scope by visibility):
+ * how many CURRENT/FUTURE-VISIBLE published events and distinct artist
+ * names exist right now, so the one-time backfill
+ * (src/db/youtubePreviewBackfill.ts) only ever spends quota on artists a
+ * viewer could actually see a preview for — never on a stale, long-past
+ * event's lineup. Visibility uses the exact same effective-end semantics
+ * as the public site (src/lib/datetime.ts::isPastEvent /
+ * effectiveEndInstant — the same "no explicit end time -> assume it runs
+ * to the next nightlife-day cutoff" rule every other page already uses),
+ * not a new one invented for this script. Also checks
+ * artist_youtube_preview_cache for an already-cached count — gracefully
+ * reports 0 if that table doesn't exist yet on whatever database this
+ * runs against (expected pre-merge; this mode never creates it).
  */
 async function modeYoutubePreviewBackfillPlan(client: Client, _args: Record<string, string | boolean>) {
   const { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } = await import("@/lib/enrichment/genreEnrichment");
+  const { isPastEvent } = await import("@/lib/datetime");
 
-  section("YouTube Artist Preview backfill plan — read-only projection");
+  section("YouTube Artist Preview backfill plan — read-only projection (current/future-visible events only)");
 
-  const countRes = await client.query("SELECT count(*)::int AS n FROM events WHERE published = true");
-  const publishedEventCount = countRes.rows[0].n as number;
+  const now = new Date();
+  const rows = await client.query("SELECT artists, start_datetime, end_datetime FROM events WHERE published = true");
+  const allRows = rows.rows as { artists: string[]; start_datetime: Date; end_datetime: Date | null }[];
+  const visibleRows = allRows.filter(
+    (row) =>
+      !isPastEvent({ startDatetime: row.start_datetime.toISOString(), endDatetime: row.end_datetime?.toISOString() ?? null }, now),
+  );
 
-  const rows = await client.query("SELECT artists FROM events WHERE published = true");
   const distinctNormalized = new Map<string, string>(); // normalized -> one example raw form
   let totalArtistMentions = 0;
   let placeholderMentions = 0;
-  for (const row of rows.rows as { artists: string[] }[]) {
+  for (const row of visibleRows) {
     for (const raw of row.artists) {
       totalArtistMentions++;
       if (isPlaceholderArtistName(raw)) {
@@ -754,22 +762,40 @@ async function modeYoutubePreviewBackfillPlan(client: Client, _args: Record<stri
   }
 
   const distinctCount = distinctNormalized.size;
-  // Cost model: every distinct artist needs at least one search.list (100
-  // units); assume ~35% also need the "live" fallback (matches the
-  // proportion of abstains observed in the 30-artist benchmark) at another
-  // 100 units; videos.list enrichment is comparatively free (1 unit,
-  // batched) and omitted from this estimate as negligible.
-  const estimatedFallbackCount = Math.ceil(distinctCount * 0.35);
-  const estimatedQuotaUnits = distinctCount * 100 + estimatedFallbackCount * 100;
 
-  console.log(`Published events: ${publishedEventCount}`);
-  console.log(`Total artist-name mentions across those events (incl. duplicates across events): ${totalArtistMentions}`);
+  let alreadyCached = 0;
+  let cacheTableExists = true;
+  try {
+    const names = [...distinctNormalized.keys()];
+    if (names.length > 0) {
+      const cacheRes = await client.query(
+        "SELECT count(*)::int AS n FROM artist_youtube_preview_cache WHERE artist_name_normalized = ANY($1::text[]) AND expires_at > now()",
+        [names],
+      );
+      alreadyCached = cacheRes.rows[0].n as number;
+    }
+  } catch (err) {
+    cacheTableExists = false;
+    console.log(`(artist_youtube_preview_cache not queryable yet — expected pre-merge: ${err instanceof Error ? err.message : String(err)})`);
+  }
+  const uncachedCount = distinctCount - alreadyCached;
+
+  // Cost model: every UNCACHED distinct artist needs at least one
+  // search.list (100 units); assume ~35% also need the "live" fallback
+  // (matches the proportion of abstains observed in the 30-artist
+  // benchmark) at another 100 units; videos.list enrichment is
+  // comparatively free (1 unit, batched) and omitted as negligible.
+  const estimatedFallbackCount = Math.ceil(uncachedCount * 0.35);
+  const estimatedQuotaUnits = uncachedCount * 100 + estimatedFallbackCount * 100;
+
+  console.log(`Published events (all time): ${allRows.length}`);
+  console.log(`Current/future-visible published events (isPastEvent === false): ${visibleRows.length}`);
+  console.log(`Total artist-name mentions across visible events (incl. duplicates across events): ${totalArtistMentions}`);
   console.log(`Placeholder mentions excluded (TBA/TBD/TBC): ${placeholderMentions}`);
-  console.log(`Distinct normalized artist names: ${distinctCount}`);
-  console.log(
-    `All ${distinctCount} of these would have NO artist_youtube_preview_cache row immediately after this feature deploys — matching only ever runs at createEvent for a NEW event, never retroactively for an already-published one.`,
-  );
-  console.log(`Estimated one-time backfill quota cost: ~${estimatedQuotaUnits} units (assumes ~${estimatedFallbackCount} of ${distinctCount} need the "live" fallback query too, matching the benchmark's observed abstain proportion) — against a 10,000 units/day default budget.`);
+  console.log(`Distinct normalized artist names (visible events only): ${distinctCount}`);
+  console.log(`Already cached (fresh row in artist_youtube_preview_cache): ${alreadyCached}${cacheTableExists ? "" : " (table not queryable — treated as 0, expected pre-merge)"}`);
+  console.log(`Uncached: ${uncachedCount}`);
+  console.log(`Estimated one-time backfill quota cost: ~${estimatedQuotaUnits} units (assumes ~${estimatedFallbackCount} of ${uncachedCount} uncached artists need the "live" fallback query too) — against a 10,000 units/day default budget.`);
   console.log(`A ${estimatedQuotaUnits > 8000 ? "MULTI-DAY" : "single-day"} backfill run is sufficient at this scale.`);
 }
 
