@@ -91,6 +91,17 @@ describe("titleContainsExactName", () => {
   it("does not match a name embedded in a longer word (word-boundary)", () => {
     expect(titleContainsExactName("DJ Nathalie live set", "Nat")).toBe(false);
   });
+
+  it("does not match when the artist is the OBJECT of someone else's set (confirmed live, 30-artist benchmark, 2026-09-25)", () => {
+    expect(titleContainsExactName("Papa Bo Selektah - warm up set for MEUTE", "Meute")).toBe(false);
+    expect(titleContainsExactName("Some DJ opening for Eric Prydz", "Eric Prydz")).toBe(false);
+    expect(titleContainsExactName("Support for CamelPhat at Printworks", "CamelPhat")).toBe(false);
+  });
+
+  it("still matches the artist as subject when nearby text merely mentions another act (not the supporting-act phrasing)", () => {
+    expect(titleContainsExactName("VSNZ pres. CAMELPHAT @ VSNZ Winter Arc 2026", "CamelPhat")).toBe(true);
+    expect(titleContainsExactName("Kasper Bjørke & Sexy Lazer AKA The Mansisters Boiler Room DJ Set at STRØM", "Kasper Bjørke")).toBe(true);
+  });
 });
 
 describe("countBilledNames", () => {
@@ -240,6 +251,19 @@ describe("matchArtistYoutubePreview — Rule A", () => {
 
     expect(result.status).toBe("accepted");
     expect(result.videoId).toBe("v_full");
+  });
+
+  it("abstains rather than accept another artist's warm-up set uploaded to the target's own channel (confirmed live, 30-artist benchmark, 2026-09-25)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Meute dj set": [video({ videoId: "v_warmup", channelTitle: "MEUTE", title: "Papa Bo Selektah - warm up set for MEUTE" })],
+        "Meute live": [],
+      },
+      details: { v_warmup: details({ videoId: "v_warmup", durationSeconds: 3600 }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Meute", client);
+    expect(result.status).toBe("abstain");
   });
 
   it("propagates a genuine API failure rather than silently returning an abstain", async () => {

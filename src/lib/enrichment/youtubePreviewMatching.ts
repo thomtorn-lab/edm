@@ -94,10 +94,26 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Exact normalized artist name as a distinct phrase in the title — word-boundary aware over Unicode letters, so "Nat" never matches inside "Nathalie". */
+/**
+ * "warm up set for MEUTE" / "opening for MEUTE" / "support for MEUTE" —
+ * confirmed live during 30-artist benchmark validation (2026-09-25):
+ * Meute's own channel had uploaded another DJ's warm-up set, titled with
+ * "for MEUTE" at the end, which otherwise cleanly passed own-channel +
+ * exact-name-in-title. The artist named is the OBJECT of someone else's
+ * set in this phrasing, never its subject — a targeted, deterministic
+ * exclusion (not fuzzy matching), checked only against the text
+ * immediately preceding the matched name.
+ */
+const SUPPORTING_ACT_CUE = /\b(?:warm(?:ing)?[\s-]?up(?:\s+set)?|opening|support(?:ing)?)\s+for\s*$/i;
+
+/** Exact normalized artist name as a distinct phrase in the title — word-boundary aware over Unicode letters, so "Nat" never matches inside "Nathalie" — and never when the name is the OBJECT of someone else's set (see SUPPORTING_ACT_CUE). */
 export function titleContainsExactName(title: string, cleanedName: string): boolean {
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(cleanedName)}([^\\p{L}\\p{N}]|$)`, "iu");
-  return pattern.test(title);
+  const match = pattern.exec(title);
+  if (!match) return false;
+  const precedingText = title.slice(0, match.index + match[1].length);
+  if (SUPPORTING_ACT_CUE.test(precedingText)) return false;
+  return true;
 }
 
 const MULTI_BILLING_SEPARATORS = /,|&|(?:\bx\b)|(?:\bvs\.?\b)|(?:\bb2b\b)/gi;
