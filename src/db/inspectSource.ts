@@ -971,6 +971,14 @@ async function modeReachability(_client: Client, args: Record<string, string | b
         },
       });
       console.log(`Authenticated HTTP status: ${authRes.status} (credential value never printed)`);
+      // Full response headers (429/403 diagnosis, 2026-09-25) — Google APIs
+      // carry their rate-limit/quota signal in the JSON error body (error.
+      // errors[].reason / error.status), not in dedicated rate-limit
+      // headers, but printing every header here costs nothing and rules out
+      // a Retry-After or other transport-level signal being missed. The
+      // fetched URL (which carries the key) is never assigned to anything
+      // logged here — only the Headers object's own entries.
+      console.log(`Authenticated response headers: ${JSON.stringify(Object.fromEntries(authRes.headers.entries()))}`);
 
       // Same save/print-full/preview options as the unauthenticated fetch
       // above, reused here so a real authenticated response body (the only
