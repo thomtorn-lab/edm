@@ -680,14 +680,17 @@ async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, st
   let abstained = 0;
   let failed = 0;
   for (const [i, name] of artistNames.entries()) {
-    // A small pacing delay between artists — confirmed live (2026-09-25)
-    // that ~30 rapid sequential lookups can trip YouTube's short-window
-    // rate limit even though youtubeClient.ts now retries a 429 with
-    // backoff; spacing requests out here avoids relying on that retry
-    // budget for a batch this size. Production ingestion (one event's
-    // lineup at a time) never approaches this rate naturally, so this is
-    // a dry-run-only concern.
-    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 500));
+    // Pacing delay between artists — confirmed live (2026-09-25) across
+    // three successive 30-artist runs that this key's effective rate-limit
+    // window is considerably tighter and/or longer than a first 500ms
+    // guess accounted for: a 500ms pace plus a 1s/2s retry-on-429 backoff
+    // (~3.5s worst case per artist) was still nowhere near enough once
+    // back-to-back validation runs had already used up the window, and
+    // widened to 2s here as a direct result of that evidence. Production
+    // ingestion (one event's lineup at a time, at whatever cadence sync
+    // actually runs) never approaches this rate naturally either way — this
+    // pacing exists only for this batch dry-run tool.
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
     try {
       const result = await matchArtistYoutubePreview(name, youtubeClient);
       if (result.status === "accepted") {
