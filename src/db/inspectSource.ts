@@ -717,8 +717,9 @@ async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, st
 
 /**
  * Read-only projection (automated Artist Preview V1 merge review,
- * 2026-09-25, item 2; revised same day, item 3, to scope by visibility):
- * how many CURRENT/FUTURE-VISIBLE published events and distinct artist
+ * 2026-09-25, item 2; revised same day, item 3, to scope by visibility;
+ * revised again 2026-09-25 for the prioritized-batch V1 rollout, item 3)
+ * — how many CURRENT/FUTURE-VISIBLE published events and distinct artist
  * names exist right now, so the one-time backfill
  * (src/db/youtubePreviewBackfill.ts) only ever spends quota on artists a
  * viewer could actually see a preview for — never on a stale, long-past
@@ -730,12 +731,25 @@ async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, st
  * artist_youtube_preview_cache for an already-cached count — gracefully
  * reports 0 if that table doesn't exist yet on whatever database this
  * runs against (expected pre-merge; this mode never creates it).
+ *
+ * Also previews the exact prioritized batch youtubePreviewBackfill.ts's
+ * --mode=apply would select for a run capped at --limit (default 50, the
+ * V1 batch size): UNCACHED artists only, ordered by (1) the earliest
+ * currently/future-visible event they appear on, (2) normalized name as a
+ * deterministic tie-breaker — never a popularity/view-count heuristic.
+ * This mirrors the script's own buildWorklist()/selection logic exactly
+ * (duplicated here in raw SQL rather than imported, matching every other
+ * mode in this file, which never imports the write-path scripts it
+ * previews) so the plan output is a true preview of what apply would do,
+ * not an approximation.
  */
-async function modeYoutubePreviewBackfillPlan(client: Client, _args: Record<string, string | boolean>) {
+async function modeYoutubePreviewBackfillPlan(client: Client, args: Record<string, string | boolean>) {
   const { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } = await import("@/lib/enrichment/genreEnrichment");
   const { isPastEvent } = await import("@/lib/datetime");
 
   section("YouTube Artist Preview backfill plan — read-only projection (current/future-visible events only)");
+
+  const batchLimit = typeof args.limit === "string" && args.limit ? Number(args.limit) : 50;
 
   const now = new Date();
   const rows = await client.query("SELECT artists, start_datetime, end_datetime FROM events WHERE published = true");
@@ -745,7 +759,12 @@ async function modeYoutubePreviewBackfillPlan(client: Client, _args: Record<stri
       !isPastEvent({ startDatetime: row.start_datetime.toISOString(), endDatetime: row.end_datetime?.toISOString() ?? null }, now),
   );
 
-  const distinctNormalized = new Map<string, string>(); // normalized -> one example raw form
+  interface WorklistEntry {
+    normalized: string;
+    raw: string;
+    earliestStart: Date;
+  }
+  const byNormalized = new Map<string, WorklistEntry>();
   let totalArtistMentions = 0;
   let placeholderMentions = 0;
   for (const row of visibleRows) {
@@ -757,46 +776,86 @@ async function modeYoutubePreviewBackfillPlan(client: Client, _args: Record<stri
       }
       const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
       if (!normalized) continue;
-      if (!distinctNormalized.has(normalized)) distinctNormalized.set(normalized, raw);
+      const existing = byNormalized.get(normalized);
+      if (!existing) byNormalized.set(normalized, { normalized, raw, earliestStart: row.start_datetime });
+      else if (row.start_datetime < existing.earliestStart) existing.earliestStart = row.start_datetime;
     }
   }
+  const worklist = [...byNormalized.values()].sort(
+    (a, b) => a.earliestStart.getTime() - b.earliestStart.getTime() || a.normalized.localeCompare(b.normalized),
+  );
+  const distinctCount = worklist.length;
+  const names = worklist.map((w) => w.normalized);
 
-  const distinctCount = distinctNormalized.size;
-
-  let alreadyCached = 0;
+  let freshCached = new Set<string>();
+  let acceptedCached = new Set<string>();
   let cacheTableExists = true;
   try {
-    const names = [...distinctNormalized.keys()];
     if (names.length > 0) {
       const cacheRes = await client.query(
-        "SELECT count(*)::int AS n FROM artist_youtube_preview_cache WHERE artist_name_normalized = ANY($1::text[]) AND expires_at > now()",
+        "SELECT artist_name_normalized, status, manual_block FROM artist_youtube_preview_cache WHERE artist_name_normalized = ANY($1::text[]) AND expires_at > now()",
         [names],
       );
-      alreadyCached = cacheRes.rows[0].n as number;
+      const cacheRows = cacheRes.rows as { artist_name_normalized: string; status: string; manual_block: boolean }[];
+      freshCached = new Set(cacheRows.map((r) => r.artist_name_normalized));
+      acceptedCached = new Set(cacheRows.filter((r) => r.status === "accepted" && !r.manual_block).map((r) => r.artist_name_normalized));
     }
   } catch (err) {
     cacheTableExists = false;
     console.log(`(artist_youtube_preview_cache not queryable yet — expected pre-merge: ${err instanceof Error ? err.message : String(err)})`);
   }
-  const uncachedCount = distinctCount - alreadyCached;
+  const uncachedList = worklist.filter((w) => !freshCached.has(w.normalized));
+  const uncachedCount = uncachedList.length;
 
-  // Cost model: every UNCACHED distinct artist needs at least one
-  // search.list (100 units); assume ~35% also need the "live" fallback
-  // (matches the proportion of abstains observed in the 30-artist
-  // benchmark) at another 100 units; videos.list enrichment is
-  // comparatively free (1 unit, batched) and omitted as negligible.
-  const estimatedFallbackCount = Math.ceil(uncachedCount * 0.35);
-  const estimatedQuotaUnits = uncachedCount * 100 + estimatedFallbackCount * 100;
+  const estimateFor = (n: number) => n * 100 + Math.ceil(n * 0.35) * 100;
+
+  let eventsWithAcceptedPreview = 0;
+  for (const row of visibleRows) {
+    const hit = row.artists.some((raw) => {
+      if (isPlaceholderArtistName(raw)) return false;
+      const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
+      return normalized ? acceptedCached.has(normalized) : false;
+    });
+    if (hit) eventsWithAcceptedPreview++;
+  }
 
   console.log(`Published events (all time): ${allRows.length}`);
   console.log(`Current/future-visible published events (isPastEvent === false): ${visibleRows.length}`);
   console.log(`Total artist-name mentions across visible events (incl. duplicates across events): ${totalArtistMentions}`);
   console.log(`Placeholder mentions excluded (TBA/TBD/TBC): ${placeholderMentions}`);
   console.log(`Distinct normalized artist names (visible events only): ${distinctCount}`);
-  console.log(`Already cached (fresh row in artist_youtube_preview_cache): ${alreadyCached}${cacheTableExists ? "" : " (table not queryable — treated as 0, expected pre-merge)"}`);
+  console.log(`Already cached (fresh row in artist_youtube_preview_cache): ${freshCached.size}${cacheTableExists ? "" : " (table not queryable — treated as 0, expected pre-merge)"}`);
   console.log(`Uncached: ${uncachedCount}`);
-  console.log(`Estimated one-time backfill quota cost: ~${estimatedQuotaUnits} units (assumes ~${estimatedFallbackCount} of ${uncachedCount} uncached artists need the "live" fallback query too) — against a 10,000 units/day default budget.`);
-  console.log(`A ${estimatedQuotaUnits > 8000 ? "MULTI-DAY" : "single-day"} backfill run is sufficient at this scale.`);
+  console.log(`Current/future-visible events with at least one accepted cached preview: ${eventsWithAcceptedPreview} / ${visibleRows.length}`);
+  console.log(`Estimated FULL remaining backfill quota cost: ~${estimateFor(uncachedCount)} units (10,000/day default budget) — ${Math.ceil(uncachedCount / batchLimit)} batch(es) at size ${batchLimit}.`);
+
+  section(`Prioritized batch preview (limit=${batchLimit}, earliest-visible-event-first, normalized-name tie-break — no popularity/view-count scoring)`);
+  const batch = uncachedList.slice(0, batchLimit);
+  console.log(`Selected for this batch: ${batch.length} of ${uncachedCount} uncached`);
+  if (batch.length === 0) {
+    console.log("Nothing to do — every current/future-visible artist is already cached.");
+    return;
+  }
+  const batchNormalized = new Set(batch.map((b) => b.normalized));
+  let eventsCoveredByBatch = 0;
+  for (const row of visibleRows) {
+    const hit = row.artists.some((raw) => {
+      if (isPlaceholderArtistName(raw)) return false;
+      const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
+      return normalized ? batchNormalized.has(normalized) : false;
+    });
+    if (hit) eventsCoveredByBatch++;
+  }
+  const earliest = batch.reduce((min, b) => (b.earliestStart < min ? b.earliestStart : min), batch[0].earliestStart);
+  const latest = batch.reduce((max, b) => (b.earliestStart > max ? b.earliestStart : max), batch[0].earliestStart);
+  const batchEstimate = estimateFor(batch.length);
+  console.log(`Visible events covered by this batch: ${eventsCoveredByBatch}`);
+  console.log(`Earliest event date represented: ${earliest.toISOString()}`);
+  console.log(`Latest event date represented: ${latest.toISOString()}`);
+  console.log(`Estimated quota cost for THIS batch: ~${batchEstimate} units (against 10,000/day default budget)`);
+  console.log(batchEstimate > 8000 ? "WARNING: exceeds the 8,000-unit safe single-batch budget — reduce --limit before applying." : "SAFE: within the 8,000-unit safe single-batch budget.");
+  console.log(`\nSelected artists, in priority order:`);
+  for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
 }
 
 async function modeReachability(_client: Client, args: Record<string, string | boolean>) {
