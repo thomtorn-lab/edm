@@ -13,6 +13,7 @@ import type { GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
 import { enrichArtistYoutubePreviews } from "./youtubePreview";
+import { after } from "next/server";
 
 /**
  * All admin/sync write operations go through this module — API routes stay
@@ -507,18 +508,42 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
   await writeChangeLog(input.id, createdBy, "create", Object.keys(eventFields));
 
   // YouTube Artist Preview cache warm-up (Rule A V1, 2026-09-25) — every
-  // newly-ingested/approved event's lineup, from either write path that
+  // newly-ingested/approved event's lineup, from every write path that
   // reaches createEvent (sync auto-publish and admin publishDiscoveryItem
   // alike), gets its artists' matches looked up once and cached, never on
   // page render. enrichArtistYoutubePreviews never throws (see its own doc
-  // comment) — this try/catch is belt-and-suspenders only, so a genuinely
-  // unexpected failure here can never fail event creation itself, matching
-  // this same file's Discogs-enrichment call sites' own "never blocks the
-  // write" discipline.
+  // comment) — the .catch below is belt-and-suspenders only, so a
+  // genuinely unexpected failure here can never fail event creation
+  // itself, matching this same file's Discogs-enrichment call sites' own
+  // "never blocks the write" discipline.
+  //
+  // Deferred via next/server's after() (2026-09-25 latency review) rather
+  // than awaited inline: `await`ing enrichArtistYoutubePreviews here would
+  // make createEvent's own completion synchronously depend on YouTube's
+  // response time (up to ~4 sequential API calls per uncached artist —
+  // search.list + videos.list, doubled if the "live" fallback query is
+  // needed — each with its own 8s timeout and up to two 429 retries), even
+  // though errors from it were already swallowed. "Errors don't propagate"
+  // and "the call doesn't delay completion" are NOT the same guarantee —
+  // only after() gets the second one. after() schedules the work to run
+  // once the response has been sent, while Next.js keeps the
+  // request's execution context alive to let it finish, rather than a bare
+  // unawaited promise that a serverless platform could freeze/kill first.
+  // It throws synchronously when called outside an active request
+  // (confirmed: node_modules/next/dist/server/after/after.js) — exactly
+  // the case for createEvent's non-request callers
+  // (src/db/verifyProductionBootstrap.ts, src/db/verifySync.ts, run via
+  // tsx directly, never through Next's server runtime) — so those fall
+  // back to the original synchronous await, where latency was never a
+  // user-facing concern in the first place.
+  const runYoutubeEnrichment = () =>
+    enrichArtistYoutubePreviews(input.artists).catch((err) => {
+      console.error(`[youtube-preview] cache warm-up failed for event ${input.id}: ${err instanceof Error ? err.message : String(err)}`);
+    });
   try {
-    await enrichArtistYoutubePreviews(input.artists);
-  } catch (err) {
-    console.error(`[youtube-preview] cache warm-up failed for event ${input.id}: ${err instanceof Error ? err.message : String(err)}`);
+    after(runYoutubeEnrichment);
+  } catch {
+    await runYoutubeEnrichment();
   }
 }
 
