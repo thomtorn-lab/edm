@@ -1,0 +1,91 @@
+name: SCRATCH — YouTube Artist Preview Audit (temporary)
+
+# Throwaway, unlisted diagnostic for the YouTube Artist Preview feasibility
+# audit (2026-09-25). NOT part of the permanent source-onboarding tooling —
+# deliberately kept separate from inspect-source.yml so that tool's
+# --with-credentials mechanism (currently Billetto-only) doesn't need a
+# code change just to run this one-off audit. Read-only: calls the public
+# YouTube Data API v3 (search.list / videos.list) and prints the response
+# JSON. The API key is read from the YOUTUBE_API_KEY repository secret and
+# is never echoed, printed, or included in any URL that gets logged — it is
+# sent only as a curl --data-urlencode value into a variable, and GitHub
+# Actions automatically masks any exact occurrence of a registered secret
+# in job output as a second layer of protection. Safe to delete once the
+# audit is complete.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "search (YouTube search.list) or videos (YouTube videos.list, for enrichment)"
+        required: true
+        type: choice
+        options:
+          - search
+          - videos
+      query:
+        description: "search mode only: the exact search query text, e.g. 'CamelPhat live'"
+        required: false
+      max_results:
+        description: "search mode only: number of results (default 5)"
+        required: false
+        default: "5"
+      video_ids:
+        description: "videos mode only: comma-separated YouTube video IDs to enrich"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify YOUTUBE_API_KEY secret is configured
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          if [ -z "${YOUTUBE_API_KEY:-}" ]; then
+            echo "::error::Repository secret YOUTUBE_API_KEY is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+          echo "YOUTUBE_API_KEY is configured (value never printed)."
+
+      - name: Run search.list
+        if: ${{ inputs.mode == 'search' }}
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          QUERY: ${{ inputs.query }}
+          MAX_RESULTS: ${{ inputs.max_results }}
+        run: |
+          set +x
+          if [ -z "${QUERY:-}" ]; then
+            echo "::error::query input is required for mode=search"
+            exit 1
+          fi
+          echo "=== search.list: q=\"${QUERY}\" maxResults=${MAX_RESULTS:-5} ==="
+          curl -sS -G "https://www.googleapis.com/youtube/v3/search" \
+            --data-urlencode "part=snippet" \
+            --data-urlencode "q=${QUERY}" \
+            --data-urlencode "type=video" \
+            --data-urlencode "maxResults=${MAX_RESULTS:-5}" \
+            --data-urlencode "key=${YOUTUBE_API_KEY}" \
+            | python3 -m json.tool
+
+      - name: Run videos.list
+        if: ${{ inputs.mode == 'videos' }}
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          VIDEO_IDS: ${{ inputs.video_ids }}
+        run: |
+          set +x
+          if [ -z "${VIDEO_IDS:-}" ]; then
+            echo "::error::video_ids input is required for mode=videos"
+            exit 1
+          fi
+          echo "=== videos.list: id=\"${VIDEO_IDS}\" ==="
+          curl -sS -G "https://www.googleapis.com/youtube/v3/videos" \
+            --data-urlencode "part=snippet,contentDetails,status,statistics" \
+            --data-urlencode "id=${VIDEO_IDS}" \
+            --data-urlencode "key=${YOUTUBE_API_KEY}" \
+            | python3 -m json.tool
