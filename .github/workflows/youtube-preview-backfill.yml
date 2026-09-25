@@ -1,0 +1,101 @@
+name: YouTube Preview Backfill
+
+# One-time, deliberately temporary workflow (YouTube Artist Preview V1
+# prioritized backfill rollout, 2026-09-25). Mirrors this repo's established
+# one-time-correction pattern (see genre-subgenres-backfill.yml,
+# apply-youtube-preview-migration.yml): added, run in small confirm-gated
+# batches, then a candidate for removal once the backlog is cleared. Runs
+# src/db/youtubePreviewBackfill.ts, which only ever reads events.artists/
+# startDatetime/endDatetime to build a prioritized worklist (earliest
+# currently/future-visible event first, normalized name as tie-break — never
+# a popularity/view-count heuristic) and writes exclusively to
+# artist_youtube_preview_cache via the exact same cache-first Rule A matcher
+# production ingestion uses. Never touches `events` rows. Defaults to a
+# 50-artist batch per invocation (DEFAULT_BATCH_LIMIT in the script) —
+# override with the limit input for a later batch.
+#
+# Secrets used: DATABASE_URL, YOUTUBE_API_KEY. Never echoed, printed, or
+# logged (see src/lib/enrichment/youtubeClient.ts's own key-in-URL-never-
+# logged discipline).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default, spends no quota) or "apply" (writes cache rows, spends quota)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: "apply mode only: type BACKFILL-YOUTUBE-PREVIEW to confirm running real YouTube lookups and cache writes against Production."
+        required: false
+      limit:
+        description: "Max distinct uncached artists to select for this run's prioritized batch. Defaults to the script's own DEFAULT_BATCH_LIMIT (50) when left blank."
+        required: false
+      batch_size:
+        description: "apply mode only: inter-request pacing group size within the selected batch. Defaults to the script's own BATCH_SIZE_DEFAULT (20) when left blank."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube-preview-backfill
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Verify YOUTUBE_API_KEY secret is configured
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          if [ -z "${YOUTUBE_API_KEY:-}" ]; then
+            echo "::error::Repository secret YOUTUBE_API_KEY is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run YouTube preview backfill
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
+          [ -n "${{ inputs.batch_size }}" ] && args+=(--batch-size="${{ inputs.batch_size }}")
+          node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local

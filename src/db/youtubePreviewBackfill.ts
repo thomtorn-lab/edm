@@ -38,7 +38,7 @@ import { isPastEvent } from "@/lib/datetime";
  * own-channel limitation as-is).
  *
  * Usage:
- *   node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=plan
+ *   node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=plan [--limit=N]
  *   node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=apply --confirm=BACKFILL-YOUTUBE-PREVIEW [--batch-size=20] [--limit=N]
  *
  * --mode=plan is entirely read-only (same projection as
@@ -57,9 +57,21 @@ import { isPastEvent } from "@/lib/datetime";
  * signature of exhausted quota, not of individual bad artist names (an
  * unmatchable name fails closed to a cached "abstain", never a thrown
  * error — see getOrMatchArtistYoutubePreview's own doc comment).
+ *
+ * Prioritized batch rollout (2026-09-25 product decision): both modes
+ * select from UNCACHED artists only, ordered by (1) the earliest
+ * currently/future-visible event they appear on, (2) normalized name as a
+ * deterministic tie-breaker — never a popularity/view-count heuristic, and
+ * cap the selection at --limit, which defaults to DEFAULT_BATCH_LIMIT (50)
+ * rather than the full backlog. This keeps a single invocation small and
+ * quota-safe by default; a later batch is a separate, explicit re-run with
+ * a fresh --limit, never automatic. --batch-size is unrelated: it's the
+ * existing inter-request pacing group size within whatever batch --limit
+ * selects, not a second cap.
  */
 
 const BATCH_SIZE_DEFAULT = 20;
+const DEFAULT_BATCH_LIMIT = 50;
 const INTER_ARTIST_DELAY_MS = 1500;
 const INTER_BATCH_DELAY_MS = 5000;
 const CONSECUTIVE_FAILURE_ABORT_THRESHOLD = 5;
@@ -81,15 +93,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+interface WorklistEntry {
+  normalized: string;
+  raw: string;
+  earliestStart: Date;
+}
+
 /**
  * Distinct normalized artist names across every CURRENT/FUTURE-VISIBLE
  * published event (src/lib/datetime.ts::isPastEvent === false — the same
  * effective-end rule the public site uses everywhere else), each mapped to
  * one real raw display form (the raw form is what's actually passed to the
- * matcher — matching re-normalizes from it; this map is for a stable,
- * deduplicated worklist and readable logging).
+ * matcher — matching re-normalizes from it) and the earliest visible
+ * event's startDatetime it appears on. Sorted by that earliest date, then
+ * normalized name as a deterministic tie-breaker (2026-09-25 prioritized
+ * rollout) — never popularity/view-count, which V1 deliberately doesn't
+ * measure.
  */
-async function buildWorklist(): Promise<{ normalized: string; raw: string }[]> {
+async function buildWorklist(): Promise<WorklistEntry[]> {
   const rows = await db
     .select({ artists: events.artists, startDatetime: events.startDatetime, endDatetime: events.endDatetime })
     .from(events)
@@ -98,65 +119,89 @@ async function buildWorklist(): Promise<{ normalized: string; raw: string }[]> {
   const visibleRows = rows.filter(
     (row) => !isPastEvent({ startDatetime: row.startDatetime.toISOString(), endDatetime: row.endDatetime?.toISOString() ?? null }, now),
   );
-  const seen = new Map<string, string>();
+  const byNormalized = new Map<string, WorklistEntry>();
   for (const row of visibleRows) {
     for (const raw of row.artists) {
       if (isPlaceholderArtistName(raw)) continue;
       const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
-      if (!normalized || seen.has(normalized)) continue;
-      seen.set(normalized, raw);
+      if (!normalized) continue;
+      const existing = byNormalized.get(normalized);
+      if (!existing) byNormalized.set(normalized, { normalized, raw, earliestStart: row.startDatetime });
+      else if (row.startDatetime < existing.earliestStart) existing.earliestStart = row.startDatetime;
     }
   }
-  return [...seen.entries()].map(([normalized, raw]) => ({ normalized, raw }));
+  return [...byNormalized.values()].sort(
+    (a, b) => a.earliestStart.getTime() - b.earliestStart.getTime() || a.normalized.localeCompare(b.normalized),
+  );
 }
 
-/** How many of `worklist`'s normalized names already have a fresh (unexpired) cache row — read-only, never creates the table. */
-async function countAlreadyCached(worklist: { normalized: string }[]): Promise<number> {
-  if (worklist.length === 0) return 0;
+/** Which of `worklist`'s normalized names already have a fresh (unexpired) cache row — read-only, never creates the table. */
+async function getFreshCachedSet(worklist: { normalized: string }[]): Promise<Set<string>> {
+  if (worklist.length === 0) return new Set();
   const names = worklist.map((w) => w.normalized);
   const rows = await db
     .select({ n: artistYoutubePreviewCache.artistNameNormalized })
     .from(artistYoutubePreviewCache)
     .where(and(inArray(artistYoutubePreviewCache.artistNameNormalized, names), gt(artistYoutubePreviewCache.expiresAt, new Date())));
-  return rows.length;
+  return new Set(rows.map((r) => r.n));
 }
 
-async function runPlan(): Promise<void> {
+async function runPlan(batchLimit: number): Promise<void> {
   const worklist = await buildWorklist();
-  let alreadyCached = 0;
+  let freshCached = new Set<string>();
   try {
-    alreadyCached = await countAlreadyCached(worklist);
+    freshCached = await getFreshCachedSet(worklist);
   } catch (err) {
     console.log(`(artist_youtube_preview_cache not queryable yet — expected pre-merge: ${err instanceof Error ? err.message : String(err)})`);
   }
-  const uncached = worklist.length - alreadyCached;
-  const estimatedFallback = Math.ceil(uncached * 0.35);
-  const estimatedUnits = uncached * 100 + estimatedFallback * 100;
+  const uncachedList = worklist.filter((w) => !freshCached.has(w.normalized));
+  const estimateFor = (n: number) => n * 100 + Math.ceil(n * 0.35) * 100;
+
   console.log(`Distinct artists on current/future-visible events: ${worklist.length}`);
-  console.log(`Already cached (fresh): ${alreadyCached}`);
-  console.log(`Uncached: ${uncached}`);
-  console.log(`Estimated quota cost: ~${estimatedUnits} units (10,000/day default budget)`);
-  console.log(`At batch size ${BATCH_SIZE_DEFAULT}, this is ${Math.ceil(uncached / BATCH_SIZE_DEFAULT)} batch(es) of real lookups (already-cached artists cost nothing).`);
-  if (estimatedUnits > 8000) {
-    console.log(
-      "This exceeds a safe single-day quota budget — run with --limit=N across multiple days, or rely on the script's own consecutive-failure abort (safe: already-processed artists are cached and won't be re-looked-up on a later run).",
-    );
+  console.log(`Already cached (fresh): ${freshCached.size}`);
+  console.log(`Uncached: ${uncachedList.length}`);
+  console.log(`Estimated FULL remaining backfill quota cost: ~${estimateFor(uncachedList.length)} units (10,000/day default budget) — ${Math.ceil(uncachedList.length / batchLimit)} batch(es) at size ${batchLimit}.`);
+
+  const batch = uncachedList.slice(0, batchLimit);
+  console.log(`\nPrioritized batch preview (limit=${batchLimit}, earliest-visible-event-first, normalized-name tie-break):`);
+  console.log(`Selected for this batch: ${batch.length} of ${uncachedList.length} uncached`);
+  if (batch.length === 0) {
+    console.log("Nothing to do — every current/future-visible artist is already cached.");
+    return;
   }
-  console.log("\nFirst 20 (of the full worklist, for a quick sanity check):");
-  for (const { raw } of worklist.slice(0, 20)) console.log(`  - ${raw}`);
+  const earliest = batch.reduce((min, b) => (b.earliestStart < min ? b.earliestStart : min), batch[0].earliestStart);
+  const latest = batch.reduce((max, b) => (b.earliestStart > max ? b.earliestStart : max), batch[0].earliestStart);
+  const batchEstimate = estimateFor(batch.length);
+  console.log(`Earliest event date represented: ${earliest.toISOString()}`);
+  console.log(`Latest event date represented: ${latest.toISOString()}`);
+  console.log(`Estimated quota cost for THIS batch: ~${batchEstimate} units`);
+  console.log(batchEstimate > 8000 ? "WARNING: exceeds the 8,000-unit safe single-batch budget — pass a smaller --limit." : "SAFE: within the 8,000-unit safe single-batch budget.");
+  console.log("\nSelected artists, in priority order:");
+  for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
 }
 
-async function runApply(batchSize: number, limit: number | null): Promise<void> {
-  let worklist = await buildWorklist();
-  if (limit != null) worklist = worklist.slice(0, limit);
-  console.log(`Backfilling ${worklist.length} distinct artist(s) from current/future-visible events, paced ${INTER_ARTIST_DELAY_MS}ms apart in batches of ${batchSize} (already-cached artists resolve instantly with no API call)...`);
+async function runApply(paceBatchSize: number, runLimit: number): Promise<void> {
+  const worklist = await buildWorklist();
+  let freshCached: Set<string>;
+  try {
+    freshCached = await getFreshCachedSet(worklist);
+  } catch (err) {
+    console.error(`::error::Could not query artist_youtube_preview_cache — aborting (the cache table must exist before apply can run): ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+  const uncachedList = worklist.filter((w) => !freshCached.has(w.normalized));
+  const batch = uncachedList.slice(0, runLimit);
+  console.log(`Backfilling ${batch.length} uncached distinct artist(s) (of ${uncachedList.length} remaining uncached, ${worklist.length} total visible), prioritized by earliest visible event, paced ${INTER_ARTIST_DELAY_MS}ms apart in pacing groups of ${paceBatchSize}...`);
 
   let consecutiveFailures = 0;
   let processed = 0;
-  for (let i = 0; i < worklist.length; i++) {
-    const { raw } = worklist[i];
-    if (i > 0 && i % batchSize === 0) {
-      console.log(`--- batch boundary (${i}/${worklist.length}) ---`);
+  let accepted = 0;
+  let abstained = 0;
+  let failed = 0;
+  for (let i = 0; i < batch.length; i++) {
+    const { raw } = batch[i];
+    if (i > 0 && i % paceBatchSize === 0) {
+      console.log(`--- pacing pause (${i}/${batch.length}) ---`);
       await sleep(INTER_BATCH_DELAY_MS);
     } else if (i > 0) {
       await sleep(INTER_ARTIST_DELAY_MS);
@@ -164,28 +209,33 @@ async function runApply(batchSize: number, limit: number | null): Promise<void> 
 
     try {
       const result = await getOrMatchArtistYoutubePreview(raw, drizzleCacheStore, youtubeClient);
+      if (result.status === "accepted") accepted++;
+      else abstained++;
       console.log(`  [${result.status.toUpperCase()}] "${raw}"${result.videoId ? ` -> ${result.videoId}` : ""}`);
       consecutiveFailures = 0;
     } catch (err) {
+      failed++;
       consecutiveFailures++;
       console.error(`  [FAILED] "${raw}": ${err instanceof Error ? err.message : String(err)}`);
       if (consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT_THRESHOLD) {
         console.error(
-          `\nAborting: ${consecutiveFailures} consecutive failures — this looks like exhausted quota, not individual bad artist names (those fail closed to a cached "abstain", never a thrown error). Processed ${processed}/${worklist.length} before stopping. Safe to re-run this script later (or tomorrow, once quota resets) — already-cached artists are skipped.`,
+          `\nAborting: ${consecutiveFailures} consecutive failures — this looks like exhausted quota, not individual bad artist names (those fail closed to a cached "abstain", never a thrown error). Processed ${processed}/${batch.length} before stopping. Safe to re-run this script later (or tomorrow, once quota resets) — already-cached artists are skipped.`,
         );
+        console.log(`\nSummary before abort: processed=${processed} accepted=${accepted} abstained=${abstained} failed=${failed}`);
         return;
       }
     }
     processed++;
   }
-  console.log(`\nDone. Processed ${processed}/${worklist.length}.`);
+  console.log(`\nDone. processed=${processed}/${batch.length} accepted=${accepted} abstained=${abstained} failed=${failed}.`);
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (mode === "plan") {
-    await runPlan();
+    const batchLimit = args.limit ? Number(args.limit) : DEFAULT_BATCH_LIMIT;
+    await runPlan(batchLimit);
     return;
   }
   if (mode === "apply") {
@@ -193,9 +243,9 @@ async function main() {
       console.error(`::error::--mode=apply requires --confirm=${CONFIRM_TOKEN}`);
       process.exit(1);
     }
-    const batchSize = args["batch-size"] ? Number(args["batch-size"]) : BATCH_SIZE_DEFAULT;
-    const limit = args.limit ? Number(args.limit) : null;
-    await runApply(batchSize, limit);
+    const paceBatchSize = args["batch-size"] ? Number(args["batch-size"]) : BATCH_SIZE_DEFAULT;
+    const runLimit = args.limit ? Number(args.limit) : DEFAULT_BATCH_LIMIT;
+    await runApply(paceBatchSize, runLimit);
     return;
   }
   console.error("::error::--mode=<plan|apply> is required.");
