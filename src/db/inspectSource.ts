@@ -35,7 +35,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--artists="Artist One, Artist Two, ..."]  (youtube-preview-dry-run only — runs the REAL Rule A
@@ -713,6 +713,64 @@ async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, st
   if (accepted + abstained > 0) {
     console.log(`coverage (accepted / total) = ${((accepted / artistNames.length) * 100).toFixed(1)}%`);
   }
+}
+
+/**
+ * Read-only projection (automated Artist Preview V1 merge review,
+ * 2026-09-25, item 2): how many currently-published events/distinct artist
+ * names exist right now, so the deployment/backfill impact can be sized
+ * before the backfill script (src/db/youtubePreviewBackfill.ts) is ever
+ * run. Never touches artist_youtube_preview_cache — that table may not
+ * even exist yet on whatever database this runs against (pre-merge), and
+ * this mode doesn't need it to answer "how many artists would need a
+ * one-time backfill": before this feature's migration ships, that number
+ * is definitionally 100% of them, since matching only ever runs at
+ * createEvent for a NEW event (src/db/writes.ts) — no existing published
+ * event has ever gone through it.
+ */
+async function modeYoutubePreviewBackfillPlan(client: Client, _args: Record<string, string | boolean>) {
+  const { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } = await import("@/lib/enrichment/genreEnrichment");
+
+  section("YouTube Artist Preview backfill plan — read-only projection");
+
+  const countRes = await client.query("SELECT count(*)::int AS n FROM events WHERE published = true");
+  const publishedEventCount = countRes.rows[0].n as number;
+
+  const rows = await client.query("SELECT artists FROM events WHERE published = true");
+  const distinctNormalized = new Map<string, string>(); // normalized -> one example raw form
+  let totalArtistMentions = 0;
+  let placeholderMentions = 0;
+  for (const row of rows.rows as { artists: string[] }[]) {
+    for (const raw of row.artists) {
+      totalArtistMentions++;
+      if (isPlaceholderArtistName(raw)) {
+        placeholderMentions++;
+        continue;
+      }
+      const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
+      if (!normalized) continue;
+      if (!distinctNormalized.has(normalized)) distinctNormalized.set(normalized, raw);
+    }
+  }
+
+  const distinctCount = distinctNormalized.size;
+  // Cost model: every distinct artist needs at least one search.list (100
+  // units); assume ~35% also need the "live" fallback (matches the
+  // proportion of abstains observed in the 30-artist benchmark) at another
+  // 100 units; videos.list enrichment is comparatively free (1 unit,
+  // batched) and omitted from this estimate as negligible.
+  const estimatedFallbackCount = Math.ceil(distinctCount * 0.35);
+  const estimatedQuotaUnits = distinctCount * 100 + estimatedFallbackCount * 100;
+
+  console.log(`Published events: ${publishedEventCount}`);
+  console.log(`Total artist-name mentions across those events (incl. duplicates across events): ${totalArtistMentions}`);
+  console.log(`Placeholder mentions excluded (TBA/TBD/TBC): ${placeholderMentions}`);
+  console.log(`Distinct normalized artist names: ${distinctCount}`);
+  console.log(
+    `All ${distinctCount} of these would have NO artist_youtube_preview_cache row immediately after this feature deploys — matching only ever runs at createEvent for a NEW event, never retroactively for an already-published one.`,
+  );
+  console.log(`Estimated one-time backfill quota cost: ~${estimatedQuotaUnits} units (assumes ~${estimatedFallbackCount} of ${distinctCount} need the "live" fallback query too, matching the benchmark's observed abstain proportion) — against a 10,000 units/day default budget.`);
+  console.log(`A ${estimatedQuotaUnits > 8000 ? "MULTI-DAY" : "single-day"} backfill run is sufficient at this scale.`);
 }
 
 async function modeReachability(_client: Client, args: Record<string, string | boolean>) {
@@ -2105,6 +2163,7 @@ async function main() {
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
+    "youtube-preview-backfill-plan": modeYoutubePreviewBackfillPlan,
   };
 
   if (mode === "reachability") {
@@ -2121,7 +2180,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan.`,
     );
     process.exit(1);
   }
