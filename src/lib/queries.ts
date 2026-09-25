@@ -1,12 +1,13 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { discoveryQueue, events, sourceEventLinks, sources, venues } from "@/db/schema";
+import { artistYoutubePreviewCache, discoveryQueue, events, sourceEventLinks, sources, venues } from "@/db/schema";
 import {
   discoveryRowToRecord,
   eventRowToRecord,
   sourceRowToRecord,
   venueRowToRecord,
 } from "@/db/mappers";
+import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 
 export interface EventWithVenue extends EventRecord {
@@ -128,6 +129,46 @@ export async function getSourceEventLinksForEvent(
     })
     .from(sourceEventLinks)
     .where(eq(sourceEventLinks.eventId, eventId));
+}
+
+/**
+ * YouTube Artist Preview lookup for the event-detail page (automated Rule A
+ * V1, 2026-09-25) — read-only, no network, ever: matching itself only ever
+ * runs at ingestion (src/db/writes.ts::createEvent, via
+ * src/db/youtubePreview.ts::enrichArtistYoutubePreviews), never here.
+ * Returns the first artist in lineup order with an accepted, non-blocked
+ * cached match, or null (including a cache miss for a lineup no event has
+ * warmed the cache for yet — the next ingestion touching that name is what
+ * populates it, never this call).
+ */
+export interface ArtistYoutubePreview {
+  artistName: string;
+  videoId: string;
+  videoTitle: string | null;
+  channelTitle: string | null;
+}
+
+export async function getArtistYoutubePreviewForLineup(artistNames: string[]): Promise<ArtistYoutubePreview | null> {
+  if (artistNames.length === 0) return null;
+  const normalizedToRaw = new Map(artistNames.map((name) => [normalizeArtistName(cleanArtistDisplayName(name)), name]));
+  const normalizedNames = [...normalizedToRaw.keys()];
+  const rows = await db
+    .select()
+    .from(artistYoutubePreviewCache)
+    .where(inArray(artistYoutubePreviewCache.artistNameNormalized, normalizedNames));
+  const byNormalized = new Map(rows.map((r) => [r.artistNameNormalized, r]));
+
+  for (const normalized of normalizedNames) {
+    const row = byNormalized.get(normalized);
+    if (!row || row.status !== "accepted" || row.manualBlock || !row.videoId) continue;
+    return {
+      artistName: normalizedToRaw.get(normalized) ?? normalized,
+      videoId: row.videoId,
+      videoTitle: row.videoTitle,
+      channelTitle: row.channelTitle,
+    };
+  }
+  return null;
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {

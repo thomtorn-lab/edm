@@ -419,6 +419,57 @@ export const syncLocks = pgTable("sync_locks", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
+/**
+ * YouTube Artist Preview cache — automated V1, Rule A only (feasibility
+ * audit 2026-09-25: 100% precision, 0 wrong matches, 53.3% usable-preview
+ * coverage on a 30-artist benchmark; approved for implementation the same
+ * day). One row per distinct artist name, reused across every event and
+ * every future sync — mirrors artistGenreCache's exact shape/purpose above
+ * (cache-first, TTL-bounded, self-heals via a later lookup rather than a
+ * backfill) rather than a new first-class Artist domain model, since
+ * events.artists is (and stays) a plain string array with no other stable
+ * per-artist identity anywhere in this schema. See
+ * src/lib/enrichment/youtubePreviewMatching.ts for the matching logic and
+ * src/db/youtubePreview.ts for the Postgres wiring.
+ */
+export const artistYoutubePreviewCache = pgTable("artist_youtube_preview_cache", {
+  artistNameNormalized: text("artist_name_normalized").primaryKey(),
+  provider: text("provider").notNull().default("youtube"),
+  /** "accepted" | "abstain" — what the automated matcher decided. Never "blocked": that's manualBlock below, kept independent so an admin override survives the next automated re-lookup instead of being silently overwritten by it. */
+  status: text("status").notNull(),
+  /** "A" for an accepted match (Rule A is the only rule implemented in V1); null when status is "abstain". */
+  matchRule: text("match_rule"),
+  query: text("query").notNull(),
+  videoId: text("video_id"),
+  videoTitle: text("video_title"),
+  channelId: text("channel_id"),
+  channelTitle: text("channel_title"),
+  /** Raw evidence for the decision (candidates considered, which check failed/passed) — admin/debugging visibility, mirrors artistGenreCache.evidence. */
+  evidence: jsonb("evidence").notNull().default([]),
+  /**
+   * Cheap admin override (public UI, 2026-09-25): true means never serve a
+   * preview for this artist name regardless of `status` — set directly via
+   * src/db/writes.ts::blockArtistYoutubePreview, no dedicated admin screen
+   * in V1. Survives re-matching: getOrMatchArtistYoutubePreview never
+   * clears this on a fresh lookup, only an explicit unblock call does.
+   */
+  manualBlock: boolean("manual_block").notNull().default(false),
+  matchedAt: timestamp("matched_at", { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Last time an ACCEPTED match's embeddable/public status was confirmed
+   * still true (re-verification, item 9) — null for an abstain, or for an
+   * accepted match that hasn't been re-checked since it was first matched
+   * (matchedAt itself counts as the first verification). Refreshed by
+   * getOrMatchArtistYoutubePreview via a single cheap videos.list call
+   * (never a new search) whenever this is more than
+   * VERIFY_STALE_DAYS old — see that function's own doc comment for why
+   * this piggybacks on the ingestion-triggered cache-warm call rather than
+   * a dedicated schedule.
+   */
+  lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
 export const sourceEventLinks = pgTable(
   "source_event_links",
   {

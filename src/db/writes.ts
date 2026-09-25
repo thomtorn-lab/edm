@@ -12,6 +12,7 @@ import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types"
 import type { GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
+import { enrichArtistYoutubePreviews } from "./youtubePreview";
 
 /**
  * All admin/sync write operations go through this module — API routes stay
@@ -504,6 +505,21 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
     await recordSourceLink(input.id, input.canonicalSourceId, provenance, "official");
   }
   await writeChangeLog(input.id, createdBy, "create", Object.keys(eventFields));
+
+  // YouTube Artist Preview cache warm-up (Rule A V1, 2026-09-25) — every
+  // newly-ingested/approved event's lineup, from either write path that
+  // reaches createEvent (sync auto-publish and admin publishDiscoveryItem
+  // alike), gets its artists' matches looked up once and cached, never on
+  // page render. enrichArtistYoutubePreviews never throws (see its own doc
+  // comment) — this try/catch is belt-and-suspenders only, so a genuinely
+  // unexpected failure here can never fail event creation itself, matching
+  // this same file's Discogs-enrichment call sites' own "never blocks the
+  // write" discipline.
+  try {
+    await enrichArtistYoutubePreviews(input.artists);
+  } catch (err) {
+    console.error(`[youtube-preview] cache warm-up failed for event ${input.id}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function recordSourceLink(

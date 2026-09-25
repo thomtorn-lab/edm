@@ -35,9 +35,11 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
+ *     [--artists="Artist One, Artist Two, ..."]  (youtube-preview-dry-run only — runs the REAL Rule A
+ *      matcher against each name, no DB/cache involved; requires YOUTUBE_API_KEY)
  *     [--table=<venues|sources|events|discovery_queue|source_event_links|sync_locks>]  (db-integrity only, optional)
  *     [--detail-category=<needs_review|venue_blocked|insufficient|rejected|past_stale>
  *      --detail-source=<sourceId> --detail-limit=<n> --detail-offset=<n>]  (admin-queue-audit only, optional —
@@ -643,6 +645,62 @@ async function decodeResponseBody(res: Response): Promise<string> {
     return new TextDecoder(charset, { fatal: false }).decode(buffer);
   } catch {
     return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+  }
+}
+
+/**
+ * Read-only dry run of the REAL YouTube Artist Preview matcher (automated
+ * Rule A V1, 2026-09-25) against a given artist list — no DB connection, no
+ * cache writes, just src/lib/enrichment/youtubePreviewMatching.ts's
+ * matchArtistYoutubePreview run live against the real YouTube Data API v3
+ * (requires the same YOUTUBE_API_KEY secret already wired for
+ * `reachability --source=src-youtube`). Built specifically to validate the
+ * shipped matcher against the exact 30-artist feasibility-audit benchmark
+ * before opening a PR (item 11 of the implementation task) — reuses the
+ * existing --artists flag (dedup-simulate's own input) rather than adding a
+ * new one-off workflow, per SOURCE_ONBOARDING.md's "use the permanent
+ * tooling" rule. Never touches the cache table, so it's safe to run
+ * against Production as many times as needed without warming/polluting it
+ * (a real cache warm only ever happens via src/db/writes.ts::createEvent).
+ */
+async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, string | boolean>) {
+  const artistsRaw = typeof args.artists === "string" ? args.artists : null;
+  if (!artistsRaw) throw new Error("youtube-preview-dry-run requires --artists=\"Artist One, Artist Two, ...\"");
+  const artistNames = artistsRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const { matchArtistYoutubePreview } = await import("@/lib/enrichment/youtubePreviewMatching");
+  const youtubeClient = await import("@/lib/enrichment/youtubeClient");
+
+  section(`YouTube Artist Preview dry run (Rule A) — ${artistNames.length} artist(s), no DB/cache involved`);
+
+  let accepted = 0;
+  let abstained = 0;
+  let failed = 0;
+  for (const name of artistNames) {
+    try {
+      const result = await matchArtistYoutubePreview(name, youtubeClient);
+      if (result.status === "accepted") {
+        accepted++;
+        console.log(
+          `ACCEPTED  "${name}" -> rule=${result.matchRule} query="${result.query}" videoId=${result.videoId} channel="${result.channelTitle}" title="${result.videoTitle}"`,
+        );
+      } else {
+        abstained++;
+        console.log(`ABSTAIN   "${name}" -> query="${result.query}"`);
+      }
+    } catch (err) {
+      failed++;
+      console.log(`FAILED    "${name}" -> ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  section("Summary");
+  console.log(`accepted=${accepted} abstain=${abstained} failed=${failed} total=${artistNames.length}`);
+  if (accepted + abstained > 0) {
+    console.log(`coverage (accepted / total) = ${((accepted / artistNames.length) * 100).toFixed(1)}%`);
   }
 }
 
@@ -2043,11 +2101,16 @@ async function main() {
     await modeReachability(null as unknown as Client, args);
     return;
   }
+  if (mode === "youtube-preview-dry-run") {
+    // No DB connection needed — pure matcher logic + a real YouTube API call.
+    await modeYoutubePreviewDryRun(null as unknown as Client, args);
+    return;
+  }
 
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run.`,
     );
     process.exit(1);
   }
