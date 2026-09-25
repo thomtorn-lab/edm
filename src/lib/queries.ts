@@ -152,10 +152,25 @@ export async function getArtistYoutubePreviewForLineup(artistNames: string[]): P
   if (artistNames.length === 0) return null;
   const normalizedToRaw = new Map(artistNames.map((name) => [normalizeArtistName(cleanArtistDisplayName(name)), name]));
   const normalizedNames = [...normalizedToRaw.keys()];
-  const rows = await db
-    .select()
-    .from(artistYoutubePreviewCache)
-    .where(inArray(artistYoutubePreviewCache.artistNameNormalized, normalizedNames));
+
+  let rows: (typeof artistYoutubePreviewCache.$inferSelect)[];
+  try {
+    rows = await db
+      .select()
+      .from(artistYoutubePreviewCache)
+      .where(inArray(artistYoutubePreviewCache.artistNameNormalized, normalizedNames));
+  } catch (err) {
+    // Deploy-ordering safety (2026-09-25 review): this is optional
+    // enrichment, exactly like the write side (enrichArtistYoutubePreviews
+    // never throws either) — a query failure here (most notably
+    // artist_youtube_preview_cache not existing yet, if application code
+    // ever ships before its migration runs) must degrade to "no preview"
+    // rather than fail the entire event page. Every other DB-touching
+    // function in this file assumes its tables already exist, which is a
+    // safe assumption for them; it is deliberately NOT assumed here.
+    console.error(`[youtube-preview] lineup lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
   const byNormalized = new Map(rows.map((r) => [r.artistNameNormalized, r]));
 
   for (const normalized of normalizedNames) {
