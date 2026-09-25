@@ -717,26 +717,55 @@ async function modeReachability(_client: Client, args: Record<string, string | b
     console.log(bodyText.slice(0, 4000));
   }
 
-  if (args["with-credentials"] && typeof args.source === "string" && args.source === "src-billetto") {
-    const accessKeyId = process.env.BILLETTO_ACCESS_KEY_ID;
-    const accessKeySecret = process.env.BILLETTO_ACCESS_KEY_SECRET;
-    if (!accessKeyId || !accessKeySecret) {
-      console.log("Billetto credential check requested but BILLETTO_ACCESS_KEY_ID / BILLETTO_ACCESS_KEY_SECRET are not set — skipping (never printed regardless).");
+  if (args["with-credentials"] && typeof args.source === "string" && (args.source === "src-billetto" || args.source === "src-youtube")) {
+    let authRequest: { url: string; headers: Record<string, string> } | null = null;
+    if (args.source === "src-billetto") {
+      const accessKeyId = process.env.BILLETTO_ACCESS_KEY_ID;
+      const accessKeySecret = process.env.BILLETTO_ACCESS_KEY_SECRET;
+      if (!accessKeyId || !accessKeySecret) {
+        console.log("Billetto credential check requested but BILLETTO_ACCESS_KEY_ID / BILLETTO_ACCESS_KEY_SECRET are not set — skipping (never printed regardless).");
+      } else {
+        authRequest = {
+          url: endpoint,
+          headers: { "Api-Keypair": buildApiKeypairHeader(accessKeyId, accessKeySecret) },
+        };
+      }
     } else {
-      const authRes = await fetch(endpoint, {
+      // YouTube Data API v3 (YouTube Artist Preview feasibility audit,
+      // 2026-09-25) — every useful endpoint (search.list, videos.list,
+      // channels.list) requires a key as a `key=` query parameter, never a
+      // header, so unlike Billetto the credential has to be appended to the
+      // URL itself. Built here, server-side, from the env var straight into
+      // a URL object that is only ever used as a fetch() input — the
+      // composed authenticated URL is deliberately never assigned anywhere
+      // this function logs (contrast the plain `endpoint` string logged in
+      // the section() call above, which never carries a key).
+      const apiKey = process.env.YOUTUBE_API_KEY;
+      if (!apiKey) {
+        console.log("YouTube credential check requested but YOUTUBE_API_KEY is not set — skipping (never printed regardless).");
+      } else {
+        const authUrl = new URL(endpoint);
+        authUrl.searchParams.set("key", apiKey);
+        authRequest = { url: authUrl.toString(), headers: {} };
+      }
+    }
+
+    if (authRequest) {
+      const authRes = await fetch(authRequest.url, {
         signal: AbortSignal.timeout(15_000),
         headers: {
           "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)",
-          "Api-Keypair": buildApiKeypairHeader(accessKeyId, accessKeySecret),
+          ...authRequest.headers,
         },
       });
       console.log(`Authenticated HTTP status: ${authRes.status} (credential value never printed)`);
 
       // Same save/print-full/preview options as the unauthenticated fetch
       // above, reused here so a real authenticated response body (the only
-      // way to see actual Billetto categorization/description payloads) can
-      // be captured without a one-off diagnostic script. Never prints or
-      // saves anything credential-related — only the response body.
+      // way to see actual Billetto categorization/description payloads, or
+      // real YouTube search/video results) can be captured without a
+      // one-off diagnostic script. Never prints or saves anything
+      // credential-related — only the response body.
       const authBodyText = await decodeResponseBody(authRes);
       console.log(`Authenticated body length: ${authBodyText.length} chars`);
       if (saveBodyPath) {
@@ -756,7 +785,7 @@ async function modeReachability(_client: Client, args: Record<string, string | b
       }
     }
   } else if (args["with-credentials"]) {
-    console.log("--with-credentials is currently only wired for src-billetto (BILLETTO_ACCESS_KEY_ID/SECRET) — extend this branch if a future source needs a different credential check.");
+    console.log("--with-credentials is currently only wired for src-billetto (BILLETTO_ACCESS_KEY_ID/SECRET) and src-youtube (YOUTUBE_API_KEY) — extend this branch if a future source needs a different credential check.");
   }
 }
 

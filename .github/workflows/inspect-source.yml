@@ -22,7 +22,9 @@ name: Inspect Source
 # One-time setup: repository secret DATABASE_URL. For --with-credentials
 # reachability checks against src-billetto, also BILLETTO_ACCESS_KEY_ID /
 # BILLETTO_ACCESS_KEY_SECRET (already required for that source's real sync
-# to work at all).
+# to work at all). For --with-credentials --source=src-youtube (YouTube
+# Data API v3, used only for the Artist Preview feasibility audit — not a
+# registered sync source), also YOUTUBE_API_KEY.
 
 on:
   workflow_dispatch:
@@ -169,6 +171,7 @@ jobs:
         env:
           BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
           BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           set -u
           args=(--mode="${{ inputs.mode }}")
