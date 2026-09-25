@@ -51,6 +51,20 @@ vi.mock("./client", () => ({
   },
 }));
 
+// createEvent's YouTube Artist Preview cache warm-up (2026-09-25) is
+// deliberately mocked out here rather than exercised through this file's
+// generic db mock above — every fixture below uses an empty lineup, so in
+// practice the real hook never reaches a db call either way, but mocking it
+// explicitly keeps that independent of any future fixture adding a
+// non-empty detectedLineup, and lets the "never blocks event creation"
+// contract be tested directly (see the dedicated describe block below).
+const enrichArtistYoutubePreviewsMock = vi.fn(async (artistNames: string[]) => {
+  void artistNames;
+});
+vi.mock("./youtubePreview", () => ({
+  enrichArtistYoutubePreviews: (artistNames: string[]) => enrichArtistYoutubePreviewsMock(artistNames),
+}));
+
 const {
   insertDiscoveryItem,
   adminUnpublishEvent,
@@ -85,6 +99,20 @@ beforeEach(() => {
   updateMock.mockClear();
   updateSetMock.mockClear();
   selectResults = [];
+  enrichArtistYoutubePreviewsMock.mockClear();
+  enrichArtistYoutubePreviewsMock.mockImplementation(async () => {});
+});
+
+describe("createEvent — YouTube Artist Preview cache warm-up never blocks event creation", () => {
+  it("still creates the event when enrichArtistYoutubePreviews rejects", async () => {
+    enrichArtistYoutubePreviewsMock.mockImplementation(async () => {
+      throw new Error("YouTube API unreachable");
+    });
+    selectResults = [[{ ...item, status: "pending", detectedLineup: ["Kasper Bjørke"] }]];
+
+    await expect(publishDiscoveryItem("dq-abc123", "v-poolen")).resolves.toBeDefined();
+    expect(enrichArtistYoutubePreviewsMock).toHaveBeenCalledWith(["Kasper Bjørke"]);
+  });
 });
 
 describe("insertDiscoveryItem", () => {

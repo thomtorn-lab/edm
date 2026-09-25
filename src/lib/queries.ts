@@ -1,12 +1,13 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { discoveryQueue, events, sourceEventLinks, sources, venues } from "@/db/schema";
+import { artistYoutubePreviewCache, discoveryQueue, events, sourceEventLinks, sources, venues } from "@/db/schema";
 import {
   discoveryRowToRecord,
   eventRowToRecord,
   sourceRowToRecord,
   venueRowToRecord,
 } from "@/db/mappers";
+import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 
 export interface EventWithVenue extends EventRecord {
@@ -128,6 +129,61 @@ export async function getSourceEventLinksForEvent(
     })
     .from(sourceEventLinks)
     .where(eq(sourceEventLinks.eventId, eventId));
+}
+
+/**
+ * YouTube Artist Preview lookup for the event-detail page (automated Rule A
+ * V1, 2026-09-25) — read-only, no network, ever: matching itself only ever
+ * runs at ingestion (src/db/writes.ts::createEvent, via
+ * src/db/youtubePreview.ts::enrichArtistYoutubePreviews), never here.
+ * Returns the first artist in lineup order with an accepted, non-blocked
+ * cached match, or null (including a cache miss for a lineup no event has
+ * warmed the cache for yet — the next ingestion touching that name is what
+ * populates it, never this call).
+ */
+export interface ArtistYoutubePreview {
+  artistName: string;
+  videoId: string;
+  videoTitle: string | null;
+  channelTitle: string | null;
+}
+
+export async function getArtistYoutubePreviewForLineup(artistNames: string[]): Promise<ArtistYoutubePreview | null> {
+  if (artistNames.length === 0) return null;
+  const normalizedToRaw = new Map(artistNames.map((name) => [normalizeArtistName(cleanArtistDisplayName(name)), name]));
+  const normalizedNames = [...normalizedToRaw.keys()];
+
+  let rows: (typeof artistYoutubePreviewCache.$inferSelect)[];
+  try {
+    rows = await db
+      .select()
+      .from(artistYoutubePreviewCache)
+      .where(inArray(artistYoutubePreviewCache.artistNameNormalized, normalizedNames));
+  } catch (err) {
+    // Deploy-ordering safety (2026-09-25 review): this is optional
+    // enrichment, exactly like the write side (enrichArtistYoutubePreviews
+    // never throws either) — a query failure here (most notably
+    // artist_youtube_preview_cache not existing yet, if application code
+    // ever ships before its migration runs) must degrade to "no preview"
+    // rather than fail the entire event page. Every other DB-touching
+    // function in this file assumes its tables already exist, which is a
+    // safe assumption for them; it is deliberately NOT assumed here.
+    console.error(`[youtube-preview] lineup lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+  const byNormalized = new Map(rows.map((r) => [r.artistNameNormalized, r]));
+
+  for (const normalized of normalizedNames) {
+    const row = byNormalized.get(normalized);
+    if (!row || row.status !== "accepted" || row.manualBlock || !row.videoId) continue;
+    return {
+      artistName: normalizedToRaw.get(normalized) ?? normalized,
+      videoId: row.videoId,
+      videoTitle: row.videoTitle,
+      channelTitle: row.channelTitle,
+    };
+  }
+  return null;
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {

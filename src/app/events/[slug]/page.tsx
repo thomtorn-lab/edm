@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/queries";
+import { getArtistYoutubePreviewForLineup, getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/queries";
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
@@ -11,6 +11,7 @@ import { buildEventJsonLd } from "@/lib/jsonld";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
+import ArtistVideoPreview from "@/components/ArtistVideoPreview";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -51,6 +52,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
+  const artistVideoPreview = await getArtistYoutubePreviewForLineup(event.artists);
   const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
   const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
@@ -132,6 +134,14 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           </div>
         )}
       </dl>
+
+      {artistVideoPreview && (
+        <ArtistVideoPreview
+          artistName={artistVideoPreview.artistName}
+          videoId={artistVideoPreview.videoId}
+          videoTitle={artistVideoPreview.videoTitle}
+        />
+      )}
 
       <div className="mt-6">
         <ShareButton

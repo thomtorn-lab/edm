@@ -55,6 +55,8 @@ on:
           - admin-queue-audit
           - ignore-persistence-audit
           - genre-taxonomy-audit
+          - youtube-preview-dry-run
+          - youtube-preview-backfill-plan
       source_id:
         description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks/event-integrity/text-leakage-audit/cancellation-audit/link-role-audit/admin-queue-audit/ignore-persistence-audit/genre-taxonomy-audit with no source scoping; must match src-[a-z0-9-]+)'
         required: false
@@ -97,7 +99,7 @@ on:
         description: "Candidate title (dedup-simulate mode), or a case-insensitive title substring filter (event-integrity/link-role-audit modes, optional — omit to inspect every published event)"
         required: false
       dedup_artists:
-        description: 'Candidate artists, comma-separated, e.g. "Artist A, Artist B" (dedup-simulate mode only)'
+        description: 'Candidate artists, comma-separated, e.g. "Artist A, Artist B" (dedup-simulate mode), or the artist list to run the real Rule A matcher against (youtube-preview-dry-run mode)'
         required: false
       dedup_venue:
         description: "Candidate venue name (dedup-simulate mode only)"
@@ -148,8 +150,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify DATABASE_URL secret is configured (skipped for reachability mode with no DB access)
-        if: ${{ inputs.mode != 'reachability' }}
+      - name: Verify DATABASE_URL secret is configured (skipped for reachability/youtube-preview-dry-run modes with no DB access)
+        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -162,7 +164,7 @@ jobs:
         run: npm ci
 
       - name: Write DATABASE_URL for the diagnostic script
-        if: ${{ inputs.mode != 'reachability' }}
+        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
@@ -196,7 +198,7 @@ jobs:
           [ -n "${{ inputs.detail_source }}" ] && args+=(--detail-source="${{ inputs.detail_source }}")
           [ -n "${{ inputs.detail_limit }}" ] && args+=(--detail-limit="${{ inputs.detail_limit }}")
           [ -n "${{ inputs.detail_offset }}" ] && args+=(--detail-offset="${{ inputs.detail_offset }}")
-          if [ "${{ inputs.mode }}" = "reachability" ]; then
+          if [ "${{ inputs.mode }}" = "reachability" ] || [ "${{ inputs.mode }}" = "youtube-preview-dry-run" ]; then
             node --import tsx src/db/inspectSource.ts "${args[@]}"
           else
             node --env-file=.env.local --import tsx src/db/inspectSource.ts "${args[@]}"

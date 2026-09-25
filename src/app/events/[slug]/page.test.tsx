@@ -69,9 +69,10 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 vi.mock("@/lib/queries", () => ({
   getEventBySlugWithVenue: vi.fn(),
   getSourceEventLinksForEvent: vi.fn(),
+  getArtistYoutubePreviewForLineup: vi.fn(),
 }));
 
-const { getEventBySlugWithVenue, getSourceEventLinksForEvent } = await import("@/lib/queries");
+const { getEventBySlugWithVenue, getSourceEventLinksForEvent, getArtistYoutubePreviewForLineup } = await import("@/lib/queries");
 const { default: EventDetailPage } = await import("./page");
 
 type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
@@ -83,10 +84,15 @@ type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
  * deriving provenance from the event's own canonicalSourceId/officialEventUrl
  * fields, so tests must supply them explicitly whenever provenance is
  * expected to render. Defaults to none (no provenance).
+ *
+ * getArtistYoutubePreviewForLineup defaults to null (no cached YouTube
+ * Artist Preview match) — none of the tests in this file are about that
+ * feature, so it stays off unless a test opts in.
  */
 async function renderPage(event: EventWithVenue, sourceLinks: SourceLinkRow[] = []) {
   vi.mocked(getEventBySlugWithVenue).mockResolvedValue(event);
   vi.mocked(getSourceEventLinksForEvent).mockResolvedValue(sourceLinks);
+  vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValue(null);
   const element = await EventDetailPage({ params: Promise.resolve({ slug: event.slug }) } as never);
   render(element);
 }
@@ -687,5 +693,29 @@ describe("Event detail page — multi-day event date-range display", () => {
     expect(ddText.startsWith("Friday 9 October 2026")).toBe(true);
     expect(ddText).not.toContain("Sunday");
     expect(ddText).not.toContain("–");
+  });
+});
+
+describe("Event detail page — YouTube Artist Preview embed (automated Rule A V1, 2026-09-25)", () => {
+  afterEach(cleanup);
+
+  it("renders the embed when a cached accepted match exists", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
+
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(iframe?.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ");
+  });
+
+  it("renders no embed and no placeholder when there is no cached match", async () => {
+    await renderPage(makeEvent({ artists: ["Some Unmatched Artist"] }));
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.queryByText(/no preview available/i)).toBeNull();
   });
 });
