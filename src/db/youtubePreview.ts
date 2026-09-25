@@ -19,7 +19,7 @@ import { isPlaceholderArtistName } from "@/lib/enrichment/genreEnrichment";
  * everywhere in this codebase). This file is the only place that touches
  * `db`/YouTube directly for Artist Preview matching.
  */
-const drizzleCacheStore: ArtistPreviewCacheStore = {
+export const drizzleCacheStore: ArtistPreviewCacheStore = {
   async get(artistNameNormalized) {
     const [row] = await db
       .select()

@@ -19,7 +19,8 @@
     "db:check-source-health": "node --env-file=.env.local --import tsx src/db/checkSourceHealth.ts",
     "db:inspect-source": "node --env-file=.env.local --import tsx src/db/inspectSource.ts",
     "db:sync-source-registry": "node --env-file=.env.local --import tsx src/db/syncSourceRegistry.ts",
-    "db:culture-box-room-consolidation": "node --env-file=.env.local --import tsx src/db/cultureBoxRoomConsolidation.ts"
+    "db:culture-box-room-consolidation": "node --env-file=.env.local --import tsx src/db/cultureBoxRoomConsolidation.ts",
+    "db:youtube-preview-backfill": "node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts"
   },
   "dependencies": {
     "@fontsource/big-shoulders": "^5.3.0",
