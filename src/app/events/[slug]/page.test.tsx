@@ -989,3 +989,41 @@ describe("Event detail page — Artist Preview positioned below About, ahead of 
     expect(tickets.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe("Event detail page — Artist Preview #video anchor (homepage VIDEO deep-link work, 2026-09-26)", () => {
+  afterEach(cleanup);
+
+  it("the Artist Preview section has id=\"video\" on its own container, not on the iframe", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
+
+    const anchor = document.getElementById("video");
+    expect(anchor).not.toBeNull();
+    expect(anchor!.tagName).not.toBe("IFRAME");
+    expect(anchor!.querySelector("iframe")).not.toBeNull();
+  });
+
+  it("no #video anchor exists when there is no Artist Preview", async () => {
+    await renderPage(makeEvent({ artists: ["Some Artist"] }));
+    expect(document.getElementById("video")).toBeNull();
+  });
+
+  it("keeps youtube-nocookie.com and no autoplay parameter on the embed src", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
+
+    const iframe = document.querySelector("iframe")!;
+    expect(iframe.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ");
+    expect(iframe.getAttribute("src")).not.toContain("autoplay");
+  });
+});
