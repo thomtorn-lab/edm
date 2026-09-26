@@ -292,6 +292,56 @@ describe("Event detail page — clickability affordance (Round 13: brighten + un
   });
 });
 
+describe("Event detail page — sold-out hides Tickets (public link-integrity rule, 2026-09-26)", () => {
+  afterEach(cleanup);
+
+  it("normal event + ticket URL -> Tickets shown", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x", soldOut: false }));
+    expect(screen.getByRole("link", { name: /^Tickets/i })).toBeTruthy();
+  });
+
+  it("sold-out event + ticket URL -> Tickets hidden", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x", soldOut: true }));
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+  });
+
+  it("sold-out + Official event -> Official event shown and PRIMARY (filled accent)", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x", soldOut: true }),
+    );
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    expect(officialEvent.className).toContain("bg-accent");
+    expect(officialEvent.className).toContain("text-accent-on");
+  });
+
+  it("sold-out + no Official event -> no primary CTA at all", async () => {
+    await renderPage(makeEvent({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null, soldOut: true }));
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+    expect(screen.queryByText(/^Official event/i)).toBeNull();
+  });
+
+  it("sold-out officialEventUrl classified as ticketing role (e.g. Billetto) -> suppressed entirely, not relabeled Source or Official event", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://billetto.dk/e/x", canonicalSourceId: "src-billetto", soldOut: true }),
+    );
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+    expect(screen.queryByText(/^Official event/i)).toBeNull();
+    expect(screen.queryByText(/^Source/i)).toBeNull();
+  });
+
+  it("sold-out does not mutate the stored event data (ticketUrl/officialEventUrl still present on the input object)", async () => {
+    const input = makeEvent({
+      officialEventUrl: "https://venue.example.com/event",
+      ticketUrl: "https://billetto.dk/e/x",
+      soldOut: true,
+    });
+    const snapshot = JSON.parse(JSON.stringify(input));
+    await renderPage(input);
+    expect(input).toEqual(snapshot);
+  });
+});
+
 describe("Event detail page — three-level text hierarchy (Round 18: new secondary-strong grey; superseded for the PRIMARY CTA by the event-detail CTA hierarchy work, 2026-09-26 — the secondary-strong grey now applies only to the SECONDARY CTA, since the primary CTA gets its own filled-accent treatment instead, see the dedicated CTA-hierarchy describe block above)", () => {
   afterEach(cleanup);
 
