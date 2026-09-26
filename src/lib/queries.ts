@@ -148,6 +148,22 @@ export interface ArtistYoutubePreview {
   channelTitle: string | null;
 }
 
+/**
+ * The single acceptance predicate for "does this cache row count as an
+ * available Artist Preview" — accepted, not manually blocked, and a real
+ * videoId. No expiresAt/freshness check at read time (matching the existing
+ * behavior below, unchanged). Extracted (event-detail CTA hierarchy +
+ * homepage video indicator work, 2026-09-26) so the homepage's batched
+ * availability check below can reuse the EXACT same real-world condition
+ * the event-detail page itself relies on, rather than re-deriving it and
+ * risking the two silently drifting apart.
+ */
+function isAcceptedPreviewRow<
+  T extends Pick<typeof artistYoutubePreviewCache.$inferSelect, "status" | "manualBlock" | "videoId">,
+>(row: T | undefined): row is T & { videoId: string } {
+  return Boolean(row && row.status === "accepted" && !row.manualBlock && row.videoId);
+}
+
 export async function getArtistYoutubePreviewForLineup(artistNames: string[]): Promise<ArtistYoutubePreview | null> {
   if (artistNames.length === 0) return null;
   const normalizedToRaw = new Map(artistNames.map((name) => [normalizeArtistName(cleanArtistDisplayName(name)), name]));
@@ -175,7 +191,7 @@ export async function getArtistYoutubePreviewForLineup(artistNames: string[]): P
 
   for (const normalized of normalizedNames) {
     const row = byNormalized.get(normalized);
-    if (!row || row.status !== "accepted" || row.manualBlock || !row.videoId) continue;
+    if (!isAcceptedPreviewRow(row)) continue;
     return {
       artistName: normalizedToRaw.get(normalized) ?? normalized,
       videoId: row.videoId,
@@ -184,6 +200,44 @@ export async function getArtistYoutubePreviewForLineup(artistNames: string[]): P
     };
   }
   return null;
+}
+
+/**
+ * Batched "would event detail render an Artist Preview for this lineup"
+ * check for the homepage/event-list VIDEO indicator (2026-09-26) — ONE query
+ * covering every event's combined lineup, never per-event, so the homepage
+ * never issues N+1 cache lookups. Reuses isAcceptedPreviewRow, the exact same
+ * acceptance predicate getArtistYoutubePreviewForLineup uses, so the
+ * indicator can never show (or hide) for an event where the detail page
+ * itself would disagree. Returns one boolean per input lineup, same order.
+ * Degrades to all-false on a query failure, matching
+ * getArtistYoutubePreviewForLineup's own deploy-safety behavior — this is
+ * optional presentation, never worth failing the homepage render over.
+ */
+export async function getArtistPreviewAvailabilityForLineups(lineups: string[][]): Promise<boolean[]> {
+  const allNormalized = new Set<string>();
+  for (const artists of lineups) {
+    for (const name of artists) {
+      allNormalized.add(normalizeArtistName(cleanArtistDisplayName(name)));
+    }
+  }
+  if (allNormalized.size === 0) return lineups.map(() => false);
+
+  let rows: (typeof artistYoutubePreviewCache.$inferSelect)[];
+  try {
+    rows = await db
+      .select()
+      .from(artistYoutubePreviewCache)
+      .where(inArray(artistYoutubePreviewCache.artistNameNormalized, [...allNormalized]));
+  } catch (err) {
+    console.error(`[youtube-preview] batched availability lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    return lineups.map(() => false);
+  }
+  const byNormalized = new Map(rows.map((r) => [r.artistNameNormalized, r]));
+
+  return lineups.map((artists) =>
+    artists.some((name) => isAcceptedPreviewRow(byNormalized.get(normalizeArtistName(cleanArtistDisplayName(name))))),
+  );
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {

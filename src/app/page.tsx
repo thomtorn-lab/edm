@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getPublishedEventsWithVenue } from "@/lib/queries";
+import { getArtistPreviewAvailabilityForLineups, getPublishedEventsWithVenue } from "@/lib/queries";
 import EventExplorer from "@/components/EventExplorer";
 
 export const metadata: Metadata = {
@@ -12,6 +12,15 @@ export const revalidate = 0;
 
 export default async function HomePage() {
   const events = await getPublishedEventsWithVenue();
+  // Homepage VIDEO indicator (2026-09-26): ONE batched query for every
+  // event's lineup combined (never per-event — see
+  // getArtistPreviewAvailabilityForLineups's own doc comment), reusing the
+  // exact same acceptance predicate the event-detail page relies on, so the
+  // indicator only ever shows when that event's own detail page would
+  // actually render an Artist Preview. No YouTube API call and no matcher
+  // execution happen here — this only reads the existing cache table.
+  const previewAvailability = await getArtistPreviewAvailabilityForLineups(events.map((e) => e.artists));
+  const eventsWithPreview = events.map((event, i) => ({ ...event, hasArtistPreview: previewAvailability[i] }));
   // Computed here (server request time, same as /venues/[slug]) rather than
   // left for the client to fill in post-hydration — see EventExplorer's
   // `serverNow` prop doc comment for why.
@@ -28,7 +37,7 @@ export default async function HomePage() {
           curated guide to electronic music in Copenhagen.
         </p>
       </div>
-      <EventExplorer events={events} serverNow={serverNow} />
+      <EventExplorer events={eventsWithPreview} serverNow={serverNow} />
     </div>
   );
 }

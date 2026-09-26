@@ -292,20 +292,20 @@ describe("Event detail page — clickability affordance (Round 13: brighten + un
   });
 });
 
-describe("Event detail page — three-level text hierarchy (Round 18: new secondary-strong grey)", () => {
+describe("Event detail page — three-level text hierarchy (Round 18: new secondary-strong grey; superseded for the PRIMARY CTA by the event-detail CTA hierarchy work, 2026-09-26 — the secondary-strong grey now applies only to the SECONDARY CTA, since the primary CTA gets its own filled-accent treatment instead, see the dedicated CTA-hierarchy describe block above)", () => {
   afterEach(cleanup);
 
-  it("puts OFFICIAL EVENT / TICKETS links on the same new secondary-strong grey used on the homepage", async () => {
+  it("keeps the SECONDARY CTA on the existing secondary-strong grey", async () => {
     await renderPage(
       makeEvent({
         officialEventUrl: "https://venue.example.com/event",
         ticketUrl: "https://billetto.dk/e/x",
       }),
     );
+    // Tickets is PRIMARY here (verified ticket destination), Official event
+    // is SECONDARY — only the secondary CTA keeps the old uniform grey.
     const officialEvent = screen.getByText(/Official event/i);
-    const tickets = screen.getByText(/Tickets/i);
     expect(officialEvent.className).toContain("text-text-secondary-strong");
-    expect(tickets.className).toContain("text-text-secondary-strong");
   });
 });
 
@@ -572,17 +572,20 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     expect(calendarSection?.contains(shareButton)).toBe(false);
   });
 
-  it("2. Share renders immediately after Genre in the event metadata section, ahead of About/Links/Add to calendar", async () => {
+  it("2. Share renders after About (and the metadata/CTA section), ahead of Add to calendar (event-detail CTA hierarchy work, 2026-09-26: Share moved below About/Artist Preview, no longer sandwiched between Genre and About)", async () => {
     await renderPage(
       makeEvent({ description: "Some description.", officialEventUrl: "https://venue.example.com/event" }),
     );
     const genreDt = screen.getByText("Genre");
+    const officialEventCta = screen.getByText(/^Official event/i);
     const shareButton = screen.getByRole("button", { name: /^Share /i });
     const aboutHeading = screen.getByText("About");
     const addToCalendarHeading = screen.getByText("Add to calendar");
 
-    expect(genreDt.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(shareButton.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // New order: Genre -> primary CTA -> About -> Share -> Add to calendar.
+    expect(genreDt.compareDocumentPosition(officialEventCta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(officialEventCta.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(aboutHeading.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -717,5 +720,111 @@ describe("Event detail page — YouTube Artist Preview embed (automated Rule A V
     await renderPage(makeEvent({ artists: ["Some Unmatched Artist"] }));
     expect(document.querySelector("iframe")).toBeNull();
     expect(screen.queryByText(/no preview available/i)).toBeNull();
+  });
+});
+
+describe("Event detail page — primary/secondary CTA hierarchy (event-detail CTA hierarchy work, 2026-09-26)", () => {
+  afterEach(cleanup);
+
+  it("Tickets is PRIMARY (filled accent) and Official event is SECONDARY (outline) when both exist", async () => {
+    await renderPage(
+      makeEvent({
+        officialEventUrl: "https://venue.example.com/event",
+        ticketUrl: "https://billetto.dk/e/x",
+      }),
+    );
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    expect(tickets.className).toContain("bg-accent");
+    expect(tickets.className).toContain("text-accent-on");
+    expect(officialEvent.className).not.toContain("bg-accent");
+    expect(officialEvent.className).toContain("border-border-strong");
+  });
+
+  it("Official event becomes PRIMARY when no verified Tickets link exists", async () => {
+    await renderPage(makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: null }));
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    expect(officialEvent.className).toContain("bg-accent");
+    expect(officialEvent.className).toContain("text-accent-on");
+  });
+
+  it("never renders a Tickets button when there is no verified ticket destination", async () => {
+    await renderPage(makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: null }));
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+  });
+
+  it("renders no primary CTA block at all when the event has no external links", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: null, ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null, otherSourceUrls: [] }),
+    );
+    expect(screen.queryByText(/^Official event/i)).toBeNull();
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+  });
+
+  it("both primary and secondary CTAs preserve the existing external-link ↗ semantics", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
+    );
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    expect(tickets.textContent).toContain("↗");
+    expect(officialEvent.textContent).toContain("↗");
+  });
+
+  it("gives the primary CTA a mobile-first tap target of at least 44px and 16px+ text, relaxing to compact sizing at sm:", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    expect(tickets.className).toContain("min-h-[2.75rem]");
+    expect(tickets.className).toContain("text-base");
+    expect(tickets.className).toContain("sm:text-xs");
+  });
+});
+
+describe("Event detail page — Artist Preview positioned below About, ahead of Share/Add to calendar (event-detail CTA hierarchy work, 2026-09-26)", () => {
+  afterEach(cleanup);
+
+  it("renders the Artist Preview embed below the About heading", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"], description: "Some description." }));
+
+    const aboutHeading = screen.getByText("About");
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(aboutHeading.compareDocumentPosition(iframe!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("renders the Artist Preview embed above the Share button and Add to calendar", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
+
+    const iframe = document.querySelector("iframe")!;
+    const shareButton = screen.getByRole("button", { name: /^Share /i });
+    const addToCalendarHeading = screen.getByText("Add to calendar");
+    expect(iframe.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(iframe.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("Artist Preview never appears before the Tickets/Official event CTA", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"], ticketUrl: "https://billetto.dk/e/x" }));
+
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    const iframe = document.querySelector("iframe")!;
+    expect(tickets.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

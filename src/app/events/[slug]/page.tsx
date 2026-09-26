@@ -46,6 +46,15 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event);
+  // Primary/secondary CTA hierarchy (event-detail CTA hierarchy work,
+  // 2026-09-26): computed independently of getExternalLinks's own `primary`
+  // flag, which is NOT the same thing — it always marks "Official event" as
+  // primary when present, even alongside a Tickets link. Product rule here
+  // is the opposite: a verified Tickets destination always outranks Official
+  // event. Never modifies links.ts itself — this is a purely additive,
+  // presentation-only re-ranking of its unchanged output.
+  const primaryLink = links.find((l) => l.label === "Tickets") ?? links.find((l) => l.label === "Official event") ?? links[0] ?? null;
+  const secondaryLinks = primaryLink ? links.filter((l) => l !== primaryLink) : [];
   const sourceLinks = await getSourceEventLinksForEvent(event.id);
   const sourceProvenance = getSourceProvenance(sourceLinks);
   const statuses = getEventStatuses(event);
@@ -135,6 +144,48 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         )}
       </dl>
 
+      {/* Primary + secondary outbound event actions (event-detail CTA
+          hierarchy work, 2026-09-26) — placed immediately after the core
+          event facts, ahead of About/Artist Preview, since these are the
+          user's primary task on this page. Tickets outranks Official event
+          when both exist (primaryLink/secondaryLinks above); never renders a
+          button for a link that doesn't exist. Primary gets a filled accent
+          treatment, secondary an outline treatment — visibly subordinate,
+          neither oversized. min-h-[2.75rem] (44px, matching the same mobile
+          tap-target convention already used elsewhere — see
+          EventExplorer.tsx's own filter-apply button) and text-base hold on
+          mobile; both relax to the previous compact desktop sizing at sm:. */}
+      {primaryLink && (
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <a
+            href={primaryLink.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-[2.75rem] items-center justify-center rounded bg-accent px-5 text-base font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:min-h-0 sm:px-4 sm:py-2 sm:text-xs"
+          >
+            {primaryLink.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+          </a>
+          {secondaryLinks.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-5 text-base font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary sm:min-h-0 sm:px-4 sm:py-2 sm:text-xs"
+            >
+              {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {event.description && (
+        <div className="mt-8">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
+        </div>
+      )}
+
       {artistVideoPreview && (
         <ArtistVideoPreview
           artistName={artistVideoPreview.artistName}
@@ -143,69 +194,13 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         />
       )}
 
-      <div className="mt-6">
+      <div className="mt-8 flex flex-wrap gap-3">
         <ShareButton
           title={title}
           url={canonicalUrl}
           className="inline-flex items-center gap-1.5 rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
         />
       </div>
-
-      {event.description && (
-        <div className="mt-6">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
-        </div>
-      )}
-
-      {links.length > 0 && (
-        <div className="mt-8">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Links</h2>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {links.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
-              >
-                {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
-              </a>
-            ))}
-          </div>
-          {/* Discreet, non-CTA provenance (public source-link visibility work
-              package, 2026-09-07; revised same day to read from ALL of the
-              event's real source_event_links, not only its canonical
-              source — see getSourceProvenance's own doc comment): identifies
-              every qualifying discovery/aggregator source by its clean
-              public brand name — deliberately small/muted text, never a
-              button, so it never competes with Official event/Tickets
-              above. Shown even when getExternalLinks already hid the Source
-              CTA (the common case), and also when Source remains the only
-              CTA above, since that button's own label only ever reads the
-              generic word "Source". Compact "Sources: A · B" form when more
-              than one qualifying source exists — never a source browser. */}
-          {sourceProvenance.length > 0 && (
-            <p className="mt-2 text-[11px] text-text-tertiary">
-              {sourceProvenance.length === 1 ? "Source:" : "Sources:"}{" "}
-              {sourceProvenance.map((s, i) => (
-                <span key={s.sourceName}>
-                  {i > 0 && " · "}
-                  <a
-                    href={s.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline decoration-1 underline-offset-2 hover:text-text-secondary"
-                  >
-                    {s.sourceName}
-                  </a>
-                </span>
-              ))}
-            </p>
-          )}
-        </div>
-      )}
 
       <div className="mt-8">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Add to calendar</h2>
@@ -221,6 +216,38 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           </a>
         </div>
       </div>
+
+      {/* Discreet, non-CTA provenance (public source-link visibility work
+          package, 2026-09-07; revised same day to read from ALL of the
+          event's real source_event_links, not only its canonical
+          source — see getSourceProvenance's own doc comment): identifies
+          every qualifying discovery/aggregator source by its clean
+          public brand name — deliberately small/muted text, never a
+          button, so it never competes with Official event/Tickets above.
+          Moved to its own final section, alongside the report-incorrect-info
+          disclaimer below, as of the CTA hierarchy work (2026-09-26) — it's
+          provenance/source metadata, not an outbound action, so it no
+          longer sits inside the primary-CTA block. Compact "Sources: A · B"
+          form when more than one qualifying source exists — never a source
+          browser. */}
+      {sourceProvenance.length > 0 && (
+        <p className="mt-8 text-[11px] text-text-tertiary">
+          {sourceProvenance.length === 1 ? "Source:" : "Sources:"}{" "}
+          {sourceProvenance.map((s, i) => (
+            <span key={s.sourceName}>
+              {i > 0 && " · "}
+              <a
+                href={s.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-1 underline-offset-2 hover:text-text-secondary"
+              >
+                {s.sourceName}
+              </a>
+            </span>
+          ))}
+        </p>
+      )}
 
       <p className="mt-10 text-xs text-text-tertiary">
         Times shown in Europe/Copenhagen. Details are drawn from official and verified sources — if something here looks

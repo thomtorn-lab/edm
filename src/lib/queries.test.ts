@@ -23,7 +23,7 @@ vi.mock("@/db/client", () => ({
   db: { select: () => selectMock() },
 }));
 
-const { getArtistYoutubePreviewForLineup } = await import("./queries");
+const { getArtistYoutubePreviewForLineup, getArtistPreviewAvailabilityForLineups } = await import("./queries");
 
 beforeEach(() => {
   selectMock.mockClear();
@@ -55,5 +55,66 @@ describe("getArtistYoutubePreviewForLineup", () => {
   it("degrades to null, never throws, when the query fails (e.g. the cache table doesn't exist yet — deploy-ordering safety)", async () => {
     selectShouldThrow = true;
     await expect(getArtistYoutubePreviewForLineup(["Eric Prydz"])).resolves.toBeNull();
+  });
+});
+
+/**
+ * Homepage VIDEO indicator batched availability (event-detail CTA hierarchy
+ * + homepage video indicator work, 2026-09-26): must reuse the EXACT same
+ * acceptance predicate getArtistYoutubePreviewForLineup uses above (accepted,
+ * not manually blocked, truthy videoId — no separate freshness rule), and
+ * must issue exactly ONE query for however many events' lineups are passed
+ * in, never one per event (no N+1).
+ */
+describe("getArtistPreviewAvailabilityForLineups", () => {
+  it("returns all-false without querying the DB when every lineup is empty", async () => {
+    const result = await getArtistPreviewAvailabilityForLineups([[], []]);
+    expect(result).toEqual([false, false]);
+    expect(selectMock).not.toHaveBeenCalled();
+  });
+
+  it("issues exactly one query for many events' lineups combined (no N+1)", async () => {
+    selectResult = [
+      { artistNameNormalized: "eric prydz", status: "accepted", manualBlock: false, videoId: "v1", videoTitle: "x", channelTitle: "x" },
+    ];
+    await getArtistPreviewAvailabilityForLineups([["Eric Prydz"], ["Some Other Artist"], ["A Third Artist"]]);
+    expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns true only for the lineup(s) with an accepted, non-blocked, matched artist — same order as the input", async () => {
+    selectResult = [
+      { artistNameNormalized: "eric prydz", status: "accepted", manualBlock: false, videoId: "v1", videoTitle: "x", channelTitle: "x" },
+    ];
+    const result = await getArtistPreviewAvailabilityForLineups([["Some Unmatched Artist"], ["Eric Prydz"]]);
+    expect(result).toEqual([false, true]);
+  });
+
+  it("treats any one accepted artist in a multi-artist lineup as enough (some, not every)", async () => {
+    selectResult = [
+      { artistNameNormalized: "eric prydz", status: "accepted", manualBlock: false, videoId: "v1", videoTitle: "x", channelTitle: "x" },
+    ];
+    const result = await getArtistPreviewAvailabilityForLineups([["Unmatched Support Act", "Eric Prydz"]]);
+    expect(result).toEqual([true]);
+  });
+
+  it("treats a manually-blocked match as unavailable, same as the detail page's own predicate", async () => {
+    selectResult = [
+      { artistNameNormalized: "eric prydz", status: "accepted", manualBlock: true, videoId: "v1", videoTitle: "x", channelTitle: "x" },
+    ];
+    const result = await getArtistPreviewAvailabilityForLineups([["Eric Prydz"]]);
+    expect(result).toEqual([false]);
+  });
+
+  it("treats an abstained (non-accepted) cache row as unavailable", async () => {
+    selectResult = [
+      { artistNameNormalized: "eric prydz", status: "abstain", manualBlock: false, videoId: null, videoTitle: null, channelTitle: null },
+    ];
+    const result = await getArtistPreviewAvailabilityForLineups([["Eric Prydz"]]);
+    expect(result).toEqual([false]);
+  });
+
+  it("degrades to all-false, never throws, when the batched query fails", async () => {
+    selectShouldThrow = true;
+    await expect(getArtistPreviewAvailabilityForLineups([["Eric Prydz"], ["Someone Else"]])).resolves.toEqual([false, false]);
   });
 });
