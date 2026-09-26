@@ -858,6 +858,45 @@ async function modeYoutubePreviewBackfillPlan(client: Client, args: Record<strin
   for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
 }
 
+/**
+ * Read-only single-artist cache row dump (Eric Prydz Production smoke
+ * test, 2026-09-26) — the batch/backfill logs only ever print status +
+ * videoId (see youtubePreviewBackfill.ts's own console.log), never the
+ * full row, so this is the only way to confirm the rest of an accepted
+ * match (video title, channel title, match rule, public/embeddable
+ * evidence) without re-querying YouTube. Also confirms whether any
+ * current/future-visible event containing this artist would now resolve
+ * a preview via getArtistYoutubePreviewForLineup's own acceptance rule
+ * (status=accepted, not manually blocked, fresh) — the exact same check
+ * that query makes, reproduced here read-only against the real cache
+ * table plus a real event lookup, never mutating anything.
+ */
+async function modeYoutubePreviewCacheRow(client: Client, args: Record<string, string | boolean>) {
+  const artistRaw = typeof args.artists === "string" ? args.artists : null;
+  if (!artistRaw) throw new Error('youtube-preview-cache-row requires --artists="Exact Artist Name"');
+  const { cleanArtistDisplayName, normalizeArtistName } = await import("@/lib/enrichment/genreEnrichment");
+  const normalized = normalizeArtistName(cleanArtistDisplayName(artistRaw));
+
+  section(`YouTube preview cache row — "${artistRaw}" (normalized: "${normalized}")`);
+  const cacheRes = await client.query(`SELECT * FROM artist_youtube_preview_cache WHERE artist_name_normalized = $1`, [normalized]);
+  if (cacheRes.rows.length === 0) {
+    console.log("No cache row for this artist.");
+    return;
+  }
+  const row = cacheRes.rows[0] as Record<string, unknown>;
+  console.log(JSON.stringify(row, null, 2));
+  const nowFresh = row.expires_at ? new Date(row.expires_at as string).getTime() > Date.now() : false;
+  const wouldResolve = row.status === "accepted" && row.manual_block === false && !!row.video_id && nowFresh;
+  console.log(`\nWould getArtistYoutubePreviewForLineup resolve this artist right now? ${wouldResolve ? "YES" : "NO"} (status=${row.status}, manual_block=${row.manual_block}, fresh=${nowFresh})`);
+
+  const eventsRes = await client.query(
+    `SELECT id, slug, title, start_datetime FROM events WHERE published = true AND $1 = ANY(artists) ORDER BY start_datetime`,
+    [artistRaw],
+  );
+  console.log(`\nPublished events with this exact artist string in their lineup (${eventsRes.rows.length}):`);
+  console.log(JSON.stringify(eventsRes.rows, null, 2));
+}
+
 async function modeReachability(_client: Client, args: Record<string, string | boolean>) {
   const endpoint = typeof args.endpoint === "string" ? args.endpoint : null;
   if (!endpoint) throw new Error("reachability requires --endpoint=<https url>");
@@ -2308,6 +2347,7 @@ async function main() {
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
     "youtube-preview-backfill-plan": modeYoutubePreviewBackfillPlan,
+    "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
     "migration-status": modeMigrationStatus,
   };
 
@@ -2325,7 +2365,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-cache-row, migration-status.`,
     );
     process.exit(1);
   }

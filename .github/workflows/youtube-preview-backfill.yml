@@ -38,6 +38,9 @@ on:
       batch_size:
         description: "apply mode only: inter-request pacing group size within the selected batch. Defaults to the script's own BATCH_SIZE_DEFAULT (20) when left blank."
         required: false
+      artist:
+        description: "apply mode only, optional: scope the run to exactly this one normalized artist name (e.g. \"Eric Prydz\"), ignoring limit entirely. For a single-artist smoke test — never processes anyone else."
+        required: false
 
 permissions:
   contents: read
@@ -94,6 +97,7 @@ jobs:
           [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
           [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
           [ -n "${{ inputs.batch_size }}" ] && args+=(--batch-size="${{ inputs.batch_size }}")
+          [ -n "${{ inputs.artist }}" ] && args+=(--artist="${{ inputs.artist }}")
           node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts "${args[@]}"
 
       - name: Remove local env file
