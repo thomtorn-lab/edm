@@ -9,7 +9,17 @@ import StatusBadge, { getEventStatuses } from "./StatusBadge";
 
 const SITE_URL = "https://electroniccph.com";
 
-export default function EventRow({ event }: { event: EventWithVenue }) {
+/**
+ * hasArtistPreview (homepage VIDEO indicator work, 2026-09-26) is computed
+ * once, batched, by the homepage (src/app/page.tsx) and attached to each
+ * event object before it reaches EventExplorer/EventRow — optional so venue
+ * pages (src/app/venues/[slug]/page.tsx), which don't compute it, keep
+ * passing plain EventWithVenue objects unchanged and simply render no
+ * indicator (a safe default, not a regression).
+ */
+type EventRowEvent = EventWithVenue & { hasArtistPreview?: boolean };
+
+export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
   const isFree = showFreeCta(event);
@@ -75,6 +85,28 @@ export default function EventRow({ event }: { event: EventWithVenue }) {
                 <span aria-hidden className="text-text-tertiary">·</span>
                 <span className="font-medium uppercase tracking-wide text-text-tertiary">
                   {genres.map((g) => g.shortLabel).join(" · ")}
+                </span>
+              </>
+            )}
+            {event.hasArtistPreview && (
+              <>
+                <span aria-hidden className="text-text-tertiary">·</span>
+                {/* Minimal availability signal (homepage VIDEO indicator,
+                    2026-09-26) — informational only, never a separate
+                    clickable target: the row's own title/date navigation is
+                    unchanged, and this span carries no href/onClick. Kept
+                    deliberately restrained (small outlined pill, no
+                    thumbnail/logo) so it never competes with Official
+                    event/Tickets in the CTA column. role="img" + aria-label
+                    give it one clean accessible name instead of the visible
+                    glyph + "Video" being read out separately. */}
+                <span
+                  role="img"
+                  aria-label="Artist preview available"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary"
+                >
+                  <span aria-hidden="true" className="text-accent">▶</span>
+                  Video
                 </span>
               </>
             )}
