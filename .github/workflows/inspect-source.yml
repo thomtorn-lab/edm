@@ -57,6 +57,7 @@ on:
           - genre-taxonomy-audit
           - youtube-preview-dry-run
           - youtube-preview-backfill-plan
+          - youtube-preview-backlog-projection
           - youtube-preview-cache-row
           - migration-status
       source_id:
