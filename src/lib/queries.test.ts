@@ -118,3 +118,39 @@ describe("getArtistPreviewAvailabilityForLineups", () => {
     await expect(getArtistPreviewAvailabilityForLineups([["Eric Prydz"], ["Someone Else"]])).resolves.toEqual([false, false]);
   });
 });
+
+/**
+ * Freshness parity (final review, 2026-09-26): the event-detail page's own
+ * read path (getArtistYoutubePreviewForLineup) has never checked expiresAt —
+ * freshness is enforced upstream, at match/ingestion time, by
+ * getOrMatchArtistYoutubePreview (src/lib/enrichment/youtubePreviewMatching.ts:
+ * an expired row triggers a fresh lookup/re-verification the next time an
+ * event touches that artist). These tests lock in that both read paths — the
+ * existing detail-page lookup and the new homepage batched availability
+ * check — agree on an "expired" row exactly the same way (by both ignoring
+ * expiresAt), so the homepage indicator can never disagree with what the
+ * event's own detail page would actually render.
+ */
+describe("freshness parity — expiresAt is read-time-irrelevant for both getArtistYoutubePreviewForLineup and getArtistPreviewAvailabilityForLineups", () => {
+  const EXPIRED_ACCEPTED_ROW = {
+    artistNameNormalized: "eric prydz",
+    status: "accepted",
+    manualBlock: false,
+    videoId: "v1",
+    videoTitle: "x",
+    channelTitle: "x",
+    expiresAt: new Date("2020-01-01T00:00:00.000Z"), // long past — never consulted at read time
+  };
+
+  it("getArtistYoutubePreviewForLineup still returns an expired-but-accepted row (freshness is a match-time concern, not a read-time filter)", async () => {
+    selectResult = [EXPIRED_ACCEPTED_ROW];
+    const result = await getArtistYoutubePreviewForLineup(["Eric Prydz"]);
+    expect(result).toEqual({ artistName: "Eric Prydz", videoId: "v1", videoTitle: "x", channelTitle: "x" });
+  });
+
+  it("getArtistPreviewAvailabilityForLineups agrees — also returns true for the same expired-but-accepted row", async () => {
+    selectResult = [EXPIRED_ACCEPTED_ROW];
+    const result = await getArtistPreviewAvailabilityForLineups([["Eric Prydz"]]);
+    expect(result).toEqual([true]);
+  });
+});

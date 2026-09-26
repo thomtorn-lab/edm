@@ -47,14 +47,19 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event);
   // Primary/secondary CTA hierarchy (event-detail CTA hierarchy work,
-  // 2026-09-26): computed independently of getExternalLinks's own `primary`
-  // flag, which is NOT the same thing — it always marks "Official event" as
-  // primary when present, even alongside a Tickets link. Product rule here
-  // is the opposite: a verified Tickets destination always outranks Official
-  // event. Never modifies links.ts itself — this is a purely additive,
-  // presentation-only re-ranking of its unchanged output.
-  const primaryLink = links.find((l) => l.label === "Tickets") ?? links.find((l) => l.label === "Official event") ?? links[0] ?? null;
-  const secondaryLinks = primaryLink ? links.filter((l) => l !== primaryLink) : [];
+  // 2026-09-26; fallback narrowed 2026-09-26 review): computed independently
+  // of getExternalLinks's own `primary` flag, which is NOT the same thing —
+  // it always marks "Official event" as primary when present, even alongside
+  // a Tickets link. Product rule here is the opposite: a verified Tickets
+  // destination always outranks Official event. Deliberately only ever
+  // Tickets or Official event — a bare "Source" (or any other) link is never
+  // promoted to the filled-accent primary treatment merely because neither
+  // of those exists; it still renders, just with the ordinary secondary/
+  // outline treatment (see secondaryLinks below). Never modifies links.ts
+  // itself — this is a purely additive, presentation-only re-ranking of its
+  // unchanged output.
+  const primaryLink = links.find((l) => l.label === "Tickets") ?? links.find((l) => l.label === "Official event") ?? null;
+  const secondaryLinks = primaryLink ? links.filter((l) => l !== primaryLink) : links;
   const sourceLinks = await getSourceEventLinksForEvent(event.id);
   const sourceProvenance = getSourceProvenance(sourceLinks);
   const statuses = getEventStatuses(event);
@@ -149,22 +154,28 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           event facts, ahead of About/Artist Preview, since these are the
           user's primary task on this page. Tickets outranks Official event
           when both exist (primaryLink/secondaryLinks above); never renders a
-          button for a link that doesn't exist. Primary gets a filled accent
-          treatment, secondary an outline treatment — visibly subordinate,
-          neither oversized. min-h-[2.75rem] (44px, matching the same mobile
-          tap-target convention already used elsewhere — see
-          EventExplorer.tsx's own filter-apply button) and text-base hold on
-          mobile; both relax to the previous compact desktop sizing at sm:. */}
-      {primaryLink && (
+          button for a link that doesn't exist. When neither Tickets nor
+          Official event exists (e.g. a bare "Source" fallback), there is no
+          primary CTA at all — every link in that case renders with the
+          ordinary secondary/outline treatment, never promoted to the filled
+          accent style. Primary gets a filled accent treatment, secondary an
+          outline treatment — visibly subordinate, neither oversized.
+          min-h-[2.75rem] (44px, matching the same mobile tap-target
+          convention already used elsewhere — see EventExplorer.tsx's own
+          filter-apply button) and text-base hold on mobile; both relax to
+          the previous compact desktop sizing at sm:. */}
+      {links.length > 0 && (
         <div className="mt-6 flex flex-wrap items-center gap-3">
-          <a
-            href={primaryLink.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-[2.75rem] items-center justify-center rounded bg-accent px-5 text-base font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:min-h-0 sm:px-4 sm:py-2 sm:text-xs"
-          >
-            {primaryLink.label} ↗<span className="sr-only"> (opens in a new tab)</span>
-          </a>
+          {primaryLink && (
+            <a
+              href={primaryLink.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[2.75rem] items-center justify-center rounded bg-accent px-5 text-base font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:min-h-0 sm:px-4 sm:py-2 sm:text-xs"
+            >
+              {primaryLink.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          )}
           {secondaryLinks.map((link) => (
             <a
               key={link.href}

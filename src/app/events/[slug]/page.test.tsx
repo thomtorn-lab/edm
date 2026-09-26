@@ -761,6 +761,22 @@ describe("Event detail page — primary/secondary CTA hierarchy (event-detail CT
     expect(screen.queryByText(/^Tickets/i)).toBeNull();
   });
 
+  it("a bare Source-only link (no Tickets, no Official event) is never promoted to the primary/filled-accent treatment — it stays secondary/outline (fallback narrowed, 2026-09-26 review)", async () => {
+    await renderPage(
+      makeEvent({
+        officialEventUrl: null,
+        ticketUrl: null,
+        facebookUrl: null,
+        residentAdvisorUrl: null,
+        otherSourceUrls: ["https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=99"],
+      }),
+    );
+    const source = screen.getByRole("link", { name: /^Source/i });
+    expect(source.className).not.toContain("bg-accent");
+    expect(source.className).not.toContain("text-accent-on");
+    expect(source.className).toContain("border-border-strong");
+  });
+
   it("both primary and secondary CTAs preserve the existing external-link ↗ semantics", async () => {
     await renderPage(
       makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),

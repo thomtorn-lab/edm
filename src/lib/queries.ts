@@ -152,11 +152,22 @@ export interface ArtistYoutubePreview {
  * The single acceptance predicate for "does this cache row count as an
  * available Artist Preview" — accepted, not manually blocked, and a real
  * videoId. No expiresAt/freshness check at read time (matching the existing
- * behavior below, unchanged). Extracted (event-detail CTA hierarchy +
- * homepage video indicator work, 2026-09-26) so the homepage's batched
- * availability check below can reuse the EXACT same real-world condition
- * the event-detail page itself relies on, rather than re-deriving it and
- * risking the two silently drifting apart.
+ * behavior below, unchanged) — that's deliberate, not an oversight: freshness
+ * is already enforced upstream, at match/ingestion time, by
+ * getOrMatchArtistYoutubePreview (src/lib/enrichment/youtubePreviewMatching.ts)
+ * — an expired entry there triggers a fresh lookup (and, for a previously-
+ * accepted match, a cheap videos.list re-verification that can flip it to
+ * "abstain") the next time an event touches that artist name. This read path
+ * only ever runs at render time and never re-verifies or re-queries YouTube,
+ * so it has nothing to check expiresAt against beyond trusting the row as it
+ * currently stands — exactly what the event-detail page has always done
+ * (confirmed live in Production, Rule A V1). Extracted (event-detail CTA
+ * hierarchy + homepage video indicator work, 2026-09-26; freshness-parity
+ * reviewed same day) so the homepage's batched availability check below
+ * reuses the EXACT same real-world condition the event-detail page itself
+ * relies on, rather than re-deriving it and risking the two silently
+ * drifting apart — by construction they can never disagree, since both call
+ * this one function against the same table.
  */
 function isAcceptedPreviewRow<
   T extends Pick<typeof artistYoutubePreviewCache.$inferSelect, "status" | "manualBlock" | "videoId">,
