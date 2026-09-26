@@ -104,3 +104,46 @@ describe("runApply — daily-quota vs. ordinary failure abort behavior", () => {
     expect(summaryLine).toMatch(/accepted=0 abstained=0 failed=1/);
   });
 });
+
+describe("runApply — --artist single-name scoping (2026-09-26 smoke-test addition)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    getOrMatchMock.mockReset();
+    eventsRows = [
+      { artists: ["Artist A", "Artist B", "Eric Prydz", "Artist D"], startDatetime: FUTURE, endDatetime: null },
+    ];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("processes only the named artist, ignoring --limit and every other uncached name", async () => {
+    getOrMatchMock.mockResolvedValue({ status: "accepted", videoId: "abc123" });
+
+    const promise = runApply(20, 50, "Eric Prydz");
+    await vi.advanceTimersByTimeAsync(60_000);
+    await promise;
+
+    expect(getOrMatchMock).toHaveBeenCalledTimes(1);
+    expect(getOrMatchMock).toHaveBeenCalledWith("Eric Prydz", expect.anything(), expect.anything());
+  });
+
+  it("matches case/whitespace-insensitively via the same normalization the worklist uses", async () => {
+    getOrMatchMock.mockResolvedValue({ status: "accepted", videoId: "abc123" });
+
+    const promise = runApply(20, 50, "  eric   prydz  ");
+    await vi.advanceTimersByTimeAsync(60_000);
+    await promise;
+
+    expect(getOrMatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing (and never calls the matcher) when the named artist isn't an uncached visible-event entry", async () => {
+    const promise = runApply(20, 50, "Nonexistent Artist");
+    await vi.advanceTimersByTimeAsync(60_000);
+    await promise;
+
+    expect(getOrMatchMock).not.toHaveBeenCalled();
+  });
+});

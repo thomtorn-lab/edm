@@ -41,7 +41,13 @@ import { isPastEvent } from "@/lib/datetime";
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=plan [--limit=N]
- *   node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=apply --confirm=BACKFILL-YOUTUBE-PREVIEW [--batch-size=20] [--limit=N]
+ *   node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=apply --confirm=BACKFILL-YOUTUBE-PREVIEW [--batch-size=20] [--limit=N] [--artist="Exact Artist Name"]
+ *
+ * --artist (apply mode only, 2026-09-26 smoke-test addition): scopes the run
+ * to exactly one normalized artist name, ignoring --limit entirely. Matches
+ * a single uncached worklist entry (or does nothing, logging why, if that
+ * name isn't an uncached current/future-visible artist) — never falls back
+ * to processing anyone else.
  *
  * --mode=plan is entirely read-only (same projection as
  * `inspectSource.ts --mode=youtube-preview-backfill-plan`, reproduced here
@@ -197,7 +203,7 @@ async function runPlan(batchLimit: number): Promise<void> {
   for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
 }
 
-export async function runApply(paceBatchSize: number, runLimit: number): Promise<void> {
+export async function runApply(paceBatchSize: number, runLimit: number, artistFilter?: string | null): Promise<void> {
   const worklist = await buildWorklist();
   let freshCached: Set<string>;
   try {
@@ -207,7 +213,26 @@ export async function runApply(paceBatchSize: number, runLimit: number): Promise
     process.exit(1);
   }
   const uncachedList = worklist.filter((w) => !freshCached.has(w.normalized));
-  const batch = uncachedList.slice(0, runLimit);
+
+  let batch: WorklistEntry[];
+  if (artistFilter) {
+    // Single-artist smoke-test scoping (2026-09-26): matches on normalized
+    // name, exactly the same normalization the worklist itself and the real
+    // matcher both use, so "--artist" targets the identical identity a
+    // production lineup would. Never falls back to --limit -- either this
+    // one name resolves to exactly one uncached worklist entry, or nothing
+    // runs at all.
+    const targetNormalized = normalizeArtistName(cleanArtistDisplayName(artistFilter));
+    batch = uncachedList.filter((w) => w.normalized === targetNormalized);
+    if (batch.length === 0) {
+      console.log(
+        `No uncached current/future-visible worklist entry matches --artist="${artistFilter}" (normalized: "${targetNormalized}") — nothing to do (already cached, or no visible event currently contains this artist).`,
+      );
+      return;
+    }
+  } else {
+    batch = uncachedList.slice(0, runLimit);
+  }
   console.log(`Backfilling ${batch.length} uncached distinct artist(s) (of ${uncachedList.length} remaining uncached, ${worklist.length} total visible), prioritized by earliest visible event, paced ${INTER_ARTIST_DELAY_MS}ms apart in pacing groups of ${paceBatchSize}...`);
 
   let consecutiveFailures = 0;
@@ -269,7 +294,8 @@ async function main() {
     }
     const paceBatchSize = args["batch-size"] ? Number(args["batch-size"]) : BATCH_SIZE_DEFAULT;
     const runLimit = args.limit ? Number(args.limit) : DEFAULT_BATCH_LIMIT;
-    await runApply(paceBatchSize, runLimit);
+    const artistFilter = typeof args.artist === "string" ? args.artist : null;
+    await runApply(paceBatchSize, runLimit, artistFilter);
     return;
   }
   console.error("::error::--mode=<plan|apply> is required.");
