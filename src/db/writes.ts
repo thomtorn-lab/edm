@@ -1022,30 +1022,41 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     .set({ ...patch, missingFields, overriddenFields })
     .where(eq(discoveryQueue.id, id));
 
-  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout)
-  // — see triggerDiscoveryEnrichment's own doc comment. Classifies the ROW
-  // AS IT NOW STANDS (existing state merged with this patch), so an admin
-  // edit that resolves a venue or adds/corrects the lineup is covered the
-  // same as a sync-driven change — deferred via deferOrRun so this never
-  // adds latency to the admin edit request.
-  await deferOrRun(() =>
-    triggerDiscoveryEnrichment({
-      id: existing.id,
-      overallConfidence: existing.overallConfidence as ConfidenceLevel,
-      holdReason: existing.holdReason as HoldReason,
-      venueResolvedDecision: existing.venueResolvedDecision as PublishDecision | null,
-      missingFields,
-      probableStart: "probableStart" in patch ? (patch.probableStart ?? null) : existing.probableStart,
-      probableEnd: "probableEnd" in patch ? (patch.probableEnd ?? null) : existing.probableEnd,
-      lastSeenAt: existing.lastSeenAt,
-      sourceId: existing.sourceId,
-      probableTitle: patch.probableTitle ?? existing.probableTitle,
-      detectedLineup: patch.detectedLineup ?? existing.detectedLineup,
-      predictedGenre: "predictedGenre" in patch ? (patch.predictedGenre ?? null) : (existing.predictedGenre as GenreSlug | null),
-    }).catch((err) => {
-      console.error(`[youtube-preview] discovery enrichment trigger failed for ${existing.id}: ${err instanceof Error ? err.message : String(err)}`);
-    }),
-  );
+  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout;
+  // narrowed 2026-09-26 performance review) — see triggerDiscoveryEnrichment's
+  // own doc comment. Classifies the ROW AS IT NOW STANDS (existing state
+  // merged with this patch), so an admin edit that resolves a venue or
+  // adds/corrects the lineup is covered the same as a sync-driven change.
+  // Only bothers when the patch actually touches something that could
+  // change either the lineup to enrich (detectedLineup) or the computed
+  // category (predictedGenre/probableStart/probableEnd feed classification
+  // directly; probableTitle feeds it indirectly via the positive-review-
+  // signal text scan — see classifyAdminQueueRow/hasStrongPositiveReviewSignal
+  // in src/lib/adminQueue.ts) — an edit that only touches e.g. ticketUrl,
+  // description, or venue name never needs a re-check here. Deferred via
+  // deferOrRun so this never adds latency to the admin edit request.
+  const ENRICHMENT_RELEVANT_EDIT_KEYS = ["detectedLineup", "predictedGenre", "probableStart", "probableEnd", "probableTitle"] as const;
+  const editMayAffectEnrichment = ENRICHMENT_RELEVANT_EDIT_KEYS.some((key) => key in patch);
+  if (editMayAffectEnrichment) {
+    await deferOrRun(() =>
+      triggerDiscoveryEnrichment({
+        id: existing.id,
+        overallConfidence: existing.overallConfidence as ConfidenceLevel,
+        holdReason: existing.holdReason as HoldReason,
+        venueResolvedDecision: existing.venueResolvedDecision as PublishDecision | null,
+        missingFields,
+        probableStart: "probableStart" in patch ? (patch.probableStart ?? null) : existing.probableStart,
+        probableEnd: "probableEnd" in patch ? (patch.probableEnd ?? null) : existing.probableEnd,
+        lastSeenAt: existing.lastSeenAt,
+        sourceId: existing.sourceId,
+        probableTitle: patch.probableTitle ?? existing.probableTitle,
+        detectedLineup: patch.detectedLineup ?? existing.detectedLineup,
+        predictedGenre: "predictedGenre" in patch ? (patch.predictedGenre ?? null) : (existing.predictedGenre as GenreSlug | null),
+      }).catch((err) => {
+        console.error(`[youtube-preview] discovery enrichment trigger failed for ${existing.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }),
+    );
+  }
 }
 
 /**
@@ -1130,14 +1141,36 @@ export async function applyDiscoveryClassificationUpdate(
     .set(patch)
     .where(and(eq(discoveryQueue.id, queueId), eq(discoveryQueue.status, "pending")));
 
-  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout)
-  // — see triggerDiscoveryEnrichment's own doc comment. This function never
-  // sees the row's full prior state (only a partial classification patch),
-  // so the merged post-update row is re-read here rather than assembled from
-  // pieces — one small extra SELECT, never per-artist. A miss (row no
-  // longer "pending" — resolved by an admin between this sync's read and
-  // this write, the same race the UPDATE's own guard defends against) is a
-  // silent no-op, matching that guard's own behavior.
+  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout;
+  // narrowed 2026-09-26 performance review) — see
+  // triggerDiscoveryEnrichment's own doc comment. This function runs on
+  // EVERY sync cycle for every still-pending row the sync re-matched
+  // (lastSeenAt is unconditional — see its own doc comment above), which for
+  // a row that sits in NEEDS_REVIEW/VENUE_BLOCKED across many consecutive
+  // syncs would otherwise re-run the full enrichment check (a `sources`
+  // lookup plus a cache read per lineup artist) every single cycle even
+  // though nothing that could change its category or its lineup ever
+  // changed — this function's own patch type never includes detectedLineup
+  // at all, so the lineup literally cannot change here. buildDiscoveryQueue
+  // ClassificationPatch (src/lib/sync.ts) only ever includes a key when its
+  // fresh value differs from what's already stored (confirmed by reading
+  // that function: every field is set behind its own `!== existing.X`
+  // check), so "does this patch touch any classification-relevant field" is
+  // an exact, not approximate, proxy for "could this write actually change
+  // which category the row lands in" — skipping the read-modify-classify
+  // work entirely when it's absent costs nothing in missed transitions.
+  const CLASSIFICATION_RELEVANT_PATCH_KEYS = ["holdReason", "venueResolvedDecision", "overallConfidence", "missingFields", "predictedGenre"] as const;
+  const patchMayChangeCategory = CLASSIFICATION_RELEVANT_PATCH_KEYS.some((key) => key in patch);
+  if (!patchMayChangeCategory) return;
+
+  // This function never sees the row's full prior state (only a partial
+  // classification patch), so the merged post-update row is re-read here
+  // rather than assembled from pieces — one small extra SELECT, never
+  // per-artist, and now only reached when the patch actually touched a
+  // classification-relevant field. A miss (row no longer "pending" —
+  // resolved by an admin between this sync's read and this write, the same
+  // race the UPDATE's own guard defends against) is a silent no-op,
+  // matching that guard's own behavior.
   const [updated] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, queueId)).limit(1);
   if (!updated) return;
   await deferOrRun(() =>

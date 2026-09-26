@@ -210,6 +210,28 @@ describe("Discovery-stage YouTube enrichment — updateDiscoveryItem (admin edit
     await expect(updateDiscoveryItem("dq-1", { detectedLineup: ["Artist X"] })).resolves.toBeUndefined();
     expect(updateWhereMock).toHaveBeenCalledTimes(1);
   });
+
+  it("performance review, 2026-09-26: an edit that only touches an enrichment-irrelevant field (e.g. probableTicketUrl) never triggers enrichment, even on an already-eligible row", async () => {
+    discoveryQueueSelectRow = {
+      id: "dq-1",
+      status: "pending",
+      probableStart: null,
+      probableEnd: null,
+      probableVenueName: "Test Venue",
+      probableTitle: "Test Night",
+      missingFields: [],
+      overriddenFields: [],
+      overallConfidence: "low",
+      holdReason: null,
+      venueResolvedDecision: null,
+      lastSeenAt: null,
+      sourceId: null,
+      detectedLineup: ["Already There"],
+      predictedGenre: null,
+    };
+    await updateDiscoveryItem("dq-1", { probableTicketUrl: "https://example.com/tickets" });
+    expect(enrichArtistYoutubePreviewsMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("Discovery-stage YouTube enrichment — applyDiscoveryClassificationUpdate (sync reclassification)", () => {
@@ -229,7 +251,10 @@ describe("Discovery-stage YouTube enrichment — applyDiscoveryClassificationUpd
       predictedGenre: null,
     };
     sourceSelectRow = { lastCompleteSyncAt: SEEN_AT };
-    await applyDiscoveryClassificationUpdate("dq-1", { lastSeenAt: SEEN_AT });
+    // venueResolvedDecision is a classification-relevant key (this run's
+    // patch is what actually moved the row into Venue Blocked) — a bare
+    // lastSeenAt-only patch is covered separately below.
+    await applyDiscoveryClassificationUpdate("dq-1", { lastSeenAt: SEEN_AT, venueResolvedDecision: "review_queue" });
     expect(enrichArtistYoutubePreviewsMock).toHaveBeenCalledWith(["Artist From Sync"]);
   });
 
@@ -249,7 +274,7 @@ describe("Discovery-stage YouTube enrichment — applyDiscoveryClassificationUpd
       predictedGenre: null,
     };
     sourceSelectRow = { lastCompleteSyncAt: SEEN_AT };
-    await applyDiscoveryClassificationUpdate("dq-1", { lastSeenAt: SEEN_AT });
+    await applyDiscoveryClassificationUpdate("dq-1", { lastSeenAt: SEEN_AT, holdReason: "negative_relevance" });
     expect(enrichArtistYoutubePreviewsMock).not.toHaveBeenCalled();
   });
 
@@ -257,6 +282,54 @@ describe("Discovery-stage YouTube enrichment — applyDiscoveryClassificationUpd
     await applyDiscoveryClassificationUpdate("dq-1", {});
     expect(updateWhereMock).not.toHaveBeenCalled();
     expect(enrichArtistYoutubePreviewsMock).not.toHaveBeenCalled();
+  });
+
+  it("performance review, 2026-09-26: a routine lastSeenAt-only patch (row unchanged, still just re-matched by this sync) skips the enrichment check entirely — no re-read, no re-classify, no enrichment call, even though the row already sits in Venue Blocked", async () => {
+    discoveryQueueSelectRow = {
+      id: "dq-1",
+      probableStart: FUTURE,
+      probableEnd: null,
+      probableTitle: "Test Night",
+      missingFields: [],
+      overallConfidence: "medium",
+      holdReason: null,
+      venueResolvedDecision: "review_queue",
+      lastSeenAt: SEEN_AT,
+      sourceId: "src-test",
+      detectedLineup: ["Artist From Sync"],
+      predictedGenre: null,
+    };
+    sourceSelectRow = { lastCompleteSyncAt: SEEN_AT };
+    // The row is ALREADY Venue Blocked (fixture above) and this sync's own
+    // patch changes nothing classification-relevant — only lastSeenAt, the
+    // unconditional freshness bump every sync applies regardless of outcome.
+    await applyDiscoveryClassificationUpdate("dq-1", { lastSeenAt: SEEN_AT });
+    expect(enrichArtistYoutubePreviewsMock).not.toHaveBeenCalled();
+  });
+
+  it("performance review, 2026-09-26: a patch that changes a non-classification field (e.g. probableTicketUrl) alongside lastSeenAt still skips enrichment", async () => {
+    sourceSelectRow = { lastCompleteSyncAt: SEEN_AT };
+    await applyDiscoveryClassificationUpdate("dq-1", { lastSeenAt: SEEN_AT, probableTicketUrl: "https://example.com/tickets" });
+    expect(enrichArtistYoutubePreviewsMock).not.toHaveBeenCalled();
+  });
+
+  it("performance review, 2026-09-26: a patch that DOES touch a classification-relevant field (missingFields shrinking) still triggers normally", async () => {
+    discoveryQueueSelectRow = {
+      id: "dq-1",
+      probableStart: null,
+      probableEnd: null,
+      probableTitle: "Test Night",
+      missingFields: [],
+      overallConfidence: "low",
+      holdReason: null,
+      venueResolvedDecision: null,
+      lastSeenAt: null,
+      sourceId: null,
+      detectedLineup: ["Artist From Sync"],
+      predictedGenre: null,
+    };
+    await applyDiscoveryClassificationUpdate("dq-1", { missingFields: [] });
+    expect(enrichArtistYoutubePreviewsMock).toHaveBeenCalledWith(["Artist From Sync"]);
   });
 });
 
