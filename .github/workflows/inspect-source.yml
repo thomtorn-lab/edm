@@ -57,6 +57,7 @@ on:
           - genre-taxonomy-audit
           - youtube-preview-dry-run
           - youtube-preview-backfill-plan
+          - youtube-preview-cache-row
           - migration-status
       source_id:
         description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks/event-integrity/text-leakage-audit/cancellation-audit/link-role-audit/admin-queue-audit/ignore-persistence-audit/genre-taxonomy-audit with no source scoping; must match src-[a-z0-9-]+)'
