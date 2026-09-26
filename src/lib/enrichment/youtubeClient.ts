@@ -55,6 +55,44 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Thrown when a YouTube API 429 response's own error body explicitly
+ * identifies DAILY search-quota exhaustion (backfill safety fix,
+ * 2026-09-26 — confirmed live: Google's error response names the limit
+ * `defaultSearchListPerDayPerProject` / `quota_unit: "1/d/{project}"`).
+ * Distinguished from a plain rate-limit Error specifically so a batch
+ * runner (src/db/youtubePreviewBackfill.ts) can abort immediately rather
+ * than waiting for several ordinary/transient failures in a row — more of
+ * the same daily-quota error will not resolve by retrying or continuing.
+ */
+export class YoutubeDailyQuotaExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "YoutubeDailyQuotaExhaustedError";
+  }
+}
+
+/**
+ * True only when the parsed error body's `error.details[]` carries a
+ * per-day quota signal (Google's own ErrorInfo `metadata.quota_unit`
+ * matching "1/d/..." or `metadata.quota_limit` naming a "PerDay" limit) —
+ * a structural check against the documented shape of this specific error,
+ * never inferred from the HTTP 429 status alone (a 429 can just as well be
+ * a short-window burst limit, which this must NOT match).
+ */
+function isDailyQuotaExhaustedBody(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const details = (body as { error?: { details?: unknown } }).error?.details;
+  if (!Array.isArray(details)) return false;
+  return details.some((detail) => {
+    if (!detail || typeof detail !== "object") return false;
+    const metadata = (detail as { metadata?: { quota_unit?: unknown; quota_limit?: unknown } }).metadata;
+    const quotaUnit = typeof metadata?.quota_unit === "string" ? metadata.quota_unit : "";
+    const quotaLimit = typeof metadata?.quota_limit === "string" ? metadata.quota_limit : "";
+    return /^1\/d\//.test(quotaUnit) || /PerDay/i.test(quotaLimit);
+  });
+}
+
+/**
  * The composed URL (key included) lives only in this function's local
  * `url` variable, passed straight to fetch() — never assigned anywhere a
  * caller could log or an error message could echo (errors below reference
@@ -66,7 +104,10 @@ function sleep(ms: number): Promise<void> {
  * never a second retry beyond that fixed, small budget. Without this, a
  * transient rate-limit during ingestion would silently degrade a real
  * artist match to "no preview" rather than the temporary condition it
- * actually is.
+ * actually is. A 429 whose body explicitly names daily-quota exhaustion
+ * skips the retry budget entirely and throws immediately (2026-09-26) —
+ * retrying within the same second cannot help a quota that resets once a
+ * day, so there's nothing to wait out here.
  */
 async function youtubeGet(path: string, params: Record<string, string>, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
   const key = requireApiKey();
@@ -82,6 +123,12 @@ async function youtubeGet(path: string, params: Record<string, string>, timeoutM
     });
     if (res.ok) return res.json();
     lastStatus = res.status;
+    if (res.status === 429) {
+      const body = await res.json().catch(() => null);
+      if (isDailyQuotaExhaustedBody(body)) {
+        throw new YoutubeDailyQuotaExhaustedError(`YouTube daily search quota exhausted (HTTP 429) for ${path}`);
+      }
+    }
     if (res.status !== 429 || attempt === RATE_LIMIT_RETRY_DELAYS_MS.length) break;
     await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
   }

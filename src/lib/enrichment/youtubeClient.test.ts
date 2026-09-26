@@ -1,5 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getVideoDetails, parseIso8601Duration, searchVideos } from "./youtubeClient";
+import { YoutubeDailyQuotaExhaustedError, getVideoDetails, parseIso8601Duration, searchVideos } from "./youtubeClient";
+
+/** The exact error shape confirmed live against Production, 2026-09-25/26. */
+const DAILY_QUOTA_EXHAUSTED_BODY = {
+  error: {
+    code: 429,
+    message: "Quota exceeded for quota metric 'Search Queries' and limit 'Search Queries per day' of service 'youtube.googleapis.com' for consumer 'project_number:994147049083'.",
+    errors: [{ message: "Quota exceeded...", domain: "global", reason: "rateLimitExceeded" }],
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        reason: "RATE_LIMIT_EXCEEDED",
+        domain: "googleapis.com",
+        metadata: {
+          quota_location: "global",
+          window_start_time: "1790319600",
+          quota_limit: "defaultSearchListPerDayPerProject",
+          consumer: "projects/994147049083",
+          quota_unit: "1/d/{project}",
+          service: "youtube.googleapis.com",
+          quota_metric: "youtube.googleapis.com/search_list",
+          quota_limit_value: "100",
+        },
+      },
+    ],
+  },
+};
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -51,6 +78,46 @@ describe("youtubeClient — rate-limit retry (confirmed live, 30-artist benchmar
 
     await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toThrow(/HTTP 403/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("youtubeClient — daily quota exhaustion (backfill safety fix, 2026-09-26)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    process.env.YOUTUBE_API_KEY = "test-key";
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    delete process.env.YOUTUBE_API_KEY;
+  });
+
+  it("throws YoutubeDailyQuotaExhaustedError immediately, without retrying, when the 429 body names a per-day quota limit", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no retry budget spent on a daily-quota 429
+  });
+
+  it("still retries an ordinary 429 with no quota-limit body (short-window burst, not daily)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(429, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const promise = searchVideos("Eric Prydz dj set", 5);
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await promise;
+
+    expect(result).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies a 429 on getVideoDetails the same way", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY)));
+    await expect(getVideoDetails(["v1"])).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
   });
 });
 
