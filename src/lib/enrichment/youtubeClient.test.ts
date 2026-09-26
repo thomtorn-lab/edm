@@ -1,5 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { YoutubeDailyQuotaExhaustedError, getVideoDetails, parseIso8601Duration, searchVideos } from "./youtubeClient";
+import {
+  YoutubeDailyQuotaExhaustedError,
+  __resetYoutubeDailyQuotaCircuitBreakerForTests,
+  getVideoDetails,
+  parseIso8601Duration,
+  searchVideos,
+} from "./youtubeClient";
+
+// The daily-quota circuit breaker (quota-safety review, 2026-09-26) is
+// process-local module state shared across every test in this file (all
+// import the same module instance) — reset before/after every test so the
+// "daily quota exhaustion" describe block below can trip it without
+// bleeding into every other describe block's own fetch-mock assertions.
+beforeEach(() => {
+  __resetYoutubeDailyQuotaCircuitBreakerForTests();
+});
+afterEach(() => {
+  __resetYoutubeDailyQuotaCircuitBreakerForTests();
+});
 
 /** The exact error shape confirmed live against Production, 2026-09-25/26. */
 const DAILY_QUOTA_EXHAUSTED_BODY = {
@@ -118,6 +136,71 @@ describe("youtubeClient — daily quota exhaustion (backfill safety fix, 2026-09
   it("classifies a 429 on getVideoDetails the same way", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY)));
     await expect(getVideoDetails(["v1"])).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+  });
+});
+
+describe("youtubeClient — process-local daily-quota circuit breaker (quota-safety review, 2026-09-26)", () => {
+  beforeEach(() => {
+    process.env.YOUTUBE_API_KEY = "test-key";
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.YOUTUBE_API_KEY;
+  });
+
+  it("trips on the first confirmed daily-quota error", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a second, different, uncached artist lookup in the same process does NOT call fetch again once tripped", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // A completely different query, after the trip: the breaker short-
+    // circuits before requireApiKey()/fetch are ever reached.
+    await expect(searchVideos("Charlotte de Witte dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // still 1 — the second call never touched the network
+
+    // getVideoDetails goes through the exact same youtubeGet choke point.
+    await expect(getVideoDetails(["v1"])).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("an ordinary (non-daily-quota) error does NOT trip the breaker — the next call still reaches the network", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(500, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toThrow(/HTTP 500/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // A later, unrelated call still goes out for real — proves the breaker
+    // was never armed by the ordinary failure above.
+    const result = await searchVideos("Charlotte de Witte dj set", 5);
+    expect(result).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("an ordinary HTTP 403 (e.g. missing/invalid key) does NOT trip the breaker either", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(403, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toThrow(/HTTP 403/);
+    const result = await searchVideos("Charlotte de Witte dj set", 5);
+    expect(result).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
