@@ -156,8 +156,8 @@ describe("youtubeClient — process-local daily-quota circuit breaker (quota-saf
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("a second, different, uncached artist lookup in the same process does NOT call fetch again once tripped", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY));
+  it("a second, different, uncached artist's search.list call does NOT call fetch again once tripped", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY)));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
@@ -167,10 +167,24 @@ describe("youtubeClient — process-local daily-quota circuit breaker (quota-saf
     // circuits before requireApiKey()/fetch are ever reached.
     await expect(searchVideos("Charlotte de Witte dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
     expect(fetchMock).toHaveBeenCalledTimes(1); // still 1 — the second call never touched the network
+  });
 
-    // getVideoDetails goes through the exact same youtubeGet choke point.
-    await expect(getVideoDetails(["v1"])).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+  it("scoped to search.list only (2026-09-26 follow-up): getVideoDetails (videos.list) still reaches the real network while the search breaker is tripped", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchVideos("Eric Prydz dj set", 5)).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // videos.list is a distinct, much cheaper quota (1 unit vs. 100) — a
+    // confirmed search.list exhaustion says nothing about it, so this call
+    // goes through the exact same youtubeGet choke point but is NOT
+    // short-circuited: it reaches the network for real (and, since the
+    // mocked response here also happens to be quota-shaped, correctly
+    // still throws YoutubeDailyQuotaExhaustedError from ITS OWN response —
+    // the point being fetch was actually called for it).
+    await expect(getVideoDetails(["v1"])).rejects.toBeInstanceOf(YoutubeDailyQuotaExhaustedError);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // the videos.list call actually hit the network
   });
 
   it("an ordinary (non-daily-quota) error does NOT trip the breaker — the next call still reaches the network", async () => {

@@ -72,38 +72,45 @@ export class YoutubeDailyQuotaExhaustedError extends Error {
 }
 
 /**
- * Process-local daily-quota circuit breaker (quota-safety review,
- * 2026-09-26) — automatic Discovery-stage enrichment (src/db/writes.ts::
+ * Process-local SEARCH-quota circuit breaker (quota-safety review,
+ * 2026-09-26; scoped to search.list only, 2026-09-26 follow-up) —
+ * automatic Discovery-stage enrichment (src/db/writes.ts::
  * triggerDiscoveryEnrichment) can run this client many times across many
  * rows within one process lifetime, unlike the one-shot manual backfill
  * script (src/db/youtubePreviewBackfill.ts), which has its own, separate,
  * more aggressive whole-run abort (shouldAbortImmediately) and never
  * reaches this flag at all — it calls getOrMatchArtistYoutubePreview
  * directly, bypassing nothing here, so this is purely additive for it.
- * Once a real 429 response has been confirmed (structurally, not merely
- * HTTP-429-shaped — see isDailyQuotaExhaustedBody) to be DAILY quota
- * exhaustion, every subsequent real request this same process would
- * otherwise make is guaranteed-futile until the quota resets — tomorrow, a
- * boundary this process has no reliable way to compute (timezone/exact
- * reset instant are Google-internal), so V1 deliberately never tries: the
- * flag simply never clears itself. A fresh serverless instance/process
- * gets a fresh flag and is free to try again — this is intentionally NOT
- * cross-process/cross-request coordination (no DB row, no cache entry, no
- * scheduler), just the smallest guard that stops a single already-running
- * process from repeating known-futile requests. Lives here (the one real
- * network boundary — youtubeGet, below) rather than in
- * youtubePreviewMatching.ts or db/youtubePreview.ts, so it protects every
- * caller uniformly without touching the matching heuristic (Rule A) or
- * either orchestration layer at all: a fresh cache hit inside
- * getOrMatchArtistYoutubePreview already returns before ever reaching this
- * client, so cached previews keep resolving completely normally while this
- * is tripped.
+ * Once a real search.list 429 response has been confirmed (structurally,
+ * not merely HTTP-429-shaped — see isDailyQuotaExhaustedBody) to be DAILY
+ * SEARCH quota exhaustion specifically (Google's own error names
+ * `defaultSearchListPerDayPerProject` / `youtube.googleapis.com/search_list`
+ * — a distinct quota economy from videos.list's own, much cheaper one, 1
+ * unit vs. 100), every subsequent real search.list request this same
+ * process would otherwise make is guaranteed-futile until that quota
+ * resets — tomorrow, a boundary this process has no reliable way to
+ * compute (timezone/exact reset instant are Google-internal), so V1
+ * deliberately never tries: the flag simply never clears itself. A fresh
+ * serverless instance/process gets a fresh flag and is free to try again —
+ * this is intentionally NOT cross-process/cross-request coordination (no
+ * DB row, no cache entry, no scheduler), just the smallest guard that
+ * stops a single already-running process from repeating known-futile
+ * search.list requests.
+ *
+ * Deliberately scoped to search.list only, never a generic per-endpoint
+ * quota map: confirmed search-quota exhaustion says nothing about
+ * videos.list's own, separate quota, so getVideoDetails (below) never
+ * checks or sets this flag — a stale-but-previously-accepted match can
+ * still be re-verified via videos.list while this is tripped, and a fresh
+ * cache hit inside getOrMatchArtistYoutubePreview never reaches this
+ * client at all regardless, so cached previews keep resolving completely
+ * normally either way.
  */
-let dailyQuotaExhausted = false;
+let searchQuotaExhausted = false;
 
 /** Test-only reset — never used by product code. Keeps this module's tests independent despite the shared process-local flag above. */
 export function __resetYoutubeDailyQuotaCircuitBreakerForTests(): void {
-  dailyQuotaExhausted = false;
+  searchQuotaExhausted = false;
 }
 
 /**
@@ -145,10 +152,14 @@ function isDailyQuotaExhaustedBody(body: unknown): boolean {
  * day, so there's nothing to wait out here.
  */
 async function youtubeGet(path: string, params: Record<string, string>, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
-  // Circuit breaker (see dailyQuotaExhausted's own doc comment above) —
-  // checked first, before even reading the API key, so a tripped process
-  // never issues another real request no matter which endpoint called us.
-  if (dailyQuotaExhausted) {
+  // Search-quota circuit breaker (see searchQuotaExhausted's own doc
+  // comment above) — scoped to path === "/search" only: a confirmed
+  // search.list daily-quota exhaustion says nothing about videos.list's
+  // own separate quota, so a videos.list call always proceeds to the real
+  // network regardless of this flag. Checked first, before even reading
+  // the API key, so a tripped process never issues another futile
+  // search.list request.
+  if (path === "/search" && searchQuotaExhausted) {
     throw new YoutubeDailyQuotaExhaustedError(`YouTube daily search quota already confirmed exhausted this process — skipping ${path}`);
   }
   const key = requireApiKey();
@@ -167,8 +178,13 @@ async function youtubeGet(path: string, params: Record<string, string>, timeoutM
     if (res.status === 429) {
       const body = await res.json().catch(() => null);
       if (isDailyQuotaExhaustedBody(body)) {
-        dailyQuotaExhausted = true;
-        throw new YoutubeDailyQuotaExhaustedError(`YouTube daily search quota exhausted (HTTP 429) for ${path}`);
+        // Trip the breaker only for the endpoint that actually confirmed
+        // exhaustion — never a generic "some daily quota, somewhere"
+        // signal. In practice only search.list has ever been observed to
+        // exhaust (100 units/call vs. videos.list's 1), but this stays
+        // endpoint-specific rather than assuming that will always hold.
+        if (path === "/search") searchQuotaExhausted = true;
+        throw new YoutubeDailyQuotaExhaustedError(`YouTube daily quota exhausted (HTTP 429) for ${path}`);
       }
     }
     if (res.status !== 429 || attempt === RATE_LIMIT_RETRY_DELAYS_MS.length) break;

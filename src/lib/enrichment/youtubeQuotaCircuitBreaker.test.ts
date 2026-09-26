@@ -150,4 +150,59 @@ describe("daily-quota circuit breaker + getOrMatchArtistYoutubePreview integrati
     expect(result.status).toBe("abstain");
     expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterFirst);
   });
+
+  it("scoped to search.list only (2026-09-26 follow-up): a stale-but-previously-accepted artist can still be re-verified via videos.list while the search breaker is tripped", async () => {
+    // A single global fetch mock has to serve both endpoints here, so it
+    // branches on the URL: /search always returns the confirmed
+    // daily-quota body (tripping the search-only breaker), while /videos
+    // always returns a normal, still-embeddable/public result — proving
+    // the two endpoints are independent once the breaker is armed.
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/search")) return Promise.resolve(jsonResponse(429, DAILY_QUOTA_EXHAUSTED_BODY));
+      return Promise.resolve(
+        jsonResponse(200, {
+          items: [{ id: "stale-video-id", contentDetails: { duration: "PT5M0S" }, status: { embeddable: true, privacyStatus: "public" } }],
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Trip the search breaker first via a real (failing) search lookup for
+    // an unrelated, uncached artist.
+    const cache = inMemoryCacheStore();
+    await expect(getOrMatchArtistYoutubePreview("Some Uncached Artist", cache, youtubeClient)).rejects.toBeInstanceOf(
+      youtubeClient.YoutubeDailyQuotaExhaustedError,
+    );
+    const callsAfterTrip = fetchMock.mock.calls.length;
+    expect(callsAfterTrip).toBeGreaterThan(0);
+
+    // A different, previously-accepted artist whose cache entry is fresh
+    // (expiresAt still in the future) but stale for re-verification
+    // purposes (lastVerifiedAt well past VERIFY_STALE_DAYS) must still be
+    // re-verified via getVideoDetails (videos.list) — never blocked by the
+    // search-only breaker, and never re-searched.
+    const staleAcceptedEntry: ArtistPreviewCacheEntry = {
+      artistNameNormalized: "stale artist",
+      provider: "youtube",
+      status: "accepted",
+      matchRule: "A",
+      query: "Stale Artist",
+      videoId: "stale-video-id",
+      videoTitle: "Stale Artist Live Set",
+      channelId: "c2",
+      channelTitle: "Stale Artist",
+      evidence: {},
+      manualBlock: false,
+      matchedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      lastVerifiedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      expiresAt: FAR_FUTURE,
+    };
+    const cacheWithStale = inMemoryCacheStore([staleAcceptedEntry]);
+    const result = await getOrMatchArtistYoutubePreview("Stale Artist", cacheWithStale, youtubeClient);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("stale-video-id");
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterTrip); // the videos.list re-verification actually hit the network
+  });
 });
