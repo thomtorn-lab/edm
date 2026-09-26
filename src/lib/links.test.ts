@@ -609,3 +609,68 @@ describe("getExternalLinks — Facebook decision (unified event create/edit mode
     expect(links.map((l) => l.label)).toEqual(["Tickets"]);
   });
 });
+
+describe("getExternalLinks — sold-out hides Tickets (public link-integrity rule, 2026-09-26)", () => {
+  it("normal event + ticket URL -> Tickets shown", () => {
+    const links = getExternalLinks(event({ ticketUrl: "https://billetto.dk/e/x", soldOut: false }));
+    expect(links).toEqual([{ label: "Tickets", href: "https://billetto.dk/e/x", primary: false }]);
+  });
+
+  it("sold-out event + ticket URL -> Tickets hidden entirely, not relabeled", () => {
+    const links = getExternalLinks(event({ ticketUrl: "https://billetto.dk/e/x", soldOut: true }));
+    expect(links).toEqual([]);
+  });
+
+  it("sold-out + Official event -> Official event shown (and is the only, therefore primary, CTA)", () => {
+    const links = getExternalLinks(
+      event({
+        officialEventUrl: "https://www.hangaren.dk/events/x",
+        canonicalSourceId: "src-hangaren",
+        ticketUrl: "https://billetto.dk/e/x",
+        soldOut: true,
+      }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://www.hangaren.dk/events/x", primary: true }]);
+  });
+
+  it("sold-out + no Official event -> no primary CTA at all (empty list)", () => {
+    const links = getExternalLinks(event({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null, soldOut: true }));
+    expect(links).toEqual([]);
+  });
+
+  it("sold-out officialEventUrl classified as ticketing role (e.g. Billetto's own page) -> suppressed entirely, never relabeled 'Source' or 'Official event'", () => {
+    const links = getExternalLinks(event({ officialEventUrl: "https://billetto.dk/e/x", canonicalSourceId: "src-billetto", soldOut: true }));
+    expect(links).toEqual([]);
+  });
+
+  it("sold-out never suppresses a genuine Official event (official-venue role) link, even without a ticketUrl", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://www.hangaren.dk/events/x", canonicalSourceId: "src-hangaren", soldOut: true }),
+    );
+    expect(links).toEqual([{ label: "Official event", href: "https://www.hangaren.dk/events/x", primary: true }]);
+  });
+
+  it("sold-out never suppresses a legitimate last-resort Source link when it is the only usable public link", () => {
+    const links = getExternalLinks(
+      event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut", soldOut: true }),
+    );
+    expect(links).toEqual([{ label: "Source", href: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", primary: true }]);
+  });
+
+  it("sold-out does not affect the RA/HvadErPå guardrail — still never a public CTA under any label", () => {
+    expect(getExternalLinks(event({ residentAdvisorUrl: "https://ra.co/events/1", soldOut: true }))).toEqual([]);
+  });
+
+  it("stored event data is never mutated by suppressing Tickets", () => {
+    const input = event({
+      officialEventUrl: "https://www.hangaren.dk/events/x",
+      canonicalSourceId: "src-hangaren",
+      ticketUrl: "https://billetto.dk/e/x",
+      soldOut: true,
+    });
+    const snapshot = JSON.parse(JSON.stringify(input));
+    getExternalLinks(input);
+    expect(input).toEqual(snapshot);
+    expect(input.ticketUrl).toBe("https://billetto.dk/e/x");
+  });
+});

@@ -471,6 +471,51 @@ describe("EventRow — three-level text hierarchy (Round 18: new secondary-stron
   });
 });
 
+describe("EventRow — sold-out hides Tickets (public link-integrity rule, 2026-09-26)", () => {
+  afterEach(cleanup);
+
+  it("normal event + ticket URL -> Tickets shown", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", soldOut: false })} />);
+    expect(screen.getByText(/^Tickets/i)).toBeTruthy();
+  });
+
+  it("sold-out event + ticket URL -> Tickets hidden", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", soldOut: true })} />);
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+  });
+
+  it("sold-out + Official event -> Official event still shown (only Tickets is suppressed)", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          officialEventUrl: "https://venue.example.com/event",
+          ticketUrl: "https://billetto.dk/e/x",
+          soldOut: true,
+        })}
+      />,
+    );
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+    expect(screen.getByText(/^Official event/i)).toBeTruthy();
+  });
+
+  it("sold-out + no Official event -> no CTA link at all (consistent with the event-detail page's 'no primary CTA' outcome)", () => {
+    render(<EventRow event={makeEvent({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null, soldOut: true })} />);
+    expect(screen.queryByText(/^Tickets/i)).toBeNull();
+    expect(screen.queryByText(/^Official event/i)).toBeNull();
+  });
+
+  it("sold-out does not mutate the stored event data", () => {
+    const input = makeEvent({
+      officialEventUrl: "https://venue.example.com/event",
+      ticketUrl: "https://billetto.dk/e/x",
+      soldOut: true,
+    });
+    const snapshot = JSON.parse(JSON.stringify(input));
+    render(<EventRow event={input} />);
+    expect(input).toEqual(snapshot);
+  });
+});
+
 describe("EventRow — public/internal status separation (event lifecycle/status handling, 2026-08-28: dateChanged is now the public Rescheduled signal; timeChanged alone stays internal-only)", () => {
   afterEach(cleanup);
 

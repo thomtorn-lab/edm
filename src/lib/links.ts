@@ -135,6 +135,20 @@ function officialUrlRole(
  *
  * RA/HvadErPå are never even eligible for that last-resort "Source" CTA —
  * see the guard at the top of this function's body.
+ *
+ * Sold-out guardrail (public link-integrity rule, 2026-09-26): once
+ * `event.soldOut` is true, no link whose classified role is "tickets" is
+ * ever added — not the `ticketUrl` field, and not an `officialEventUrl`
+ * that itself classifies as ticketing-role (e.g. a Billetto event page).
+ * Presentation-only: the stored URLs are never read differently or
+ * mutated, this function simply never emits them as a public CTA. Official
+ * event and Source links are entirely unaffected and keep rendering under
+ * the exact same rules as before, so a sold-out event with a genuine
+ * Official event link still shows that as its one CTA (see the
+ * primaryLink fallback in the event-detail page and EventRow, which look
+ * for "Tickets" first, then "Official event" — with no "Tickets" entry
+ * ever produced here, that fallback lands on Official event automatically,
+ * or on nothing at all if none exists).
  */
 export function getExternalLinks(event: EventRecord, max?: number): ExternalLink[] {
   const seen = new Set<string>();
@@ -164,7 +178,15 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
   // HvadErPå's own source_event_links rows on the detail page.
   if (event.officialEventUrl && !isResidentAdvisorUrl(event.officialEventUrl) && !isHvaderpaaUrl(event.officialEventUrl)) {
     const role = officialUrlRole(event);
-    add(role === "tickets" ? "Tickets" : role === "unknown" ? "Source" : "Official event", event.officialEventUrl, true);
+    // Sold-out guardrail (public link-integrity rule, 2026-09-26): a
+    // ticket-role destination is never a legitimate public CTA once the
+    // event is sold out — dropped entirely rather than relabeled "Source"
+    // or "Official event", since it genuinely has no other standing over
+    // this event. Only the "tickets" role is affected; "Official event"
+    // and "Source" render exactly as before regardless of soldOut.
+    if (!(role === "tickets" && event.soldOut)) {
+      add(role === "tickets" ? "Tickets" : role === "unknown" ? "Source" : "Official event", event.officialEventUrl, true);
+    }
   }
   // Whichever label the block above used, `add`'s own seen-set collapses an
   // identical ticketUrl into that single entry rather than a duplicate.
@@ -177,7 +199,7 @@ export function getExternalLinks(event: EventRecord, max?: number): ExternalLink
   // trusted merely because it's in the ticketUrl field. Dropped entirely
   // (no CTA at all) rather than falling back to "Source" — see the guard
   // comment above.
-  if (event.ticketUrl && !isHvaderpaaUrl(event.ticketUrl)) {
+  if (event.ticketUrl && !isHvaderpaaUrl(event.ticketUrl) && !event.soldOut) {
     add("Tickets", event.ticketUrl);
   }
   // RA guardrail: a residentAdvisorUrl is NEVER its own public CTA — no
