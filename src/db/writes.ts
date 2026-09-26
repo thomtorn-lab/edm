@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
-import { discoveryQueue, eventChangeLog, events, sourceEventLinks, venues } from "./schema";
+import { discoveryQueue, eventChangeLog, events, sourceEventLinks, sources, venues } from "./schema";
 import { venueRowToRecord } from "./mappers";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { isEndAfterStart, END_BEFORE_START_ERROR } from "../lib/datetime";
@@ -12,6 +12,7 @@ import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types"
 import type { GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
+import { classifyAdminQueueRow } from "../lib/adminQueue";
 import { enrichArtistYoutubePreviews } from "./youtubePreview";
 import { after } from "next/server";
 
@@ -23,6 +24,112 @@ import { after } from "next/server";
 
 function logId(): string {
   return `log-${randomUUID()}`;
+}
+
+/**
+ * Runs `fn` after the current request has already been sent (next/server's
+ * after()), so its caller's own completion never waits on it; falls back to
+ * a plain synchronous await outside an active request — after() throws
+ * synchronously when called with no active request (confirmed:
+ * node_modules/next/dist/server/after/after.js), which is exactly the case
+ * for every non-request caller of this module (src/db/verifyProductionBootstrap.ts,
+ * src/db/verifySync.ts, run via tsx directly, never through Next's server
+ * runtime) — those fall back to a real await, where latency was never a
+ * user-facing concern in the first place. Extracted (YouTube Artist Preview
+ * Discovery-stage rollout, 2026-09-26) from createEvent's own original
+ * inline try/catch, which now reuses it too, so every optional cache-first
+ * enrichment call site in this file (createEvent's publish-time warm-up, and
+ * the three Discovery write paths below) shares this one deferral policy
+ * instead of repeating it.
+ */
+async function deferOrRun(fn: () => Promise<void>): Promise<void> {
+  try {
+    after(fn);
+  } catch {
+    await fn();
+  }
+}
+
+/**
+ * Discovery-stage YouTube Artist Preview enrichment (2026-09-26 rollout) —
+ * the moment a discovery_queue row's CURRENT state (as it stands right after
+ * an insert or update) would actually land in the NEEDS_REVIEW or
+ * VENUE_BLOCKED admin-queue category, its lineup is run through the exact
+ * same cache-first Rule A matcher createEvent already warms on publish (see
+ * enrichArtistYoutubePreviews's own doc comment) — never a second matcher,
+ * never a second cache. Reuses classifyAdminQueueRow (src/lib/adminQueue.ts)
+ * verbatim — the identical function the admin queue itself groups rows
+ * with — rather than re-deriving "is this row actionable" here, so this can
+ * never silently disagree with what an admin actually sees. A row that would
+ * classify as INSUFFICIENT/REJECTED/PAST_STALE is skipped entirely: it will
+ * either resolve into a real category on some later sync/edit (reclassified
+ * again then, since this runs on every insert/update) or never become
+ * publicly visible at all, so spending quota on it now would be premature.
+ *
+ * lastCompleteSyncAt is looked up fresh here (one lightweight indexed read
+ * on sources.id, only when the row has a registered source at all) rather
+ * than threaded through from the caller — classifyAdminQueueRow needs the
+ * REAL, currently-stored value (the same one the admin queue's own read path
+ * uses), not an approximation, and this keeps the classification-parity
+ * guarantee self-contained in one place instead of asking every call site to
+ * get it right. This is a per-row-write query, never per-artist and never a
+ * YouTube API call, so it costs nothing against quota.
+ *
+ * Never mutates the discovery_queue row itself, never throws (errors are
+ * caught and logged only — enrichArtistYoutubePreviews already never
+ * rejects; this is belt-and-suspenders exactly like createEvent's own call),
+ * and is always run via deferOrRun so it never adds latency to Discovery
+ * ingestion.
+ */
+interface DiscoveryEnrichmentInput {
+  id: string;
+  overallConfidence: ConfidenceLevel;
+  holdReason: HoldReason;
+  venueResolvedDecision: PublishDecision | null;
+  missingFields: string[];
+  probableStart: Date | null;
+  probableEnd: Date | null;
+  lastSeenAt: Date | null;
+  sourceId: string | null;
+  probableTitle: string;
+  detectedLineup: string[];
+  predictedGenre: GenreSlug | null;
+}
+
+async function triggerDiscoveryEnrichment(row: DiscoveryEnrichmentInput): Promise<void> {
+  if (row.detectedLineup.length === 0) return;
+
+  let lastCompleteSyncAt: string | null = null;
+  if (row.sourceId) {
+    const [sourceRow] = await db
+      .select({ lastCompleteSyncAt: sources.lastCompleteSyncAt })
+      .from(sources)
+      .where(eq(sources.id, row.sourceId))
+      .limit(1);
+    lastCompleteSyncAt = sourceRow?.lastCompleteSyncAt ? sourceRow.lastCompleteSyncAt.toISOString() : null;
+  }
+
+  const category = classifyAdminQueueRow(
+    {
+      overallConfidence: row.overallConfidence,
+      holdReason: row.holdReason,
+      venueResolvedDecision: row.venueResolvedDecision,
+      missingFields: row.missingFields,
+      probableStart: row.probableStart ? row.probableStart.toISOString() : null,
+      probableEnd: row.probableEnd ? row.probableEnd.toISOString() : null,
+      lastSeenAt: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
+      sourceId: row.sourceId,
+      probableTitle: row.probableTitle,
+      detectedLineup: row.detectedLineup,
+      predictedGenre: row.predictedGenre,
+    },
+    { lastCompleteSyncAt, now: new Date() },
+  );
+  if (category !== "needs_review" && category !== "venue_blocked") return;
+
+  await enrichArtistYoutubePreviews(row.detectedLineup).catch((err) => {
+    console.error(`[youtube-preview] discovery enrichment failed for ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
+  });
 }
 
 async function writeChangeLog(
@@ -517,34 +624,21 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
   // itself, matching this same file's Discogs-enrichment call sites' own
   // "never blocks the write" discipline.
   //
-  // Deferred via next/server's after() (2026-09-25 latency review) rather
-  // than awaited inline: `await`ing enrichArtistYoutubePreviews here would
-  // make createEvent's own completion synchronously depend on YouTube's
-  // response time (up to ~4 sequential API calls per uncached artist —
-  // search.list + videos.list, doubled if the "live" fallback query is
-  // needed — each with its own 8s timeout and up to two 429 retries), even
-  // though errors from it were already swallowed. "Errors don't propagate"
-  // and "the call doesn't delay completion" are NOT the same guarantee —
-  // only after() gets the second one. after() schedules the work to run
-  // once the response has been sent, while Next.js keeps the
-  // request's execution context alive to let it finish, rather than a bare
-  // unawaited promise that a serverless platform could freeze/kill first.
-  // It throws synchronously when called outside an active request
-  // (confirmed: node_modules/next/dist/server/after/after.js) — exactly
-  // the case for createEvent's non-request callers
-  // (src/db/verifyProductionBootstrap.ts, src/db/verifySync.ts, run via
-  // tsx directly, never through Next's server runtime) — so those fall
-  // back to the original synchronous await, where latency was never a
-  // user-facing concern in the first place.
-  const runYoutubeEnrichment = () =>
+  // Deferred via deferOrRun (2026-09-25 latency review; extracted into the
+  // shared helper 2026-09-26) rather than awaited inline: `await`ing
+  // enrichArtistYoutubePreviews here would make createEvent's own completion
+  // synchronously depend on YouTube's response time (up to ~4 sequential API
+  // calls per uncached artist — search.list + videos.list, doubled if the
+  // "live" fallback query is needed — each with its own 8s timeout and up to
+  // two 429 retries), even though errors from it were already swallowed.
+  // "Errors don't propagate" and "the call doesn't delay completion" are NOT
+  // the same guarantee — only after() gets the second one. See deferOrRun's
+  // own doc comment for the full after()/non-request-caller reasoning.
+  await deferOrRun(() =>
     enrichArtistYoutubePreviews(input.artists).catch((err) => {
       console.error(`[youtube-preview] cache warm-up failed for event ${input.id}: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  try {
-    after(runYoutubeEnrichment);
-  } catch {
-    await runYoutubeEnrichment();
-  }
+    }),
+  );
 }
 
 export async function recordSourceLink(
@@ -927,6 +1021,31 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     .update(discoveryQueue)
     .set({ ...patch, missingFields, overriddenFields })
     .where(eq(discoveryQueue.id, id));
+
+  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout)
+  // — see triggerDiscoveryEnrichment's own doc comment. Classifies the ROW
+  // AS IT NOW STANDS (existing state merged with this patch), so an admin
+  // edit that resolves a venue or adds/corrects the lineup is covered the
+  // same as a sync-driven change — deferred via deferOrRun so this never
+  // adds latency to the admin edit request.
+  await deferOrRun(() =>
+    triggerDiscoveryEnrichment({
+      id: existing.id,
+      overallConfidence: existing.overallConfidence as ConfidenceLevel,
+      holdReason: existing.holdReason as HoldReason,
+      venueResolvedDecision: existing.venueResolvedDecision as PublishDecision | null,
+      missingFields,
+      probableStart: "probableStart" in patch ? (patch.probableStart ?? null) : existing.probableStart,
+      probableEnd: "probableEnd" in patch ? (patch.probableEnd ?? null) : existing.probableEnd,
+      lastSeenAt: existing.lastSeenAt,
+      sourceId: existing.sourceId,
+      probableTitle: patch.probableTitle ?? existing.probableTitle,
+      detectedLineup: patch.detectedLineup ?? existing.detectedLineup,
+      predictedGenre: "predictedGenre" in patch ? (patch.predictedGenre ?? null) : (existing.predictedGenre as GenreSlug | null),
+    }).catch((err) => {
+      console.error(`[youtube-preview] discovery enrichment trigger failed for ${existing.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+  );
 }
 
 /**
@@ -1010,6 +1129,35 @@ export async function applyDiscoveryClassificationUpdate(
     .update(discoveryQueue)
     .set(patch)
     .where(and(eq(discoveryQueue.id, queueId), eq(discoveryQueue.status, "pending")));
+
+  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout)
+  // — see triggerDiscoveryEnrichment's own doc comment. This function never
+  // sees the row's full prior state (only a partial classification patch),
+  // so the merged post-update row is re-read here rather than assembled from
+  // pieces — one small extra SELECT, never per-artist. A miss (row no
+  // longer "pending" — resolved by an admin between this sync's read and
+  // this write, the same race the UPDATE's own guard defends against) is a
+  // silent no-op, matching that guard's own behavior.
+  const [updated] = await db.select().from(discoveryQueue).where(eq(discoveryQueue.id, queueId)).limit(1);
+  if (!updated) return;
+  await deferOrRun(() =>
+    triggerDiscoveryEnrichment({
+      id: updated.id,
+      overallConfidence: updated.overallConfidence as ConfidenceLevel,
+      holdReason: updated.holdReason as HoldReason,
+      venueResolvedDecision: updated.venueResolvedDecision as PublishDecision | null,
+      missingFields: updated.missingFields,
+      probableStart: updated.probableStart,
+      probableEnd: updated.probableEnd,
+      lastSeenAt: updated.lastSeenAt,
+      sourceId: updated.sourceId,
+      probableTitle: updated.probableTitle,
+      detectedLineup: updated.detectedLineup,
+      predictedGenre: updated.predictedGenre as GenreSlug | null,
+    }).catch((err) => {
+      console.error(`[youtube-preview] discovery enrichment trigger failed for ${updated.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+  );
 }
 
 /**
@@ -1076,6 +1224,30 @@ export async function insertDiscoveryItem(item: {
   holdReason?: HoldReason;
 }): Promise<DiscoveryQueueNotificationItem> {
   await db.insert(discoveryQueue).values({ ...item, status: "pending" });
+
+  // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout)
+  // — see triggerDiscoveryEnrichment's own doc comment. Every field it needs
+  // is already right here in `item` (no re-read needed); deferred via
+  // deferOrRun exactly like createEvent's own warm-up, so this never adds
+  // latency to a sync's per-candidate insert loop.
+  await deferOrRun(() =>
+    triggerDiscoveryEnrichment({
+      id: item.id,
+      overallConfidence: item.overallConfidence,
+      holdReason: item.holdReason ?? null,
+      venueResolvedDecision: item.venueResolvedDecision ?? null,
+      missingFields: item.missingFields,
+      probableStart: item.probableStart,
+      probableEnd: item.probableEnd ?? null,
+      lastSeenAt: item.lastSeenAt ?? null,
+      sourceId: item.sourceId ?? null,
+      probableTitle: item.probableTitle,
+      detectedLineup: item.detectedLineup,
+      predictedGenre: item.predictedGenre,
+    }).catch((err) => {
+      console.error(`[youtube-preview] discovery enrichment trigger failed for ${item.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+  );
 
   // Deliberately does NOT send the notification itself: a per-candidate
   // sync loop must not serialize DB writes behind an external HTTP round-

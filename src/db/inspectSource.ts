@@ -35,7 +35,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan|youtube-preview-backlog-projection> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--artists="Artist One, Artist Two, ..."]  (youtube-preview-dry-run only — runs the REAL Rule A
@@ -856,6 +856,146 @@ async function modeYoutubePreviewBackfillPlan(client: Client, args: Record<strin
   console.log(batchEstimate > 8000 ? "WARNING: exceeds the 8,000-unit safe single-batch budget — reduce --limit before applying." : "SAFE: within the 8,000-unit safe single-batch budget.");
   console.log(`\nSelected artists, in priority order:`);
   for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
+}
+
+/**
+ * YouTube Artist Preview COMPLETE ROLLOUT — read-only backlog projection
+ * (2026-09-26). Broader than modeYoutubePreviewBackfillPlan above (which
+ * only ever covered current/future-visible PUBLISHED events): this also
+ * folds in every pending discovery_queue row that would currently classify
+ * as NEEDS_REVIEW or VENUE_BLOCKED via classifyAdminQueueRow — the exact
+ * same function the admin queue itself groups rows with, and the exact same
+ * category pair the new Discovery-stage enrichment hook
+ * (triggerDiscoveryEnrichment, src/db/writes.ts) triggers on — never a
+ * separately-derived "relevant" definition. INSUFFICIENT/REJECTED/PAST_STALE
+ * rows and every non-pending status are deliberately excluded, same as that
+ * hook. Every artist name (published or Discovery) is deduplicated through
+ * the SAME normalizeArtistName(cleanArtistDisplayName(...)) key the cache
+ * table itself is keyed by, so a name appearing in both a published event
+ * and a Discovery row counts once, not twice. Never writes anything —
+ * read-only exactly like every other mode in this file.
+ */
+async function modeYoutubePreviewBacklogProjection(client: Client, _args: Record<string, string | boolean>) {
+  const { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } = await import("@/lib/enrichment/genreEnrichment");
+
+  section("YouTube Artist Preview COMPLETE ROLLOUT — backlog projection (published visible + Needs Review + Venue Blocked, read-only)");
+
+  const now = new Date();
+
+  // A. Current/future-visible published events (identical query/filter to
+  // modeYoutubePreviewBackfillPlan above).
+  const eventRows = await client.query("SELECT artists, start_datetime, end_datetime FROM events WHERE published = true");
+  const allEventRows = eventRows.rows as { artists: string[]; start_datetime: Date; end_datetime: Date | null }[];
+  const visibleEventRows = allEventRows.filter(
+    (row) =>
+      !isPastEvent({ startDatetime: row.start_datetime.toISOString(), endDatetime: row.end_datetime?.toISOString() ?? null }, now),
+  );
+
+  // B. Pending discovery_queue rows, classified via the exact same query
+  // shape and function modeAdminQueueAudit/triggerDiscoveryEnrichment use.
+  const dqRows = await client.query(`
+    SELECT
+      dq.id, dq.probable_title, dq.probable_start, dq.probable_end, dq.missing_fields,
+      dq.overall_confidence, dq.hold_reason, dq.venue_resolved_decision, dq.last_seen_at,
+      dq.source_id, s.last_complete_sync_at, dq.predicted_genre, dq.detected_lineup
+    FROM discovery_queue dq
+    LEFT JOIN sources s ON s.id = dq.source_id
+    WHERE dq.status = 'pending'
+  `);
+  let needsReviewCount = 0;
+  let venueBlockedCount = 0;
+  const discoveryRelevantLineups: string[][] = [];
+  for (const r of dqRows.rows) {
+    const lastCompleteSyncAt = r.last_complete_sync_at ? new Date(r.last_complete_sync_at as string).toISOString() : null;
+    const category = classifyAdminQueueRow(
+      {
+        overallConfidence: r.overall_confidence,
+        holdReason: r.hold_reason as HoldReason,
+        venueResolvedDecision: r.venue_resolved_decision as PublishDecision | null,
+        missingFields: (r.missing_fields as string[]) ?? [],
+        probableStart: r.probable_start ? new Date(r.probable_start as string).toISOString() : null,
+        probableEnd: r.probable_end ? new Date(r.probable_end as string).toISOString() : null,
+        lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at as string).toISOString() : null,
+        sourceId: (r.source_id as string | null) ?? null,
+        probableTitle: r.probable_title as string,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
+      },
+      { lastCompleteSyncAt, now },
+    );
+    if (category === "needs_review") needsReviewCount++;
+    else if (category === "venue_blocked") venueBlockedCount++;
+    else continue;
+    discoveryRelevantLineups.push((r.detected_lineup as string[]) ?? []);
+  }
+
+  // Normalize + dedupe both artist pools, tracking which pool(s) each
+  // normalized name appeared in for the overlap stat.
+  const publishedNormalized = new Set<string>();
+  let publishedMentions = 0;
+  for (const row of visibleEventRows) {
+    for (const raw of row.artists) {
+      publishedMentions++;
+      if (isPlaceholderArtistName(raw)) continue;
+      const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
+      if (normalized) publishedNormalized.add(normalized);
+    }
+  }
+  const discoveryNormalized = new Set<string>();
+  let discoveryMentions = 0;
+  for (const lineup of discoveryRelevantLineups) {
+    for (const raw of lineup) {
+      discoveryMentions++;
+      if (isPlaceholderArtistName(raw)) continue;
+      const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
+      if (normalized) discoveryNormalized.add(normalized);
+    }
+  }
+  let overlapCount = 0;
+  for (const name of publishedNormalized) {
+    if (discoveryNormalized.has(name)) overlapCount++;
+  }
+  const allNormalized = new Set([...publishedNormalized, ...discoveryNormalized]);
+  const distinctCount = allNormalized.size;
+  const names = [...allNormalized];
+
+  let freshCachedCount = 0;
+  let cacheTableExists = true;
+  try {
+    if (names.length > 0) {
+      const cacheRes = await client.query(
+        "SELECT artist_name_normalized FROM artist_youtube_preview_cache WHERE artist_name_normalized = ANY($1::text[]) AND expires_at > now()",
+        [names],
+      );
+      freshCachedCount = cacheRes.rows.length;
+    }
+  } catch (err) {
+    cacheTableExists = false;
+    console.log(`(artist_youtube_preview_cache not queryable — expected pre-merge: ${err instanceof Error ? err.message : String(err)})`);
+  }
+  const uncachedCount = distinctCount - freshCachedCount;
+
+  // Same worst-case-per-artist estimate as modeYoutubePreviewBackfillPlan:
+  // one search.list (100 units) plus a videos.list re-verify (1 unit,
+  // rounded up here to 100 for a deliberately conservative per-artist
+  // ceiling) for ~35% of artists (the observed live-fallback-query rate).
+  const estimateFor = (n: number) => n * 100 + Math.ceil(n * 0.35) * 100;
+
+  section("Backlog counts");
+  console.log(`Published, current/future-visible events: ${visibleEventRows.length}`);
+  console.log(`Discovery — Needs Review rows: ${needsReviewCount}`);
+  console.log(`Discovery — Venue Blocked rows: ${venueBlockedCount}`);
+  console.log(`Total artist-name mentions — published visible events: ${publishedMentions}`);
+  console.log(`Total artist-name mentions — Needs Review + Venue Blocked rows: ${discoveryMentions}`);
+  console.log(`Total artist-name mentions (combined, incl. duplicates): ${publishedMentions + discoveryMentions}`);
+  console.log(`Distinct normalized artists (published ∪ Discovery, deduplicated by cache key): ${distinctCount}`);
+  console.log(`  — distinct in published visible events only: ${publishedNormalized.size}`);
+  console.log(`  — distinct in Needs Review/Venue Blocked only: ${discoveryNormalized.size}`);
+  console.log(`  — overlap (appears in both pools, counted once): ${overlapCount}`);
+  console.log(`Already cached (fresh row in artist_youtube_preview_cache): ${freshCachedCount}${cacheTableExists ? "" : " (table not queryable — treated as 0)"}`);
+  console.log(`Uncached: ${uncachedCount}`);
+  console.log(`Estimated YouTube quota cost for all uncached artists: ~${estimateFor(uncachedCount)} units (10,000/day default budget)`);
+  console.log("\nThis is a projection only — no backfill was run and no cache/event/discovery row was written.");
 }
 
 /**
@@ -2347,6 +2487,7 @@ async function main() {
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
     "youtube-preview-backfill-plan": modeYoutubePreviewBackfillPlan,
+    "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
     "migration-status": modeMigrationStatus,
   };
@@ -2365,7 +2506,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-cache-row, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
     );
     process.exit(1);
   }
