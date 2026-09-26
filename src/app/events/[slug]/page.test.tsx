@@ -804,43 +804,80 @@ describe("Event detail page — primary/secondary CTA hierarchy (event-detail CT
     expect(officialEvent.textContent).toContain("↗");
   });
 
-  it("gives the primary CTA a mobile-first tap target of at least 44px and 16px+ text, relaxing to compact sizing at sm:", async () => {
+  it("gives the primary CTA a mobile-first ~40px tap target with 12px text, relaxing to the ~44px desktop treatment at sm:", async () => {
     await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
     const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    expect(tickets.className).toContain("min-h-[2.75rem]");
-    expect(tickets.className).toContain("text-base");
-    expect(tickets.className).toContain("sm:text-xs");
+    expect(tickets.className).toContain("min-h-[2.5rem]");
+    expect(tickets.className).toContain("text-xs");
+    expect(tickets.className).toContain("sm:min-h-[2.75rem]");
   });
 });
 
-describe("Event detail page — button height / tap-target polish (2026-09-26: ~40-44px at every breakpoint, not just mobile)", () => {
+describe("Event detail page — mobile action-row polish (2026-09-26: ~40px/12px-text/8px-gap on mobile so Tickets + Official event + Share fit on one row; desktop keeps its existing ~44px treatment)", () => {
   afterEach(cleanup);
 
-  it("keeps the primary CTA's 44px min-height on desktop too (no more sm:min-h-0 shrink)", async () => {
+  it("gives the primary CTA ~40px height, 12px text, and 12-14px horizontal padding on mobile", async () => {
     await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
     const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    expect(tickets.className).toContain("min-h-[2.75rem]");
-    expect(tickets.className).not.toContain("sm:min-h-0");
-    // Desktop width/typography stay compact and unchanged.
-    expect(tickets.className).toContain("sm:px-4");
-    expect(tickets.className).toContain("sm:py-2");
-    expect(tickets.className).toContain("sm:text-xs");
+    expect(tickets.className).toContain("min-h-[2.5rem]"); // 40px
+    expect(tickets.className).toContain("text-xs"); // 12px
+    expect(tickets.className).toContain("px-3.5"); // 14px
   });
 
-  it("keeps the secondary CTA's 44px min-height on desktop too", async () => {
+  it("restores the ~44px desktop height for the primary CTA without changing its desktop width/typography", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    expect(tickets.className).toContain("sm:min-h-[2.75rem]");
+    expect(tickets.className).toContain("sm:px-4");
+    expect(tickets.className).toContain("sm:py-2");
+  });
+
+  it("gives the secondary CTA the same mobile ~40px / desktop ~44px treatment", async () => {
     await renderPage(
       makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
     );
     const officialEvent = screen.getByRole("link", { name: /^Official event/i });
-    expect(officialEvent.className).toContain("min-h-[2.75rem]");
-    expect(officialEvent.className).not.toContain("sm:min-h-0");
+    expect(officialEvent.className).toContain("min-h-[2.5rem]");
+    expect(officialEvent.className).toContain("text-xs");
+    expect(officialEvent.className).toContain("sm:min-h-[2.75rem]");
   });
 
-  it("gives Share the same ~44px min-height as the CTA buttons, without changing its font size", async () => {
+  it("uses an 8px gap between actions on mobile, restoring the wider desktop gap at sm:", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    const row = tickets.parentElement!;
+    expect(row.className).toContain("gap-2");
+    expect(row.className).toContain("sm:gap-3");
+  });
+
+  it("renders Share as an icon-only 40x40px button on mobile, with the text label restored at sm:", async () => {
     await renderPage(makeEvent());
     const shareButton = screen.getByRole("button", { name: /^Share /i });
-    expect(shareButton.className).toContain("min-h-[2.75rem]");
-    expect(shareButton.className).toContain("text-xs"); // typography unchanged, per the polish scope
+    expect(shareButton.className).toContain("h-10");
+    expect(shareButton.className).toContain("w-10");
+    expect(shareButton.className).toContain("sm:h-auto");
+    expect(shareButton.className).toContain("sm:w-auto");
+    expect(shareButton.className).toContain("sm:min-h-[2.75rem]");
+    // The visible "Share" text span is hidden on mobile, shown at sm:.
+    const textSpan = Array.from(shareButton.querySelectorAll("span")).find((s) => s.textContent === "Share");
+    expect(textSpan?.className).toContain("hidden");
+    expect(textSpan?.className).toContain("sm:inline");
+  });
+
+  it("keeps Share's accessible label and click behavior unchanged on mobile — icon-only is presentation only", async () => {
+    await renderPage(makeEvent({ title: "Warehouse Night" }));
+    expect(screen.getByRole("button", { name: "Share Warehouse Night" })).toBeTruthy();
+  });
+
+  it("preserves the logical action order Tickets -> Official event -> Share in the DOM", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
+    );
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    const shareButton = screen.getByRole("button", { name: /^Share /i });
+    expect(tickets.compareDocumentPosition(officialEvent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(officialEvent.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("gives each Add to calendar link the same ~44px min-height", async () => {
