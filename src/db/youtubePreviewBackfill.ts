@@ -1,9 +1,11 @@
+import { fileURLToPath } from "node:url";
 import { eq, inArray, gt, and } from "drizzle-orm";
 import { db } from "./client";
 import { events, artistYoutubePreviewCache } from "./schema";
 import { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } from "@/lib/enrichment/genreEnrichment";
 import { getOrMatchArtistYoutubePreview } from "@/lib/enrichment/youtubePreviewMatching";
 import * as youtubeClient from "@/lib/enrichment/youtubeClient";
+import { YoutubeDailyQuotaExhaustedError } from "@/lib/enrichment/youtubeClient";
 import { drizzleCacheStore } from "./youtubePreview";
 import { isPastEvent } from "@/lib/datetime";
 
@@ -93,6 +95,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Whether a failed lookup should abort the batch immediately rather than
+ * only after CONSECUTIVE_FAILURE_ABORT_THRESHOLD in a row (daily-quota
+ * safety fix, 2026-09-26 — confirmed live: the ordinary consecutive-failure
+ * guard let a batch burn through several more lookups, each guaranteed to
+ * fail the same way, before stopping). A confirmed daily search-quota
+ * exhaustion (youtubeClient.ts's YoutubeDailyQuotaExhaustedError, thrown
+ * only when the API's own error body names a per-day quota limit) will not
+ * resolve by continuing or retrying — unlike an ordinary/transient
+ * failure, which still goes through the existing threshold below.
+ */
+export function shouldAbortImmediately(err: unknown): boolean {
+  return err instanceof YoutubeDailyQuotaExhaustedError;
+}
+
 interface WorklistEntry {
   normalized: string;
   raw: string;
@@ -180,7 +197,7 @@ async function runPlan(batchLimit: number): Promise<void> {
   for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
 }
 
-async function runApply(paceBatchSize: number, runLimit: number): Promise<void> {
+export async function runApply(paceBatchSize: number, runLimit: number): Promise<void> {
   const worklist = await buildWorklist();
   let freshCached: Set<string>;
   try {
@@ -215,8 +232,15 @@ async function runApply(paceBatchSize: number, runLimit: number): Promise<void> 
       consecutiveFailures = 0;
     } catch (err) {
       failed++;
-      consecutiveFailures++;
       console.error(`  [FAILED] "${raw}": ${err instanceof Error ? err.message : String(err)}`);
+      if (shouldAbortImmediately(err)) {
+        console.error(
+          `\nAborting immediately: YouTube's own response confirms the DAILY search quota is exhausted — continuing would only produce more of the same failure until it resets. Processed ${processed}/${batch.length} before stopping. Safe to re-run this script later (once quota resets) — already-cached artists are skipped.`,
+        );
+        console.log(`\nSummary before abort: processed=${processed} accepted=${accepted} abstained=${abstained} failed=${failed}`);
+        return;
+      }
+      consecutiveFailures++;
       if (consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT_THRESHOLD) {
         console.error(
           `\nAborting: ${consecutiveFailures} consecutive failures — this looks like exhausted quota, not individual bad artist names (those fail closed to a cached "abstain", never a thrown error). Processed ${processed}/${batch.length} before stopping. Safe to re-run this script later (or tomorrow, once quota resets) — already-cached artists are skipped.`,
@@ -252,7 +276,12 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((err) => {
-  console.error("::error::youtubePreviewBackfill.ts FAILED:", err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+// Only auto-run when this file is executed directly (node ... youtubePreviewBackfill.ts),
+// never on import — lets runApply/shouldAbortImmediately be unit-tested without
+// triggering the CLI's argv parsing (main.catch's own top-level side effect).
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    console.error("::error::youtubePreviewBackfill.ts FAILED:", err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+}
