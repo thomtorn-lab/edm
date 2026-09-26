@@ -168,19 +168,24 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           (and Share within it) always renders regardless of whether any
           external links exist, matching Share's previous unconditional
           behavior; only the Tickets/Official event buttons are conditional.
-          min-h-[2.75rem] (44px, matching the mobile tap-target convention
-          already used elsewhere — see EventExplorer.tsx's own filter-apply
-          button) now applies at every breakpoint (2026-09-26 polish: the
-          previous sm:min-h-0 desktop shrink is removed so desktop buttons
-          also sit at ~40-44px instead of ~32-34px) — width/padding/
-          typography are otherwise untouched, so the compact look holds. */}
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+          Mobile/video affordance polish (2026-09-26): on mobile, Tickets/
+          Official event now target ~40px height (min-h-[2.5rem]), 12px text,
+          14px horizontal padding, and an 8px row gap (gap-2), specifically so
+          Tickets + Official event + Share can fit on one row at normal
+          mobile widths; desktop keeps its existing ~44px/12px-text/16px-
+          padding treatment unchanged via the sm: overrides (min-h-[2.75rem]
+          restored, matching the mobile tap-target convention already used
+          elsewhere — see EventExplorer.tsx's own filter-apply button —
+          gap-3 restored). Share becomes an icon-only 40x40px button on
+          mobile (see its own sm:-gated text label in ShareButton.tsx) and
+          reverts to its previous full pill on desktop. */}
+      <div className="mt-6 flex flex-wrap items-center gap-2 sm:gap-3">
         {primaryLink && (
           <a
             href={primaryLink.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-[2.75rem] items-center justify-center rounded bg-accent px-5 text-base font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:px-4 sm:py-2 sm:text-xs"
+            className="inline-flex min-h-[2.5rem] items-center justify-center rounded bg-accent px-3.5 text-xs font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:min-h-[2.75rem] sm:px-4 sm:py-2"
           >
             {primaryLink.label} ↗<span className="sr-only"> (opens in a new tab)</span>
           </a>
@@ -191,7 +196,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
             href={link.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-5 text-base font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary sm:px-4 sm:py-2 sm:text-xs"
+            className="inline-flex min-h-[2.5rem] items-center justify-center rounded border border-border-strong px-3.5 text-xs font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary sm:min-h-[2.75rem] sm:px-4 sm:py-2"
           >
             {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
           </a>
@@ -199,7 +204,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         <ShareButton
           title={title}
           url={canonicalUrl}
-          className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-border-strong text-xs font-semibold uppercase tracking-wide text-text-secondary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary sm:h-auto sm:w-auto sm:min-h-[2.75rem] sm:gap-1.5 sm:px-4 sm:py-2"
         />
       </div>
 

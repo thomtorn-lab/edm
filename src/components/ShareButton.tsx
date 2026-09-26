@@ -89,7 +89,12 @@ export default function ShareButton({ title, url, className = "" }: { title: str
     <div ref={rootRef} className="relative inline-block">
       <button type="button" onClick={handleClick} aria-label={`Share ${title}`} className={className}>
         <ShareIcon />
-        <span aria-hidden="true">Share</span>
+        {/* Icon-only on mobile, text label restored at sm: (mobile action-row
+            polish, 2026-09-26) — this span was already aria-hidden (the
+            button's own aria-label is the real accessible name), so hiding
+            it visually below sm: is presentation-only and never affects
+            screen-reader behavior or share functionality. */}
+        <span aria-hidden="true" className="hidden sm:inline">Share</span>
       </button>
 
       {status === "copied" && (

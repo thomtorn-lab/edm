@@ -28,13 +28,18 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
+  // Single source of truth for this row's own event-detail URL (mobile/video
+  // affordance polish, 2026-09-26) — reused by both the title link and the
+  // VIDEO badge link below, so there is only ever one place that constructs
+  // it.
+  const eventHref = `/events/${event.slug}`;
   const calendarInput = {
     title,
     description: event.description,
     startDatetime: event.startDatetime,
     endDatetime: event.endDatetime,
     venue: event.venue,
-    eventUrl: `${SITE_URL}/events/${event.slug}`,
+    eventUrl: `${SITE_URL}${eventHref}`,
   };
 
   return (
@@ -51,7 +56,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
 
         <div className="min-w-0 flex-1">
           <Link
-            href={`/events/${event.slug}`}
+            href={eventHref}
             className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:line-clamp-2"
           >
             {title}
@@ -92,22 +97,26 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               <>
                 <span aria-hidden className="text-text-tertiary">·</span>
                 {/* Minimal availability signal (homepage VIDEO indicator,
-                    2026-09-26) — informational only, never a separate
-                    clickable target: the row's own title/date navigation is
-                    unchanged, and this span carries no href/onClick. Kept
-                    deliberately restrained (small outlined pill, no
-                    thumbnail/logo) so it never competes with Official
-                    event/Tickets in the CTA column. role="img" + aria-label
-                    give it one clean accessible name instead of the visible
-                    glyph + "Video" being read out separately. */}
-                <span
-                  role="img"
-                  aria-label="Artist preview available"
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary"
+                    2026-09-26; made clickable, mobile/video affordance
+                    polish 2026-09-26) — a real, semantic link to the same
+                    event-detail page as the title (same eventHref, same-tab,
+                    no external-link ↗ glyph since it never leaves the site),
+                    kept deliberately restrained (small outlined pill, no
+                    thumbnail/logo) so it still never competes with Official
+                    event/Tickets in the CTA column. It sits as a sibling of
+                    the title link, not nested inside it, so there's no
+                    nested-link markup and no conflicting click handlers.
+                    aria-label gives it one clean, title-specific accessible
+                    name instead of the visible glyph + "Video" being read
+                    out separately. */}
+                <Link
+                  href={eventHref}
+                  aria-label={`View video preview for ${title}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
                 >
                   <span aria-hidden="true" className="text-accent">▶</span>
                   Video
-                </span>
+                </Link>
               </>
             )}
             {statuses.map((s) => (
