@@ -98,20 +98,24 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 <span aria-hidden className="text-text-tertiary">·</span>
                 {/* Minimal availability signal (homepage VIDEO indicator,
                     2026-09-26; made clickable, mobile/video affordance
-                    polish 2026-09-26) — a real, semantic link to the same
-                    event-detail page as the title (same eventHref, same-tab,
-                    no external-link ↗ glyph since it never leaves the site),
-                    kept deliberately restrained (small outlined pill, no
-                    thumbnail/logo) so it still never competes with Official
-                    event/Tickets in the CTA column. It sits as a sibling of
-                    the title link, not nested inside it, so there's no
-                    nested-link markup and no conflicting click handlers.
-                    aria-label gives it one clean, title-specific accessible
-                    name instead of the visible glyph + "Video" being read
-                    out separately. */}
+                    polish 2026-09-26; deep-links to the Artist Preview
+                    section, 2026-09-26) — a real, semantic link, same-tab, no
+                    external-link ↗ glyph since it never leaves the site.
+                    Deep-links straight to the event page's Artist Preview
+                    section (`#video`, the id on ArtistVideoPreview's own
+                    wrapper) rather than the plain eventHref the title link
+                    still uses — only this badge deep-links, ordinary
+                    title/row navigation is unaffected. Kept deliberately
+                    restrained (small outlined pill, no thumbnail/logo) so it
+                    still never competes with Official event/Tickets in the
+                    CTA column. It sits as a sibling of the title link, not
+                    nested inside it, so there's no nested-link markup and no
+                    conflicting click handlers. aria-label gives it one
+                    clean, title-specific accessible name instead of the
+                    visible glyph + "Video" being read out separately. */}
                 <Link
-                  href={eventHref}
-                  aria-label={`View video preview for ${title}`}
+                  href={`${eventHref}#video`}
+                  aria-label={`Go to artist preview video for ${title}`}
                   className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
                 >
                   <span aria-hidden="true" className="text-accent">▶</span>

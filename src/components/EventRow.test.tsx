@@ -751,19 +751,19 @@ describe("EventRow — multi-day event date-range display", () => {
   });
 });
 
-describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + homepage video indicator work, 2026-09-26; made clickable, mobile/video affordance polish 2026-09-26)", () => {
+describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + homepage video indicator work, 2026-09-26; made clickable, mobile/video affordance polish 2026-09-26; deep-links to the Artist Preview section, 2026-09-26)", () => {
   afterEach(cleanup);
 
   it("shows the VIDEO indicator when hasArtistPreview is true", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
     expect(screen.getByText("Video")).toBeTruthy();
-    expect(screen.getByLabelText("View video preview for Test Event")).toBeTruthy();
+    expect(screen.getByLabelText("Go to artist preview video for Test Event")).toBeTruthy();
   });
 
   it("shows no VIDEO indicator when hasArtistPreview is false", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: false }} />);
     expect(screen.queryByText("Video")).toBeNull();
-    expect(screen.queryByLabelText(/View video preview for/)).toBeNull();
+    expect(screen.queryByLabelText(/Go to artist preview video for/)).toBeNull();
   });
 
   it("shows no VIDEO indicator when hasArtistPreview is absent (e.g. the venue page, which doesn't compute it) — safe default, no regression", () => {
@@ -771,22 +771,29 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
     expect(screen.queryByText("Video")).toBeNull();
   });
 
-  it("renders as a real, semantic link (not a clickable span/div) to the same event-detail URL as the title, navigating in the same tab", () => {
+  it("deep-links to the event detail page's #video anchor, not the plain event URL, and navigates in the same tab", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
-    const titleLink = screen.getByRole("link", { name: "Test Event" });
-    const videoLink = screen.getByRole("link", { name: "View video preview for Test Event" });
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     expect(videoLink.tagName).toBe("A");
-    expect(videoLink.getAttribute("href")).toBe("/events/test-event");
-    expect(videoLink.getAttribute("href")).toBe(titleLink.getAttribute("href"));
+    expect(videoLink.getAttribute("href")).toBe("/events/test-event#video");
     // Same-tab navigation: no target attribute (unlike the external Official
     // event/Tickets/Source links, which always open in a new tab).
     expect(videoLink.getAttribute("target")).toBeNull();
     expect(videoLink.getAttribute("rel")).toBeNull();
   });
 
+  it("normal event-title/event-row navigation still goes to the plain event URL, with no #video suffix — only the VIDEO indicator deep-links", () => {
+    render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
+    const titleLink = screen.getByRole("link", { name: "Test Event" });
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
+    expect(titleLink.getAttribute("href")).toBe("/events/test-event");
+    expect(videoLink.getAttribute("href")).toBe("/events/test-event#video");
+    expect(videoLink.getAttribute("href")).not.toBe(titleLink.getAttribute("href"));
+  });
+
   it("uses no external-link icon (↗) — it never leaves the site", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
-    const videoLink = screen.getByRole("link", { name: "View video preview for Test Event" });
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     expect(videoLink.textContent).not.toContain("↗");
   });
 
@@ -796,16 +803,24 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
         event={{ ...makeEvent({ title: "Warehouse Night" }), hasArtistPreview: true }}
       />,
     );
-    expect(screen.getByRole("link", { name: "View video preview for Warehouse Night" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Go to artist preview video for Warehouse Night" })).toBeTruthy();
   });
 
   it("is a sibling of the title link, not nested inside it — no nested-link markup, no duplicate/conflicting click handlers, and title navigation is unaffected", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
     const titleLink = screen.getByRole("link", { name: "Test Event" });
-    const videoLink = screen.getByRole("link", { name: "View video preview for Test Event" });
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     expect(titleLink.contains(videoLink)).toBe(false);
     expect(videoLink.contains(titleLink)).toBe(false);
     expect(titleLink.getAttribute("href")).toBe("/events/test-event");
+  });
+
+  it("is a plain anchor with no click handler / no tabIndex override — ordinary keyboard/focus behavior, no JS-driven scrolling", () => {
+    render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
+    expect(videoLink.getAttribute("tabindex")).toBeNull();
+    expect(videoLink.getAttribute("onclick")).toBeNull();
+    expect(videoLink.getAttribute("role")).toBeNull();
   });
 
   it("renders no YouTube-branded element — no logo, no thumbnail image", () => {
@@ -821,14 +836,14 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
       />,
     );
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
-    const videoLink = screen.getByRole("link", { name: "View video preview for Test Event" });
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     // Same flex-wrap metadata container, not a sibling block/new row.
     expect(venueLink.parentElement).toBe(videoLink.parentElement);
   });
 
   it("preserves the badge's visual appearance as closely as possible — same outlined pill, accent play glyph, no new button styling", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
-    const videoLink = screen.getByRole("link", { name: "View video preview for Test Event" });
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     expect(videoLink.className).toContain("border");
     expect(videoLink.className).toContain("rounded-full");
     expect(videoLink.className).not.toContain("bg-accent");
