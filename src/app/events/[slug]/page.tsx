@@ -160,35 +160,48 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           ordinary secondary/outline treatment, never promoted to the filled
           accent style. Primary gets a filled accent treatment, secondary an
           outline treatment — visibly subordinate, neither oversized.
-          min-h-[2.75rem] (44px, matching the same mobile tap-target
-          convention already used elsewhere — see EventExplorer.tsx's own
-          filter-apply button) and text-base hold on mobile; both relax to
-          the previous compact desktop sizing at sm:. */}
-      {links.length > 0 && (
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          {primaryLink && (
-            <a
-              href={primaryLink.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[2.75rem] items-center justify-center rounded bg-accent px-5 text-base font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:min-h-0 sm:px-4 sm:py-2 sm:text-xs"
-            >
-              {primaryLink.label} ↗<span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          )}
-          {secondaryLinks.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-5 text-base font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary sm:min-h-0 sm:px-4 sm:py-2 sm:text-xs"
-            >
-              {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          ))}
-        </div>
-      )}
+          Share now lives in this same row too (UX polish, 2026-09-26: moved
+          up from below Artist Preview so it's visually associated with the
+          event's actions, not the video) — it keeps its own existing muted/
+          outline treatment, one notch lighter than the Official-event
+          secondary style, so it never competes with Tickets. The row itself
+          (and Share within it) always renders regardless of whether any
+          external links exist, matching Share's previous unconditional
+          behavior; only the Tickets/Official event buttons are conditional.
+          min-h-[2.75rem] (44px, matching the mobile tap-target convention
+          already used elsewhere — see EventExplorer.tsx's own filter-apply
+          button) now applies at every breakpoint (2026-09-26 polish: the
+          previous sm:min-h-0 desktop shrink is removed so desktop buttons
+          also sit at ~40-44px instead of ~32-34px) — width/padding/
+          typography are otherwise untouched, so the compact look holds. */}
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        {primaryLink && (
+          <a
+            href={primaryLink.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-[2.75rem] items-center justify-center rounded bg-accent px-5 text-base font-semibold uppercase tracking-wide text-accent-on transition-colors hover:bg-accent-strong focus-visible:bg-accent-strong sm:px-4 sm:py-2 sm:text-xs"
+          >
+            {primaryLink.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        )}
+        {secondaryLinks.map((link) => (
+          <a
+            key={link.href}
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-5 text-base font-semibold uppercase tracking-wide text-text-secondary-strong transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary sm:px-4 sm:py-2 sm:text-xs"
+          >
+            {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        ))}
+        <ShareButton
+          title={title}
+          url={canonicalUrl}
+          className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
+        />
+      </div>
 
       {event.description && (
         <div className="mt-8">
@@ -205,24 +218,16 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         />
       )}
 
-      <div className="mt-8 flex flex-wrap gap-3">
-        <ShareButton
-          title={title}
-          url={canonicalUrl}
-          className="inline-flex items-center gap-1.5 rounded border border-border-strong px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
-        />
-      </div>
-
       <div className="mt-8">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Add to calendar</h2>
         <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
-          <a href={googleCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
+          <a href={googleCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Google Calendar<span className="sr-only"> (opens in a new tab)</span>
           </a>
-          <a href={outlookCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
+          <a href={outlookCalendarUrl(calendarInput)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Outlook<span className="sr-only"> (opens in a new tab)</span>
           </a>
-          <a href={`/events/${event.slug}/calendar.ics`} className="rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
+          <a href={`/events/${event.slug}/calendar.ics`} className="inline-flex min-h-[2.75rem] items-center justify-center rounded border border-border-strong px-4 py-2 hover:border-accent-dim hover:text-text-primary">
             Apple Calendar / ICS
           </a>
         </div>

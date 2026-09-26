@@ -572,7 +572,7 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     expect(calendarSection?.contains(shareButton)).toBe(false);
   });
 
-  it("2. Share renders after About (and the metadata/CTA section), ahead of Add to calendar (event-detail CTA hierarchy work, 2026-09-26: Share moved below About/Artist Preview, no longer sandwiched between Genre and About)", async () => {
+  it("2. Share renders alongside the primary CTA row, ahead of About/Add to calendar (UX polish, 2026-09-26: Share moved up from below Artist Preview into the event-action row, so it's associated with the event's actions rather than the video)", async () => {
     await renderPage(
       makeEvent({ description: "Some description.", officialEventUrl: "https://venue.example.com/event" }),
     );
@@ -582,11 +582,28 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     const aboutHeading = screen.getByText("About");
     const addToCalendarHeading = screen.getByText("Add to calendar");
 
-    // New order: Genre -> primary CTA -> About -> Share -> Add to calendar.
+    // New order: Genre -> primary CTA -> Share (same row) -> About -> Add to calendar.
     expect(genreDt.compareDocumentPosition(officialEventCta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(officialEventCta.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(aboutHeading.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(officialEventCta.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(aboutHeading.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("Share sits in the same container as the primary CTA (Tickets/Official event), not a separate block", async () => {
+    await renderPage(makeEvent({ officialEventUrl: "https://venue.example.com/event" }));
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    const shareButton = screen.getByRole("button", { name: /^Share /i });
+    // ShareButton wraps its <button> in its own "relative inline-block" div
+    // (for its own copy-confirmation UI), so compare containment rather than
+    // exact parentElement equality.
+    expect(officialEvent.parentElement?.contains(shareButton)).toBe(true);
+  });
+
+  it("Share still renders even when the event has no external links at all (unconditional, unlike Tickets/Official event)", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: null, ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null, otherSourceUrls: [] }),
+    );
+    expect(screen.getByRole("button", { name: /^Share /i })).toBeTruthy();
   });
 
   it("3. the Share button's accessible name contains the event's (cleaned) title", async () => {
@@ -796,7 +813,48 @@ describe("Event detail page — primary/secondary CTA hierarchy (event-detail CT
   });
 });
 
-describe("Event detail page — Artist Preview positioned below About, ahead of Share/Add to calendar (event-detail CTA hierarchy work, 2026-09-26)", () => {
+describe("Event detail page — button height / tap-target polish (2026-09-26: ~40-44px at every breakpoint, not just mobile)", () => {
+  afterEach(cleanup);
+
+  it("keeps the primary CTA's 44px min-height on desktop too (no more sm:min-h-0 shrink)", async () => {
+    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
+    const tickets = screen.getByRole("link", { name: /^Tickets/i });
+    expect(tickets.className).toContain("min-h-[2.75rem]");
+    expect(tickets.className).not.toContain("sm:min-h-0");
+    // Desktop width/typography stay compact and unchanged.
+    expect(tickets.className).toContain("sm:px-4");
+    expect(tickets.className).toContain("sm:py-2");
+    expect(tickets.className).toContain("sm:text-xs");
+  });
+
+  it("keeps the secondary CTA's 44px min-height on desktop too", async () => {
+    await renderPage(
+      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
+    );
+    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    expect(officialEvent.className).toContain("min-h-[2.75rem]");
+    expect(officialEvent.className).not.toContain("sm:min-h-0");
+  });
+
+  it("gives Share the same ~44px min-height as the CTA buttons, without changing its font size", async () => {
+    await renderPage(makeEvent());
+    const shareButton = screen.getByRole("button", { name: /^Share /i });
+    expect(shareButton.className).toContain("min-h-[2.75rem]");
+    expect(shareButton.className).toContain("text-xs"); // typography unchanged, per the polish scope
+  });
+
+  it("gives each Add to calendar link the same ~44px min-height", async () => {
+    await renderPage(makeEvent());
+    const google = screen.getByRole("link", { name: /Google Calendar/i });
+    const outlook = screen.getByRole("link", { name: /Outlook/i });
+    const ics = screen.getByRole("link", { name: /Apple Calendar/i });
+    expect(google.className).toContain("min-h-[2.75rem]");
+    expect(outlook.className).toContain("min-h-[2.75rem]");
+    expect(ics.className).toContain("min-h-[2.75rem]");
+  });
+});
+
+describe("Event detail page — Artist Preview positioned below About, ahead of Add to calendar (event-detail CTA hierarchy work, 2026-09-26; Share relocated into the CTA row, UX polish 2026-09-26)", () => {
   afterEach(cleanup);
 
   it("renders the Artist Preview embed below the About heading", async () => {
@@ -814,7 +872,7 @@ describe("Event detail page — Artist Preview positioned below About, ahead of 
     expect(aboutHeading.compareDocumentPosition(iframe!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("renders the Artist Preview embed above the Share button and Add to calendar", async () => {
+  it("renders the Artist Preview embed above Add to calendar, but below Share (Share moved up into the CTA row, UX polish 2026-09-26)", async () => {
     vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -826,7 +884,7 @@ describe("Event detail page — Artist Preview positioned below About, ahead of 
     const iframe = document.querySelector("iframe")!;
     const shareButton = screen.getByRole("button", { name: /^Share /i });
     const addToCalendarHeading = screen.getByText("Add to calendar");
-    expect(iframe.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(iframe.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
