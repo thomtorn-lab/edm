@@ -272,6 +272,142 @@ describe("matchArtistYoutubePreview — Rule A", () => {
   });
 });
 
+describe("matchArtistYoutubePreview — recency preference among Rule A-safe candidates (2026-09-27)", () => {
+  it("selects the newest of two Rule A-safe candidates from the same query", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Eric Prydz dj set": [
+          video({ videoId: "v_old", channelTitle: "Eric Prydz", title: "Eric Prydz DJ Set 2023", publishedAt: "2023-01-01T00:00:00Z" }),
+          video({ videoId: "v_new", channelTitle: "Eric Prydz", title: "Eric Prydz DJ Set 2026", publishedAt: "2026-06-01T00:00:00Z" }),
+        ],
+      },
+      details: { v_old: details({ videoId: "v_old" }), v_new: details({ videoId: "v_new" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Eric Prydz", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_new");
+  });
+
+  it("an older safe candidate wins over a newer candidate that fails Rule A safety (correctness always outranks recency)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Eric Prydz dj set": [
+          video({ videoId: "v_new_unsafe", channelTitle: "Eric Prydz", title: "Eric Prydz DJ Set 2026", publishedAt: "2026-06-01T00:00:00Z" }),
+          video({ videoId: "v_old_safe", channelTitle: "Eric Prydz", title: "Eric Prydz DJ Set 2023", publishedAt: "2023-01-01T00:00:00Z" }),
+        ],
+      },
+      details: {
+        v_new_unsafe: details({ videoId: "v_new_unsafe", durationSeconds: 300 }), // fails the 20-minute floor
+        v_old_safe: details({ videoId: "v_old_safe" }),
+      },
+    });
+
+    const result = await matchArtistYoutubePreview("Eric Prydz", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_old_safe");
+  });
+
+  it("selects the newest of two safe own-channel candidates", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "MEUTE dj set": [
+          video({ videoId: "v_own_old", channelTitle: "MEUTE", title: "MEUTE - Live in Paris [Full Concert]", publishedAt: "2022-05-01T00:00:00Z" }),
+          video({ videoId: "v_own_new", channelTitle: "MEUTE", title: "MEUTE - Live in Berlin [Full Concert]", publishedAt: "2026-03-01T00:00:00Z" }),
+        ],
+      },
+      details: { v_own_old: details({ videoId: "v_own_old" }), v_own_new: details({ videoId: "v_own_new" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("MEUTE", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_own_new");
+    expect(result.channelTitle).toBe("MEUTE");
+  });
+
+  it("selects the newest of two safe trusted-channel candidates", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Octave One dj set": [
+          video({ videoId: "v_trusted_old", channelTitle: "Boiler Room", title: "Octave One | Boiler Room Festival Berlin", publishedAt: "2021-01-01T00:00:00Z" }),
+          video({ videoId: "v_trusted_new", channelTitle: "Boiler Room", title: "Octave One | Boiler Room London", publishedAt: "2026-02-01T00:00:00Z" }),
+        ],
+      },
+      details: { v_trusted_old: details({ videoId: "v_trusted_old" }), v_trusted_new: details({ videoId: "v_trusted_new" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Octave One", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_trusted_new");
+    expect(result.channelTitle).toBe("Boiler Room");
+  });
+
+  it("a safe primary-query candidate still wins over a newer safe fallback candidate — fallback is never even queried", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Eric Prydz dj set": [video({ videoId: "v_primary", channelTitle: "Eric Prydz", title: "Eric Prydz DJ Set 2023", publishedAt: "2023-01-01T00:00:00Z" })],
+        "Eric Prydz live": [video({ videoId: "v_fallback_newer", channelTitle: "Eric Prydz", title: "Eric Prydz Live 2026", publishedAt: "2026-06-01T00:00:00Z" })],
+      },
+      details: { v_primary: details({ videoId: "v_primary" }), v_fallback_newer: details({ videoId: "v_fallback_newer" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Eric Prydz", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_primary");
+    expect(client.searchCalls).toEqual(["Eric Prydz dj set"]); // primary already had a safe candidate — no fallback/recency comparison across queries
+  });
+
+  it("no safe primary candidate -> fallback runs, and the newest safe fallback candidate wins", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Octave One dj set": [],
+        "Octave One live": [
+          video({ videoId: "v_fb_old", channelTitle: "Boiler Room", title: "Octave One | Boiler Room Refuge Worldwide", publishedAt: "2021-01-01T00:00:00Z" }),
+          video({ videoId: "v_fb_new", channelTitle: "Boiler Room", title: "Octave One | Boiler Room London", publishedAt: "2026-02-01T00:00:00Z" }),
+        ],
+      },
+      details: { v_fb_old: details({ videoId: "v_fb_old" }), v_fb_new: details({ videoId: "v_fb_new" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Octave One", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_fb_new");
+    expect(client.searchCalls).toEqual(["Octave One dj set", "Octave One live"]);
+  });
+
+  it("a single safe old candidate is still accepted — recency is a preference, not a maximum-age cutoff", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Eric Prydz dj set": [video({ videoId: "v_ancient", channelTitle: "Eric Prydz", title: "Eric Prydz DJ Set 2018", publishedAt: "2018-01-01T00:00:00Z" })],
+      },
+      details: { v_ancient: details({ videoId: "v_ancient" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Eric Prydz", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_ancient");
+  });
+
+  it("no Rule A-safe candidates at all -> abstain, unaffected by the recency change", async () => {
+    const client = fakeYoutubeClient({
+      search: { "Some New Artist dj set": [], "Some New Artist live": [] },
+      details: {},
+    });
+
+    const result = await matchArtistYoutubePreview("Some New Artist", client);
+
+    expect(result.status).toBe("abstain");
+    expect(result.videoId).toBeNull();
+  });
+});
+
 describe("getOrMatchArtistYoutubePreview — cache behavior", () => {
   it("cache miss performs a lookup and writes the result to the cache", async () => {
     const cache = inMemoryCache();
