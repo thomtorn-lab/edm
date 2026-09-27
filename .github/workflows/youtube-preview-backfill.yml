@@ -5,18 +5,36 @@ name: YouTube Preview Backfill
 # one-time-correction pattern (see genre-subgenres-backfill.yml,
 # apply-youtube-preview-migration.yml): added, run in small confirm-gated
 # batches, then a candidate for removal once the backlog is cleared. Runs
-# src/db/youtubePreviewBackfill.ts, which only ever reads events.artists/
-# startDatetime/endDatetime to build a prioritized worklist (earliest
-# currently/future-visible event first, normalized name as tie-break — never
-# a popularity/view-count heuristic) and writes exclusively to
-# artist_youtube_preview_cache via the exact same cache-first Rule A matcher
-# production ingestion uses. Never touches `events` rows. Defaults to a
-# 50-artist batch per invocation (DEFAULT_BATCH_LIMIT in the script) —
-# override with the limit input for a later batch.
+# src/db/youtubePreviewBackfill.ts, which reads events.artists/startDatetime/
+# endDatetime (current/future-visible published events) UNION pending
+# discovery_queue rows currently classified Needs Review/Venue Blocked (scope
+# fix, 2026-09-27 — see buildWorklist's own doc comment in that script) to
+# build one deduplicated prioritized worklist (earliest known date first,
+# normalized name as tie-break — never a popularity/view-count heuristic),
+# and writes exclusively to artist_youtube_preview_cache via the exact same
+# cache-first Rule A matcher production ingestion uses. Never touches
+# `events` or `discovery_queue` rows. Defaults to a 50-artist batch per
+# invocation (DEFAULT_BATCH_LIMIT in the script) — override with the limit
+# input for a later batch.
 #
 # Secrets used: DATABASE_URL, YOUTUBE_API_KEY. Never echoed, printed, or
 # logged (see src/lib/enrichment/youtubeClient.ts's own key-in-URL-never-
 # logged discipline).
+#
+# NO AUTOMATIC SCHEDULE (2026-09-27): an automatic daily 09:00 UTC
+# `schedule` trigger was built and validated (combined-population plan-mode
+# backlog check, hardcoded --limit=15, fail-safe on an unparseable backlog
+# count) but deliberately PAUSED before going live — the project's real
+# Google Cloud search.list quota/usage behavior has not yet been confirmed
+# in Google Cloud Console, and live automatic enrichment
+# (createEvent/triggerDiscoveryEnrichment in src/db/writes.ts, PR #94) must
+# keep priority over backlog clearing until that's verified. This workflow
+# is manual-only (`workflow_dispatch`) for now — every batch is a deliberate,
+# explicit run. Re-adding the schedule later is a small, self-contained
+# change (reintroduce the `on.schedule` trigger plus the scheduled-only
+# backlog-check/no-op/hardcoded-limit steps this file carried up to
+# 2026-09-27) once quota is confirmed — not a reason to leave that
+# machinery sitting here disabled-but-present in the meantime.
 
 on:
   workflow_dispatch:

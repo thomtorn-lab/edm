@@ -1,35 +1,52 @@
 import { fileURLToPath } from "node:url";
 import { eq, inArray, gt, and } from "drizzle-orm";
 import { db } from "./client";
-import { events, artistYoutubePreviewCache } from "./schema";
+import { events, artistYoutubePreviewCache, discoveryQueue, sources } from "./schema";
 import { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } from "@/lib/enrichment/genreEnrichment";
 import { getOrMatchArtistYoutubePreview } from "@/lib/enrichment/youtubePreviewMatching";
 import * as youtubeClient from "@/lib/enrichment/youtubeClient";
 import { YoutubeDailyQuotaExhaustedError } from "@/lib/enrichment/youtubeClient";
 import { drizzleCacheStore } from "./youtubePreview";
 import { isPastEvent } from "@/lib/datetime";
+import { classifyAdminQueueRow } from "@/lib/adminQueue";
+import type { ConfidenceLevel } from "@/lib/types";
+import type { HoldReason } from "@/lib/adapters/pipeline";
+import type { PublishDecision } from "@/lib/classification";
+import type { GenreSlug } from "@/lib/taxonomy";
 
 /**
- * One-time YouTube Artist Preview cache backfill for the CURRENT/
- * FUTURE-VISIBLE published catalogue (automated Artist Preview V1 merge
- * review, 2026-09-25, items 2 and 3 — item 3 narrows scope to visible
- * events only, using the exact same effective-end semantics as the public
- * site rather than a new date rule invented for this script).
+ * One-time YouTube Artist Preview cache backfill for the full approved
+ * relevant population (automated Artist Preview V1 merge review,
+ * 2026-09-25, items 2 and 3 — item 3 narrows scope to visible events only,
+ * using the exact same effective-end semantics as the public site rather
+ * than a new date rule invented for this script; scope widened 2026-09-27
+ * to also include the same Discovery-stage population the automatic
+ * enrichment hook and read-only backlog-projection diagnostic already
+ * cover — see buildWorklist's own doc comment below for the fix and why
+ * the worklist previously undercounted the real backlog).
  *
- * Why this exists: matching only ever runs at src/db/writes.ts::createEvent,
- * for a newly-ingested/approved event — no already-published event is
- * touched retroactively. Without running this once after deploy, every
- * artist already in the catalogue would show no preview until they happen
- * to appear in a brand-new event. Scoped to visible events only (per
- * src/lib/datetime.ts::isPastEvent, the same rule every other page already
- * uses) so quota is never spent on a long-past event's lineup nobody can
- * see a preview for anyway.
+ * Why this exists: matching only ever runs at src/db/writes.ts::createEvent
+ * (on publish) and src/db/writes.ts::triggerDiscoveryEnrichment (on a
+ * Discovery row landing in Needs Review/Venue Blocked) — no already-
+ * existing published event or Discovery row is touched retroactively by
+ * either of those. Without running this once after deploy (and periodically
+ * thereafter, since a pending Discovery row's classification is re-derived
+ * on every sync), every artist already in the catalogue at either stage
+ * would show no preview until something re-triggers the automatic hooks.
+ * Scoped to visible events only (per src/lib/datetime.ts::isPastEvent, the
+ * same rule every other page already uses) so quota is never spent on a
+ * long-past event's lineup nobody can see a preview for anyway, and to
+ * Discovery rows currently classified Needs Review/Venue Blocked only (per
+ * classifyAdminQueueRow, src/lib/adminQueue.ts) — the same actionable
+ * population an admin can see and act on right now.
  *
- * Never touches `events` rows — reads `events.artists`/`startDatetime`/
- * `endDatetime` only to build the distinct artist-name worklist, and every
- * write goes through the exact same cache-first Rule A matcher production
- * ingestion uses (getOrMatchArtistYoutubePreview + the real Postgres cache
- * store from src/db/youtubePreview.ts), which only ever writes to
+ * Never touches `events` or `discovery_queue` rows — reads
+ * `events.artists`/`startDatetime`/`endDatetime` and (for pending Discovery
+ * rows) the same fields classifyAdminQueueRow needs, only to build the
+ * distinct artist-name worklist — and every write goes through the exact
+ * same cache-first Rule A matcher production ingestion uses
+ * (getOrMatchArtistYoutubePreview + the real Postgres cache store from
+ * src/db/youtubePreview.ts), which only ever writes to
  * artist_youtube_preview_cache. Idempotent by construction: cache-first
  * matching means re-running this script (in full, from the start) after a
  * partial/interrupted run skips every artist already cached and fresh —
@@ -46,14 +63,15 @@ import { isPastEvent } from "@/lib/datetime";
  * --artist (apply mode only, 2026-09-26 smoke-test addition): scopes the run
  * to exactly one normalized artist name, ignoring --limit entirely. Matches
  * a single uncached worklist entry (or does nothing, logging why, if that
- * name isn't an uncached current/future-visible artist) — never falls back
- * to processing anyone else.
+ * name isn't an uncached artist in the combined relevant population) —
+ * never falls back to processing anyone else.
  *
- * --mode=plan is entirely read-only (same projection as
- * `inspectSource.ts --mode=youtube-preview-backfill-plan`, reproduced here
- * so the exact code path that will run the backfill also plans it) and
- * also reports how many of the visible-event artists are already cached
- * and fresh, so --mode=apply's real remaining cost is visible up front.
+ * --mode=plan is entirely read-only (same combined-population projection as
+ * `inspectSource.ts --mode=youtube-preview-backlog-projection`, reproduced
+ * here so the exact code path that will run the backfill also plans it) and
+ * also reports how many of the combined-population artists are already
+ * cached and fresh, so --mode=apply's real remaining cost is visible up
+ * front.
  * --mode=apply requires the literal --confirm token (this codebase's
  * established one-time-script safety convention — see
  * src/db/tonserCleanup.ts) and processes the distinct-artist worklist one
@@ -123,36 +141,123 @@ interface WorklistEntry {
 }
 
 /**
- * Distinct normalized artist names across every CURRENT/FUTURE-VISIBLE
- * published event (src/lib/datetime.ts::isPastEvent === false — the same
- * effective-end rule the public site uses everywhere else), each mapped to
- * one real raw display form (the raw form is what's actually passed to the
- * matcher — matching re-normalizes from it) and the earliest visible
- * event's startDatetime it appears on. Sorted by that earliest date, then
+ * Sentinel "no known date" priority marker for a Discovery-only artist whose
+ * row carries no resolved probableStart (e.g. still missing a date field) —
+ * sorts after every real event date, same spirit as adminQueue.ts's own
+ * compareUpcomingFirst treating a missing date as sinking to the bottom,
+ * never as "soonest"/"unknown-but-urgent". If the same normalized artist
+ * also appears on a real dated event/Discovery row, the merge below always
+ * keeps the earlier real date — this sentinel only surfaces when NO dated
+ * mention exists anywhere in the combined pool.
+ */
+const NO_KNOWN_DATE_SENTINEL = new Date("9999-12-31T00:00:00.000Z");
+
+/**
+ * Distinct normalized artist names across the full approved relevant
+ * population (scope fix, 2026-09-27 — see this file's own top-of-file doc
+ * comment): (A) every CURRENT/FUTURE-VISIBLE published event
+ * (src/lib/datetime.ts::isPastEvent === false — the same effective-end rule
+ * the public site uses everywhere else) UNION (B) every pending
+ * discovery_queue row currently classified NEEDS_REVIEW or VENUE_BLOCKED via
+ * classifyAdminQueueRow (src/lib/adminQueue.ts) — the exact same function,
+ * and exact same category pair, the admin queue itself groups rows with and
+ * the automatic Discovery-stage enrichment hook (triggerDiscoveryEnrichment,
+ * src/db/writes.ts) already triggers on, never a separately-derived
+ * "relevant" definition. INSUFFICIENT/REJECTED/PAST_STALE rows and every
+ * non-pending status are excluded, same as that hook.
+ *
+ * Each distinct normalized name is mapped to one real raw display form (the
+ * raw form is what's actually passed to the matcher — matching re-normalizes
+ * from it) and the earliest date it's associated with across BOTH pools
+ * (a published event's real startDatetime, or a Discovery row's
+ * probableStart, falling back to NO_KNOWN_DATE_SENTINEL when that row has no
+ * resolved date) — so an artist appearing in both pools keeps whichever date
+ * is earlier, never double-counted. Sorted by that earliest date, then
  * normalized name as a deterministic tie-breaker (2026-09-25 prioritized
  * rollout) — never popularity/view-count, which V1 deliberately doesn't
  * measure.
  */
 async function buildWorklist(): Promise<WorklistEntry[]> {
-  const rows = await db
+  const byNormalized = new Map<string, WorklistEntry>();
+  const addMention = (raw: string, candidateStart: Date) => {
+    if (isPlaceholderArtistName(raw)) return;
+    const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
+    if (!normalized) return;
+    const existing = byNormalized.get(normalized);
+    if (!existing) byNormalized.set(normalized, { normalized, raw, earliestStart: candidateStart });
+    else if (candidateStart < existing.earliestStart) existing.earliestStart = candidateStart;
+  };
+
+  // A. Current/future-visible published events.
+  const eventRows = await db
     .select({ artists: events.artists, startDatetime: events.startDatetime, endDatetime: events.endDatetime })
     .from(events)
     .where(eq(events.published, true));
   const now = new Date();
-  const visibleRows = rows.filter(
+  const visibleEventRows = eventRows.filter(
     (row) => !isPastEvent({ startDatetime: row.startDatetime.toISOString(), endDatetime: row.endDatetime?.toISOString() ?? null }, now),
   );
-  const byNormalized = new Map<string, WorklistEntry>();
-  for (const row of visibleRows) {
-    for (const raw of row.artists) {
-      if (isPlaceholderArtistName(raw)) continue;
-      const normalized = normalizeArtistName(cleanArtistDisplayName(raw));
-      if (!normalized) continue;
-      const existing = byNormalized.get(normalized);
-      if (!existing) byNormalized.set(normalized, { normalized, raw, earliestStart: row.startDatetime });
-      else if (row.startDatetime < existing.earliestStart) existing.earliestStart = row.startDatetime;
-    }
+  for (const row of visibleEventRows) {
+    for (const raw of row.artists) addMention(raw, row.startDatetime);
   }
+
+  // B. Pending discovery_queue rows classified NEEDS_REVIEW or VENUE_BLOCKED.
+  // Never mutates discovery_queue — read-only, exactly like the events read
+  // above.
+  const dqRows = await db
+    .select({
+      probableTitle: discoveryQueue.probableTitle,
+      probableStart: discoveryQueue.probableStart,
+      probableEnd: discoveryQueue.probableEnd,
+      missingFields: discoveryQueue.missingFields,
+      overallConfidence: discoveryQueue.overallConfidence,
+      holdReason: discoveryQueue.holdReason,
+      venueResolvedDecision: discoveryQueue.venueResolvedDecision,
+      lastSeenAt: discoveryQueue.lastSeenAt,
+      sourceId: discoveryQueue.sourceId,
+      predictedGenre: discoveryQueue.predictedGenre,
+      detectedLineup: discoveryQueue.detectedLineup,
+    })
+    .from(discoveryQueue)
+    .where(eq(discoveryQueue.status, "pending"));
+
+  // classifyAdminQueueRow needs each row's SOURCE's real lastCompleteSyncAt
+  // (see its own doc comment) — batched into one query across every distinct
+  // registered source these pending rows reference, rather than a
+  // per-row lookup.
+  const sourceIds = [...new Set(dqRows.map((r) => r.sourceId).filter((id): id is string => id !== null))];
+  const lastCompleteSyncById = new Map<string, string | null>();
+  if (sourceIds.length > 0) {
+    const sourceRows = await db
+      .select({ id: sources.id, lastCompleteSyncAt: sources.lastCompleteSyncAt })
+      .from(sources)
+      .where(inArray(sources.id, sourceIds));
+    for (const r of sourceRows) lastCompleteSyncById.set(r.id, r.lastCompleteSyncAt ? r.lastCompleteSyncAt.toISOString() : null);
+  }
+
+  for (const row of dqRows) {
+    const lastCompleteSyncAt = row.sourceId ? (lastCompleteSyncById.get(row.sourceId) ?? null) : null;
+    const category = classifyAdminQueueRow(
+      {
+        overallConfidence: row.overallConfidence as ConfidenceLevel,
+        holdReason: row.holdReason as HoldReason,
+        venueResolvedDecision: row.venueResolvedDecision as PublishDecision | null,
+        missingFields: row.missingFields,
+        probableStart: row.probableStart ? row.probableStart.toISOString() : null,
+        probableEnd: row.probableEnd ? row.probableEnd.toISOString() : null,
+        lastSeenAt: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
+        sourceId: row.sourceId,
+        probableTitle: row.probableTitle,
+        detectedLineup: row.detectedLineup,
+        predictedGenre: row.predictedGenre as GenreSlug | null,
+      },
+      { lastCompleteSyncAt, now },
+    );
+    if (category !== "needs_review" && category !== "venue_blocked") continue;
+    const earliestStart = row.probableStart ?? NO_KNOWN_DATE_SENTINEL;
+    for (const raw of row.detectedLineup) addMention(raw, earliestStart);
+  }
+
   return [...byNormalized.values()].sort(
     (a, b) => a.earliestStart.getTime() - b.earliestStart.getTime() || a.normalized.localeCompare(b.normalized),
   );
@@ -180,7 +285,7 @@ async function runPlan(batchLimit: number): Promise<void> {
   const uncachedList = worklist.filter((w) => !freshCached.has(w.normalized));
   const estimateFor = (n: number) => n * 100 + Math.ceil(n * 0.35) * 100;
 
-  console.log(`Distinct artists on current/future-visible events: ${worklist.length}`);
+  console.log(`Distinct artists across the combined relevant population (current/future-visible published events + Needs Review/Venue Blocked Discovery rows): ${worklist.length}`);
   console.log(`Already cached (fresh): ${freshCached.size}`);
   console.log(`Uncached: ${uncachedList.length}`);
   console.log(`Estimated FULL remaining backfill quota cost: ~${estimateFor(uncachedList.length)} units (10,000/day default budget) — ${Math.ceil(uncachedList.length / batchLimit)} batch(es) at size ${batchLimit}.`);
@@ -189,7 +294,7 @@ async function runPlan(batchLimit: number): Promise<void> {
   console.log(`\nPrioritized batch preview (limit=${batchLimit}, earliest-visible-event-first, normalized-name tie-break):`);
   console.log(`Selected for this batch: ${batch.length} of ${uncachedList.length} uncached`);
   if (batch.length === 0) {
-    console.log("Nothing to do — every current/future-visible artist is already cached.");
+    console.log("Nothing to do — every artist in the combined relevant population is already cached.");
     return;
   }
   const earliest = batch.reduce((min, b) => (b.earliestStart < min ? b.earliestStart : min), batch[0].earliestStart);
@@ -200,7 +305,7 @@ async function runPlan(batchLimit: number): Promise<void> {
   console.log(`Estimated quota cost for THIS batch: ~${batchEstimate} units`);
   console.log(batchEstimate > 8000 ? "WARNING: exceeds the 8,000-unit safe single-batch budget — pass a smaller --limit." : "SAFE: within the 8,000-unit safe single-batch budget.");
   console.log("\nSelected artists, in priority order:");
-  for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest visible event: ${earliestStart.toISOString()})`);
+  for (const { raw, earliestStart } of batch) console.log(`  - ${raw}  (earliest known date: ${earliestStart.toISOString()})`);
 }
 
 export async function runApply(paceBatchSize: number, runLimit: number, artistFilter?: string | null): Promise<void> {
@@ -226,14 +331,14 @@ export async function runApply(paceBatchSize: number, runLimit: number, artistFi
     batch = uncachedList.filter((w) => w.normalized === targetNormalized);
     if (batch.length === 0) {
       console.log(
-        `No uncached current/future-visible worklist entry matches --artist="${artistFilter}" (normalized: "${targetNormalized}") — nothing to do (already cached, or no visible event currently contains this artist).`,
+        `No uncached worklist entry matches --artist="${artistFilter}" (normalized: "${targetNormalized}") — nothing to do (already cached, or no visible event or Needs Review/Venue Blocked Discovery row currently contains this artist).`,
       );
       return;
     }
   } else {
     batch = uncachedList.slice(0, runLimit);
   }
-  console.log(`Backfilling ${batch.length} uncached distinct artist(s) (of ${uncachedList.length} remaining uncached, ${worklist.length} total visible), prioritized by earliest visible event, paced ${INTER_ARTIST_DELAY_MS}ms apart in pacing groups of ${paceBatchSize}...`);
+  console.log(`Backfilling ${batch.length} uncached distinct artist(s) (of ${uncachedList.length} remaining uncached, ${worklist.length} total in the combined relevant population), prioritized by earliest known date, paced ${INTER_ARTIST_DELAY_MS}ms apart in pacing groups of ${paceBatchSize}...`);
 
   let consecutiveFailures = 0;
   let processed = 0;

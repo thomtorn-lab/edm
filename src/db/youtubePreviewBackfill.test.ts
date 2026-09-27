@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { YoutubeDailyQuotaExhaustedError } from "@/lib/enrichment/youtubeClient";
+import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
 
 /**
  * Daily-quota immediate-abort safety fix (2026-09-26, confirmed live: a
@@ -13,6 +14,8 @@ import { YoutubeDailyQuotaExhaustedError } from "@/lib/enrichment/youtubeClient"
  */
 
 const FUTURE = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+const PAST = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+const SEEN_AT = new Date("2026-09-26T10:00:00.000Z");
 
 interface EventsRow {
   artists: string[];
@@ -20,14 +23,48 @@ interface EventsRow {
   endDatetime: Date | null;
 }
 
-let eventsRows: EventsRow[] = [];
-const cacheRows: { n: string }[] = [];
+interface DiscoveryRow {
+  probableTitle: string;
+  probableStart: Date | null;
+  probableEnd: Date | null;
+  missingFields: string[];
+  overallConfidence: "low" | "medium" | "high";
+  holdReason: string | null;
+  venueResolvedDecision: string | null;
+  lastSeenAt: Date | null;
+  sourceId: string | null;
+  predictedGenre: string | null;
+  detectedLineup: string[];
+}
 
+interface SourceRow {
+  id: string;
+  lastCompleteSyncAt: Date | null;
+}
+
+let eventsRows: EventsRow[] = [];
+let discoveryRows: DiscoveryRow[] = [];
+let sourceRows: SourceRow[] = [];
+let cacheRows: { n: string }[] = [];
+
+/**
+ * Distinguishes buildWorklist's four distinct queries (events / pending
+ * discovery_queue / sources / artist_youtube_preview_cache) by the shape of
+ * the field-selection object each one passes to db.select(...) — the same
+ * shape-based branching this file's mock already used for events vs. cache,
+ * extended for the scope fix (2026-09-27) that added the discovery_queue and
+ * sources queries.
+ */
 vi.mock("@/db/client", () => ({
   db: {
     select: (sel: Record<string, unknown>) => ({
       from: () => ({
-        where: () => Promise.resolve("artists" in sel ? eventsRows : cacheRows),
+        where: () => {
+          if ("artists" in sel) return Promise.resolve(eventsRows);
+          if ("detectedLineup" in sel) return Promise.resolve(discoveryRows);
+          if ("lastCompleteSyncAt" in sel) return Promise.resolve(sourceRows);
+          return Promise.resolve(cacheRows);
+        },
       }),
     }),
   },
@@ -39,6 +76,23 @@ vi.mock("@/lib/enrichment/youtubePreviewMatching", () => ({
 }));
 
 const { runApply, shouldAbortImmediately } = await import("./youtubePreviewBackfill");
+
+function baseDiscoveryRow(overrides: Partial<DiscoveryRow> = {}): DiscoveryRow {
+  return {
+    probableTitle: "Test Night",
+    probableStart: null,
+    probableEnd: null,
+    missingFields: [],
+    overallConfidence: "low",
+    holdReason: null,
+    venueResolvedDecision: null,
+    lastSeenAt: null,
+    sourceId: null,
+    predictedGenre: null,
+    detectedLineup: [],
+    ...overrides,
+  };
+}
 
 describe("shouldAbortImmediately", () => {
   it("is true for YoutubeDailyQuotaExhaustedError", () => {
@@ -144,6 +198,131 @@ describe("runApply — --artist single-name scoping (2026-09-26 smoke-test addit
     await vi.advanceTimersByTimeAsync(60_000);
     await promise;
 
+    expect(getOrMatchMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Scope fix, 2026-09-27: buildWorklist previously read ONLY current/future-
+ * visible published events, so an uncached artist that only ever appeared on
+ * a pending Discovery row (Needs Review or Venue Blocked) could never be
+ * selected by a scheduled/manual batch, even though the same population is
+ * already the approved "relevant" backlog everywhere else (the automatic
+ * Discovery-stage enrichment hook, and the read-only backlog-projection
+ * diagnostic). buildWorklist itself isn't exported — every case below is
+ * observed the same way the rest of this file already observes it: through
+ * runApply's real effect (which normalized name it does or doesn't pass to
+ * the mocked matcher), never a live YouTube call.
+ */
+describe("buildWorklist (via runApply) — combined published + Discovery relevant population", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    getOrMatchMock.mockReset();
+    getOrMatchMock.mockResolvedValue({ status: "accepted", videoId: "vid" });
+    eventsRows = [];
+    discoveryRows = [];
+    sourceRows = [];
+    cacheRows = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function runAndCollectNames(): Promise<string[]> {
+    const promise = runApply(20, 50);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await promise;
+    return getOrMatchMock.mock.calls.map((c) => c[0] as string);
+  }
+
+  it("a published-only artist (current/future-visible event) enters the worklist", async () => {
+    eventsRows = [{ artists: ["Published Artist"], startDatetime: FUTURE, endDatetime: null }];
+
+    expect(await runAndCollectNames()).toEqual(["Published Artist"]);
+  });
+
+  it("a Needs Review Discovery-only artist (admin-originated, no past date) enters the worklist", async () => {
+    discoveryRows = [baseDiscoveryRow({ sourceId: null, probableStart: null, detectedLineup: ["NR Artist"] })];
+
+    expect(await runAndCollectNames()).toEqual(["NR Artist"]);
+  });
+
+  it("a Venue Blocked Discovery-only artist (registered source, current, venue-unresolved-only) enters the worklist", async () => {
+    discoveryRows = [
+      baseDiscoveryRow({
+        sourceId: "src-test",
+        lastSeenAt: SEEN_AT,
+        probableStart: FUTURE,
+        venueResolvedDecision: "review_queue",
+        overallConfidence: "medium",
+        detectedLineup: ["VB Artist"],
+      }),
+    ];
+    sourceRows = [{ id: "src-test", lastCompleteSyncAt: SEEN_AT }];
+
+    expect(await runAndCollectNames()).toEqual(["VB Artist"]);
+  });
+
+  it("a Rejected (negative_relevance) Discovery row does not enter the worklist", async () => {
+    discoveryRows = [
+      baseDiscoveryRow({
+        sourceId: "src-test",
+        lastSeenAt: SEEN_AT,
+        probableStart: FUTURE,
+        venueResolvedDecision: null,
+        holdReason: "negative_relevance",
+        detectedLineup: ["Rejected Artist"],
+      }),
+    ];
+    sourceRows = [{ id: "src-test", lastCompleteSyncAt: SEEN_AT }];
+
+    expect(await runAndCollectNames()).toEqual([]);
+  });
+
+  it("a Past/Stale Discovery row (admin-originated, resolved past date) does not enter the worklist", async () => {
+    discoveryRows = [baseDiscoveryRow({ sourceId: null, probableStart: PAST, detectedLineup: ["PastStale Artist"] })];
+
+    expect(await runAndCollectNames()).toEqual([]);
+  });
+
+  it("an Insufficient Evidence Discovery row does not enter the worklist", async () => {
+    discoveryRows = [
+      baseDiscoveryRow({
+        sourceId: "src-test",
+        lastSeenAt: SEEN_AT,
+        probableStart: FUTURE,
+        venueResolvedDecision: null,
+        holdReason: "low_confidence",
+        overallConfidence: "low",
+        detectedLineup: ["Insufficient Artist"],
+      }),
+    ];
+    sourceRows = [{ id: "src-test", lastCompleteSyncAt: SEEN_AT }];
+
+    expect(await runAndCollectNames()).toEqual([]);
+  });
+
+  it("the same normalized artist appearing in BOTH a published event and a Discovery row is deduplicated — matched exactly once", async () => {
+    eventsRows = [{ artists: ["Shared Artist"], startDatetime: FUTURE, endDatetime: null }];
+    discoveryRows = [baseDiscoveryRow({ sourceId: null, probableStart: null, detectedLineup: ["  shared   artist  "] })];
+
+    const names = await runAndCollectNames();
+    expect(names).toHaveLength(1);
+  });
+
+  it("an already-fresh-cached artist is skipped even though it's a Needs Review Discovery-only entry", async () => {
+    discoveryRows = [baseDiscoveryRow({ sourceId: null, probableStart: null, detectedLineup: ["Cached Artist"] })];
+    cacheRows = [{ n: normalizeArtistName(cleanArtistDisplayName("Cached Artist")) }];
+
+    expect(await runAndCollectNames()).toEqual([]);
+  });
+
+  it("zero combined backlog (no visible events, no Needs Review/Venue Blocked Discovery rows) never calls the matcher", async () => {
+    eventsRows = [];
+    discoveryRows = [];
+
+    expect(await runAndCollectNames()).toEqual([]);
     expect(getOrMatchMock).not.toHaveBeenCalled();
   });
 });
