@@ -26,6 +26,20 @@ import type { YoutubeSearchItem, YoutubeVideoDetails } from "./youtubeClient";
  * genuine live act (a marching band, a live-PA duo) that "dj set" doesn't
  * surface still gets a fair shot without doubling API usage for every
  * artist.
+ *
+ * Candidate selection (recency preference, 2026-09-27): within ONE query's
+ * results, once every Rule A safety check has run (exact name, billed-names
+ * limit, own/trusted channel, duration floor, embeddable, public), the
+ * NEWEST of the resulting safe candidates is selected — see
+ * selectNewestSafeCandidate below. This is a ranking improvement only, never
+ * a matching-policy change: it chooses among an already-safe set, never
+ * widens which candidates count as safe, and never imposes a maximum video
+ * age (a lone safe 3-year-old candidate is still accepted). The
+ * primary-vs-fallback relationship is untouched — a safe candidate from the
+ * primary "<artist> dj set" query always wins over anything from the
+ * "<artist> live" fallback, which only ever runs when the primary query
+ * produced zero safe candidates; recency is never compared ACROSS the two
+ * queries; only within whichever one is used.
  */
 
 export type PreviewStatus = "accepted" | "abstain";
@@ -170,6 +184,7 @@ interface EligibleCandidate {
   channelId: string;
   channelTitle: string;
   channelMatch: ChannelMatch;
+  publishedAt: string;
 }
 
 interface MatchAttempt {
@@ -185,10 +200,13 @@ interface MatchAttempt {
 /**
  * One query -> structural filter (no API cost) -> a SINGLE batched
  * videos.list call for every structurally-eligible candidate (1 quota unit
- * total, regardless of count) -> pick the first, in original search-rank
- * order, that also clears duration/embeddable/public. This is what lets a
- * lower-ranked candidate beat an invalid rank-1 result without costing
- * more than one search + one enrichment call.
+ * total, regardless of count) -> collect every candidate that also clears
+ * duration/embeddable/public, then select the NEWEST of those (recency
+ * preference, 2026-09-27 — see selectNewestSafeCandidate; search rank never
+ * matters for the final pick, only for which candidates get a videos.list
+ * call in the first place). This is what lets a lower-ranked candidate beat
+ * an invalid rank-1 result, and a newer safe candidate beat an older safe
+ * one, without costing more than one search + one batched enrichment call.
  */
 async function attemptMatch(
   cleanedName: string,
@@ -208,6 +226,7 @@ async function attemptMatch(
         channelId: item.channelId,
         channelTitle: item.channelTitle,
         channelMatch: check.channelMatch,
+        publishedAt: item.publishedAt,
       });
     } else {
       rejected.push({ videoId: item.videoId, title: item.title, channelTitle: item.channelTitle, reason: check.reason ?? "ineligible" });
@@ -221,7 +240,7 @@ async function attemptMatch(
   const verified = await client.getVideoDetails(structurallyEligible.map((c) => c.videoId));
   const byId = new Map(verified.map((d) => [d.videoId, d]));
   const rejectedAfterVerification: { videoId: string; reason: string }[] = [];
-  let selected: EligibleCandidate | null = null;
+  const safeCandidates: EligibleCandidate[] = [];
   for (const candidate of structurallyEligible) {
     const detail = byId.get(candidate.videoId);
     if (!detail) {
@@ -240,11 +259,40 @@ async function attemptMatch(
       rejectedAfterVerification.push({ videoId: candidate.videoId, reason: `privacyStatus is "${detail.privacyStatus}", not public` });
       continue;
     }
-    selected = candidate;
-    break;
+    safeCandidates.push(candidate);
   }
+  const selected = selectNewestSafeCandidate(safeCandidates);
 
   return { query, candidatesReturned: results.length, structurallyEligible, rejected, verified, selected, rejectedAfterVerification };
+}
+
+/**
+ * Recency preference among already-safe candidates (2026-09-27 — a ranking
+ * change only, never a matching-policy change): `safeCandidates` has
+ * already cleared every Rule A check this module enforces (exact name,
+ * channel, billed-names, duration floor, embeddable, public) — this
+ * function only decides WHICH of those already-safe candidates to prefer,
+ * never whether one is safe. Picks the newest by `publishedAt`; a safe
+ * 3-year-old candidate still wins over no candidate at all when it's the
+ * only safe one — there is no maximum-age cutoff, only a preference for
+ * newer among an already-safe set. Ties or an unparseable publishedAt fall
+ * back to original search-rank order (the earlier candidate in the array)
+ * so selection stays fully deterministic.
+ */
+function selectNewestSafeCandidate(safeCandidates: EligibleCandidate[]): EligibleCandidate | null {
+  if (safeCandidates.length === 0) return null;
+  let best = safeCandidates[0];
+  let bestTime = Date.parse(best.publishedAt);
+  for (let i = 1; i < safeCandidates.length; i++) {
+    const candidate = safeCandidates[i];
+    const time = Date.parse(candidate.publishedAt);
+    if (Number.isNaN(time)) continue;
+    if (Number.isNaN(bestTime) || time > bestTime) {
+      best = candidate;
+      bestTime = time;
+    }
+  }
+  return best;
 }
 
 function computeExpiry(status: PreviewStatus, now: Date): Date {
