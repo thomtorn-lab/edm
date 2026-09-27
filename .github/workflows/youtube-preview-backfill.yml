@@ -21,46 +21,22 @@ name: YouTube Preview Backfill
 # logged (see src/lib/enrichment/youtubeClient.ts's own key-in-URL-never-
 # logged discipline).
 #
-# TEMPORARY daily scheduler (2026-09-27): `schedule` below fires once a day
-# at 09:00 UTC — after YouTube's Pacific-midnight daily quota reset in both
-# PDT (07:00 UTC) and PST (08:00 UTC), with margin either way — and runs
-# exactly one capped batch (--limit=15, hardcoded for scheduled runs only;
-# see the "Run YouTube preview backfill" step below) against the SAME script
-# and SAME safety rules as every manual batch this workflow has always run:
-# cache-only writes, Rule A only, deterministic earliest-known-date-first
-# ordering, immediate abort on confirmed daily search-quota exhaustion (never
-# a retry loop — see shouldAbortImmediately in the script). No matcher/backfill
-# logic is duplicated here; the workflow only decides *when* and *how much*.
-# A scheduled run first checks the remaining backlog with the script's own
-# --mode=plan (DB-only, zero YouTube calls — see "Check remaining backlog"
-# below), which reports the SAME combined published+Discovery population
-# --mode=apply draws from, and no-ops without calling YouTube at all once
-# nothing uncached remains in that combined pool, logging "YouTube preview
-# backlog complete". If that check's output can't be parsed, the job fails
-# safely instead of guessing (see the step's own comment) — never a silent
-# false no-op, and never a blind apply against an unknown backlog state.
-# This is purely operational automation for clearing the existing backlog
-# without a human re-triggering the same batch every day; it does not touch
-# Rule A, the matcher, or any other part of the matching architecture, and
-# does not replace PR #94's automatic live enrichment on ingestion
-# (createEvent/triggerDiscoveryEnrichment in src/db/writes.ts), which already
-# runs independently of this schedule and takes priority over it.
-#
-# CLEANUP: once a scheduled run logs "YouTube preview backlog complete" (i.e.
-# --mode=plan reports Uncached: 0 against the combined current/future-visible
-# published + Needs Review/Venue Blocked Discovery population), the
-# `schedule` trigger below — and this whole workflow — is a candidate for
-# removal, same as this file always has been. Future enrichment for newly-
-# ingested/approved events keeps happening automatically and immediately via
-# PR #94, with no schedule required. workflow_dispatch (manual mode/limit/
-# batch_size/artist inputs, unchanged) stays available regardless, including
-# after the schedule is removed.
+# NO AUTOMATIC SCHEDULE (2026-09-27): an automatic daily 09:00 UTC
+# `schedule` trigger was built and validated (combined-population plan-mode
+# backlog check, hardcoded --limit=15, fail-safe on an unparseable backlog
+# count) but deliberately PAUSED before going live — the project's real
+# Google Cloud search.list quota/usage behavior has not yet been confirmed
+# in Google Cloud Console, and live automatic enrichment
+# (createEvent/triggerDiscoveryEnrichment in src/db/writes.ts, PR #94) must
+# keep priority over backlog clearing until that's verified. This workflow
+# is manual-only (`workflow_dispatch`) for now — every batch is a deliberate,
+# explicit run. Re-adding the schedule later is a small, self-contained
+# change (reintroduce the `on.schedule` trigger plus the scheduled-only
+# backlog-check/no-op/hardcoded-limit steps this file carried up to
+# 2026-09-27) once quota is confirmed — not a reason to leave that
+# machinery sitting here disabled-but-present in the meantime.
 
 on:
-  schedule:
-    # 09:00 UTC daily — see the TEMPORARY daily scheduler note above for why
-    # this time is safe across both Pacific daylight and standard time.
-    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -130,67 +106,16 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
 
-      # Scheduled runs only. Read-only: runs the script's own --mode=plan,
-      # which computes the SAME combined worklist --mode=apply uses (current/
-      # future-visible published events UNION Needs Review/Venue Blocked
-      # Discovery rows — see buildWorklist's doc comment in
-      # src/db/youtubePreviewBackfill.ts) and logs it ("Uncached: N") before
-      # ever touching YouTube — this step makes no YouTube API calls and
-      # needs no YOUTUBE_API_KEY. This is the "empty backlog" check
-      # (requirement 4): if nothing uncached remains in that combined pool,
-      # the apply step below is skipped entirely as a no-op rather than
-      # issuing an empty/pointless request. Not a "quota-check search" — no
-      # search request is made here at all, so this does not conflict with
-      # the daily-batch rule against a separate pre-batch quota-check search.
-      #
-      # If the Uncached count can't be parsed from the plan output, the
-      # combined backlog state is genuinely unknown — this step fails the
-      # job outright (exit 1) rather than guessing either way, so a broken
-      # parse can never silently skip a real backlog (false no-op) NOR
-      # blindly start an apply run against an unverified backlog state.
-      # Today's scheduled run simply doesn't happen; the next scheduled run
-      # tries again from a clean slate.
-      - name: Check remaining backlog (scheduled runs only — DB read-only, no YouTube calls)
-        id: check_backlog
-        if: github.event_name == 'schedule'
-        run: |
-          set -u
-          output=$(node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts --mode=plan)
-          echo "$output"
-          uncached=$(printf '%s\n' "$output" | grep -oE '^Uncached: [0-9]+' | grep -oE '[0-9]+' | head -1 || true)
-          if [ -z "$uncached" ]; then
-            echo "::error::Could not parse the Uncached count from --mode=plan output — the combined backlog state is unknown, so this scheduled run is failing safely instead of guessing. Not attempting apply. The next scheduled run will try again."
-            exit 1
-          fi
-          echo "Parsed uncached count: $uncached"
-          echo "uncached_count=$uncached" >> "$GITHUB_OUTPUT"
-
-      - name: YouTube preview backlog complete (scheduled no-op)
-        if: github.event_name == 'schedule' && steps.check_backlog.outputs.uncached_count == '0'
-        run: echo "YouTube preview backlog complete"
-
-      # Scheduled runs: hardcoded --mode=apply --limit=15, never taking the
-      # limit/batch_size/artist workflow_dispatch inputs (those are empty on
-      # a schedule trigger anyway) — the daily cap is fixed at 15 and is
-      # never dynamically increased, per the daily-scheduler operational
-      # rules. Skipped entirely when the backlog check above found nothing
-      # uncached. Manual workflow_dispatch runs are completely unchanged:
-      # same inputs, same behavior as before this schedule was added.
       - name: Run YouTube preview backfill
-        if: github.event_name != 'schedule' || steps.check_backlog.outputs.uncached_count != '0'
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           set -u
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            args=(--mode=apply --confirm=BACKFILL-YOUTUBE-PREVIEW --limit=15)
-          else
-            args=(--mode="${{ inputs.mode }}")
-            [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
-            [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
-            [ -n "${{ inputs.batch_size }}" ] && args+=(--batch-size="${{ inputs.batch_size }}")
-            [ -n "${{ inputs.artist }}" ] && args+=(--artist="${{ inputs.artist }}")
-          fi
+          args=(--mode="${{ inputs.mode }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
+          [ -n "${{ inputs.batch_size }}" ] && args+=(--batch-size="${{ inputs.batch_size }}")
+          [ -n "${{ inputs.artist }}" ] && args+=(--artist="${{ inputs.artist }}")
           node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts "${args[@]}"
 
       - name: Remove local env file
