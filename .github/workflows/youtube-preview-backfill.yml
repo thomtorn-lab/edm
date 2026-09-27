@@ -5,14 +5,17 @@ name: YouTube Preview Backfill
 # one-time-correction pattern (see genre-subgenres-backfill.yml,
 # apply-youtube-preview-migration.yml): added, run in small confirm-gated
 # batches, then a candidate for removal once the backlog is cleared. Runs
-# src/db/youtubePreviewBackfill.ts, which only ever reads events.artists/
-# startDatetime/endDatetime to build a prioritized worklist (earliest
-# currently/future-visible event first, normalized name as tie-break — never
-# a popularity/view-count heuristic) and writes exclusively to
-# artist_youtube_preview_cache via the exact same cache-first Rule A matcher
-# production ingestion uses. Never touches `events` rows. Defaults to a
-# 50-artist batch per invocation (DEFAULT_BATCH_LIMIT in the script) —
-# override with the limit input for a later batch.
+# src/db/youtubePreviewBackfill.ts, which reads events.artists/startDatetime/
+# endDatetime (current/future-visible published events) UNION pending
+# discovery_queue rows currently classified Needs Review/Venue Blocked (scope
+# fix, 2026-09-27 — see buildWorklist's own doc comment in that script) to
+# build one deduplicated prioritized worklist (earliest known date first,
+# normalized name as tie-break — never a popularity/view-count heuristic),
+# and writes exclusively to artist_youtube_preview_cache via the exact same
+# cache-first Rule A matcher production ingestion uses. Never touches
+# `events` or `discovery_queue` rows. Defaults to a 50-artist batch per
+# invocation (DEFAULT_BATCH_LIMIT in the script) — override with the limit
+# input for a later batch.
 #
 # Secrets used: DATABASE_URL, YOUTUBE_API_KEY. Never echoed, printed, or
 # logged (see src/lib/enrichment/youtubeClient.ts's own key-in-URL-never-
@@ -24,29 +27,34 @@ name: YouTube Preview Backfill
 # exactly one capped batch (--limit=15, hardcoded for scheduled runs only;
 # see the "Run YouTube preview backfill" step below) against the SAME script
 # and SAME safety rules as every manual batch this workflow has always run:
-# cache-only writes, Rule A only, deterministic earliest-visible-event-first
+# cache-only writes, Rule A only, deterministic earliest-known-date-first
 # ordering, immediate abort on confirmed daily search-quota exhaustion (never
 # a retry loop — see shouldAbortImmediately in the script). No matcher/backfill
 # logic is duplicated here; the workflow only decides *when* and *how much*.
 # A scheduled run first checks the remaining backlog with the script's own
 # --mode=plan (DB-only, zero YouTube calls — see "Check remaining backlog"
-# below) and no-ops without calling YouTube at all once nothing uncached
-# remains, logging "YouTube preview backlog complete". This is purely
-# operational automation for clearing the existing backlog without a human
-# re-triggering the same batch every day; it does not touch Rule A, the
-# matcher, or any other part of the matching architecture, and does not
-# replace PR #94's automatic live enrichment on ingestion (createEvent/
-# triggerDiscoveryEnrichment in src/db/writes.ts), which already runs
-# independently of this schedule and takes priority over it.
+# below), which reports the SAME combined published+Discovery population
+# --mode=apply draws from, and no-ops without calling YouTube at all once
+# nothing uncached remains in that combined pool, logging "YouTube preview
+# backlog complete". If that check's output can't be parsed, the job fails
+# safely instead of guessing (see the step's own comment) — never a silent
+# false no-op, and never a blind apply against an unknown backlog state.
+# This is purely operational automation for clearing the existing backlog
+# without a human re-triggering the same batch every day; it does not touch
+# Rule A, the matcher, or any other part of the matching architecture, and
+# does not replace PR #94's automatic live enrichment on ingestion
+# (createEvent/triggerDiscoveryEnrichment in src/db/writes.ts), which already
+# runs independently of this schedule and takes priority over it.
 #
 # CLEANUP: once a scheduled run logs "YouTube preview backlog complete" (i.e.
-# --mode=plan reports Uncached: 0 against the current/future-visible
-# published population), the `schedule` trigger below — and this whole
-# workflow — is a candidate for removal, same as this file always has been.
-# Future enrichment for newly-ingested/approved events keeps happening
-# automatically and immediately via PR #94, with no schedule required.
-# workflow_dispatch (manual mode/limit/batch_size/artist inputs, unchanged)
-# stays available regardless, including after the schedule is removed.
+# --mode=plan reports Uncached: 0 against the combined current/future-visible
+# published + Needs Review/Venue Blocked Discovery population), the
+# `schedule` trigger below — and this whole workflow — is a candidate for
+# removal, same as this file always has been. Future enrichment for newly-
+# ingested/approved events keeps happening automatically and immediately via
+# PR #94, with no schedule required. workflow_dispatch (manual mode/limit/
+# batch_size/artist inputs, unchanged) stays available regardless, including
+# after the schedule is removed.
 
 on:
   schedule:
@@ -123,14 +131,25 @@ jobs:
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
 
       # Scheduled runs only. Read-only: runs the script's own --mode=plan,
-      # which computes the full uncached-artist worklist and logs it
-      # ("Uncached: N") before ever touching YouTube — this step makes no
-      # YouTube API calls and needs no YOUTUBE_API_KEY. This is the "empty
-      # backlog" check (requirement 4): if nothing uncached remains, the
-      # apply step below is skipped entirely as a no-op rather than issuing
-      # an empty/pointless request. Not a "quota-check search" — no search
-      # request is made here at all, so this does not conflict with the
-      # daily-batch rule against a separate pre-batch quota-check search.
+      # which computes the SAME combined worklist --mode=apply uses (current/
+      # future-visible published events UNION Needs Review/Venue Blocked
+      # Discovery rows — see buildWorklist's doc comment in
+      # src/db/youtubePreviewBackfill.ts) and logs it ("Uncached: N") before
+      # ever touching YouTube — this step makes no YouTube API calls and
+      # needs no YOUTUBE_API_KEY. This is the "empty backlog" check
+      # (requirement 4): if nothing uncached remains in that combined pool,
+      # the apply step below is skipped entirely as a no-op rather than
+      # issuing an empty/pointless request. Not a "quota-check search" — no
+      # search request is made here at all, so this does not conflict with
+      # the daily-batch rule against a separate pre-batch quota-check search.
+      #
+      # If the Uncached count can't be parsed from the plan output, the
+      # combined backlog state is genuinely unknown — this step fails the
+      # job outright (exit 1) rather than guessing either way, so a broken
+      # parse can never silently skip a real backlog (false no-op) NOR
+      # blindly start an apply run against an unverified backlog state.
+      # Today's scheduled run simply doesn't happen; the next scheduled run
+      # tries again from a clean slate.
       - name: Check remaining backlog (scheduled runs only — DB read-only, no YouTube calls)
         id: check_backlog
         if: github.event_name == 'schedule'
@@ -140,8 +159,8 @@ jobs:
           echo "$output"
           uncached=$(printf '%s\n' "$output" | grep -oE '^Uncached: [0-9]+' | grep -oE '[0-9]+' | head -1 || true)
           if [ -z "$uncached" ]; then
-            echo "::error::Could not parse the Uncached count from --mode=plan output — failing closed by treating the backlog as non-empty so today's scheduled run still attempts the capped apply step."
-            uncached=1
+            echo "::error::Could not parse the Uncached count from --mode=plan output — the combined backlog state is unknown, so this scheduled run is failing safely instead of guessing. Not attempting apply. The next scheduled run will try again."
+            exit 1
           fi
           echo "Parsed uncached count: $uncached"
           echo "uncached_count=$uncached" >> "$GITHUB_OUTPUT"
