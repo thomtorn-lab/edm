@@ -40,6 +40,14 @@ import type { YoutubeSearchItem, YoutubeVideoDetails } from "./youtubeClient";
  * "<artist> live" fallback, which only ever runs when the primary query
  * produced zero safe candidates; recency is never compared ACROSS the two
  * queries; only within whichever one is used.
+ *
+ * Trusted-channel short-suffix guard (2026-09-29): a confirmed false
+ * positive ("Benji" matching inside the unrelated "Benji B | Boiler Room
+ * London") showed that an exact-name match on a trusted third-party channel
+ * is weaker evidence than on an artist's own channel, since a trusted
+ * channel hosts many different artists. checkTrustedChannelSuffix (below)
+ * narrows trusted-channel eligibility only — own-channel matching is
+ * completely unaffected — see its own doc comment for the exact rule.
  */
 
 export type PreviewStatus = "accepted" | "abstain";
@@ -157,6 +165,78 @@ interface StructuralCheck {
   reason: string | null;
 }
 
+/**
+ * Trusted-channel-only short-suffix guard (2026-09-29, confirmed Rule A false
+ * positive: "Benji" matched inside "Benji B | Boiler Room London", a
+ * different, unrelated artist — see this repo's own investigation notes).
+ * A trusted third-party channel (Boiler Room, Tomorrowland, DGTL, UKF on
+ * air) hosts sets from many different artists, so an exact-name match there
+ * is weaker evidence than an own-channel match: the title can continue past
+ * the matched name with ANOTHER short stage name/initial that
+ * titleContainsExactName's word-boundary check cannot distinguish from a
+ * harmless continuation, since "Benji" is a valid strict prefix of "Benji
+ * B" under that check alone. Never applied to own-channel matches (see the
+ * two call sites below) — an artist's own channel naming a set after
+ * themselves is not ambiguous in the same way.
+ *
+ * Deliberately narrow, NOT a general allow-list (2026-09-29 review): only a
+ * small, curated set of continuations is treated as safe — the existing
+ * TITLE_STOP_MARKERS vocabulary, a short explicit collaboration-connector
+ * list (b2b/x/vs/ft/feat/w — already tolerated as legitimate multi-billing
+ * separators by countBilledNames), and the first word of the channel's own
+ * name (e.g. "Boiler" in "Stenny Boiler Room Munich DJ Set"). Anything else
+ * that reads as a short (<=2 letter/digit) token immediately after the
+ * match — introduced by a space, hyphen, or colon, glued or spaced — is
+ * treated as AMBIGUOUS and rejected, forcing abstention rather than a
+ * possibly-wrong preview, even if it later turns out to be a harmless
+ * version tag (e.g. "V2"): this check has no way to tell a real distinct
+ * artist from a coincidental short tag, so it deliberately declines rather
+ * than guesses. A glued apostrophe/typographic-quote continuation (e.g.
+ * "Sama' Abdulhadi") is the one unconditional exception, because it
+ * continues the same name grammatically rather than introducing a new one —
+ * unlike a hyphen or colon, which conventionally separate clauses/titles.
+ */
+const TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS = new Set([
+  "b2b",
+  "x",
+  "vs",
+  "ft",
+  "feat",
+  "w",
+  "live",
+  "at",
+  "dj",
+  "set",
+  "festival",
+  "presents",
+  "full",
+]);
+
+function checkTrustedChannelSuffix(title: string, cleanedName: string, channelTitle: string): { safe: boolean; reason: string | null } {
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(cleanedName)}([^\\p{L}\\p{N}]|$)`, "iu");
+  const match = pattern.exec(title);
+  if (!match) return { safe: true, reason: null }; // caller already confirmed a match exists
+
+  const rest = title.slice(match.index + match[1].length + cleanedName.length);
+  if (rest.length === 0) return { safe: true, reason: null };
+  if (/^['’]/.test(rest)) return { safe: true, reason: null }; // glued apostrophe — same name, not a separator
+
+  const afterSeparators = rest.replace(/^[\s\-:|,@]+/u, "");
+  const tokenMatch = /^\p{L}[\p{L}\p{N}]*/u.exec(afterSeparators);
+  if (!tokenMatch) return { safe: true, reason: null }; // nothing name-like follows
+
+  const token = tokenMatch[0];
+  const tokenLower = token.toLowerCase();
+  const channelFirstWord = channelTitle.trim().toLowerCase().split(/\s+/)[0] ?? "";
+  if (TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS.has(tokenLower) || tokenLower === channelFirstWord || token.length >= 3) {
+    return { safe: true, reason: null };
+  }
+  return {
+    safe: false,
+    reason: `possible distinct stage name — trusted-channel match with a short, unrecognized continuation ("${token}")`,
+  };
+}
+
 function checkStructuralEligibility(cleanedName: string, normalized: string, item: YoutubeSearchItem): StructuralCheck {
   if (!titleContainsExactName(item.title, cleanedName)) {
     return { eligible: false, channelMatch: null, reason: "title does not contain the exact artist name" };
@@ -169,12 +249,18 @@ function checkStructuralEligibility(cleanedName: string, normalized: string, ite
   const ownChannel = channelNormalized === normalized;
   const trustedChannel = TRUSTED_CHANNELS.has(channelNormalized);
 
+  const acceptTrusted = (): StructuralCheck => {
+    const suffixCheck = checkTrustedChannelSuffix(item.title, cleanedName, item.channelTitle);
+    if (!suffixCheck.safe) return { eligible: false, channelMatch: null, reason: suffixCheck.reason };
+    return { eligible: true, channelMatch: "trusted", reason: null };
+  };
+
   if (AUDIT_CONFIRMED_GENERIC_COLLISION_NAMES.has(normalized)) {
-    if (trustedChannel) return { eligible: true, channelMatch: "trusted", reason: null };
+    if (trustedChannel) return acceptTrusted();
     return { eligible: false, channelMatch: null, reason: "generic/common-word name — own-channel match alone is not sufficient in Rule A" };
   }
   if (ownChannel) return { eligible: true, channelMatch: "own", reason: null };
-  if (trustedChannel) return { eligible: true, channelMatch: "trusted", reason: null };
+  if (trustedChannel) return acceptTrusted();
   return { eligible: false, channelMatch: null, reason: "channel is neither the artist's own nor an allow-listed trusted channel" };
 }
 
