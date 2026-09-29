@@ -1,0 +1,91 @@
+name: YouTube Preview Manual Block
+
+# Temporary, small admin-correction workflow (2026-09-29) wiring up the
+# existing manualBlock override (src/db/youtubePreview.ts::
+# blockArtistYoutubePreview/unblockArtistYoutubePreview, added 2026-09-25
+# but never previously reachable from any route, script, or workflow — "no
+# dedicated admin screen in V1"). Runs src/db/youtubePreviewBlock.ts, a thin
+# CLI wrapper around those two functions — no new business logic. Sets/
+# clears manualBlock on exactly ONE artist's artist_youtube_preview_cache
+# row; never touches `events` or `discovery_queue`, and never calls
+# YouTube (block/unblock are pure cache-table writes, so this workflow
+# needs only DATABASE_URL, not YOUTUBE_API_KEY). Fully reversible: unblock
+# mode exactly undoes block mode.
+#
+# Built to correct a confirmed Rule A false positive (2026-09-29
+# investigation): "Benji" (a small Copenhagen-scene artist) matched a
+# YouTube video actually belonging to "Benji B" (a distinct, well-
+# established international DJ/broadcaster), because the artist name was a
+# strict prefix of a different, longer stage name in the video title. The
+# matching-logic fix for that root cause is a separate, not-yet-approved
+# change tracked outside this workflow — this tool only corrects the
+# resulting cache row(s), one artist at a time, by hand.
+#
+# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) prints the current cache row; "block"/"unblock" set/clear manualBlock.'
+        required: true
+        type: choice
+        options:
+          - plan
+          - block
+          - unblock
+        default: plan
+      artist:
+        description: 'Exact artist name as it appears in the event lineup, e.g. "Benji" (not normalized/lowercased — the script normalizes it the same way the matcher does).'
+        required: true
+      confirm:
+        description: "block/unblock modes only: type BLOCK-YOUTUBE-PREVIEW or UNBLOCK-YOUTUBE-PREVIEW (matching the chosen mode) to confirm the write."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube-preview-block
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run YouTube preview manual block/unblock
+        run: |
+          set -u
+          args=(--mode="${{ inputs.mode }}" --artist="${{ inputs.artist }}")
+          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          node --env-file=.env.local --import tsx src/db/youtubePreviewBlock.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
