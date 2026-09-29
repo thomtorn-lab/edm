@@ -186,15 +186,21 @@ interface StructuralCheck {
  * separators by countBilledNames), and the first word of the channel's own
  * name (e.g. "Boiler" in "Stenny Boiler Room Munich DJ Set"). Anything else
  * that reads as a short (<=2 letter/digit) token immediately after the
- * match — introduced by a space, hyphen, or colon, glued or spaced — is
- * treated as AMBIGUOUS and rejected, forcing abstention rather than a
- * possibly-wrong preview, even if it later turns out to be a harmless
- * version tag (e.g. "V2"): this check has no way to tell a real distinct
- * artist from a coincidental short tag, so it deliberately declines rather
- * than guesses. A glued apostrophe/typographic-quote continuation (e.g.
- * "Sama' Abdulhadi") is the one unconditional exception, because it
- * continues the same name grammatically rather than introducing a new one —
- * unlike a hyphen or colon, which conventionally separate clauses/titles.
+ * match — introduced by a space, colon, or dash (ASCII hyphen "-", en dash
+ * "–", or em dash "—" — treated identically, since all three are used
+ * interchangeably as title separators by different channels/creators),
+ * glued or spaced — is treated as AMBIGUOUS and rejected, forcing
+ * abstention rather than a possibly-wrong preview, even if it later turns
+ * out to be a harmless version tag (e.g. "V2"): this check has no way to
+ * tell a real distinct artist from a coincidental short tag, so it
+ * deliberately declines rather than guesses. A glued apostrophe/
+ * typographic-quote continuation (e.g. "Sama' Abdulhadi") is the one
+ * unconditional exception, because it continues the same name grammatically
+ * rather than introducing a new one — unlike a dash or colon, which
+ * conventionally separate clauses/titles. A dash that is part of the
+ * artist's OWN name (e.g. "MCR-T") is unaffected either way, since it's
+ * consumed by the cleanedName match itself before this function ever looks
+ * at what follows.
  */
 const TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS = new Set([
   "b2b",
@@ -221,7 +227,7 @@ function checkTrustedChannelSuffix(title: string, cleanedName: string, channelTi
   if (rest.length === 0) return { safe: true, reason: null };
   if (/^['’]/.test(rest)) return { safe: true, reason: null }; // glued apostrophe — same name, not a separator
 
-  const afterSeparators = rest.replace(/^[\s\-:|,@]+/u, "");
+  const afterSeparators = rest.replace(/^[\s\-–—:|,@]+/u, ""); // – en dash, — em dash — same treatment as ASCII hyphen
   const tokenMatch = /^\p{L}[\p{L}\p{N}]*/u.exec(afterSeparators);
   if (!tokenMatch) return { safe: true, reason: null }; // nothing name-like follows
 
