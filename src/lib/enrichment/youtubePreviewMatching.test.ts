@@ -408,6 +408,185 @@ describe("matchArtistYoutubePreview — recency preference among Rule A-safe can
   });
 });
 
+describe("matchArtistYoutubePreview — trusted-channel short-suffix guard (2026-09-29)", () => {
+  it("rejects a trusted-channel match where the title continues with a different short stage name (Benji / Benji B, the confirmed false positive)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_benji_b", channelTitle: "Boiler Room", title: "Benji B | Boiler Room London" })],
+        "Benji live": [],
+      },
+      details: { v_benji_b: details({ videoId: "v_benji_b" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("abstain");
+    expect(result.videoId).toBeNull();
+  });
+
+  it("accepts a glued apostrophe continuation of the same name (SAMA / Sama' Abdulhadi)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "SAMA dj set": [video({ videoId: "v_sama", channelTitle: "Boiler Room", title: "Sama' Abdulhadi | Boiler Room: Palestine" })],
+      },
+      details: { v_sama: details({ videoId: "v_sama" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("SAMA", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_sama");
+  });
+
+  it("accepts a continuation that names the channel itself (Stenny / Boiler Room Munich DJ Set)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Stenny dj set": [video({ videoId: "v_stenny", channelTitle: "Boiler Room", title: "Stenny Boiler Room Munich DJ Set" })],
+      },
+      details: { v_stenny: details({ videoId: "v_stenny" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Stenny", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_stenny");
+  });
+
+  it("rejects a hyphen-separated short continuation on a trusted channel (same ambiguity as a space-separated one)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_hyphen", channelTitle: "Boiler Room", title: "Benji - B | Boiler Room London" })],
+        "Benji live": [],
+      },
+      details: { v_hyphen: details({ videoId: "v_hyphen" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("abstain");
+  });
+
+  it("accepts a hyphen-separated continuation that is a substantive word, not a short token", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_hyphen_safe", channelTitle: "Boiler Room", title: "Benji - Boiler Room Session" })],
+      },
+      details: { v_hyphen_safe: details({ videoId: "v_hyphen_safe" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_hyphen_safe");
+  });
+
+  it("rejects a colon-separated short continuation on a trusted channel", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_colon", channelTitle: "Boiler Room", title: "Benji: B | Boiler Room London" })],
+        "Benji live": [],
+      },
+      details: { v_colon: details({ videoId: "v_colon" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("abstain");
+  });
+
+  it("accepts a colon-separated continuation that names the channel", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_colon_safe", channelTitle: "Boiler Room", title: "Benji: Boiler Room DJ Set" })],
+      },
+      details: { v_colon_safe: details({ videoId: "v_colon_safe" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_colon_safe");
+  });
+
+  it("accepts a legitimate b2b credit on a trusted channel — the connector is not a distinct name", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_b2b", channelTitle: "Boiler Room", title: "Benji b2b Todd | Boiler Room X" })],
+      },
+      details: { v_b2b: details({ videoId: "v_b2b" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_b2b");
+  });
+
+  it("rejects a short version tag rather than assuming it's harmless (ambiguous -> abstain, not allow-listed)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_v2", channelTitle: "Boiler Room", title: "Benji V2 | Boiler Room" })],
+        "Benji live": [],
+      },
+      details: { v_v2: details({ videoId: "v_v2" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("abstain");
+  });
+
+  it("does not apply the short-suffix guard to own-channel matches (scoped to trusted channels only)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_own", channelTitle: "Benji", title: "Benji B Official Highlights" })],
+      },
+      details: { v_own: details({ videoId: "v_own" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_own");
+    expect(result.channelTitle).toBe("Benji");
+  });
+});
+
+describe("getOrMatchArtistYoutubePreview — manual block survives the Rule A short-suffix fix (2026-09-29)", () => {
+  it("a fresh re-lookup for the previously-blocked Benji entry now abstains (Benji B correctly rejected), and the manual block is preserved", async () => {
+    const cache = inMemoryCache();
+    await cache.set({
+      artistNameNormalized: normalizeArtistName("Benji"),
+      provider: "youtube",
+      status: "accepted",
+      matchRule: "A",
+      query: "Benji dj set",
+      videoId: "GsleNHtYFGU",
+      videoTitle: "Benji B | Boiler Room London",
+      channelId: "UCGBpxWJr9FNOcFYA5GkKrMg",
+      channelTitle: "Boiler Room",
+      evidence: {},
+      manualBlock: true,
+      matchedAt: new Date(NOW.getTime() - 200 * 24 * 60 * 60 * 1000),
+      lastVerifiedAt: new Date(NOW.getTime() - 200 * 24 * 60 * 60 * 1000),
+      expiresAt: new Date(NOW.getTime() - 1), // expired -> triggers a fresh lookup
+    });
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "GsleNHtYFGU", channelTitle: "Boiler Room", title: "Benji B | Boiler Room London" })],
+        "Benji live": [],
+      },
+      details: { GsleNHtYFGU: details({ videoId: "GsleNHtYFGU" }) },
+    });
+
+    const result = await getOrMatchArtistYoutubePreview("Benji", cache, client, NOW);
+
+    expect(result.status).toBe("abstain"); // the matcher itself now correctly rejects Benji B
+    expect(result.videoId).toBeNull();
+    expect(result.manualBlock).toBe(true); // the manual block is preserved regardless
+  });
+});
+
 describe("getOrMatchArtistYoutubePreview — cache behavior", () => {
   it("cache miss performs a lookup and writes the result to the cache", async () => {
     const cache = inMemoryCache();
