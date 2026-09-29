@@ -480,6 +480,76 @@ describe("matchArtistYoutubePreview — trusted-channel short-suffix guard (2026
     expect(result.videoId).toBe("v_hyphen_safe");
   });
 
+  it("rejects an en-dash-separated short continuation on a trusted channel, same as an ASCII hyphen (Benji – B)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_endash", channelTitle: "Boiler Room", title: "Benji – B | Boiler Room London" })],
+        "Benji live": [],
+      },
+      details: { v_endash: details({ videoId: "v_endash" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("abstain");
+  });
+
+  it("rejects an em-dash-separated short continuation on a trusted channel, same as an ASCII hyphen (Benji — B)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_emdash", channelTitle: "Boiler Room", title: "Benji — B | Boiler Room London" })],
+        "Benji live": [],
+      },
+      details: { v_emdash: details({ videoId: "v_emdash" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("abstain");
+  });
+
+  it("accepts an en-dash-separated continuation that is a substantive word, not a short token", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_endash_safe", channelTitle: "Boiler Room", title: "Benji – Boiler Room Session" })],
+      },
+      details: { v_endash_safe: details({ videoId: "v_endash_safe" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_endash_safe");
+  });
+
+  it("accepts an em-dash-separated continuation that is a substantive word, not a short token", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "v_emdash_safe", channelTitle: "Boiler Room", title: "Benji — Boiler Room Session" })],
+      },
+      details: { v_emdash_safe: details({ videoId: "v_emdash_safe" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Benji", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_emdash_safe");
+  });
+
+  it("accepts a legitimate artist name that itself contains an ASCII hyphen, unaffected by dash handling in the continuation check (MCR-T)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "MCR-T dj set": [video({ videoId: "v_mcrt", channelTitle: "Boiler Room", title: "MCR-T – Boiler Room Berlin: Live From Earth" })],
+      },
+      details: { v_mcrt: details({ videoId: "v_mcrt" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("MCR-T", client);
+
+    expect(result.status).toBe("accepted");
+    expect(result.videoId).toBe("v_mcrt");
+  });
+
   it("rejects a colon-separated short continuation on a trusted channel", async () => {
     const client = fakeYoutubeClient({
       search: {
