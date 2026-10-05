@@ -1,0 +1,87 @@
+name: Send Newsletter
+
+# Weekly newsletter MVP (2026-10-05). Calls the deployed app's
+# POST /api/newsletter/send, same auth/trigger pattern every sync workflow
+# already uses (x-sync-token against SYNC_TRIGGER_TOKEN, x-vercel-
+# protection-bypass against VERCEL_AUTOMATION_BYPASS_SECRET) — see
+# sync-hangaren.yml, which this file deliberately mirrors almost exactly.
+#
+# One-time setup after deploying the app: the same three repository
+# variables/secrets sync-hangaren.yml already documents (SYNC_BASE_URL,
+# SYNC_TRIGGER_TOKEN, VERCEL_AUTOMATION_BYPASS_SECRET) — nothing new to
+# configure for this workflow specifically.
+#
+# NO AUTOMATIC SCHEDULE YET (deployment-safety requirement, 2026-10-05):
+# this workflow is deliberately workflow_dispatch-only, mirroring
+# youtube-preview-backfill.yml's own "built and validated, but paused
+# before going live" precedent. The send route itself is independently
+# gated behind the NEWSLETTER_SIGNUP_ENABLED env var (see
+# src/lib/newsletter/featureFlag.ts) — even a manual dispatch here can't
+# send real email until a human sets that flag, so the two safety layers
+# are intentionally redundant.
+#
+# When ready to go live, add TWO `schedule` cron entries rather than one,
+# to stay correct across Europe/Copenhagen's DST transitions (GitHub
+# Actions cron is always UTC, and Denmark's UTC offset changes twice a
+# year):
+#   - cron: "0 9 * * 4"   # Thursday 10:00 CPH during CET (UTC+1, Nov-Mar)
+#   - cron: "0 8 * * 4"   # Thursday 10:00 CPH during CEST (UTC+2, Mar-Nov)
+# Firing both year-round is intentional, not a bug: the send route is
+# idempotent per (subscriber, ISO week) — see db/newsletter.ts's
+# queuePendingSendsForWeek — so whichever entry fires outside the real
+# target hour simply finds nothing new to do and returns immediately; no
+# time-of-day guard is needed in the route itself.
+
+on:
+  workflow_dispatch: {} # manual trigger only, for now — see note above
+
+concurrency:
+  group: send-newsletter
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger newsletter send
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ]; then
+            echo "::error::Repository variable SYNC_BASE_URL is not set — point it at the deployed app's base URL (Settings > Secrets and variables > Actions > Variables) before this workflow can do anything."
+            exit 1
+          fi
+          if [ -z "${SYNC_TRIGGER_TOKEN}" ]; then
+            echo "::error::Repository secret SYNC_TRIGGER_TOKEN is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the deployment's SYNC_TRIGGER_TOKEN env var."
+            exit 1
+          fi
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is not set (Settings > Secrets and variables > Actions > Secrets), or doesn't match the bypass secret configured on the Vercel project."
+            exit 1
+          fi
+
+          # Higher --max-time than a routine source sync: this fans out to
+          # every confirmed subscriber in one request rather than one
+          # source's events, though at this project's realistic subscriber
+          # counts it should still complete in well under a minute.
+          http_code=$(curl -sS \
+            --retry 2 --retry-delay 15 --retry-all-errors \
+            --max-time 180 \
+            -o /tmp/newsletter-send-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/newsletter/send")
+
+          echo "HTTP status: ${http_code}"
+          echo "Response:"
+          cat /tmp/newsletter-send-response.json
+          echo
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Newsletter send returned HTTP ${http_code} — see response body above."
+            exit 1
+          fi

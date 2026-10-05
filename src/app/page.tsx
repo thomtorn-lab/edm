@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { getArtistPreviewAvailabilityForLineups, getPublishedEventsWithVenue } from "@/lib/queries";
 import EventExplorer from "@/components/EventExplorer";
+import NewsletterSignupForm from "@/components/NewsletterSignupForm";
+import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -36,6 +38,19 @@ export default async function HomePage() {
           Techno, house, trance, drum &amp; bass and more — a continuously updated,
           curated guide to electronic music in Copenhagen.
         </p>
+        {/* Newsletter signup (2026-10-05) — placed here, above
+            EventExplorer's own sticky filter bar, deliberately: it costs
+            one compact row of initial scroll height and then scrolls away
+            like any other page content once browsing starts, rather than
+            sitting inside/below the sticky bar where it would cost that
+            space on every scroll position. Feature-flagged off by default
+            (isNewsletterEnabled) until launch is approved — see
+            src/lib/newsletter/featureFlag.ts. */}
+        {isNewsletterEnabled() && (
+          <div className="mt-4">
+            <NewsletterSignupForm />
+          </div>
+        )}
       </div>
       <EventExplorer events={eventsWithPreview} serverNow={serverNow} />
     </div>

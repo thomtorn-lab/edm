@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 
 export default function Footer() {
   return (
@@ -10,6 +11,13 @@ export default function Footer() {
           <Link href="/venues" className="hover:text-text-secondary">Venues</Link>
           <Link href="/festivals" className="hover:text-text-secondary">Festivals</Link>
           <Link href="/about" className="hover:text-text-secondary">About</Link>
+          {/* Links back to the homepage signup section (there is no
+              separate footer form — one signup surface, not two; see
+              NewsletterSignupForm's own doc comment) so the feature stays
+              reachable from every page, not just the homepage. */}
+          {isNewsletterEnabled() && (
+            <Link href="/#newsletter-email" className="hover:text-text-secondary">Newsletter</Link>
+          )}
           <Link href="/suggest-event" className="hover:text-text-secondary">Suggest an event</Link>
           <Link href="/contact" className="hover:text-text-secondary">Contact</Link>
           <Link href="/privacy" className="hover:text-text-secondary">Privacy</Link>
