@@ -48,6 +48,17 @@ export interface EventFieldEditorProps {
   /** "draft" mode allows an explicit unresolved option; "published" always has some genre. */
   allowUnresolvedGenre?: boolean;
 
+  /**
+   * Optional second genre (max-two-genres-per-event product improvement,
+   * 2026-10-05) — manual-admin-only, not wired into automated classification
+   * or Discovery Queue (see EventManager.tsx, the only caller that passes
+   * these). Omitted entirely by callers that don't support it, which renders
+   * no secondary-genre control at all — an absent pair of props, not an
+   * empty string, is how a caller opts out.
+   */
+  secondaryGenre?: string;
+  onSecondaryGenreChange?: (v: string) => void;
+
   artists: string;
   onArtistsChange: (v: string) => void;
 
@@ -152,6 +163,25 @@ export function EventFieldEditorBottom(props: BottomProps) {
           ))}
         </select>
       </Field>
+      {props.onSecondaryGenreChange && (
+        <Field id={id("secondary-genre")} label="Secondary genre (optional)">
+          {/* Excludes the currently selected primary genre from the option
+              list — the one structural guarantee that selecting the same
+              genre twice is impossible, rather than validating it after the
+              fact. "None" clears it, making the secondary genre removable. */}
+          <select
+            id={id("secondary-genre")}
+            value={props.secondaryGenre ?? ""}
+            onChange={(e) => props.onSecondaryGenreChange?.(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">None</option>
+            {GENRES.filter((g) => g.slug !== props.genre).map((g) => (
+              <option key={g.slug} value={g.slug}>{g.label}</option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field id={id("artists")} label="Artists / lineup (comma-separated)">
         <input id={id("artists")} value={props.artists} onChange={(e) => props.onArtistsChange(e.target.value)} className={inputCls} />
       </Field>

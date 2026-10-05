@@ -118,6 +118,58 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     expect(screen.queryByText(/D&B/)).toBeNull();
   });
 
+  it("displays two genres in PRIMARY, SECONDARY order, joined by ' · ', plain text (max-two-genres-per-event, 2026-10-05)", () => {
+    render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "progressive-house"] as GenreSlug[] })} />);
+    expect(screen.getByText("Techno · Progressive House")).toBeTruthy();
+  });
+
+  it("shows only one genre, unchanged, for an ordinary single-genre event", () => {
+    render(<EventRow event={makeEvent()} />);
+    expect(screen.getByText("Drum & Bass")).toBeTruthy();
+    expect(screen.queryByText(/·.*Drum & Bass|Drum & Bass.*·/)).toBeNull();
+  });
+
+  it("never renders the same genre twice even if subgenres repeats a slug", () => {
+    render(<EventRow event={makeEvent({ subgenres: ["drum-and-bass", "drum-and-bass"] as GenreSlug[] })} />);
+    expect(screen.getAllByText("Drum & Bass")).toHaveLength(1);
+  });
+
+  it("caps the genre text at two even if a stored event somehow carries more than two subgenres", () => {
+    render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno", "house"] as GenreSlug[] })} />);
+    expect(screen.getByText("Techno · Melodic Techno")).toBeTruthy();
+  });
+
+  it("renders no genre badges/pills — the two-genre text stays a plain inline span, same element type as the single-genre case", () => {
+    render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno"] as GenreSlug[] })} />);
+    const genreText = screen.getByText("Techno · Melodic Techno");
+    expect(genreText.tagName).toBe("SPAN");
+    expect(genreText.className).not.toContain("rounded-full");
+    expect(genreText.className).not.toContain("border");
+  });
+
+  it("long two-genre combinations sit in the same flex-wrap metadata row and never force extra markup", () => {
+    // Mobile UX check (long genre labels + long title/venue, 2026-09-26 task
+    // section 7): the metadata row is already a flex-wrap container shared
+    // with venue/sub-venue/VIDEO/status badges, so a long genre pair simply
+    // wraps onto its own line like any other overflowing sibling — no new
+    // row element, no fixed width, nothing that would clip or overflow.
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "An Unusually Long Event Title That Runs On For A While At This Venue",
+          venue: { ...VENUE, name: "An Unusually Long Venue Name That Also Runs On" },
+          primaryGenre: "progressive-house",
+          subgenres: ["progressive-house", "melodic-techno"] as GenreSlug[],
+        })}
+      />,
+    );
+    const genreText = screen.getByText("Progressive House · Melodic Techno");
+    const metadataRow = genreText.parentElement as HTMLElement;
+    expect(metadataRow.className).toContain("flex-wrap");
+    const venueLink = screen.getByRole("link", { name: /An Unusually Long Venue Name/ });
+    expect(venueLink.parentElement).toBe(metadataRow);
+  });
+
   it("shows a FREE badge when there is no ticket link but free-admission evidence exists", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null })} />);
     expect(screen.getByText("Free")).toBeTruthy();

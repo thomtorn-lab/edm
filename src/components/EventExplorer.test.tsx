@@ -747,6 +747,41 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
     expect(queryCardText("Melodic Techno")).toBeNull();
     expect(queryCardText("Industrial")).toBeNull();
   });
+
+  // Max-two-genres-per-event (2026-10-05): an event with two subgenres must
+  // be an OR-match under EITHER genre's filter group, and must never appear
+  // twice even though the filter predicate checks two array elements.
+  const HOUSE_DISCO_EVENT = {
+    ...makeEvent("2026-08-14T20:00:00.000Z"),
+    primaryGenre: "house" as GenreSlug,
+    subgenres: ["house", "disco"] as GenreSlug[],
+  };
+
+  // EventRow renders both genres as one joined string ("House · Disco") in a
+  // single text node, not two separately-queryable texts — see
+  // EventRow.tsx's `genres.map((g) => g.shortLabel).join(" · ")`.
+  it("a two-genre event (House · Disco) is discoverable under the House filter", () => {
+    render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("house");
+    expect(cardText("House · Disco")).toBeTruthy();
+  });
+
+  it("the same two-genre event (House · Disco) is also discoverable under the Disco filter", () => {
+    render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("disco");
+    expect(cardText("House · Disco")).toBeTruthy();
+  });
+
+  it("a two-genre event never appears twice in the list under either of its own genre filters", () => {
+    render(<EventExplorer events={[HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("house");
+    expect(allCardText("House · Disco")).toHaveLength(1);
+    selectGenre("disco");
+    expect(allCardText("House · Disco")).toHaveLength(1);
+  });
 });
 
 describe("EventExplorer — Genre/Venue and Search focus treatment (Round 16)", () => {

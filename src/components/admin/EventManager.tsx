@@ -38,6 +38,14 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
   const [venueId, setVenueId] = useState(event.venueId);
   const [subVenue, setSubVenue] = useState(event.subVenue ?? "");
   const [primaryGenre, setPrimaryGenre] = useState(event.primaryGenre);
+  // Max-two-genres-per-event (2026-10-05): the event's own existing second
+  // distinct slug, if any — not event.subgenres[1], since legacy/seed data
+  // isn't guaranteed to store primary first. Falls back to "" (no secondary)
+  // when subgenres holds only the primary genre, which is every event today
+  // outside of a handful of pre-existing multi-genre fixtures.
+  const [secondaryGenre, setSecondaryGenre] = useState(
+    event.subgenres.find((g) => g !== event.primaryGenre) ?? ""
+  );
   const [artists, setArtists] = useState(event.artists.join(", "));
   const [description, setDescription] = useState(event.description ?? "");
   const [officialEventUrl, setOfficialEventUrl] = useState(event.officialEventUrl ?? "");
@@ -163,9 +171,17 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
       if (venueId !== event.venueId) patch.venueId = venueId;
       const subVenueTrimmed = subVenue.trim();
       if (subVenueTrimmed !== (event.subVenue ?? "")) patch.subVenue = subVenueTrimmed || null;
-      if (primaryGenre !== event.primaryGenre) {
+      // Max-two-genres-per-event (2026-10-05): primaryGenre and subgenres are
+      // always sent together, matching the pre-existing lockstep convention
+      // this file already had for a primary-only change — this just extends
+      // it to also cover a secondary-only change, so writes.ts's own
+      // primaryGenre-without-subgenres safety net (which would otherwise
+      // derive subgenres = [primaryGenre] and silently drop a manually-set
+      // secondary) never has a reason to fire from this form.
+      const currentSecondaryGenre = event.subgenres.find((g) => g !== event.primaryGenre) ?? "";
+      if (primaryGenre !== event.primaryGenre || secondaryGenre !== currentSecondaryGenre) {
         patch.primaryGenre = primaryGenre;
-        patch.subgenres = [primaryGenre];
+        patch.subgenres = secondaryGenre && secondaryGenre !== primaryGenre ? [primaryGenre, secondaryGenre] : [primaryGenre];
       }
       const newArtists = artists.split(",").map((s) => s.trim()).filter(Boolean);
       if (newArtists.join(",") !== event.artists.join(",")) patch.artists = newArtists;
@@ -336,6 +352,8 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
             mode="published"
             genre={primaryGenre}
             onGenreChange={(v) => setPrimaryGenre(v as typeof primaryGenre)}
+            secondaryGenre={secondaryGenre}
+            onSecondaryGenreChange={setSecondaryGenre}
             artists={artists}
             onArtistsChange={setArtists}
             officialEventUrl={officialEventUrl}

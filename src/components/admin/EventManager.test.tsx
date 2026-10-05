@@ -694,3 +694,149 @@ describe("EventManager — unified event create/edit model (2026-09-08): start d
     expect(screen.getByText(/Legacy Facebook URL/)).toBeTruthy();
   });
 });
+
+describe("EventManager — max two genres per event (2026-10-05): optional secondary genre, manual-admin-only", () => {
+  afterEach(cleanup);
+
+  it("renders an optional Secondary genre selector alongside the primary Genre select", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Secondary genre (optional)")).toBeTruthy();
+  });
+
+  it("pre-fills the secondary genre select from the event's own existing second subgenre", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno", "disco"] })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const secondarySelect = screen.getByLabelText("Secondary genre (optional)") as HTMLSelectElement;
+    expect(secondarySelect.value).toBe("disco");
+  });
+
+  it("leaves the secondary genre unset (None) for an ordinary single-genre event", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno"] })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const secondarySelect = screen.getByLabelText("Secondary genre (optional)") as HTMLSelectElement;
+    expect(secondarySelect.value).toBe("");
+  });
+
+  it("the secondary genre options exclude the currently selected primary genre — a duplicate selection is structurally impossible, not just rejected after the fact", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno"] })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const secondarySelect = screen.getByLabelText("Secondary genre (optional)") as HTMLSelectElement;
+    const optionValues = Array.from(secondarySelect.options).map((o) => o.value);
+    expect(optionValues).not.toContain("techno");
+    expect(optionValues).toContain("disco"); // every other genre remains selectable
+  });
+
+  it("adds a secondary genre, sending primaryGenre and subgenres together in PRIMARY, SECONDARY order", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Secondary genre (optional)"), { target: { value: "disco" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("techno");
+    expect(body.patch.subgenres).toEqual(["techno", "disco"]);
+  });
+
+  it("removing a previously-set secondary genre (selecting None) collapses subgenres back to a single-element array", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno", "disco"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Secondary genre (optional)"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("techno");
+    expect(body.patch.subgenres).toEqual(["techno"]);
+  });
+
+  it("preserves the primary genre unchanged when only the secondary genre is edited", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "house", subgenres: ["house"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Secondary genre (optional)"), { target: { value: "disco" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("house");
+  });
+
+  it("never sends a genre patch at all when neither genre field is touched (existing one-genre events keep working unchanged)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Kaj - Din ven i solen (genre untouched)" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch).not.toHaveProperty("primaryGenre");
+    expect(body.patch).not.toHaveProperty("subgenres");
+  });
+
+  it("changing only the primary genre still mirrors the pre-existing single-genre lockstep behavior when no secondary is set", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("house");
+    expect(body.patch.subgenres).toEqual(["house"]);
+  });
+
+  it("changing the primary genre while a secondary genre is set carries the secondary genre forward (both genres sent together)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno", "disco"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("house");
+    expect(body.patch.subgenres).toEqual(["house", "disco"]);
+  });
+
+  it("never sends a duplicate genre even if the primary genre is changed to match the already-selected secondary genre", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "techno", subgenres: ["techno", "disco"] })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // The secondary select's own options already exclude whatever the
+    // primary select currently shows, so this scenario can't be driven
+    // through the UI directly — this proves the save-time computation
+    // itself (not just the option list) never emits a duplicate, in case a
+    // future caller ever sets these two state values out of step.
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "disco" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("disco");
+    expect(body.patch.subgenres).toEqual(["disco"]);
+  });
+});
