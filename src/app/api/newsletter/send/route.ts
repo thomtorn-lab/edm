@@ -8,6 +8,7 @@ import { sendNewsletterEmail } from "@/lib/email";
 import {
   claimPendingSends,
   getConfirmedSubscribers,
+  isSendStillClaimable,
   markSendSent,
   markStaleUnconfirmedSends,
   queuePendingSendsForWeek,
@@ -36,6 +37,17 @@ const MAX_BATCHES = 400;
  * top of send-newsletter.yml not (yet) carrying a `schedule` trigger —
  * even a manual or accidental workflow_dispatch can't actually send real
  * email while the feature flag is off.
+ *
+ * Unsubscribe-safety boundary (unsubscribe-safety review, 2026-10-05):
+ * isSendStillClaimable is checked immediately before every Resend call, so
+ * an unsubscribe that cascades a row away is caught right up until the
+ * instant the external request is made. What this cannot catch — and
+ * nothing in this codebase can, since Resend is an external HTTP service
+ * with no transactional coupling to our database — is an unsubscribe that
+ * lands in the few milliseconds between that check and Resend accepting
+ * the request. Once Resend has accepted it, the email is out of our
+ * control entirely; Resend has no "cancel an already-accepted transactional
+ * send" API. This is a genuine, structural boundary, not a bug to fix.
  */
 export async function POST(request: NextRequest) {
   const token = process.env.SYNC_TRIGGER_TOKEN;
@@ -60,12 +72,23 @@ export async function POST(request: NextRequest) {
 
   let sent = 0;
   let ambiguous = 0;
+  let skippedUnsubscribed = 0;
   let batches = 0;
   for (;;) {
     if (batches++ >= MAX_BATCHES) break;
     const claimed = await claimPendingSends(isoWeek, CLAIM_BATCH_SIZE);
     if (claimed.length === 0) break;
     for (const row of claimed) {
+      // Unsubscribe-safety (2026-10-05): a batch can take real wall-clock
+      // time to work through, so re-check right before the external call
+      // that an unsubscribe hasn't cascaded this row away since it was
+      // claimed. Shrinks the unsafe window to one indexed SELECT — see
+      // isSendStillClaimable's own doc comment for why it can't close
+      // entirely.
+      if (!(await isSendStillClaimable(row.id))) {
+        skippedUnsubscribed++;
+        continue;
+      }
       const result = await sendNewsletterEmail({
         to: row.recipientEmail,
         subject: row.payloadSubject,
@@ -96,5 +119,6 @@ export async function POST(request: NextRequest) {
     staleUnconfirmedReclaimed: staleCount,
     sent,
     ambiguous,
+    skippedUnsubscribed,
   });
 }

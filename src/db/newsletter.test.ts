@@ -92,6 +92,7 @@ const {
   markStaleUnconfirmedSends,
   claimPendingSends,
   markSendSent,
+  isSendStillClaimable,
 } = await import("./newsletter");
 
 beforeEach(() => {
@@ -295,6 +296,18 @@ describe("markSendSent", () => {
   it("sets status sent, sentAt, and resendEmailId", async () => {
     await markSendSent("send-1", "resend-id-1");
     expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({ status: "sent", resendEmailId: "resend-id-1" }));
+  });
+});
+
+describe("isSendStillClaimable", () => {
+  it("returns true when the row still exists with status 'sending'", async () => {
+    selectResults = [[{ id: "send-1" }]];
+    expect(await isSendStillClaimable("send-1")).toBe(true);
+  });
+
+  it("returns false when the row no longer exists (e.g. cascaded away by an unsubscribe)", async () => {
+    selectResults = [[]];
+    expect(await isSendStillClaimable("send-1")).toBe(false);
   });
 });
 

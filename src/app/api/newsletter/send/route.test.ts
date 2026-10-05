@@ -7,6 +7,7 @@ const getConfirmedSubscribersMock = vi.fn();
 const queuePendingSendsForWeekMock = vi.fn();
 const claimPendingSendsMock = vi.fn();
 const markSendSentMock = vi.fn();
+const isSendStillClaimableMock = vi.fn();
 const sendNewsletterEmailMock = vi.fn();
 
 vi.mock("@/lib/queries", () => ({
@@ -18,6 +19,7 @@ vi.mock("@/db/newsletter", () => ({
   queuePendingSendsForWeek: (...args: unknown[]) => queuePendingSendsForWeekMock(...args),
   claimPendingSends: (...args: unknown[]) => claimPendingSendsMock(...args),
   markSendSent: (...args: unknown[]) => markSendSentMock(...args),
+  isSendStillClaimable: (...args: unknown[]) => isSendStillClaimableMock(...args),
 }));
 vi.mock("@/lib/email", () => ({
   sendNewsletterEmail: (...args: unknown[]) => sendNewsletterEmailMock(...args),
@@ -38,6 +40,7 @@ beforeEach(() => {
   queuePendingSendsForWeekMock.mockReset().mockResolvedValue({ queued: 0, skippedNoMatch: 0 });
   claimPendingSendsMock.mockReset().mockResolvedValue([]);
   markSendSentMock.mockReset().mockResolvedValue(undefined);
+  isSendStillClaimableMock.mockReset().mockResolvedValue(true);
   sendNewsletterEmailMock.mockReset();
 });
 
@@ -124,6 +127,61 @@ describe("POST /api/newsletter/send — happy path", () => {
     expect(body.sent).toBe(0);
     expect(body.ambiguous).toBe(1);
     expect(markSendSentMock).not.toHaveBeenCalled();
+  });
+
+  it("unsubscribe-safety: never calls Resend for a row that was unsubscribed (cascaded away) between claim and send", async () => {
+    claimPendingSendsMock
+      .mockResolvedValueOnce([
+        {
+          id: "send-1",
+          subscriberId: "sub-1",
+          recipientEmail: "a@example.com",
+          manageToken: "manage-1",
+          payloadSubject: "S",
+          payloadHtml: "h",
+          payloadText: "t",
+          idempotencyKey: "key-1",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    isSendStillClaimableMock.mockResolvedValue(false); // unsubscribed in the gap
+
+    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+    const body = await res.json();
+
+    expect(sendNewsletterEmailMock).not.toHaveBeenCalled();
+    expect(markSendSentMock).not.toHaveBeenCalled();
+    expect(body.sent).toBe(0);
+    expect(body.skippedUnsubscribed).toBe(1);
+  });
+
+  it("checks isSendStillClaimable before calling sendNewsletterEmail, not after", async () => {
+    claimPendingSendsMock
+      .mockResolvedValueOnce([
+        {
+          id: "send-1",
+          subscriberId: "sub-1",
+          recipientEmail: "a@example.com",
+          manageToken: "manage-1",
+          payloadSubject: "S",
+          payloadHtml: "h",
+          payloadText: "t",
+          idempotencyKey: "key-1",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const callOrder: string[] = [];
+    isSendStillClaimableMock.mockImplementation(async () => {
+      callOrder.push("check");
+      return true;
+    });
+    sendNewsletterEmailMock.mockImplementation(async () => {
+      callOrder.push("send");
+      return { status: "sent", resendEmailId: "r-1" };
+    });
+
+    await POST(makeRequest({ "x-sync-token": "test-token" }));
+    expect(callOrder).toEqual(["check", "send"]);
   });
 
   it("calls markStaleUnconfirmedSends before claiming (so a just-staled row is never claimed in the same run)", async () => {

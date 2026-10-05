@@ -6,7 +6,8 @@ vi.mock("@/db/newsletter", () => ({
   unsubscribeByManageToken: (...args: unknown[]) => unsubscribeByManageTokenMock(...args),
 }));
 
-import { POST } from "./route";
+import * as route from "./route";
+const { POST } = route;
 
 function makeRequest(url: string, body?: string): NextRequest {
   return new NextRequest(url, {
@@ -48,5 +49,9 @@ describe("POST /api/newsletter/unsubscribe", () => {
     unsubscribeByManageTokenMock.mockResolvedValue(false);
     const res = await POST(makeRequest("http://localhost/api/newsletter/unsubscribe?token=unknown"));
     expect(res.status).toBe(200);
+  });
+
+  it("protection against accidental unsubscribe from GET requests or link scanners: the route exports no GET handler, so Next.js's App Router rejects a GET with 405 before this module's code ever runs — only a POST (as RFC 8058's List-Unsubscribe-Post requires) can trigger unsubscribeByManageToken", () => {
+    expect((route as Record<string, unknown>).GET).toBeUndefined();
   });
 });

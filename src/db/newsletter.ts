@@ -298,6 +298,34 @@ export async function claimPendingSends(isoWeek: string, limit: number): Promise
   }));
 }
 
+/**
+ * Narrows (but cannot fully close) the gap between claiming a row and
+ * actually calling Resend for it (unsubscribe-safety review, 2026-10-05):
+ * `claimPendingSends` returns a batch of rows that the caller then sends
+ * one at a time, in a loop that can take a real amount of wall-clock time
+ * for a large batch. If the subscriber unsubscribes in that window, the
+ * cascade delete removes their `newsletter_sends` row, but the CALLER
+ * already has the claimed data sitting in memory and would otherwise send
+ * it anyway, never knowing the row is gone. Calling this immediately
+ * before the Resend call shrinks that window from "the rest of the batch
+ * loop" down to one indexed SELECT's round-trip — the smallest window
+ * technically achievable without coupling to Resend's own transaction,
+ * which is impossible since it's an external HTTP service. This does NOT
+ * close the window entirely: an unsubscribe that lands in the few
+ * milliseconds between this check and the Resend call still can't be
+ * caught — that remaining gap is a genuine, unavoidable boundary once
+ * Resend has already accepted the request (see the send route's own doc
+ * comment and the delivery report for why it can't be closed further).
+ */
+export async function isSendStillClaimable(sendId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: newsletterSends.id })
+    .from(newsletterSends)
+    .where(and(eq(newsletterSends.id, sendId), eq(newsletterSends.status, "sending")))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function markSendSent(sendId: string, resendEmailId: string): Promise<void> {
   await db
     .update(newsletterSends)
