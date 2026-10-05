@@ -505,6 +505,27 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.queryByText("Hard Techno")).toBeNull();
   });
 
+  it("displays two genres in PRIMARY, SECONDARY order (max-two-genres-per-event, 2026-10-05)", async () => {
+    await renderPage(makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno"] }));
+    const techno = screen.getByText("Techno");
+    const melodicTechno = screen.getByText("Melodic Techno");
+    expect(techno).toBeTruthy();
+    expect(melodicTechno).toBeTruthy();
+    expect(techno.compareDocumentPosition(melodicTechno) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("never shows the same genre twice, even if subgenres repeats a slug", async () => {
+    await renderPage(makeEvent({ primaryGenre: "techno", subgenres: ["techno", "techno"] }));
+    expect(screen.getAllByText("Techno")).toHaveLength(1);
+  });
+
+  it("caps the genre display at two even if a stored event somehow carries more than two subgenres", async () => {
+    await renderPage(makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno", "house"] }));
+    expect(screen.getByText("Techno")).toBeTruthy();
+    expect(screen.getByText("Melodic Techno")).toBeTruthy();
+    expect(screen.queryByText("House")).toBeNull();
+  });
+
   it("renders no empty About heading/block when the event has no description", async () => {
     await renderPage(makeEvent({ description: null }));
     expect(screen.queryByText("About")).toBeNull();
