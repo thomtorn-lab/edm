@@ -510,6 +510,19 @@ export const newsletterSubscribers = pgTable("newsletter_subscribers", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   /** Consent evidence (GDPR accountability principle) — when and how confirmed, nothing more. */
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  /**
+   * Which exact consent wording/purpose text (see src/lib/newsletter/
+   * consent.ts's NEWSLETTER_CONSENT_VERSION) was in effect on the
+   * signup/confirmation pages at the moment this subscriber confirmed —
+   * final GDPR hardening round, 2026-10-06. Deliberately a short version
+   * tag, not the full wording or an IP address: the actual wording for any
+   * version is recoverable from git history, which is sufficient evidence
+   * of what a given version meant without duplicating that text (or
+   * collecting anything beyond what's already stored) per subscriber. Set
+   * once, by confirmSubscriberByToken, at the same moment as confirmedAt;
+   * null for a row that's never completed double opt-in.
+   */
+  consentVersion: text("consent_version"),
 });
 
 /**

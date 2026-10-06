@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { confirmSubscriberByToken } from "@/db/newsletter";
+import { triggerRetentionSweep } from "@/lib/newsletter/retentionSweep";
 
 /**
  * Double-opt-in confirmation (GDPR consent-evidence integrity fix,
@@ -16,6 +17,12 @@ import { confirmSubscriberByToken } from "@/db/newsletter";
  * Router rejects a GET with 405 before this module's code ever runs.
  */
 export async function POST(request: NextRequest) {
+  // Retention sweep (GDPR final hardening round, 2026-10-06) — see
+  // triggerRetentionSweep's own doc comment: a confirm click is independent,
+  // organic traffic that keeps retention running even if the scheduled send
+  // workflow stops firing entirely.
+  await triggerRetentionSweep();
+
   const form = await request.formData();
   const token = form.get("token");
 

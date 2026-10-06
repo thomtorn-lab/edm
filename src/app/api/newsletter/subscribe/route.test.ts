@@ -3,12 +3,16 @@ import { NextRequest } from "next/server";
 
 const requestSubscriptionMock = vi.fn();
 const sendEmailMock = vi.fn();
+const triggerRetentionSweepMock = vi.fn();
 
 vi.mock("@/db/newsletter", () => ({
   requestSubscription: (...args: unknown[]) => requestSubscriptionMock(...args),
 }));
 vi.mock("@/lib/email", () => ({
   sendEmail: (...args: unknown[]) => sendEmailMock(...args),
+}));
+vi.mock("@/lib/newsletter/retentionSweep", () => ({
+  triggerRetentionSweep: (...args: unknown[]) => triggerRetentionSweepMock(...args),
 }));
 
 import { POST } from "./route";
@@ -25,6 +29,7 @@ beforeEach(() => {
   requestSubscriptionMock.mockReset();
   sendEmailMock.mockReset();
   sendEmailMock.mockResolvedValue(undefined);
+  triggerRetentionSweepMock.mockReset().mockResolvedValue(undefined);
   vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "true");
 });
 
@@ -39,6 +44,16 @@ describe("POST /api/newsletter/subscribe", () => {
     expect(res.status).toBe(503);
     expect(requestSubscriptionMock).not.toHaveBeenCalled();
   });
+
+  it(
+    "GDPR final hardening (2026-10-06): triggers the retention sweep even when the feature flag is off — " +
+      "retention must not depend on signup being currently enabled",
+    async () => {
+      vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+      await POST(makeRequest({ email: "a@example.com" }));
+      expect(triggerRetentionSweepMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("sends a confirmation email and returns ok for a new subscription", async () => {
     requestSubscriptionMock.mockResolvedValue({ confirmToken: "tok-123" });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unsubscribeByManageToken } from "@/db/newsletter";
+import { triggerRetentionSweep } from "@/lib/newsletter/retentionSweep";
 
 /**
  * Two distinct callers hit this exact route, both satisfied by the same
@@ -15,6 +16,12 @@ import { unsubscribeByManageToken } from "@/db/newsletter";
  * carries no other identifying information in.
  */
 export async function POST(request: NextRequest) {
+  // Retention sweep (GDPR final hardening round, 2026-10-06) — see
+  // triggerRetentionSweep's own doc comment: an unsubscribe click is
+  // independent, organic traffic that keeps retention running even if the
+  // scheduled send workflow stops firing entirely.
+  await triggerRetentionSweep();
+
   const token = request.nextUrl.searchParams.get("token");
   if (token) {
     await unsubscribeByManageToken(token);

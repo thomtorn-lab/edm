@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { NEWSLETTER_CONSENT_PURPOSE } from "@/lib/newsletter/consent";
 
 export const metadata: Metadata = {
   title: "Confirm subscription",
   robots: { index: false },
 };
+
+/** Token-bearing page — never statically rendered/cached (GDPR final hardening round, 2026-10-06; mirrors newsletter/manage/page.tsx's identical setting). */
+export const revalidate = 0;
 
 function InvalidLinkView() {
   return (
@@ -47,9 +51,7 @@ export default async function NewsletterConfirmPage({
       <h1 className="font-display text-2xl font-extrabold uppercase tracking-tight text-text-primary">
         Confirm your subscription
       </h1>
-      <p className="mt-3 text-sm text-text-secondary">
-        Click below to confirm you want to receive the Electronic CPH weekly newsletter.
-      </p>
+      <p className="mt-3 text-sm text-text-secondary">{NEWSLETTER_CONSENT_PURPOSE}</p>
       <form method="POST" action="/api/newsletter/confirm" className="mt-6">
         <input type="hidden" name="token" value={token} />
         <button

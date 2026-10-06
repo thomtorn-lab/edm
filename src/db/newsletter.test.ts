@@ -95,6 +95,7 @@ const {
   isSendStillClaimable,
   deleteOldNewsletterSends,
   deleteExpiredUnconfirmedSubscribers,
+  sweepNewsletterRetention,
 } = await import("./newsletter");
 
 beforeEach(() => {
@@ -159,12 +160,18 @@ describe("requestSubscription", () => {
 });
 
 describe("confirmSubscriberByToken", () => {
-  it("confirms a valid pending token and returns the manage token", async () => {
-    selectResults = [[{ id: "sub-1", confirmed: false, manageToken: "manage-1" }]];
-    const result = await confirmSubscriberByToken("confirm-1");
-    expect(result).toEqual({ manageToken: "manage-1" });
-    expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({ confirmed: true }));
-  });
+  it(
+    "confirms a valid pending token, returns the manage token, and stamps the consent-evidence " +
+      "fields (confirmedAt + consentVersion) — GDPR final hardening round, 2026-10-06",
+    async () => {
+      selectResults = [[{ id: "sub-1", confirmed: false, manageToken: "manage-1" }]];
+      const result = await confirmSubscriberByToken("confirm-1");
+      expect(result).toEqual({ manageToken: "manage-1" });
+      expect(updateSetMock).toHaveBeenCalledWith(
+        expect.objectContaining({ confirmed: true, confirmedAt: expect.any(Date), consentVersion: expect.any(String) }),
+      );
+    },
+  );
 
   it("returns null for an unrecognized token", async () => {
     selectResults = [[]];
@@ -378,5 +385,14 @@ describe("deleteExpiredUnconfirmedSubscribers", () => {
   it("returns 0 when nothing is expired", async () => {
     deleteReturningResults = [[]];
     expect(await deleteExpiredUnconfirmedSubscribers()).toBe(0);
+  });
+});
+
+describe("sweepNewsletterRetention", () => {
+  it("runs both retention deletes and returns their combined counts", async () => {
+    deleteReturningResults = [[{ id: "send-1" }, { id: "send-2" }], [{ id: "sub-1" }]];
+    const result = await sweepNewsletterRetention();
+    expect(result).toEqual({ deletedOldSends: 2, deletedExpiredUnconfirmed: 1 });
+    expect(deleteMock).toHaveBeenCalledTimes(2);
   });
 });

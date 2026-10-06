@@ -5,6 +5,10 @@ const confirmSubscriberByTokenMock = vi.fn();
 vi.mock("@/db/newsletter", () => ({
   confirmSubscriberByToken: (...args: unknown[]) => confirmSubscriberByTokenMock(...args),
 }));
+const triggerRetentionSweepMock = vi.fn();
+vi.mock("@/lib/newsletter/retentionSweep", () => ({
+  triggerRetentionSweep: (...args: unknown[]) => triggerRetentionSweepMock(...args),
+}));
 
 import * as route from "./route";
 const { POST } = route;
@@ -20,6 +24,7 @@ function makeRequest(formFields: Record<string, string>): NextRequest {
 
 beforeEach(() => {
   confirmSubscriberByTokenMock.mockReset();
+  triggerRetentionSweepMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("POST /api/newsletter/confirm", () => {
@@ -48,4 +53,13 @@ describe("POST /api/newsletter/confirm", () => {
   it("protection against link-scanner/prefetcher auto-confirmation: the route exports no GET handler, so Next.js's App Router rejects a GET with 405 before this module's code ever runs — only an explicit POST (the button submit on the confirm page) can trigger confirmSubscriberByToken", () => {
     expect((route as Record<string, unknown>).GET).toBeUndefined();
   });
+
+  it(
+    "GDPR final hardening (2026-10-06): triggers the retention sweep on every call, independent of " +
+      "the scheduled send workflow — a confirm click is organic traffic that keeps retention alive",
+    async () => {
+      await POST(makeRequest({ token: "confirm-123" }));
+      expect(triggerRetentionSweepMock).toHaveBeenCalledTimes(1);
+    },
+  );
 });

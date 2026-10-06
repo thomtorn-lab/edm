@@ -9,8 +9,7 @@ const claimPendingSendsMock = vi.fn();
 const markSendSentMock = vi.fn();
 const isSendStillClaimableMock = vi.fn();
 const sendNewsletterEmailMock = vi.fn();
-const deleteOldNewsletterSendsMock = vi.fn();
-const deleteExpiredUnconfirmedSubscribersMock = vi.fn();
+const sweepNewsletterRetentionMock = vi.fn();
 
 vi.mock("@/lib/queries", () => ({
   getPublishedEventsWithVenue: (...args: unknown[]) => getPublishedEventsWithVenueMock(...args),
@@ -22,8 +21,7 @@ vi.mock("@/db/newsletter", () => ({
   claimPendingSends: (...args: unknown[]) => claimPendingSendsMock(...args),
   markSendSent: (...args: unknown[]) => markSendSentMock(...args),
   isSendStillClaimable: (...args: unknown[]) => isSendStillClaimableMock(...args),
-  deleteOldNewsletterSends: (...args: unknown[]) => deleteOldNewsletterSendsMock(...args),
-  deleteExpiredUnconfirmedSubscribers: (...args: unknown[]) => deleteExpiredUnconfirmedSubscribersMock(...args),
+  sweepNewsletterRetention: (...args: unknown[]) => sweepNewsletterRetentionMock(...args),
 }));
 vi.mock("@/lib/email", () => ({
   sendNewsletterEmail: (...args: unknown[]) => sendNewsletterEmailMock(...args),
@@ -46,8 +44,7 @@ beforeEach(() => {
   markSendSentMock.mockReset().mockResolvedValue(undefined);
   isSendStillClaimableMock.mockReset().mockResolvedValue(true);
   sendNewsletterEmailMock.mockReset();
-  deleteOldNewsletterSendsMock.mockReset().mockResolvedValue(0);
-  deleteExpiredUnconfirmedSubscribersMock.mockReset().mockResolvedValue(0);
+  sweepNewsletterRetentionMock.mockReset().mockResolvedValue({ deletedOldSends: 0, deletedExpiredUnconfirmed: 0 });
 });
 
 afterEach(() => {
@@ -65,28 +62,33 @@ describe("POST /api/newsletter/send — auth and feature flag", () => {
     const res = await POST(makeRequest({ "x-sync-token": "wrong" }));
     expect(res.status).toBe(401);
     expect(getConfirmedSubscribersMock).not.toHaveBeenCalled();
-    expect(deleteOldNewsletterSendsMock).not.toHaveBeenCalled();
-    expect(deleteExpiredUnconfirmedSubscribersMock).not.toHaveBeenCalled();
+    expect(sweepNewsletterRetentionMock).not.toHaveBeenCalled();
   });
 
-  it("returns 503 when the feature flag is off, even with a correct token", async () => {
-    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
-    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
-    expect(res.status).toBe(503);
-    expect(getConfirmedSubscribersMock).not.toHaveBeenCalled();
-    expect(deleteOldNewsletterSendsMock).not.toHaveBeenCalled();
-    expect(deleteExpiredUnconfirmedSubscribersMock).not.toHaveBeenCalled();
-  });
+  it(
+    "GDPR final hardening (2026-10-06): the retention sweep still runs when the feature flag is off — " +
+      "retention is a legal obligation independent of whether real sending is currently enabled, and must " +
+      "not silently stop just because this endpoint also happens to gate sending",
+    async () => {
+      vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+      sweepNewsletterRetentionMock.mockResolvedValue({ deletedOldSends: 3, deletedExpiredUnconfirmed: 2 });
+      const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+      const body = await res.json();
+      expect(res.status).toBe(503);
+      expect(getConfirmedSubscribersMock).not.toHaveBeenCalled();
+      expect(sweepNewsletterRetentionMock).toHaveBeenCalledTimes(1);
+      expect(body.deletedOldSends).toBe(3);
+      expect(body.deletedExpiredUnconfirmed).toBe(2);
+    },
+  );
 });
 
 describe("POST /api/newsletter/send — GDPR retention sweep", () => {
-  it("deletes old resolved sends and expired unconfirmed subscribers on every authenticated, enabled invocation, and reports the counts", async () => {
-    deleteOldNewsletterSendsMock.mockResolvedValue(3);
-    deleteExpiredUnconfirmedSubscribersMock.mockResolvedValue(2);
+  it("sweeps retention on every authenticated invocation and reports the counts", async () => {
+    sweepNewsletterRetentionMock.mockResolvedValue({ deletedOldSends: 3, deletedExpiredUnconfirmed: 2 });
     const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
     const body = await res.json();
-    expect(deleteOldNewsletterSendsMock).toHaveBeenCalledTimes(1);
-    expect(deleteExpiredUnconfirmedSubscribersMock).toHaveBeenCalledTimes(1);
+    expect(sweepNewsletterRetentionMock).toHaveBeenCalledTimes(1);
     expect(body.deletedOldSends).toBe(3);
     expect(body.deletedExpiredUnconfirmed).toBe(2);
   });

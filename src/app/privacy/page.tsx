@@ -17,6 +17,11 @@ export default function PrivacyPage() {
 
       <div className="mt-6 space-y-4 text-sm leading-relaxed text-text-secondary">
         <p>
+          Electronic CPH is the data controller for the personal data described on this page. For any
+          privacy question or to exercise any of the rights below, use{" "}
+          <Link href="/contact" className="underline hover:text-text-primary">Contact</Link>.
+        </p>
+        <p>
           Electronic CPH uses Vercel Web Analytics to see how many people visit and which pages are popular.
           It&rsquo;s privacy-friendly and cookieless — it doesn&rsquo;t set cookies, doesn&rsquo;t use any
           persistent identifier, and doesn&rsquo;t track you across sites or build a profile of you. Beyond
@@ -38,19 +43,47 @@ export default function PrivacyPage() {
         {isNewsletterEnabled() && (
           <p>
             If you sign up for the weekly newsletter, we store your email address and, if you choose, your genre
-            preferences — nothing else. Subscribing requires confirming via a link we email you (so nobody can sign
-            up an address that isn&rsquo;t theirs), and every newsletter includes a one-click unsubscribe link.
-            Unsubscribing deletes your email address and preferences immediately; we don&rsquo;t keep a copy. We
-            don&rsquo;t use open or click tracking in newsletter emails. Sending is handled by Resend
-            (resend.com), acting as our processor for this purpose only. We keep a short record of each week&rsquo;s
-            send (which address, which content) for up to 30 days to debug delivery problems, then delete it
-            automatically; an unconfirmed signup that&rsquo;s never clicked its confirmation link is also deleted
-            automatically after 30 days.
+            preferences — nothing else, and we don&rsquo;t collect your IP address or any other identifier for this
+            purpose. The legal basis for this is your consent, given by confirming via a link we email you (so
+            nobody can sign up an address that isn&rsquo;t theirs) — you can withdraw it at any time via the
+            one-click unsubscribe link in every newsletter. Unsubscribing deletes your email address and
+            preferences immediately; we don&rsquo;t keep a copy. We don&rsquo;t use open or click tracking in
+            newsletter emails. Sending is handled by Resend (resend.com), acting as our processor for this purpose
+            only. We keep a short record of each week&rsquo;s send (which address, which content) for up to 30
+            days to debug delivery problems, then delete it automatically; an unconfirmed signup that&rsquo;s
+            never clicked its confirmation link is also deleted automatically after 30 days.
           </p>
         )}
         <p>
           If that ever changes — if we add any other non-essential tracking that requires consent — this
           page gets updated first, and we&rsquo;ll ask for your consent before it&rsquo;s activated.
+        </p>
+      </div>
+
+      <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+        Where data is processed
+      </h2>
+      <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
+        <p>
+          This site, and any data described above, is hosted and processed by Vercel (hosting) and our
+          database provider, and — for the newsletter only — Resend. If any of these process data outside
+          the EU/EEA, we rely on their own standard safeguards for that transfer (such as the EU Standard
+          Contractual Clauses); we haven&rsquo;t independently verified each provider&rsquo;s current region
+          or transfer mechanism beyond what they publish.
+        </p>
+      </div>
+
+      <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+        Your rights
+      </h2>
+      <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
+        <p>
+          You have the right to access, correct, or erase your personal data, to restrict or object to its
+          processing, and — where processing is based on consent — to withdraw that consent at any time
+          (the newsletter&rsquo;s unsubscribe link does this immediately for that data). Use{" "}
+          <Link href="/contact" className="underline hover:text-text-primary">Contact</Link> for any of these
+          requests. You also have the right to lodge a complaint with the Danish Data Protection Agency
+          (Datatilsynet).
         </p>
       </div>
 

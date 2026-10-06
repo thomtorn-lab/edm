@@ -5,6 +5,10 @@ const unsubscribeByManageTokenMock = vi.fn();
 vi.mock("@/db/newsletter", () => ({
   unsubscribeByManageToken: (...args: unknown[]) => unsubscribeByManageTokenMock(...args),
 }));
+const triggerRetentionSweepMock = vi.fn();
+vi.mock("@/lib/newsletter/retentionSweep", () => ({
+  triggerRetentionSweep: (...args: unknown[]) => triggerRetentionSweepMock(...args),
+}));
 
 import * as route from "./route";
 const { POST } = route;
@@ -20,6 +24,7 @@ function makeRequest(url: string, body?: string): NextRequest {
 beforeEach(() => {
   unsubscribeByManageTokenMock.mockReset();
   unsubscribeByManageTokenMock.mockResolvedValue(true);
+  triggerRetentionSweepMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("POST /api/newsletter/unsubscribe", () => {
@@ -54,4 +59,13 @@ describe("POST /api/newsletter/unsubscribe", () => {
   it("protection against accidental unsubscribe from GET requests or link scanners: the route exports no GET handler, so Next.js's App Router rejects a GET with 405 before this module's code ever runs — only a POST (as RFC 8058's List-Unsubscribe-Post requires) can trigger unsubscribeByManageToken", () => {
     expect((route as Record<string, unknown>).GET).toBeUndefined();
   });
+
+  it(
+    "GDPR final hardening (2026-10-06): triggers the retention sweep on every call, independent of " +
+      "the scheduled send workflow — an unsubscribe click is organic traffic that keeps retention alive",
+    async () => {
+      await POST(makeRequest("http://localhost/api/newsletter/unsubscribe?token=manage-tok-1"));
+      expect(triggerRetentionSweepMock).toHaveBeenCalledTimes(1);
+    },
+  );
 });

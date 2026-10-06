@@ -4,6 +4,8 @@ import { sendEmail } from "@/lib/email";
 import { isValidEmail } from "@/lib/validation";
 import { getClientIp, isRateLimited } from "@/lib/rateLimit";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
+import { NEWSLETTER_CONSENT_PURPOSE } from "@/lib/newsletter/consent";
+import { triggerRetentionSweep } from "@/lib/newsletter/retentionSweep";
 
 const SITE_URL = "https://electroniccph.com";
 
@@ -14,6 +16,13 @@ const SITE_URL = "https://electroniccph.com";
  * /api/contact's existing honeypot + isValidEmail + isRateLimited pattern.
  */
 export async function POST(request: NextRequest) {
+  // Retention sweep (GDPR final hardening round, 2026-10-06) — triggered
+  // before the feature-flag check, deliberately: retention must keep
+  // running even while signup itself is paused. See triggerRetentionSweep's
+  // own doc comment for why this can't depend solely on the scheduled send
+  // job continuing to fire.
+  await triggerRetentionSweep();
+
   if (!isNewsletterEnabled()) {
     return NextResponse.json({ error: "Newsletter signup is not yet available." }, { status: 503 });
   }
@@ -52,7 +61,7 @@ export async function POST(request: NextRequest) {
       await sendEmail({
         to: trimmedEmail,
         subject: "Confirm your Electronic CPH newsletter subscription",
-        text: `Confirm your subscription to the Electronic CPH weekly newsletter:\n\n${confirmUrl}\n\nIf you didn't request this, you can ignore this email — you won't be subscribed unless you click the link.`,
+        text: `${NEWSLETTER_CONSENT_PURPOSE}\n\nConfirm your subscription:\n\n${confirmUrl}\n\nIf you didn't request this, you can ignore this email — you won't be subscribed unless you click the link.`,
       });
     }
   } catch (err) {

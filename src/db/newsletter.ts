@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "./client";
 import { newsletterSends, newsletterSubscribers } from "./schema";
 import { generateNewsletterToken } from "../lib/newsletter/tokens";
@@ -7,6 +7,7 @@ import { MAIN_GENRES, type MainGenreSlug } from "../lib/taxonomy";
 import type { EventWithVenue } from "../lib/queries";
 import { selectEventsForSubscriber } from "../lib/newsletter/eventSelection";
 import { buildNewsletterEmail } from "../lib/newsletter/emailContent";
+import { NEWSLETTER_CONSENT_VERSION } from "../lib/newsletter/consent";
 
 const VALID_MAIN_GENRES = new Set<string>(MAIN_GENRES.map((g) => g.slug));
 
@@ -72,7 +73,22 @@ export async function requestSubscription(email: string): Promise<{ confirmToken
   return { confirmToken };
 }
 
-/** Flips a subscriber confirmed (idempotent — re-confirming an already-confirmed token just returns its existing manageToken). Returns null for an unrecognized token. */
+/**
+ * Flips a subscriber confirmed (idempotent — re-confirming an already-
+ * confirmed token just returns its existing manageToken, without
+ * overwriting its original confirmedAt/consentVersion). Returns null for an
+ * unrecognized token.
+ *
+ * Stamps `consentVersion` (GDPR final hardening round, 2026-10-06)
+ * alongside `confirmedAt` — together they're the complete consent-evidence
+ * record: exactly when, and under exactly which wording (see
+ * src/lib/newsletter/consent.ts), a subscriber took the explicit
+ * confirming action. This function is only ever reached via the POST
+ * /api/newsletter/confirm route (see that route's own doc comment), which
+ * is itself only reachable via an explicit button submit — never a GET —
+ * so "a row has a consentVersion" already IS the evidence of an explicit
+ * user action.
+ */
 export async function confirmSubscriberByToken(confirmToken: string): Promise<{ manageToken: string } | null> {
   const rows = await db.select().from(newsletterSubscribers).where(eq(newsletterSubscribers.confirmToken, confirmToken)).limit(1);
   const row = rows[0];
@@ -80,7 +96,7 @@ export async function confirmSubscriberByToken(confirmToken: string): Promise<{ 
   if (!row.confirmed) {
     await db
       .update(newsletterSubscribers)
-      .set({ confirmed: true, confirmedAt: new Date() })
+      .set({ confirmed: true, confirmedAt: new Date(), consentVersion: NEWSLETTER_CONSENT_VERSION })
       .where(eq(newsletterSubscribers.id, row.id));
   }
   return { manageToken: row.manageToken };
@@ -349,21 +365,47 @@ export async function countRemainingSends(isoWeek: string): Promise<number> {
  * rendered HTML/text of the email they were sent — none of which serves any
  * purpose once the send has reached a terminal state. 30 days is enough to
  * debug a delivery problem (cross-check against Resend's own dashboard/logs
- * for that window) without keeping personal data around indefinitely. Only
- * terminal statuses are eligible — 'pending'/'sending' rows are still active
- * work for the current week and are never touched here regardless of age.
+ * for that window) without keeping personal data around indefinitely.
  */
 const SEND_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Call once per send-job run — deletes newsletter_sends rows that reached a terminal state ('sent' | 'skipped_no_match' | 'stale_unconfirmed') more than SEND_HISTORY_RETENTION_MS ago. See that constant's doc comment for why 30 days. */
+/**
+ * Hard backstop for a row that never reaches a terminal status at all (GDPR
+ * final hardening round, 2026-10-06) — e.g. weekly sending gets disabled, or
+ * the scheduled workflow that invokes /api/newsletter/send stops running
+ * entirely, before a 'pending'/'sending' row for some past week ever gets
+ * claimed/resolved. Without this, such a row would sit forever: the
+ * terminal-status sweep above only ever touches resolved rows, so an
+ * abandoned non-terminal row would never become eligible for it no matter
+ * how old it got. 90 days is comfortably past every other timing in this
+ * pipeline (the 23h stale-unconfirmed window, the 15-minute crashed-worker
+ * reclaim window, any plausible manual catch-up run) — a row still
+ * 'pending'/'sending' at that age is unambiguously abandoned, not active
+ * work, regardless of status.
+ */
+const ABANDONED_SEND_CEILING_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Call on every newsletter write path (see sweepNewsletterRetention below) —
+ * deletes newsletter_sends rows that either (a) reached a terminal state
+ * ('sent' | 'skipped_no_match' | 'stale_unconfirmed') more than
+ * SEND_HISTORY_RETENTION_MS ago, or (b) are older than
+ * ABANDONED_SEND_CEILING_MS regardless of status (the abandoned-row
+ * backstop — see that constant's doc comment for why this can't be
+ * conditioned on status alone).
+ */
 export async function deleteOldNewsletterSends(): Promise<number> {
-  const cutoff = new Date(Date.now() - SEND_HISTORY_RETENTION_MS);
+  const resolvedCutoff = new Date(Date.now() - SEND_HISTORY_RETENTION_MS);
+  const abandonedCutoff = new Date(Date.now() - ABANDONED_SEND_CEILING_MS);
   const result = await db
     .delete(newsletterSends)
     .where(
-      and(
-        inArray(newsletterSends.status, ["sent", "skipped_no_match", "stale_unconfirmed"]),
-        lt(newsletterSends.queuedAt, cutoff),
+      or(
+        and(
+          inArray(newsletterSends.status, ["sent", "skipped_no_match", "stale_unconfirmed"]),
+          lt(newsletterSends.queuedAt, resolvedCutoff),
+        ),
+        lt(newsletterSends.queuedAt, abandonedCutoff),
       ),
     )
     .returning({ id: newsletterSends.id });
@@ -379,10 +421,13 @@ export async function deleteOldNewsletterSends(): Promise<number> {
  * separate table). 30 days is ample time for a genuine subscriber to
  * confirm; getConfirmedSubscribers already excludes unconfirmed rows from
  * every send, so deleting one here never touches an active subscription.
+ * Unlike newsletter_sends, this needs no separate "abandoned" backstop: the
+ * cutoff is already status-independent (confirmed = false), so there's no
+ * non-terminal state this can get stuck behind.
  */
 const UNCONFIRMED_SUBSCRIBER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Call once per send-job run — deletes newsletter_subscribers rows that are still unconfirmed more than UNCONFIRMED_SUBSCRIBER_RETENTION_MS after signup. Never touches a confirmed subscriber (unsubscribeByManageToken is the only path that deletes one of those). */
+/** Call on every newsletter write path (see sweepNewsletterRetention below) — deletes newsletter_subscribers rows that are still unconfirmed more than UNCONFIRMED_SUBSCRIBER_RETENTION_MS after signup. Never touches a confirmed subscriber (unsubscribeByManageToken is the only path that deletes one of those). */
 export async function deleteExpiredUnconfirmedSubscribers(): Promise<number> {
   const cutoff = new Date(Date.now() - UNCONFIRMED_SUBSCRIBER_RETENTION_MS);
   const result = await db
@@ -390,4 +435,25 @@ export async function deleteExpiredUnconfirmedSubscribers(): Promise<number> {
     .where(and(eq(newsletterSubscribers.confirmed, false), lt(newsletterSubscribers.createdAt, cutoff)))
     .returning({ id: newsletterSubscribers.id });
   return result.length;
+}
+
+/**
+ * Single retention entry point (GDPR final hardening round, 2026-10-06),
+ * called from every newsletter write path (subscribe, confirm, unsubscribe,
+ * and the weekly send job) rather than only the send job — deliberately NOT
+ * gated on the feature flag or tied to a dedicated schedule, so retention
+ * keeps working even when real sending is disabled or the scheduled
+ * workflow that drives send stops running entirely: as long as ANY
+ * newsletter endpoint still gets real traffic (a new signup, someone
+ * clicking an old confirm/unsubscribe link), cleanup keeps happening. This
+ * is deliberately plain sequential DELETEs reused across call sites, not a
+ * new job/scheduler — see deleteOldNewsletterSends/
+ * deleteExpiredUnconfirmedSubscribers for the actual windows.
+ */
+export async function sweepNewsletterRetention(): Promise<{ deletedOldSends: number; deletedExpiredUnconfirmed: number }> {
+  const [deletedOldSends, deletedExpiredUnconfirmed] = await Promise.all([
+    deleteOldNewsletterSends(),
+    deleteExpiredUnconfirmedSubscribers(),
+  ]);
+  return { deletedOldSends, deletedExpiredUnconfirmed };
 }
