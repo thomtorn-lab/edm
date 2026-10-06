@@ -5,6 +5,7 @@ import {
   boolean,
   integer,
   primaryKey,
+  unique,
   jsonb,
 } from "drizzle-orm/pg-core";
 
@@ -480,4 +481,127 @@ export const sourceEventLinks = pgTable(
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.eventId, table.sourceId, table.role] })],
+);
+
+/**
+ * Newsletter subscribers (weekly digest MVP, 2026-10-05). No account/login —
+ * `confirmToken`/`manageToken` are the entire auth model, matching the
+ * task's explicit "no account creation" requirement. `genres` stores
+ * `MainGenreSlug[]` (the same 12 broad groups the public Genre filter
+ * already uses, see src/lib/taxonomy.ts's MAIN_GENRES/mainGenreOf) — an
+ * empty array means "all events", not a separate boolean/enum field, so
+ * there's exactly one way to represent "no filter" rather than two that
+ * could disagree.
+ *
+ * `confirmed` starts false (double opt-in, product requirement) and a
+ * subscriber is never sent anything, and never counted for matching, until
+ * it's true — see getConfirmedSubscribers in db/newsletter.ts, the only
+ * read path the weekly send job uses. Unsubscribing deletes the row
+ * entirely (no soft-delete/retention window) — the simplest way to satisfy
+ * the right-to-erasure requirement without a separate purge job.
+ */
+export const newsletterSubscribers = pgTable("newsletter_subscribers", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  genres: text("genres").array().notNull().default([]),
+  confirmed: boolean("confirmed").notNull().default(false),
+  confirmToken: text("confirm_token").notNull().unique(),
+  manageToken: text("manage_token").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Consent evidence (GDPR accountability principle) — when and how confirmed, nothing more. */
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  /**
+   * Which exact consent wording/purpose text (see src/lib/newsletter/
+   * consent.ts's NEWSLETTER_CONSENT_VERSION) was in effect on the
+   * signup/confirmation pages at the moment this subscriber confirmed —
+   * final GDPR hardening round, 2026-10-06. Deliberately a short version
+   * tag, not the full wording or an IP address: the actual wording for any
+   * version is recoverable from git history, which is sufficient evidence
+   * of what a given version meant without duplicating that text (or
+   * collecting anything beyond what's already stored) per subscriber. Set
+   * once, by confirmSubscriberByToken, at the same moment as confirmedAt;
+   * null for a row that's never completed double opt-in.
+   */
+  consentVersion: text("consent_version"),
+});
+
+/**
+ * One row per (subscriber, week) the weekly send job has ever queued —
+ * this table IS the idempotency/resume mechanism (weekly delivery safety
+ * design, 2026-10-05), not just a log. `UNIQUE(isoWeek, subscriberId)`
+ * guarantees a subscriber can only ever be queued once per week, but on
+ * its own does NOT stop two parallel workers both reading the same
+ * `pending` row and both attempting to send it — the atomic claim query in
+ * db/newsletter.ts (`FOR UPDATE SKIP LOCKED`) is what actually prevents
+ * that race; this table's job is to hold the state that query operates on.
+ *
+ * `payloadHtml`/`payloadSubject`/`payloadText` are snapshotted ONCE, when
+ * the row is first queued, and never recomputed on retry — this is what
+ * makes reusing the same `idempotencyKey` on a retry safe even if the
+ * underlying event data changes between the original attempt and the
+ * retry (an event could be cancelled, sold out, etc. in between): the
+ * retry always resends exactly what was originally queued, never a
+ * silently different list. See db/newsletter.ts's claim/send functions.
+ *
+ * status: 'pending' (queued, not yet attempted) -> 'sending' (claimed by a
+ * worker, claimedAt set) -> 'sent' (resendEmailId set, terminal) or back to
+ * 'pending'-eligible-for-reclaim if a 'sending' row's claimedAt is older
+ * than the reclaim window (the worker likely crashed). A row stuck in
+ * 'sending' for more than Resend's 24h idempotency-key window becomes
+ * 'stale_unconfirmed' instead of being auto-retried — see
+ * reclaimStaleSends's own doc comment for why that one case needs a human.
+ */
+export const newsletterSends = pgTable(
+  "newsletter_sends",
+  {
+    id: text("id").primaryKey(),
+    isoWeek: text("iso_week").notNull(),
+    /**
+     * `onDelete: "cascade"` is load-bearing (delivery-safety requirement
+     * 19: an unsubscribed address can never be sent a queued or retried
+     * newsletter): unsubscribeByManageToken hard-deletes the subscriber
+     * row, and this cascade is what guarantees every one of their
+     * newsletter_sends rows — queued, in-flight, or already sent — goes
+     * with it in the same atomic statement, rather than needing a
+     * separate "delete their pending sends first" step that could itself
+     * race with a concurrent send-claim.
+     */
+    subscriberId: text("subscriber_id")
+      .notNull()
+      .references(() => newsletterSubscribers.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"), // 'pending' | 'sending' | 'sent' | 'skipped_no_match' | 'stale_unconfirmed'
+    /**
+     * Snapshotted at queue time alongside the content payload, for the
+     * same reason: the claim step must be able to send without a second
+     * lookup back to newsletter_subscribers (which, by claim time, may no
+     * longer even have a row — the subscriber could have unsubscribed
+     * between queueing and sending; the cascade delete removes this send
+     * row too in that case, but while it still exists it must remain
+     * fully self-contained). `manageToken` is immutable for a
+     * subscriber's lifetime, so snapshotting it is exactly as safe as
+     * snapshotting the HTML body itself.
+     */
+    recipientEmail: text("recipient_email").notNull(),
+    manageToken: text("manage_token").notNull(),
+    payloadSubject: text("payload_subject"),
+    payloadHtml: text("payload_html"),
+    payloadText: text("payload_text"),
+    eventCount: integer("event_count").notNull().default(0),
+    /** Deterministic: `newsletter:{subscriberId}:{isoWeek}` — see db/newsletter.ts. Reused verbatim on every retry. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    resendEmailId: text("resend_email_id"),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Set once, on the row's very first claim, and never updated again —
+     * this anchors Resend's 24h idempotency-key window (see
+     * reclaimStaleSends's doc comment): the question "is it still safe to
+     * reuse this idempotencyKey" depends on when it was FIRST sent to
+     * Resend, not when a later retry most recently picked the row up.
+     */
+    firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
+    /** Updated on every claim (first attempt or a later retry/reclaim) — what the short crashed-worker reclaim window (RECLAIM_WINDOW_MS) checks. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (table) => [unique().on(table.isoWeek, table.subscriberId)],
 );

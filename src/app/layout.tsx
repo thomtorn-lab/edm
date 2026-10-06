@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
+import PrivacyAwareAnalytics from "@/components/PrivacyAwareAnalytics";
 // Self-hosted via @fontsource instead of next/font/google: Big Shoulders'
 // dynamic Google Fonts CSS response was serving the same (stale/broken)
 // asset URL for all three weights, 404ing at build time. Fontsource
@@ -50,7 +50,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Header />
         <main className="flex-1 relative z-[1]">{children}</main>
         <Footer />
-        <Analytics />
+        <PrivacyAwareAnalytics />
       </body>
     </html>
   );
