@@ -94,6 +94,113 @@ describe("POST /api/newsletter/send — GDPR retention sweep", () => {
   });
 });
 
+describe("POST /api/newsletter/send — activation safety: test-mode allowlist isolation (2026-10-06)", () => {
+  it("proceeds (instead of 503) when the flag is off but NEWSLETTER_TEST_ALLOWLIST is set, and passes the parsed allowlist to selection and claiming", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+    expect(res.status).toBe(200);
+    expect(getConfirmedSubscribersMock).toHaveBeenCalledWith(new Set(["tester@example.com"]));
+    expect(claimPendingSendsMock).toHaveBeenCalledWith(expect.any(String), expect.any(Number), new Set(["tester@example.com"]));
+    const body = await res.json();
+    expect(body.testMode).toBe(true);
+  });
+
+  it("still 503s when the flag is off and no allowlist is configured — unchanged existing behavior", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+    expect(res.status).toBe(503);
+    expect(getConfirmedSubscribersMock).not.toHaveBeenCalled();
+  });
+
+  it("still 503s when the flag is off and the allowlist is empty — empty/missing allowlist always means no test access", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "");
+    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+    expect(res.status).toBe(503);
+    expect(getConfirmedSubscribersMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a configured allowlist entirely once the flag is genuinely enabled — passes null, not the allowlist, so a real run is never narrowed", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "true");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+    expect(res.status).toBe(200);
+    expect(getConfirmedSubscribersMock).toHaveBeenCalledWith(null);
+    expect(claimPendingSendsMock).toHaveBeenCalledWith(expect.any(String), expect.any(Number), null);
+    const body = await res.json();
+    expect(body.testMode).toBe(false);
+  });
+
+  it(
+    "existing (non-test) confirmed subscriber must never be included in test mode: even if claimPendingSends " +
+      "somehow still returned a non-allowlisted row, the final per-row gate skips it and never calls Resend " +
+      "— the third independent enforcement layer",
+    async () => {
+      vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+      vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+      claimPendingSendsMock
+        .mockResolvedValueOnce([
+          {
+            id: "send-real",
+            subscriberId: "sub-real",
+            recipientEmail: "real-subscriber@example.com", // not on the allowlist
+            manageToken: "manage-real",
+            payloadSubject: "S",
+            payloadHtml: "h",
+            payloadText: "t",
+            idempotencyKey: "key-real",
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+      const body = await res.json();
+
+      expect(sendNewsletterEmailMock).not.toHaveBeenCalled();
+      expect(markSendSentMock).not.toHaveBeenCalled();
+      expect(isSendStillClaimableMock).not.toHaveBeenCalled(); // skipped before even reaching the unsubscribe-safety check
+      expect(body.sent).toBe(0);
+      expect(body.skippedNotAllowlisted).toBe(1);
+    },
+  );
+
+  it("a genuinely allowlisted row still sends normally in test mode", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    claimPendingSendsMock
+      .mockResolvedValueOnce([
+        {
+          id: "send-test",
+          subscriberId: "sub-test",
+          recipientEmail: "Tester@Example.com", // case-different from the allowlist entry
+          manageToken: "manage-test",
+          payloadSubject: "S",
+          payloadHtml: "h",
+          payloadText: "t",
+          idempotencyKey: "key-test",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    sendNewsletterEmailMock.mockResolvedValue({ status: "sent", resendEmailId: "r-1" });
+
+    const res = await POST(makeRequest({ "x-sync-token": "test-token" }));
+    const body = await res.json();
+
+    expect(sendNewsletterEmailMock).toHaveBeenCalledWith(expect.objectContaining({ to: "Tester@Example.com" }));
+    expect(body.sent).toBe(1);
+    expect(body.skippedNotAllowlisted).toBe(0);
+  });
+
+  it("retry/reclaim in test mode still only ever claims allowlisted rows — same claimPendingSends call each batch, allowlist included every time", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    claimPendingSendsMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    await POST(makeRequest({ "x-sync-token": "test-token" }));
+    expect(claimPendingSendsMock).toHaveBeenCalledWith(expect.any(String), expect.any(Number), new Set(["tester@example.com"]));
+  });
+});
+
 describe("POST /api/newsletter/send — happy path", () => {
   it("marks stale sends, queues, claims, sends, and marks sent — returns a full summary", async () => {
     queuePendingSendsForWeekMock.mockResolvedValue({ queued: 2, skippedNoMatch: 1 });

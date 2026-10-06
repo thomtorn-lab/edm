@@ -233,6 +233,39 @@ describe("getConfirmedSubscribers", () => {
     const result = await getConfirmedSubscribers();
     expect(result).toEqual([{ id: "sub-1", email: "a@example.com", genres: [], confirmed: true, manageToken: "tok" }]);
   });
+
+  it(
+    "test-mode allowlist (activation safety round, 2026-10-06): narrows to confirmed subscribers whose " +
+      "email is on the allowlist, excluding every other existing/confirmed subscriber",
+    async () => {
+      selectResults = [
+        [
+          { id: "sub-test", email: "Tester@Example.com", genres: [], confirmed: true, manageToken: "tok-test" },
+          { id: "sub-real", email: "real-subscriber@example.com", genres: [], confirmed: true, manageToken: "tok-real" },
+        ],
+      ];
+      const result = await getConfirmedSubscribers(new Set(["tester@example.com"]));
+      expect(result).toEqual([{ id: "sub-test", email: "Tester@Example.com", genres: [], confirmed: true, manageToken: "tok-test" }]);
+    },
+  );
+
+  it("returns every confirmed subscriber when no allowlist is given (undefined) — unchanged real-mode behavior", async () => {
+    selectResults = [[{ id: "sub-1", email: "a@example.com", genres: [], confirmed: true, manageToken: "tok" }]];
+    const result = await getConfirmedSubscribers(undefined);
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns every confirmed subscriber when the allowlist is explicitly null (real mode, flag enabled)", async () => {
+    selectResults = [[{ id: "sub-1", email: "a@example.com", genres: [], confirmed: true, manageToken: "tok" }]];
+    const result = await getConfirmedSubscribers(null);
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns nobody when the allowlist matches none of the confirmed subscribers", async () => {
+    selectResults = [[{ id: "sub-real", email: "real-subscriber@example.com", genres: [], confirmed: true, manageToken: "tok" }]];
+    const result = await getConfirmedSubscribers(new Set(["tester@example.com"]));
+    expect(result).toEqual([]);
+  });
 });
 
 describe("markStaleUnconfirmedSends", () => {
@@ -298,6 +331,28 @@ describe("claimPendingSends", () => {
     const text = JSON.stringify(sqlArg);
     expect(text).toContain("status = 'pending'");
     expect(text).toMatch(/claimed_at < now\(\) - .*interval '1 millisecond'/);
+  });
+
+  it(
+    "test-mode allowlist (activation safety round, 2026-10-06): when given, adds a recipient_email " +
+      "filter to the claim query's WHERE clause, so a non-test row is never even locked, let alone claimed",
+    async () => {
+      await claimPendingSends("2026-W41", 100, new Set(["tester@example.com"]));
+      const sqlArg = executeMock.mock.calls[0][0];
+      const text = JSON.stringify(sqlArg);
+      expect(text).toContain("LOWER(recipient_email) = ANY");
+      expect(text).toContain("tester@example.com");
+    },
+  );
+
+  it("adds no recipient_email filter when no allowlist is given — unchanged real-mode query shape", async () => {
+    await claimPendingSends("2026-W41", 100);
+    const sqlArgUnfiltered = JSON.stringify(executeMock.mock.calls[0][0]);
+    executeMock.mockClear();
+    await claimPendingSends("2026-W41", 100, null);
+    const sqlArgNull = JSON.stringify(executeMock.mock.calls[0][0]);
+    expect(sqlArgUnfiltered).not.toContain("LOWER(recipient_email) = ANY");
+    expect(sqlArgNull).not.toContain("LOWER(recipient_email) = ANY");
   });
 });
 
