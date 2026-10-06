@@ -184,3 +184,14 @@ describe("Venue detail page — VEGA overall-venue presentation (2026-09-11)", (
     expect(getEventsForVenue).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Venue detail page — SEO <title> and meta description (2026-10-06)", () => {
+  it("emits an absolute title (no second brand from the layout template) and a description of the place + its event overview; canonical unchanged", async () => {
+    const { generateMetadata } = await import("./page");
+    vi.mocked(getVenueBySlug).mockResolvedValue({ ...VENUE, name: "MODULE", slug: "module" });
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "module" }) } as never);
+    expect(metadata.title).toEqual({ absolute: "MODULE Copenhagen - Upcoming Events | Electronic CPH" });
+    expect(metadata.description).toBe("Upcoming electronic music events at MODULE, Copenhagen. A club.");
+    expect(metadata.alternates).toEqual({ canonical: "/venues/module" });
+  });
+});

@@ -1048,3 +1048,26 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
     expect(iframe.getAttribute("src")).not.toContain("autoplay");
   });
 });
+
+describe("Event detail page — SEO <title> and meta description (2026-10-06)", () => {
+  it("emits an absolute title (no second brand from the layout template) and a factual description; canonical/OG unchanged", async () => {
+    const { generateMetadata } = await import("./page");
+    vi.mocked(getEventBySlugWithVenue).mockResolvedValue(
+      makeEvent({
+        title: "Eric Prydz",
+        slug: "eric-prydz-tap1",
+        artists: ["Eric Prydz"],
+        startDatetime: "2026-10-23T18:00:00.000Z",
+        venue: { ...VENUE, name: "TAP1" },
+      }),
+    );
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "eric-prydz-tap1" }) } as never);
+    expect(metadata.title).toEqual({ absolute: "Eric Prydz - TAP1, Copenhagen - 23 Oct 2026 | Electronic CPH" });
+    expect(metadata.description).toBe("Eric Prydz at TAP1, Copenhagen on Friday 23 October 2026. Drum & Bass.");
+    expect(metadata.alternates).toEqual({ canonical: "/events/eric-prydz-tap1" });
+    expect(metadata.openGraph).toMatchObject({
+      title: "Eric Prydz",
+      description: "Eric Prydz: Eric Prydz — Drum & Bass at TAP1, Copenhagen, on Friday 23 October 2026.",
+    });
+  });
+});
