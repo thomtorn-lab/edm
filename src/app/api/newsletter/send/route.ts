@@ -7,6 +7,8 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 import { sendNewsletterEmail } from "@/lib/email";
 import {
   claimPendingSends,
+  deleteExpiredUnconfirmedSubscribers,
+  deleteOldNewsletterSends,
   getConfirmedSubscribers,
   isSendStillClaimable,
   markSendSent,
@@ -48,6 +50,15 @@ const MAX_BATCHES = 400;
  * the request. Once Resend has accepted it, the email is out of our
  * control entirely; Resend has no "cancel an already-accepted transactional
  * send" API. This is a genuine, structural boundary, not a bug to fix.
+ *
+ * Retention sweep (GDPR storage-limitation audit, 2026-10-06): every
+ * invocation also deletes resolved newsletter_sends rows and expired
+ * unconfirmed subscribers past their retention window (see those functions'
+ * own doc comments in db/newsletter.ts for the exact windows and why).
+ * Folded into this existing weekly-triggered, authenticated endpoint rather
+ * than a new scheduled workflow — this route already runs on a fixed
+ * cadence via send-newsletter.yml, which is all a 30-day retention window
+ * needs.
  */
 export async function POST(request: NextRequest) {
   const token = process.env.SYNC_TRIGGER_TOKEN;
@@ -60,6 +71,11 @@ export async function POST(request: NextRequest) {
   if (!isNewsletterEnabled()) {
     return NextResponse.json({ error: "Newsletter sending is not yet enabled." }, { status: 503 });
   }
+
+  const [deletedOldSends, deletedExpiredUnconfirmed] = await Promise.all([
+    deleteOldNewsletterSends(),
+    deleteExpiredUnconfirmedSubscribers(),
+  ]);
 
   const now = new Date();
   const isoWeek = getIsoWeek(now);
@@ -120,5 +136,7 @@ export async function POST(request: NextRequest) {
     sent,
     ambiguous,
     skippedUnsubscribed,
+    deletedOldSends,
+    deletedExpiredUnconfirmed,
   });
 }

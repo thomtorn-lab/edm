@@ -93,6 +93,8 @@ const {
   claimPendingSends,
   markSendSent,
   isSendStillClaimable,
+  deleteOldNewsletterSends,
+  deleteExpiredUnconfirmedSubscribers,
 } = await import("./newsletter");
 
 beforeEach(() => {
@@ -352,5 +354,29 @@ describe("queuePendingSendsForWeek", () => {
     insertReturningResults = [[]]; // onConflictDoNothing -> no row returned
     const result = await queuePendingSendsForWeek("2026-W41", [subscriber as never], []);
     expect(result).toEqual({ queued: 0, skippedNoMatch: 0 });
+  });
+});
+
+describe("deleteOldNewsletterSends", () => {
+  it("returns the number of deleted rows", async () => {
+    deleteReturningResults = [[{ id: "a" }, { id: "b" }]];
+    expect(await deleteOldNewsletterSends()).toBe(2);
+  });
+
+  it("returns 0 when nothing is past the retention window", async () => {
+    deleteReturningResults = [[]];
+    expect(await deleteOldNewsletterSends()).toBe(0);
+  });
+});
+
+describe("deleteExpiredUnconfirmedSubscribers", () => {
+  it("returns the number of deleted rows", async () => {
+    deleteReturningResults = [[{ id: "sub-1" }]];
+    expect(await deleteExpiredUnconfirmedSubscribers()).toBe(1);
+  });
+
+  it("returns 0 when nothing is expired", async () => {
+    deleteReturningResults = [[]];
+    expect(await deleteExpiredUnconfirmedSubscribers()).toBe(0);
   });
 });

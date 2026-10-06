@@ -341,3 +341,53 @@ export async function countRemainingSends(isoWeek: string): Promise<number> {
     .where(and(eq(newsletterSends.isoWeek, isoWeek), inArray(newsletterSends.status, ["pending", "sending"])));
   return rows.length;
 }
+
+/**
+ * Minimal retention window for RESOLVED newsletter_sends rows (GDPR storage-
+ * limitation audit, 2026-10-06). Each row snapshots personal data — a
+ * recipient email address, that subscriber's manageToken, and the full
+ * rendered HTML/text of the email they were sent — none of which serves any
+ * purpose once the send has reached a terminal state. 30 days is enough to
+ * debug a delivery problem (cross-check against Resend's own dashboard/logs
+ * for that window) without keeping personal data around indefinitely. Only
+ * terminal statuses are eligible — 'pending'/'sending' rows are still active
+ * work for the current week and are never touched here regardless of age.
+ */
+const SEND_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Call once per send-job run — deletes newsletter_sends rows that reached a terminal state ('sent' | 'skipped_no_match' | 'stale_unconfirmed') more than SEND_HISTORY_RETENTION_MS ago. See that constant's doc comment for why 30 days. */
+export async function deleteOldNewsletterSends(): Promise<number> {
+  const cutoff = new Date(Date.now() - SEND_HISTORY_RETENTION_MS);
+  const result = await db
+    .delete(newsletterSends)
+    .where(
+      and(
+        inArray(newsletterSends.status, ["sent", "skipped_no_match", "stale_unconfirmed"]),
+        lt(newsletterSends.queuedAt, cutoff),
+      ),
+    )
+    .returning({ id: newsletterSends.id });
+  return result.length;
+}
+
+/**
+ * Minimal retention window for a signup that never completed double opt-in
+ * (GDPR storage-limitation audit, 2026-10-06). An unconfirmed row's email
+ * address and confirmToken serve no purpose once nobody has clicked the
+ * confirmation link within a reasonable window — this is also how an unused
+ * confirmToken itself gets deleted (it lives on this same row, not a
+ * separate table). 30 days is ample time for a genuine subscriber to
+ * confirm; getConfirmedSubscribers already excludes unconfirmed rows from
+ * every send, so deleting one here never touches an active subscription.
+ */
+const UNCONFIRMED_SUBSCRIBER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Call once per send-job run — deletes newsletter_subscribers rows that are still unconfirmed more than UNCONFIRMED_SUBSCRIBER_RETENTION_MS after signup. Never touches a confirmed subscriber (unsubscribeByManageToken is the only path that deletes one of those). */
+export async function deleteExpiredUnconfirmedSubscribers(): Promise<number> {
+  const cutoff = new Date(Date.now() - UNCONFIRMED_SUBSCRIBER_RETENTION_MS);
+  const result = await db
+    .delete(newsletterSubscribers)
+    .where(and(eq(newsletterSubscribers.confirmed, false), lt(newsletterSubscribers.createdAt, cutoff)))
+    .returning({ id: newsletterSubscribers.id });
+  return result.length;
+}

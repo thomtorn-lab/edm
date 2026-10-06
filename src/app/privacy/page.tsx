@@ -42,7 +42,10 @@ export default function PrivacyPage() {
             up an address that isn&rsquo;t theirs), and every newsletter includes a one-click unsubscribe link.
             Unsubscribing deletes your email address and preferences immediately; we don&rsquo;t keep a copy. We
             don&rsquo;t use open or click tracking in newsletter emails. Sending is handled by Resend
-            (resend.com), acting as our processor for this purpose only.
+            (resend.com), acting as our processor for this purpose only. We keep a short record of each week&rsquo;s
+            send (which address, which content) for up to 30 days to debug delivery problems, then delete it
+            automatically; an unconfirmed signup that&rsquo;s never clicked its confirmation link is also deleted
+            automatically after 30 days.
           </p>
         )}
         <p>
