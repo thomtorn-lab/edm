@@ -508,6 +508,78 @@ describe("publishDiscoveryItem — DQ manual Official Event/Ticket URLs (admin +
   });
 });
 
+describe("publishDiscoveryItem — Discovery two-genre support (2026-10-06)", () => {
+  const pendingWithGenre = {
+    id: "dq-genre-1",
+    status: "pending",
+    probableTitle: "Two Genre Night",
+    probableStart: new Date("2026-09-12T22:00:00Z"),
+    probableEnd: null,
+    probableSubVenue: null,
+    detectedLineup: [] as string[],
+    predictedGenre: "techno",
+    predictedSecondaryGenre: null as string | null,
+    genreConfidence: "high",
+    probableFree: false,
+    overallConfidence: "medium",
+    sourceId: "src-test",
+    sourceUrl: "https://example.com/events/two-genre-night",
+    suspectedDuplicateOfEventId: null,
+    probableTicketUrl: null as string | null,
+    probableOfficialEventUrl: null as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    description: null as string | null,
+    overriddenFields: [] as string[],
+  };
+
+  function eventInsertCall() {
+    return insertValuesMock.mock.calls.find(
+      (call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object),
+    )?.[0] as Record<string, unknown> | undefined;
+  }
+
+  it("publishes with only one genre in subgenres when no secondary genre was ever set (existing one-genre records continue working unchanged)", async () => {
+    selectResults = [[{ ...pendingWithGenre }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.primaryGenre).toBe("techno");
+    expect(eventInsertCall()?.subgenres).toEqual(["techno"]);
+  });
+
+  it("publishes with both genres in subgenres, preserving primary-then-secondary ordering", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "house" }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.primaryGenre).toBe("techno");
+    expect(eventInsertCall()?.subgenres).toEqual(["techno", "house"]);
+  });
+
+  it("never duplicates a genre in subgenres even if predictedSecondaryGenre somehow equals predictedGenre", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "techno" }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.subgenres).toEqual(["techno"]);
+  });
+
+  it("falls back to electronic-other with no secondary when predictedGenre itself was never resolved, regardless of predictedSecondaryGenre", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedGenre: null, predictedSecondaryGenre: "house" }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.primaryGenre).toBe("electronic-other");
+    expect(eventInsertCall()?.subgenres).toEqual(["electronic-other"]);
+  });
+
+  it("maps an admin override of ONLY the secondary genre onto the new event's primaryGenre/subgenres override protection, same as a primary-genre override", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "house", overriddenFields: ["predictedSecondaryGenre"] }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.overriddenFields).toEqual(["primaryGenre", "subgenres"]);
+    expect(eventInsertCall()?.manualOverride).toBe(true);
+  });
+
+  it("does not mark primaryGenre/subgenres as overridden when neither genre field was ever hand-edited", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "house", overriddenFields: [] }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.overriddenFields).toEqual([]);
+    expect(eventInsertCall()?.manualOverride).toBe(false);
+  });
+});
+
 describe("publishDiscoveryItem — description/Resident Advisor URL/expanded field parity (unified event create/edit model, 2026-09-08)", () => {
   const kultunautPending = {
     id: "dq-kn-1",

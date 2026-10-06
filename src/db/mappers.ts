@@ -124,6 +124,7 @@ export function discoveryRowToRecord(row: DiscoveryQueueRow): DiscoveryQueueItem
     sourceId: row.sourceId,
     detectedLineup: row.detectedLineup,
     predictedGenre: row.predictedGenre as GenreSlug | null,
+    predictedSecondaryGenre: row.predictedSecondaryGenre as GenreSlug | null,
     genreConfidence: row.genreConfidence as ConfidenceLevel,
     suspectedDuplicateOfEventId: row.suspectedDuplicateOfEventId,
     missingFields: row.missingFields,

@@ -1,0 +1,1 @@
+ALTER TABLE "discovery_queue" ADD COLUMN "predicted_secondary_genre" text;

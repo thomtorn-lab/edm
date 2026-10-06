@@ -271,6 +271,8 @@ export interface DiscoveryQueueItem {
   sourceId: string | null;
   detectedLineup: string[];
   predictedGenre: GenreSlug | null;
+  /** Optional admin-selected second genre (Discovery two-genre support, 2026-10-06) — see src/db/schema.ts's column comment. */
+  predictedSecondaryGenre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
   suspectedDuplicateOfEventId: string | null;
   missingFields: string[];

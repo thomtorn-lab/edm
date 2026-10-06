@@ -44,6 +44,7 @@ function makeItem(id: string, title: string): DiscoveryQueueItem {
     sourceId: "src-test",
     detectedLineup: [],
     predictedGenre: "techno",
+    predictedSecondaryGenre: null,
     genreConfidence: "high",
     suspectedDuplicateOfEventId: null,
     missingFields: [],

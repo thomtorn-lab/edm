@@ -514,6 +514,19 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     expect(patch).toEqual({});
   });
 
+  it(
+    "Discovery two-genre support (2026-10-06): also skips the entire classification refresh when only " +
+      "predictedSecondaryGenre is overridden — protects an admin's primary/secondary genre pairing even when " +
+      "they never touched the (still auto-classified) primary genre directly",
+    () => {
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+        pendingDiscoveryTarget({ predictedGenre: "techno", overriddenFields: ["predictedSecondaryGenre"], overallConfidence: "low" }),
+      );
+      expect(patch).toEqual({});
+    },
+  );
+
   it("a manual edit to an unrelated field (e.g. probableTitle) does not block a genre refresh", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
       { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
