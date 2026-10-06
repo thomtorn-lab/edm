@@ -77,6 +77,11 @@ on:
         required: false
         type: boolean
         default: false
+      no_follow_redirects:
+        description: "Reachability mode only: do NOT follow redirects — report the first response's own status and Location header (and print the chain hop by hop, up to 5 hops) instead of silently landing on the final URL. For verifying a host/permanent redirect itself, e.g. bare domain -> www."
+        required: false
+        type: boolean
+        default: false
       body_start:
         description: "Reachability mode only, requires print_full_body=true: byte offset into the response body to start printing from (default 0) — for a page too large for either the job log's own tail-anchored retrieval cap or the save_body_path artifact download to return in one piece; walk the page in a few bounded requests via this and body_length instead."
         required: false
@@ -184,6 +189,7 @@ jobs:
           [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
           [ -n "${{ inputs.save_body_path }}" ] && args+=(--save-body="${{ inputs.save_body_path }}")
           [ "${{ inputs.print_full_body }}" = "true" ] && args+=(--print-full-body)
+          [ "${{ inputs.no_follow_redirects }}" = "true" ] && args+=(--no-follow-redirects)
           [ -n "${{ inputs.body_start }}" ] && args+=(--body-start="${{ inputs.body_start }}")
           [ -n "${{ inputs.body_length }}" ] && args+=(--body-length="${{ inputs.body_length }}")
           [ -n "${{ inputs.method }}" ] && args+=(--method="${{ inputs.method }}")

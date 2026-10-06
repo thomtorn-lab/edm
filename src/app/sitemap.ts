@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { FESTIVALS } from "@/lib/data/festivals";
 import { getPublicVenueGroupPrimaryId } from "@/lib/data/venues";
+import { SITE_URL } from "@/lib/siteUrl";
 
 // Forced request-time (build-time DB dependency audit, 2026-09-07): without
 // this, Next.js prerenders this route at BUILD time by default, so the
@@ -18,8 +19,6 @@ import { getPublicVenueGroupPrimaryId } from "@/lib/data/venues";
 // events/[slug]/page.tsx, admin/page.tsx) — so a lagging migration can only
 // ever 500 a single sitemap request until it lands, never block the build.
 export const revalidate = 0;
-
-const SITE_URL = "https://electroniccph.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();

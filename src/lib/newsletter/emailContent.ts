@@ -1,13 +1,7 @@
 import type { EventWithVenue } from "../queries";
 import { formatRowDateLabel, formatTimeLabel } from "../format";
 import { displayGenres, getMainGenre, type GenreSlug, type MainGenreSlug } from "../taxonomy";
-
-/**
- * Same constant EventRow.tsx defines locally for its own absolute event
- * URLs (no shared export exists for it in this codebase) — kept identical
- * rather than introducing a new shared constant for one more call site.
- */
-const SITE_URL = "https://electroniccph.com";
+import { SITE_URL } from "../siteUrl";
 
 export interface NewsletterEmailContent {
   subject: string;

@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import { getEventBySlugWithVenue } from "@/lib/queries";
 import { cleanEventTitle } from "@/lib/eventPresentation";
 import { buildIcsFile } from "@/lib/ics";
-
-const SITE_URL = "https://electroniccph.com";
+import { SITE_URL } from "@/lib/siteUrl";
 
 // Real HTTP endpoint for the ICS download (mobile Apple Calendar fix,
 // 2026-09-13): iOS Safari does not honor the `download` attribute on a

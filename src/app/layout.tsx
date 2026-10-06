@@ -12,14 +12,13 @@ import "@fontsource/big-shoulders/latin-800.css";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import { SITE_URL } from "@/lib/siteUrl";
 
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
 });
-
-const SITE_URL = "https://electroniccph.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
