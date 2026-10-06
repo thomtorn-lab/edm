@@ -558,7 +558,15 @@ export function buildDiscoveryQueueClassificationPatch(
   existing: DiscoveryQueueTarget,
 ): DiscoveryQueueClassificationPatch {
   if (existing.status !== "pending") return {};
-  if (existing.overriddenFields.includes("predictedGenre")) return {};
+  // Discovery two-genre support (2026-10-06): also gated on
+  // "predictedSecondaryGenre" — an admin who has only hand-picked a
+  // secondary genre (leaving the auto-classified primary untouched) must
+  // still have that pairing protected from a later classification refresh
+  // swapping the primary out from under it. This function never produces a
+  // predictedSecondaryGenre key itself (see DiscoveryQueueTarget — sync has
+  // no second-genre evidence source, see buildDiscoveryQueueClassificationPatch's
+  // own doc comment), so this is purely a gate, never a write.
+  if (existing.overriddenFields.includes("predictedGenre") || existing.overriddenFields.includes("predictedSecondaryGenre")) return {};
   // "source_cancelled" (source-driven cancellation safety, 2026-09-07) is
   // authoritative the same way "no_genre_evidence"/"negative_relevance" are
   // — a genuinely complete, current-run conclusion, orthogonal to genre

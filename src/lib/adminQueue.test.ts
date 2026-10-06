@@ -757,6 +757,7 @@ function discoveryItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQu
     sourceId: "src-test",
     detectedLineup: [],
     predictedGenre: "techno",
+    predictedSecondaryGenre: null,
     genreConfidence: "high",
     suspectedDuplicateOfEventId: null,
     missingFields: [],

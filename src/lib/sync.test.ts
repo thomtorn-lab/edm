@@ -376,6 +376,54 @@ describe("buildSyncPatch", () => {
       // protection is per-field, not all-or-nothing.
       expect(safePatch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
     });
+
+    describe("Rescheduled-status correction, end-to-end (pre-PR final verification, 2026-10-06)", () => {
+      // Composes the real pure functions a clear + two subsequent syncs would
+      // actually go through (adminClearRescheduledStatus itself is a thin DB
+      // write already covered in writes.test.ts — see that file for proof it
+      // never adds "dateChanged"/"timeChanged" to overriddenFields). This
+      // proves the full lifecycle the task asked to re-verify before PR.
+      it("1) clearing survives a routine sync with no real date change", () => {
+        // Post-clear state: overriddenFields never gained "dateChanged" — the
+        // clear only reset the stored flag itself, which buildSyncPatch never
+        // reads as an input in the first place (it only compares startDatetime
+        // values and computes dateChanged as an OUTPUT), so this is really the
+        // same no-op-sync guarantee "produces an empty patch" above already
+        // proves, restated explicitly for the post-clear scenario.
+        const afterClear = target({ overriddenFields: [] });
+        const { patch, dateChanged } = buildSyncPatch(raw(), resolved, afterClear);
+        expect(dateChanged).toBe(false);
+        expect(patch).not.toHaveProperty("dateChanged"); // no mismatch -> no key proposed at all
+      });
+
+      it("2) a subsequent GENUINE date change still sets Rescheduled again, because the clear never protected the field", () => {
+        const afterClear = target({ overriddenFields: [] });
+        const genuineReschedule = raw({ startDatetime: "2026-10-30T18:00:00.000Z", endDatetime: "2026-10-31T04:00:00.000Z" });
+        const { patch, dateChanged } = buildSyncPatch(genuineReschedule, resolved, afterClear);
+        expect(dateChanged).toBe(true);
+        expect(patch.dateChanged).toBe(true);
+        // stripOverriddenFields is the real enforcement point applySourceSyncPatch
+        // runs this patch through — confirm it is NOT stripped, i.e. it would
+        // actually reach the database.
+        const applied = stripOverriddenFields(patch, afterClear.overriddenFields);
+        expect(applied.dateChanged).toBe(true);
+      });
+
+      it("3) Postponed stays fully independent of the clear — untouched either way", () => {
+        const afterClear = target({ postponed: true, overriddenFields: [] });
+        const { patch } = buildSyncPatch(raw(), resolved, afterClear);
+        expect(patch).not.toHaveProperty("postponed"); // no new date info arrived, so postponed is never touched
+      });
+
+      it("4) an unrelated existing manual override (e.g. a hand-edited title) is still respected after the clear, alongside the now-unprotected dateChanged field", () => {
+        const afterClear = target({ overriddenFields: ["title"] });
+        const genuineReschedule = raw({ startDatetime: "2026-10-30T18:00:00.000Z", endDatetime: "2026-10-31T04:00:00.000Z", title: "Source's Own New Title" });
+        const { patch } = buildSyncPatch(genuineReschedule, resolved, afterClear);
+        const applied = stripOverriddenFields(patch, afterClear.overriddenFields);
+        expect(applied).not.toHaveProperty("title"); // the admin's manual title correction is still protected
+        expect(applied.dateChanged).toBe(true); // dateChanged is unaffected by an override on a different field
+      });
+    });
   });
 
   describe("subVenue self-heal (generalized sub-venue model, 2026-09-06)", () => {
@@ -513,6 +561,19 @@ describe("buildDiscoveryQueueClassificationPatch", () => {
     );
     expect(patch).toEqual({});
   });
+
+  it(
+    "Discovery two-genre support (2026-10-06): also skips the entire classification refresh when only " +
+      "predictedSecondaryGenre is overridden — protects an admin's primary/secondary genre pairing even when " +
+      "they never touched the (still auto-classified) primary genre directly",
+    () => {
+      const patch = buildDiscoveryQueueClassificationPatch(
+        { genre: "tech-house", genreConfidence: "medium", decision: "review_queue" },
+        pendingDiscoveryTarget({ predictedGenre: "techno", overriddenFields: ["predictedSecondaryGenre"], overallConfidence: "low" }),
+      );
+      expect(patch).toEqual({});
+    },
+  );
 
   it("a manual edit to an unrelated field (e.g. probableTitle) does not block a genre refresh", () => {
     const patch = buildDiscoveryQueueClassificationPatch(
