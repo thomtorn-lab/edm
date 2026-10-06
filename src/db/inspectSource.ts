@@ -2472,7 +2472,7 @@ async function modeGenreEvidenceSample(client: Client, args: Record<string, stri
   section(`Published events: ${limit} nearest upcoming (full description + genre/artist/RA-link fields)`);
   const published = await client.query(
     `SELECT id, title, description, start_datetime, primary_genre, subgenres, genre_confidence, artists,
-            resident_advisor_url, venue_id, source_id, canonical_source_id
+            resident_advisor_url, venue_id, canonical_source_id
      FROM events
      WHERE published = true AND start_datetime >= now()
      ORDER BY start_datetime ASC
