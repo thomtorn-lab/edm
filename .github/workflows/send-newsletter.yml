@@ -20,20 +20,33 @@ name: Send Newsletter
 # send real email until a human sets that flag, so the two safety layers
 # are intentionally redundant.
 #
-# When ready to go live, add TWO `schedule` cron entries rather than one,
-# to stay correct across Europe/Copenhagen's DST transitions (GitHub
-# Actions cron is always UTC, and Denmark's UTC offset changes twice a
-# year):
-#   - cron: "0 9 * * 4"   # Thursday 10:00 CPH during CET (UTC+1, Nov-Mar)
-#   - cron: "0 8 * * 4"   # Thursday 10:00 CPH during CEST (UTC+2, Mar-Nov)
-# Firing both year-round is intentional, not a bug: the send route is
-# idempotent per (subscriber, ISO week) — see db/newsletter.ts's
-# queuePendingSendsForWeek — so whichever entry fires outside the real
-# target hour simply finds nothing new to do and returns immediately; no
-# time-of-day guard is needed in the route itself.
+# PREPARED BUT NOT ACTIVATED (newsletter activation safety round,
+# 2026-10-06): the "DST-safe schedule eligibility guard" step below is
+# fully built and tested (src/lib/newsletter/dstSchedule.ts), but has no
+# effect at all right now — it only runs `if: github.event_name ==
+# 'schedule'`, and no `schedule:` trigger exists yet below, so that
+# condition can never be true and workflow_dispatch stays completely
+# unaffected for manual testing. When ready to go live, add exactly these
+# two lines under `on:`:
+#
+#   schedule:
+#     - cron: "0 8 * * 4"   # Thursday 10:00 CPH during CEST (UTC+2, Mar-Nov)
+#     - cron: "0 9 * * 4"   # Thursday 10:00 CPH during CET (UTC+1, Nov-Mar)
+#
+# Both firing every Thursday is intentional, not a bug: the guard step
+# below decides which ONE of them is this week's DST-correct firing using
+# only the nominal cron string (`github.event.schedule`) and Denmark's
+# current UTC offset — never the actual execution clock time, so a run
+# GitHub Actions starts late is still judged correctly (see
+# dstSchedule.ts's own doc comment for exactly why). The seasonally wrong
+# firing exits as a no-op before ever calling the app, so there is exactly
+# one REAL weekly invocation, not two muted by idempotency alone — the
+# send route's existing per-(subscriber, ISO week) idempotency
+# (db/newsletter.ts's queuePendingSendsForWeek) remains as pure
+# defense-in-depth underneath this guard, never the primary mechanism.
 
 on:
-  workflow_dispatch: {} # manual trigger only, for now — see note above
+  workflow_dispatch: {} # manual trigger only, for now — see note above; unaffected by the prepared schedule guard below
 
 concurrency:
   group: send-newsletter
@@ -43,7 +56,42 @@ jobs:
   send:
     runs-on: ubuntu-latest
     steps:
+      # The three steps below exist solely for the DST-safe schedule guard
+      # and only ever run `if: github.event_name == 'schedule'` — with no
+      # `schedule:` trigger configured yet (see the top-of-file note), that
+      # condition is never true, so a manual workflow_dispatch run executes
+      # exactly as it did before this guard was added: straight to "Trigger
+      # newsletter send" below, no extra checkout/setup cost.
+      - name: Checkout (schedule guard only)
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js (schedule guard only)
+        if: github.event_name == 'schedule'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (schedule guard only)
+        if: github.event_name == 'schedule'
+        run: npm ci
+
+      - name: DST-safe schedule eligibility guard
+        if: github.event_name == 'schedule'
+        id: guard
+        run: |
+          OFFSET=$(TZ=Europe/Copenhagen date +%z)
+          echo "Copenhagen UTC offset today: ${OFFSET}; this run's cron: ${{ github.event.schedule }}"
+          if node --import tsx scripts/checkDstEligibility.ts "${{ github.event.schedule }}" "$OFFSET"; then
+            echo "eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            echo "Not today's DST-correct firing — the other prepared cron entry is this week's intended one. Exiting as a no-op without calling the app."
+          fi
+
       - name: Trigger newsletter send
+        if: github.event_name != 'schedule' || steps.guard.outputs.eligible == 'true'
         env:
           SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
           SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}

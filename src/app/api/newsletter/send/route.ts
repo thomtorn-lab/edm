@@ -4,6 +4,7 @@ import { getIsoWeek } from "@/lib/newsletter/isoWeek";
 import { selectUpcomingEventsForNewsletter } from "@/lib/newsletter/eventSelection";
 import { buildUnsubscribeUrl } from "@/lib/newsletter/emailContent";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
+import { getActiveTestAllowlist } from "@/lib/newsletter/testAllowlist";
 import { sendNewsletterEmail } from "@/lib/email";
 import {
   claimPendingSends,
@@ -61,6 +62,18 @@ const MAX_BATCHES = 400;
  * sweepNewsletterRetention's own doc comment in db/newsletter.ts) so
  * retention doesn't depend solely on this scheduled endpoint continuing to
  * fire either.
+ *
+ * Test-mode allowlist (newsletter activation safety round, 2026-10-06):
+ * while NEWSLETTER_SIGNUP_ENABLED is off, a non-null `testAllowlist` (from
+ * NEWSLETTER_TEST_ALLOWLIST) lets this run proceed scoped to exactly those
+ * addresses — never "all confirmed subscribers". The restriction is
+ * enforced three times independently, not just at the top: selection
+ * (getConfirmedSubscribers), claiming (claimPendingSends), and the final
+ * per-row check immediately below, right next to the existing
+ * isSendStillClaimable unsubscribe-safety check — so a non-test subscriber
+ * can never receive a test send even if any one layer were ever weakened.
+ * See src/lib/newsletter/testAllowlist.ts for why a genuinely enabled flag
+ * makes `testAllowlist` null here, ignoring the env var entirely.
  */
 export async function POST(request: NextRequest) {
   const token = process.env.SYNC_TRIGGER_TOKEN;
@@ -73,7 +86,9 @@ export async function POST(request: NextRequest) {
 
   const { deletedOldSends, deletedExpiredUnconfirmed } = await sweepNewsletterRetention();
 
-  if (!isNewsletterEnabled()) {
+  const testAllowlist = getActiveTestAllowlist();
+
+  if (!isNewsletterEnabled() && !testAllowlist) {
     return NextResponse.json(
       { error: "Newsletter sending is not yet enabled.", deletedOldSends, deletedExpiredUnconfirmed },
       { status: 503 },
@@ -85,19 +100,32 @@ export async function POST(request: NextRequest) {
 
   const staleCount = await markStaleUnconfirmedSends(isoWeek);
 
-  const [subscribers, publishedEvents] = await Promise.all([getConfirmedSubscribers(), getPublishedEventsWithVenue()]);
+  const [subscribers, publishedEvents] = await Promise.all([
+    getConfirmedSubscribers(testAllowlist),
+    getPublishedEventsWithVenue(),
+  ]);
   const windowEvents = selectUpcomingEventsForNewsletter(publishedEvents, now);
   const { queued, skippedNoMatch } = await queuePendingSendsForWeek(isoWeek, subscribers, windowEvents);
 
   let sent = 0;
   let ambiguous = 0;
   let skippedUnsubscribed = 0;
+  let skippedNotAllowlisted = 0;
   let batches = 0;
   for (;;) {
     if (batches++ >= MAX_BATCHES) break;
-    const claimed = await claimPendingSends(isoWeek, CLAIM_BATCH_SIZE);
+    const claimed = await claimPendingSends(isoWeek, CLAIM_BATCH_SIZE, testAllowlist);
     if (claimed.length === 0) break;
     for (const row of claimed) {
+      // Test-mode backstop (2026-10-06): claimPendingSends already filters
+      // by testAllowlist in SQL, so this should be unreachable in practice
+      // — kept anyway as the third independent layer (see this route's own
+      // doc comment), the same defense-in-depth spirit as
+      // isSendStillClaimable right below it.
+      if (testAllowlist && !testAllowlist.has(row.recipientEmail.trim().toLowerCase())) {
+        skippedNotAllowlisted++;
+        continue;
+      }
       // Unsubscribe-safety (2026-10-05): a batch can take real wall-clock
       // time to work through, so re-check right before the external call
       // that an unsubscribe hasn't cascaded this row away since it was
@@ -131,6 +159,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    testMode: testAllowlist !== null,
     isoWeek,
     subscribers: subscribers.length,
     queued,
@@ -139,6 +168,7 @@ export async function POST(request: NextRequest) {
     sent,
     ambiguous,
     skippedUnsubscribed,
+    skippedNotAllowlisted,
     deletedOldSends,
     deletedExpiredUnconfirmed,
   });

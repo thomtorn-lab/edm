@@ -134,9 +134,24 @@ export async function unsubscribeByManageToken(manageToken: string): Promise<boo
   return result.length > 0;
 }
 
-export async function getConfirmedSubscribers(): Promise<NewsletterSubscriberRecord[]> {
+/**
+ * `emailAllowlist` (newsletter activation safety round, 2026-10-06) — when
+ * provided (test mode: the real feature flag is off but
+ * NEWSLETTER_TEST_ALLOWLIST is set, see src/lib/newsletter/testAllowlist.ts),
+ * narrows the result to confirmed subscribers whose email is on the list,
+ * so an existing or previously-confirmed subscriber who isn't a test
+ * address is never selected for queueing in the first place — the first of
+ * three layers (selection, claiming in claimPendingSends, and the final
+ * per-row check in the send route) that each independently enforce the
+ * same restriction. Filtered in application code rather than SQL: this
+ * project's subscriber counts are small by design, and comparing
+ * case-insensitively against a small in-memory Set is simpler and safer
+ * than relying on a matching SQL case-folding expression.
+ */
+export async function getConfirmedSubscribers(emailAllowlist?: Set<string> | null): Promise<NewsletterSubscriberRecord[]> {
   const rows = await db.select().from(newsletterSubscribers).where(eq(newsletterSubscribers.confirmed, true));
-  return rows.map((row) => ({
+  const matching = emailAllowlist ? rows.filter((row) => emailAllowlist.has(row.email.trim().toLowerCase())) : rows;
+  return matching.map((row) => ({
     id: row.id,
     email: row.email,
     genres: row.genres as MainGenreSlug[],
@@ -273,8 +288,27 @@ export interface ClaimedSend {
  * expiry, reclaim only once it's past that expiry), applied per-row
  * instead of per-source so a large fan-out job can resume granularly
  * instead of needing one all-or-nothing lock.
+ *
+ * `emailAllowlist` (newsletter activation safety round, 2026-10-06) — the
+ * second of three enforcement layers for test mode (see
+ * getConfirmedSubscribers's own doc comment for the first). This one
+ * matters even though getConfirmedSubscribers already narrows who gets
+ * newly QUEUED: a row for a non-test subscriber queued BEFORE test mode
+ * started (e.g. left over from an earlier real run) would otherwise still
+ * be sitting there, pending or reclaimable, with nothing else to stop it
+ * from being claimed and sent during a later test window. Filtered in SQL
+ * (unlike the in-memory filter in getConfirmedSubscribers) because this
+ * query already claims atomically under `FOR UPDATE SKIP LOCKED` —
+ * excluding non-allowlisted rows from the same WHERE clause means they're
+ * never even locked, cheaper and simpler than claiming and then discarding
+ * them.
  */
-export async function claimPendingSends(isoWeek: string, limit: number): Promise<ClaimedSend[]> {
+export async function claimPendingSends(
+  isoWeek: string,
+  limit: number,
+  emailAllowlist?: Set<string> | null,
+): Promise<ClaimedSend[]> {
+  const allowlistArray = emailAllowlist ? [...emailAllowlist] : null;
   const result = await db.execute<{
     id: string;
     subscriber_id: string;
@@ -296,6 +330,7 @@ export async function claimPendingSends(isoWeek: string, limit: number): Promise
           status = 'pending'
           OR (status = 'sending' AND claimed_at < now() - (${RECLAIM_WINDOW_MS} * interval '1 millisecond'))
         )
+        ${allowlistArray ? sql`AND LOWER(recipient_email) = ANY(${allowlistArray}::text[])` : sql``}
       ORDER BY id
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED

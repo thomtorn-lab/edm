@@ -46,6 +46,53 @@ describe("POST /api/newsletter/subscribe", () => {
   });
 
   it(
+    "activation safety round (2026-10-06): an exact address on NEWSLETTER_TEST_ALLOWLIST may subscribe " +
+      "while the feature flag is off",
+    async () => {
+      vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+      vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+      requestSubscriptionMock.mockResolvedValue({ confirmToken: "tok-123" });
+      const res = await POST(makeRequest({ email: "tester@example.com" }));
+      expect(res.status).toBe(200);
+      expect(requestSubscriptionMock).toHaveBeenCalledWith("tester@example.com");
+    },
+  );
+
+  it("matches the allowlist case/whitespace-insensitively", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    requestSubscriptionMock.mockResolvedValue({ confirmToken: "tok-123" });
+    const res = await POST(makeRequest({ email: "  Tester@Example.COM  " }));
+    expect(res.status).toBe(200);
+    expect(requestSubscriptionMock).toHaveBeenCalled();
+  });
+
+  it("still 503s a non-allowlisted address while the feature flag is off, even with an allowlist configured — only exact approved addresses get through", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    const res = await POST(makeRequest({ email: "someone-else@example.com" }));
+    expect(res.status).toBe(503);
+    expect(requestSubscriptionMock).not.toHaveBeenCalled();
+  });
+
+  it("empty allowlist = no test access, same as no allowlist at all", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "false");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "");
+    const res = await POST(makeRequest({ email: "tester@example.com" }));
+    expect(res.status).toBe(503);
+    expect(requestSubscriptionMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a configured allowlist entirely once the feature flag is genuinely enabled — every valid address works, not just allowlisted ones", async () => {
+    vi.stubEnv("NEWSLETTER_SIGNUP_ENABLED", "true");
+    vi.stubEnv("NEWSLETTER_TEST_ALLOWLIST", "tester@example.com");
+    requestSubscriptionMock.mockResolvedValue({ confirmToken: "tok-123" });
+    const res = await POST(makeRequest({ email: "any-real-subscriber@example.com" }));
+    expect(res.status).toBe(200);
+    expect(requestSubscriptionMock).toHaveBeenCalledWith("any-real-subscriber@example.com");
+  });
+
+  it(
     "GDPR final hardening (2026-10-06): triggers the retention sweep even when the feature flag is off — " +
       "retention must not depend on signup being currently enabled",
     async () => {

@@ -6,6 +6,7 @@ import { getClientIp, isRateLimited } from "@/lib/rateLimit";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 import { NEWSLETTER_CONSENT_PURPOSE } from "@/lib/newsletter/consent";
 import { triggerRetentionSweep } from "@/lib/newsletter/retentionSweep";
+import { getActiveTestAllowlist, isEmailAllowlistedForTest } from "@/lib/newsletter/testAllowlist";
 
 const SITE_URL = "https://electroniccph.com";
 
@@ -14,6 +15,16 @@ const SITE_URL = "https://electroniccph.com";
  * the email was new, already pending, or already confirmed (GDPR/privacy:
  * never let the API reveal whether an address is subscribed). Mirrors
  * /api/contact's existing honeypot + isValidEmail + isRateLimited pattern.
+ *
+ * Test-mode allowlist (newsletter activation safety round, 2026-10-06):
+ * while NEWSLETTER_SIGNUP_ENABLED is off, an exact address on
+ * NEWSLETTER_TEST_ALLOWLIST may still subscribe — server-enforced here,
+ * never via UI (the signup form stays hidden regardless, since it's gated
+ * on the same isNewsletterEnabled() the homepage/footer check). No
+ * allowlist configured, or the submitted address isn't on it, is exactly
+ * today's behavior: 503, nothing else runs. See
+ * src/lib/newsletter/testAllowlist.ts for why a genuinely enabled flag
+ * always ignores the allowlist entirely.
  */
 export async function POST(request: NextRequest) {
   // Retention sweep (GDPR final hardening round, 2026-10-06) — triggered
@@ -22,10 +33,6 @@ export async function POST(request: NextRequest) {
   // own doc comment for why this can't depend solely on the scheduled send
   // job continuing to fire.
   await triggerRetentionSweep();
-
-  if (!isNewsletterEnabled()) {
-    return NextResponse.json({ error: "Newsletter signup is not yet available." }, { status: 503 });
-  }
 
   let body: unknown;
   try {
@@ -38,6 +45,14 @@ export async function POST(request: NextRequest) {
   }
 
   const { email, company } = body as Record<string, unknown>;
+  const trimmedEmail = typeof email === "string" ? email.trim() : "";
+
+  if (!isNewsletterEnabled()) {
+    const allowlist = getActiveTestAllowlist();
+    if (!isEmailAllowlistedForTest(trimmedEmail, allowlist)) {
+      return NextResponse.json({ error: "Newsletter signup is not yet available." }, { status: 503 });
+    }
+  }
 
   // Honeypot, same convention as /api/contact — a hidden field real
   // visitors never fill in; bots that do get a fake success.
@@ -45,7 +60,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const trimmedEmail = typeof email === "string" ? email.trim() : "";
   if (!isValidEmail(trimmedEmail)) {
     return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   }
