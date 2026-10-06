@@ -20,3 +20,12 @@ workflow per source. Only stop to ask the user for: (A) credentials or external 
 genuinely require user action, (B) a material product/quality-policy choice that can't be safely
 inferred, or (C) Production merge approval. A routine test failure, lint error, network blip, or
 sync anomaly is never a reason to stop and ask — diagnose and fix it, then continue.
+
+# Database migrations
+
+Vercel Production builds apply pending migrations automatically before `next build`
+(`src/db/migrateOnDeploy.ts`), and only additive statements are allowed — see README's "Schema
+migrations reach Production automatically". Generate migrations with `npm run db:generate`; never
+hand-edit an applied one. A destructive change (drop/rename/type change/`SET NOT NULL`) must ship
+as two deploys: code that stops using the old shape first, then the migration applied via the
+"Prepare Production Database" workflow.
