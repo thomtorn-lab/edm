@@ -8,6 +8,7 @@ import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
+import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
@@ -23,16 +24,29 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
   if (!event) return {};
 
   const title = cleanEventTitle(event.title, event.venue.name);
-  const genres = displayGenres(event.subgenres).map((g) => g.label).join(" · ");
-  const description = `${title}${event.artists.length ? `: ${event.artists.join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
+  const genreLabels = displayGenres(event.subgenres).map((g) => g.label);
+  const genres = genreLabels.join(" · ");
+  // Open Graph keeps its existing title/description — the SEO work package
+  // (2026-10-06) is scoped to the HTML <title> and meta description only.
+  const ogDescription = `${title}${event.artists.length ? `: ${event.artists.join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
+  const seoInput = {
+    title,
+    venueName: event.venue.name,
+    startDatetime: event.startDatetime,
+    artists: event.artists,
+    genres: genreLabels,
+    showArtists: shouldShowArtistPreview(title, event.artists),
+  };
 
   return {
-    title,
-    description,
+    // absolute: the SEO title already ends in "| Electronic CPH", so the
+    // root layout's "%s — Electronic CPH" template must not add it again.
+    title: { absolute: buildEventSeoTitle(seoInput) },
+    description: buildEventSeoDescription(seoInput),
     alternates: { canonical: `/events/${event.slug}` },
     openGraph: {
       title,
-      description,
+      description: ogDescription,
       type: "website",
       images: event.imageUrl ? [event.imageUrl] : undefined,
     },

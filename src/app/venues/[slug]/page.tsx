@@ -4,6 +4,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { getEventsForVenue, getVenueById, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
+import { buildVenueSeoDescription, buildVenueSeoTitle } from "@/lib/seoMetadata";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
 import VenueAddressLink from "@/components/VenueAddressLink";
@@ -19,10 +20,21 @@ export async function generateMetadata({ params }: PageProps<"/venues/[slug]">):
   // needs computing for it here.
   if (getPublicVenueGroupPrimaryId(venue.id)) return {};
   const label = publicVenueLabel(venue);
+  const seoInput = { label, address: venue.address, description: venue.description, shortDescription: venue.shortDescription };
+  // Open Graph/Twitter previously inherited the page title/description;
+  // pinned to those same values so the SEO work package (2026-10-06) stays
+  // scoped to the HTML <title> and meta description. A page-level openGraph
+  // replaces the layout's whole object, hence its fields are repeated here.
+  const shareTitle = `${label} — Electronic CPH`;
+  const shareDescription = `${label}, ${venue.address} — upcoming electronic music events. ${venue.shortDescription ?? venue.description}`;
   return {
-    title: label,
-    description: `${label}, ${venue.address} — upcoming electronic music events. ${venue.shortDescription ?? venue.description}`,
+    // absolute: the SEO title already ends in "| Electronic CPH", so the
+    // root layout's "%s — Electronic CPH" template must not add it again.
+    title: { absolute: buildVenueSeoTitle(seoInput) },
+    description: buildVenueSeoDescription(seoInput),
     alternates: { canonical: `/venues/${venue.slug}` },
+    openGraph: { type: "website", siteName: "Electronic CPH", locale: "en_GB", title: shareTitle, description: shareDescription },
+    twitter: { card: "summary", title: shareTitle, description: shareDescription },
   };
 }
 
