@@ -54,6 +54,9 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
   const [subVenueText, setSubVenueText] = useState(item.probableSubVenue ?? "");
   const [lineup, setLineup] = useState(item.detectedLineup.join(", "));
   const [genre, setGenre] = useState(item.predictedGenre ?? "");
+  // Discovery two-genre support (2026-10-06): mirrors EventManager's own
+  // secondaryGenre state exactly.
+  const [secondaryGenre, setSecondaryGenre] = useState(item.predictedSecondaryGenre ?? "");
 
   // ---- Admin-driven venue creation (human-gated: never wired into any
   // automated ingestion path — see src/lib/venueCreation.ts) ----
@@ -178,6 +181,9 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       probableSubVenue: subVenueText.trim() || null,
       detectedLineup: lineup.split(",").map((s) => s.trim()).filter(Boolean),
       predictedGenre: genre || null,
+      // Discovery two-genre support (2026-10-06): never sends a duplicate —
+      // same guard EventManager's own save path uses for primary/secondary.
+      predictedSecondaryGenre: secondaryGenre && secondaryGenre !== genre ? secondaryGenre : null,
       probableOfficialEventUrl: officialEventUrlTrimmed || null,
       probableTicketUrl: ticketUrlTrimmed || null,
       probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
@@ -210,6 +216,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
       {item.description && <p className="mt-1 line-clamp-2 text-xs text-text-tertiary">{item.description}</p>}
       <p className="mt-1 text-xs text-text-tertiary">
         Genre: {item.predictedGenre ? `${getGenre(item.predictedGenre).label} (${item.genreConfidence})` : "unresolved"}
+        {item.predictedSecondaryGenre && ` + ${getGenre(item.predictedSecondaryGenre).label}`}
       </p>
       {item.missingFields.length > 0 && (
         <p className="mt-1 text-xs text-status-warn">Missing: {item.missingFields.join(", ")}</p>
@@ -286,6 +293,13 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
             genre={genre}
             onGenreChange={setGenre}
             allowUnresolvedGenre
+            // Discovery two-genre support (2026-10-06): same opt-in prop
+            // pair EventManager already passes for published events — the
+            // secondary select's own options already exclude whatever the
+            // primary select currently shows (see EventFieldEditor.tsx),
+            // so duplicate selection is impossible through this control.
+            secondaryGenre={secondaryGenre}
+            onSecondaryGenreChange={setSecondaryGenre}
             artists={lineup}
             onArtistsChange={setLineup}
             officialEventUrl={officialEventUrl}

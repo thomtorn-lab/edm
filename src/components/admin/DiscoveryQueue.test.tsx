@@ -61,6 +61,7 @@ function makeItem(overrides: Partial<DiscoveryQueueItem> = {}): DiscoveryQueueIt
     sourceId: null,
     detectedLineup: ["DJ X"],
     predictedGenre: "techno",
+    predictedSecondaryGenre: null,
     genreConfidence: "medium",
     suspectedDuplicateOfEventId: null,
     missingFields: ["venue (unresolved against registry)"],
@@ -569,4 +570,90 @@ describe("DiscoveryQueue — unified event create/edit model (2026-09-08): descr
     render(<DiscoveryQueue items={[makeItem({ description: "A night of raw techno." })]} venues={VENUES} />);
     expect(screen.getByText("A night of raw techno.")).toBeTruthy();
   });
+});
+
+describe("DiscoveryQueue — two-genre support (2026-10-06)", () => {
+  afterEach(cleanup);
+
+  it("shows only one genre in the row summary when no secondary genre is set", () => {
+    render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: null })]} venues={VENUES} />);
+    const genreLine = screen.getByText(/Genre:/);
+    expect(genreLine.textContent).toBe("Genre: Techno (medium)");
+  });
+
+  it("shows both genres in the row summary when a secondary genre is set", () => {
+    render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: "house" })]} venues={VENUES} />);
+    expect(screen.getByText(/Genre: Techno \(medium\) \+ House/)).toBeTruthy();
+  });
+
+  it("pre-fills the secondary genre select from the candidate's existing value when opening the editor", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: "house" })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Secondary genre/) as HTMLSelectElement).value).toBe("house");
+  });
+
+  it("the secondary genre select excludes whatever the primary genre currently shows — duplicate selection is structurally impossible", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: null })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const options = Array.from((screen.getByLabelText(/Secondary genre/) as HTMLSelectElement).options).map((o) => o.value);
+    expect(options).not.toContain("techno");
+    expect(options).toContain("house");
+  });
+
+  it("saving a selected secondary genre sends predictedSecondaryGenre in the PATCH", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: null })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Secondary genre/), { target: { value: "house" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, options] = fetchMock.mock.calls[0];
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.predictedSecondaryGenre).toBe("house");
+  });
+
+  it("removing a previously-set secondary genre ('None') sends predictedSecondaryGenre: null", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: "house" })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/Secondary genre/), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, options] = fetchMock.mock.calls[0];
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.predictedSecondaryGenre).toBeNull();
+  });
+
+  it(
+    "never sends a duplicate genre even if the primary genre is changed to match the already-selected secondary genre " +
+      "— same save-time guard as EventManager's own primary/secondary save path",
+    async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+      vi.stubGlobal("fetch", fetchMock);
+      render(<DiscoveryQueue items={[makeItem({ predictedGenre: "techno", predictedSecondaryGenre: "house" })]} venues={VENUES} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      // The secondary select's own options already exclude whatever the
+      // primary select currently shows, so this scenario can't be driven
+      // through the UI directly — this proves the save-time computation
+      // itself never emits a duplicate, in case a future caller ever sets
+      // these two state values out of step.
+      fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const [, options] = fetchMock.mock.calls[0];
+      const { patch } = JSON.parse((options as { body: string }).body);
+      expect(patch.predictedGenre).toBe("house");
+      expect(patch.predictedSecondaryGenre).toBeNull();
+    },
+  );
 });

@@ -285,6 +285,21 @@ export const discoveryQueue = pgTable("discovery_queue", {
   sourceId: text("source_id").references(() => sources.id),
   detectedLineup: text("detected_lineup").array().notNull().default([]),
   predictedGenre: text("predicted_genre"),
+  /**
+   * Optional admin-selected second genre for a still-unpublished candidate
+   * (Discovery two-genre support, 2026-10-06) — mirrors the published-event
+   * admin editor's existing primary/secondary genre controls (max-two-
+   * genres-per-event, 2026-10-05), extended one step earlier in the
+   * pipeline. A plain nullable text column, not an array: Discovery's
+   * override-tracking (overriddenFields, below) is a list of FIELD NAMES,
+   * so this stays a single scalar — exactly like predictedGenre — rather
+   * than converting to events.subgenres' array shape. Never set by
+   * automated classification (src/lib/sync.ts's pipeline only ever produces
+   * one genre); admin-only, same as predictedGenre's own admin-edit path.
+   * Carried onto the created event's `subgenres` (alongside primaryGenre)
+   * by publishDiscoveryItem, preserving primary-then-secondary ordering.
+   */
+  predictedSecondaryGenre: text("predicted_secondary_genre"),
   genreConfidence: text("genre_confidence").notNull().default("low"),
   suspectedDuplicateOfEventId: text("suspected_duplicate_of_event_id").references(() => events.id),
   missingFields: text("missing_fields").array().notNull().default([]),

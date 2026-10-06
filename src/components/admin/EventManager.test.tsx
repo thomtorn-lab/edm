@@ -840,3 +840,49 @@ describe("EventManager — max two genres per event (2026-10-05): optional secon
     expect(body.patch.subgenres).toEqual(["disco"]);
   });
 });
+
+describe("EventManager — rescheduled-status correction (2026-10-06)", () => {
+  afterEach(cleanup);
+
+  it("shows no Rescheduled note or clear button when dateChanged/timeChanged are both false", () => {
+    render(<EventManager events={[makeEvent({ dateChanged: false, timeChanged: false })]} venues={VENUES} />);
+    expect(screen.queryByText(/Showing as Rescheduled/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear Rescheduled status" })).toBeNull();
+  });
+
+  it("shows a 'Showing as Rescheduled' note and a 'Clear Rescheduled status' button when dateChanged is true", () => {
+    render(<EventManager events={[makeEvent({ dateChanged: true })]} venues={VENUES} />);
+    expect(screen.getByText(/Showing as Rescheduled/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear Rescheduled status" })).toBeTruthy();
+  });
+
+  it("also shows the note/button when only timeChanged is true (internal-only flag, same clear action)", () => {
+    render(<EventManager events={[makeEvent({ dateChanged: false, timeChanged: true })]} venues={VENUES} />);
+    expect(screen.getByRole("button", { name: "Clear Rescheduled status" })).toBeTruthy();
+  });
+
+  it("Clear Rescheduled status calls the dedicated clear-rescheduled route, not the generic PATCH route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ dateChanged: true })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear Rescheduled status" }));
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/e-1/clear-rescheduled",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("Postponed status is unaffected by, and independent of, the Rescheduled note/button", () => {
+    render(<EventManager events={[makeEvent({ postponed: true, dateChanged: false })]} venues={VENUES} />);
+    expect(screen.queryByText(/Showing as Rescheduled/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear Rescheduled status" })).toBeNull();
+
+    cleanup();
+    render(<EventManager events={[makeEvent({ postponed: true, dateChanged: true })]} venues={VENUES} />);
+    expect(screen.getByText(/Showing as Rescheduled/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear Rescheduled status" })).toBeTruthy();
+  });
+});

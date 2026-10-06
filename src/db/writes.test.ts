@@ -75,6 +75,7 @@ const {
   applySourceCancellationUnpublish,
   applySourceCancellationRestore,
   adminOverrideSourceCancellation,
+  adminClearRescheduledStatus,
 } = await import("./writes");
 const { END_BEFORE_START_ERROR } = await import("../lib/datetime");
 
@@ -326,6 +327,55 @@ describe("adminOverrideSourceCancellation (source-driven cancellation safety, 20
   });
 });
 
+describe("adminClearRescheduledStatus (rescheduled-status correction, 2026-10-06)", () => {
+  it("clears dateChanged and timeChanged without touching overriddenFields or manualOverride", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: true, timeChanged: false, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.dateChanged).toBe(false);
+    expect(patch.timeChanged).toBe(false);
+    expect(patch).not.toHaveProperty("overriddenFields");
+    expect(patch).not.toHaveProperty("manualOverride");
+  });
+
+  it("logs the change to the audit trail attributed to 'admin'", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: true, timeChanged: false, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "e-1", changedBy: "admin", changeType: "admin_clear_rescheduled_status" }),
+    );
+  });
+
+  it("preserves any existing overriddenFields/manualOverride on the row untouched (not part of the write at all)", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: true, timeChanged: true, overriddenFields: ["title"], manualOverride: true }]];
+    await adminClearRescheduledStatus("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch).not.toHaveProperty("overriddenFields");
+    expect(patch).not.toHaveProperty("manualOverride");
+  });
+
+  it("is an idempotent no-op when neither flag is set — no write, no change-log entry", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: false, timeChanged: false, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    expect(updateSetMock).not.toHaveBeenCalled();
+    expect(insertValuesMock).not.toHaveBeenCalled();
+  });
+
+  it("clears timeChanged alone when only it is set", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: false, timeChanged: true, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.dateChanged).toBe(false);
+    expect(patch.timeChanged).toBe(false);
+  });
+
+  it("throws when the event does not exist", async () => {
+    selectResults = [[]];
+    await expect(adminClearRescheduledStatus("e-missing")).rejects.toThrow("Event e-missing not found");
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("publishDiscoveryItem's admin-unpublish duplicate guard (admin unpublish/cancellation safety, 2026-09-06)", () => {
   const pendingItem = {
     id: "dq-1",
@@ -455,6 +505,78 @@ describe("publishDiscoveryItem — DQ manual Official Event/Ticket URLs (admin +
     )?.[0] as Record<string, unknown> | undefined;
     expect(provenanceCall?.sourceUrl).toBe(kultunautPending.sourceUrl);
     expect(provenanceCall?.sourceUrl).not.toBe("https://real-official-venue.dk/event/xyz");
+  });
+});
+
+describe("publishDiscoveryItem — Discovery two-genre support (2026-10-06)", () => {
+  const pendingWithGenre = {
+    id: "dq-genre-1",
+    status: "pending",
+    probableTitle: "Two Genre Night",
+    probableStart: new Date("2026-09-12T22:00:00Z"),
+    probableEnd: null,
+    probableSubVenue: null,
+    detectedLineup: [] as string[],
+    predictedGenre: "techno",
+    predictedSecondaryGenre: null as string | null,
+    genreConfidence: "high",
+    probableFree: false,
+    overallConfidence: "medium",
+    sourceId: "src-test",
+    sourceUrl: "https://example.com/events/two-genre-night",
+    suspectedDuplicateOfEventId: null,
+    probableTicketUrl: null as string | null,
+    probableOfficialEventUrl: null as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    description: null as string | null,
+    overriddenFields: [] as string[],
+  };
+
+  function eventInsertCall() {
+    return insertValuesMock.mock.calls.find(
+      (call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object),
+    )?.[0] as Record<string, unknown> | undefined;
+  }
+
+  it("publishes with only one genre in subgenres when no secondary genre was ever set (existing one-genre records continue working unchanged)", async () => {
+    selectResults = [[{ ...pendingWithGenre }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.primaryGenre).toBe("techno");
+    expect(eventInsertCall()?.subgenres).toEqual(["techno"]);
+  });
+
+  it("publishes with both genres in subgenres, preserving primary-then-secondary ordering", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "house" }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.primaryGenre).toBe("techno");
+    expect(eventInsertCall()?.subgenres).toEqual(["techno", "house"]);
+  });
+
+  it("never duplicates a genre in subgenres even if predictedSecondaryGenre somehow equals predictedGenre", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "techno" }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.subgenres).toEqual(["techno"]);
+  });
+
+  it("falls back to electronic-other with no secondary when predictedGenre itself was never resolved, regardless of predictedSecondaryGenre", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedGenre: null, predictedSecondaryGenre: "house" }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.primaryGenre).toBe("electronic-other");
+    expect(eventInsertCall()?.subgenres).toEqual(["electronic-other"]);
+  });
+
+  it("maps an admin override of ONLY the secondary genre onto the new event's primaryGenre/subgenres override protection, same as a primary-genre override", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "house", overriddenFields: ["predictedSecondaryGenre"] }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.overriddenFields).toEqual(["primaryGenre", "subgenres"]);
+    expect(eventInsertCall()?.manualOverride).toBe(true);
+  });
+
+  it("does not mark primaryGenre/subgenres as overridden when neither genre field was ever hand-edited", async () => {
+    selectResults = [[{ ...pendingWithGenre, predictedSecondaryGenre: "house", overriddenFields: [] }]];
+    await publishDiscoveryItem("dq-genre-1", "v-poolen");
+    expect(eventInsertCall()?.overriddenFields).toEqual([]);
+    expect(eventInsertCall()?.manualOverride).toBe(false);
   });
 });
 

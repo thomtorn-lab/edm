@@ -457,6 +457,58 @@ export async function adminOverrideSourceCancellation(eventId: string) {
 }
 
 /**
+ * Clears an incorrect/outdated "Rescheduled" status (rescheduled-status
+ * correction, 2026-10-06). "Rescheduled" is displayed (StatusBadge/jsonld)
+ * purely from `dateChanged`, a one-way flag sync sets when an incoming
+ * event's calendar day differs from what's currently stored
+ * (src/lib/sync.ts::buildSyncPatch) — sync itself never resets it, and
+ * until now nothing else could either.
+ *
+ * Deliberately NOT routed through applyAdminEventEdit/EDITABLE_EVENT_FIELDS:
+ * that path would add "dateChanged" to `overriddenFields`, which would
+ * PERMANENTLY block sync from ever setting it again — even for a genuine
+ * future reschedule. That is explicitly not the desired behavior here. This
+ * function only resets the two change-detection flags themselves and never
+ * touches `overriddenFields`/`manualOverride`, so the very next sync's own
+ * comparison (current stored startDatetime vs incoming) is what decides
+ * whether "Rescheduled" should reappear — exactly the same comparison that
+ * would run if this event had never been flagged at all. A sync that finds
+ * no actual date difference proposes no `dateChanged` patch (buildSyncPatch
+ * only ever includes the key when it computes true), so clearing this does
+ * not get immediately re-asserted by routine sync; a sync that finds a
+ * genuine new date difference still sets it, because nothing protects this
+ * field from that write.
+ *
+ * Idempotent no-op when neither flag is currently set — clicking this on an
+ * already-correct event does nothing rather than writing a redundant row/
+ * change-log entry. Never touches `postponed` or any other field.
+ */
+export async function adminClearRescheduledStatus(eventId: string) {
+  const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  if (!existing) throw new Error(`Event ${eventId} not found`);
+  if (!existing.dateChanged && !existing.timeChanged) return;
+
+  const now = new Date();
+  await db
+    .update(events)
+    .set({
+      dateChanged: false,
+      timeChanged: false,
+      updatedAt: now,
+      lastChanged: now,
+    })
+    .where(eq(events.id, eventId));
+
+  await writeChangeLog(
+    eventId,
+    "admin",
+    "admin_clear_rescheduled_status",
+    ["dateChanged", "timeChanged"],
+    "Admin cleared an incorrect/outdated Rescheduled status — not recorded as a manual override, so a genuine future date change can still set it again",
+  );
+}
+
+/**
  * Reverses an unintended manualOverride side effect: clears manualOverride
  * and removes the given field names from overriddenFields, touching nothing
  * else on the row. For correcting a write that went through
@@ -847,8 +899,19 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       subVenue: item.probableSubVenue,
       primaryGenre: (item.predictedGenre as GenreSlug) ?? "electronic-other",
       // Must stay in lockstep with primaryGenre's own fallback — see the
-      // matching comment in db/sync.ts's auto-publish branch.
-      subgenres: item.predictedGenre ? [item.predictedGenre as GenreSlug] : ["electronic-other"],
+      // matching comment in db/sync.ts's auto-publish branch. Discovery
+      // two-genre support (2026-10-06): carries an admin-selected
+      // predictedSecondaryGenre through, preserving primary-then-secondary
+      // ordering, same as EventManager's own primary/secondary save
+      // convention — never duplicated (predictedSecondaryGenre can't equal
+      // predictedGenre; the admin editor's secondary select already
+      // excludes whatever the primary select shows, same guard as the
+      // published-event editor).
+      subgenres: item.predictedGenre
+        ? item.predictedSecondaryGenre && item.predictedSecondaryGenre !== item.predictedGenre
+          ? [item.predictedGenre as GenreSlug, item.predictedSecondaryGenre as GenreSlug]
+          : [item.predictedGenre as GenreSlug]
+        : ["electronic-other"],
       genreConfidence: item.genreConfidence as ConfidenceLevel,
       // Admin + public link integrity (2026-09-08): an admin-entered
       // probableOfficialEventUrl (added at the DQ review stage — see
@@ -918,7 +981,9 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
         ...(item.overriddenFields?.includes("probableVenueName") ? ["venueId"] : []),
         ...(item.overriddenFields?.includes("probableSubVenue") ? ["subVenue"] : []),
         ...(item.overriddenFields?.includes("detectedLineup") ? ["artists"] : []),
-        ...(item.overriddenFields?.includes("predictedGenre") ? ["primaryGenre", "subgenres"] : []),
+        ...(item.overriddenFields?.includes("predictedGenre") || item.overriddenFields?.includes("predictedSecondaryGenre")
+          ? ["primaryGenre", "subgenres"]
+          : []),
       ],
     },
     "admin",
@@ -983,6 +1048,8 @@ export interface DiscoveryEditPatch {
   probableSubVenue?: string | null;
   detectedLineup?: string[];
   predictedGenre?: GenreSlug | null;
+  /** Optional admin-selected second genre (Discovery two-genre support, 2026-10-06) — see src/db/schema.ts's column comment. Flows through this same generic patch/overriddenFields path as predictedGenre; updateDiscoveryItem itself needs no other change. */
+  predictedSecondaryGenre?: GenreSlug | null;
 }
 
 /**

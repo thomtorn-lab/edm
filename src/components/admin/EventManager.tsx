@@ -127,6 +127,28 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
     }
   }
 
+  // Rescheduled-status correction (2026-10-06): a dedicated action, not a
+  // generic field edit — see adminClearRescheduledStatus's own doc comment
+  // for why going through the generic PATCH route (which would permanently
+  // override-protect "dateChanged") would be wrong here. This only resets
+  // the flag; the next sync's own date comparison decides whether
+  // "Rescheduled" should reappear.
+  async function clearRescheduled() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/events/${event.id}/clear-rescheduled`, { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json.error ?? "Clear failed.");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveEdit() {
     // Same native-datetime-local caveat as the discovery-queue date field
     // (see DiscoveryQueue.tsx): an incomplete typed entry reports value=""
@@ -261,11 +283,25 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               Cancelled by source ({event.sourceCancellationEvidence ?? "no evidence recorded"}) — {formatRowDateLabel(event.sourceCancelledAt)}
             </p>
           )}
+          {/* Rescheduled-status correction (2026-10-06): "Rescheduled" is the
+              public label for dateChanged/timeChanged (see StatusBadge) — if
+              it's wrong or stale, "Clear Rescheduled status" below resets it
+              without permanently blocking a genuine future date change. */}
+          {(event.dateChanged || event.timeChanged) && (
+            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-status-warn">
+              Showing as Rescheduled (date/time changed at some point since this event was first synced)
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-2">
           <button type="button" disabled={busy} onClick={() => setEditing((v) => !v)} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
             {editing ? "Close" : "Edit"}
           </button>
+          {(event.dateChanged || event.timeChanged) && (
+            <button type="button" disabled={busy} onClick={clearRescheduled} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+              Clear Rescheduled status
+            </button>
+          )}
           {event.published ? (
             <button type="button" disabled={busy} onClick={() => setConfirmingUnpublish(true)} className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
               Unpublish

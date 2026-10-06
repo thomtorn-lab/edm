@@ -44,6 +44,7 @@ function makeItem(id: string, title: string): DiscoveryQueueItem {
     sourceId: "src-test",
     detectedLineup: [],
     predictedGenre: "techno",
+    predictedSecondaryGenre: null,
     genreConfidence: "high",
     suspectedDuplicateOfEventId: null,
     missingFields: [],
@@ -134,6 +135,36 @@ describe("AdminQueueTabs", () => {
     render(<AdminQueueTabs groups={EMPTY_GROUPS} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
     fireEvent.click(screen.getByRole("tab", { name: "Published 1" }));
     expect(screen.getByText("Published Item (canonical)")).toBeTruthy();
+  });
+
+  it(
+    "Discovery two-genre support (2026-10-06): a Needs Review row can set/save a secondary genre — proves the shared " +
+      "DiscoveryQueue editor, secondary genre included, is reachable from this tab, not just the default queue view",
+    async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+      vi.stubGlobal("fetch", fetchMock);
+      render(<AdminQueueTabs groups={EMPTY_GROUPS} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
+      // Needs review is the default tab — already showing "Needs Review Item".
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      fireEvent.change(screen.getByLabelText(/Secondary genre/), { target: { value: "house" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const [, options] = fetchMock.mock.calls[0];
+      const body = JSON.parse((options as { body: string }).body);
+      expect(body.patch.predictedSecondaryGenre).toBe("house");
+    },
+  );
+
+  it("Discovery two-genre support (2026-10-06): a Venue Blocked row's secondary genre field pre-fills from its existing value", () => {
+    const groupsWithSecondary: AdminQueueGroups = {
+      ...EMPTY_GROUPS,
+      venue_blocked: [{ ...makeItem("dq-vb", "Venue Blocked Item"), predictedSecondaryGenre: "trance" }],
+    };
+    vi.stubGlobal("fetch", vi.fn());
+    render(<AdminQueueTabs groups={groupsWithSecondary} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Venue blocked 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Secondary genre/) as HTMLSelectElement).value).toBe("trance");
   });
 
   it("shows title, reason and venue for an admin-unpublished canonical event", () => {
