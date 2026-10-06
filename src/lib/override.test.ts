@@ -80,6 +80,19 @@ describe("stripOverriddenFields — the manual-override protection guarantee", (
     const applied = stripOverriddenFields(syncProposedPatch, overriddenFields);
     expect(applied).toEqual({});
   });
+
+  // Rescheduled-status correction (2026-10-06): adminClearRescheduledStatus
+  // (db/writes.ts) deliberately never adds "dateChanged"/"timeChanged" to
+  // overriddenFields — this is the mechanism that makes that safe. Unlike
+  // every other field above, a genuine future sync-proposed dateChanged:true
+  // must NOT be protected/stripped after a clear, so that a real reschedule
+  // can still be detected and shown again.
+  it("dateChanged/timeChanged are never protected by a Rescheduled-status clear, so a genuine future date change still applies normally", () => {
+    const overriddenFieldsAfterClear: string[] = []; // the clear action never adds to this list
+    const laterGenuineReschedule = { dateChanged: true, startDatetime: "2026-11-20T22:00:00.000Z" };
+    const applied = stripOverriddenFields(laterGenuineReschedule, overriddenFieldsAfterClear);
+    expect(applied).toEqual(laterGenuineReschedule);
+  });
 });
 
 describe("isEditableEventField", () => {

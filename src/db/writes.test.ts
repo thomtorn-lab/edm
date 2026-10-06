@@ -75,6 +75,7 @@ const {
   applySourceCancellationUnpublish,
   applySourceCancellationRestore,
   adminOverrideSourceCancellation,
+  adminClearRescheduledStatus,
 } = await import("./writes");
 const { END_BEFORE_START_ERROR } = await import("../lib/datetime");
 
@@ -322,6 +323,55 @@ describe("adminOverrideSourceCancellation (source-driven cancellation safety, 20
   it("throws when the event does not exist", async () => {
     selectResults = [[]];
     await expect(adminOverrideSourceCancellation("e-missing")).rejects.toThrow("Event e-missing not found");
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("adminClearRescheduledStatus (rescheduled-status correction, 2026-10-06)", () => {
+  it("clears dateChanged and timeChanged without touching overriddenFields or manualOverride", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: true, timeChanged: false, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.dateChanged).toBe(false);
+    expect(patch.timeChanged).toBe(false);
+    expect(patch).not.toHaveProperty("overriddenFields");
+    expect(patch).not.toHaveProperty("manualOverride");
+  });
+
+  it("logs the change to the audit trail attributed to 'admin'", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: true, timeChanged: false, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "e-1", changedBy: "admin", changeType: "admin_clear_rescheduled_status" }),
+    );
+  });
+
+  it("preserves any existing overriddenFields/manualOverride on the row untouched (not part of the write at all)", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: true, timeChanged: true, overriddenFields: ["title"], manualOverride: true }]];
+    await adminClearRescheduledStatus("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch).not.toHaveProperty("overriddenFields");
+    expect(patch).not.toHaveProperty("manualOverride");
+  });
+
+  it("is an idempotent no-op when neither flag is set — no write, no change-log entry", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: false, timeChanged: false, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    expect(updateSetMock).not.toHaveBeenCalled();
+    expect(insertValuesMock).not.toHaveBeenCalled();
+  });
+
+  it("clears timeChanged alone when only it is set", async () => {
+    selectResults = [[{ id: "e-1", dateChanged: false, timeChanged: true, overriddenFields: [], manualOverride: false }]];
+    await adminClearRescheduledStatus("e-1");
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.dateChanged).toBe(false);
+    expect(patch.timeChanged).toBe(false);
+  });
+
+  it("throws when the event does not exist", async () => {
+    selectResults = [[]];
+    await expect(adminClearRescheduledStatus("e-missing")).rejects.toThrow("Event e-missing not found");
     expect(updateSetMock).not.toHaveBeenCalled();
   });
 });
