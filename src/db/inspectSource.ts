@@ -2455,6 +2455,61 @@ async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, stri
   console.log(JSON.stringify(dqByGenre.rows, null, 2));
 }
 
+/**
+ * Read-only genre-evidence sample (automatic multi-genre reassessment,
+ * 2026-10-06) — a SCRATCH diagnostic, not part of the permanent mode set,
+ * added solely to pull a representative sample of REAL event text/metadata
+ * for manual evidence review. Never writes anything; never scoped to a
+ * source. Samples the chronologically nearest upcoming published events
+ * (what a visitor would actually see right now) and the most recently
+ * queued pending Discovery items (the freshest unresolved candidates),
+ * across every active source, so the sample reflects current real content
+ * rather than historical/stale rows.
+ */
+async function modeGenreEvidenceSample(client: Client, args: Record<string, string | boolean>) {
+  const limit = typeof args.limit === "string" ? Number(args.limit) : 40;
+
+  section(`Published events: ${limit} nearest upcoming (full description + genre/artist/RA-link fields)`);
+  const published = await client.query(
+    `SELECT id, title, description, start_datetime, primary_genre, subgenres, genre_confidence, artists,
+            resident_advisor_url, venue_id, source_id, canonical_source_id
+     FROM events
+     WHERE published = true AND start_datetime >= now()
+     ORDER BY start_datetime ASC
+     LIMIT $1`,
+    [limit],
+  );
+  console.log(JSON.stringify(published.rows, null, 2));
+
+  section(`Discovery Queue: ${limit} most recently queued pending rows (full description + genre/artist/RA-link fields)`);
+  const discovery = await client.query(
+    `SELECT id, probable_title, description, probable_start, predicted_genre, genre_confidence, overall_confidence,
+            detected_lineup, probable_resident_advisor_url, source_id, source_name, created_at
+     FROM discovery_queue
+     WHERE status = 'pending'
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+  console.log(JSON.stringify(discovery.rows, null, 2));
+
+  section("Resident Advisor link presence (stored data only — never scraped, see src/lib/data/sources.ts)");
+  const raPublished = published.rows.filter((r) => r.resident_advisor_url != null).length;
+  const raDiscovery = discovery.rows.filter((r) => r.probable_resident_advisor_url != null).length;
+  console.log(
+    JSON.stringify(
+      {
+        publishedSampleSize: published.rows.length,
+        publishedWithResidentAdvisorUrl: raPublished,
+        discoverySampleSize: discovery.rows.length,
+        discoveryWithResidentAdvisorUrl: raDiscovery,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
@@ -2490,6 +2545,7 @@ async function main() {
     "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
     "migration-status": modeMigrationStatus,
+    "genre-evidence-sample": modeGenreEvidenceSample,
   };
 
   if (mode === "reachability") {
@@ -2506,7 +2562,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, genre-evidence-sample.`,
     );
     process.exit(1);
   }
