@@ -696,7 +696,7 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     expect(shareMock).toHaveBeenCalledTimes(1);
     expect(shareMock).toHaveBeenCalledWith({
       title: "Warehouse Night",
-      url: "https://electroniccph.com/events/warehouse-night-2026",
+      url: "https://www.electroniccph.com/events/warehouse-night-2026",
     });
   });
 

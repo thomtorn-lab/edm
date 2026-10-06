@@ -1047,15 +1047,51 @@ async function modeReachability(_client: Client, args: Record<string, string | b
   if (method !== "GET" && method !== "POST") throw new Error('reachability --method must be "GET" or "POST".');
 
   section(`Reachability: ${method} ${endpoint}`);
-  const res = await fetch(endpoint, {
-    method,
-    signal: AbortSignal.timeout(15_000),
-    headers: {
-      "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)",
-      ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
-    },
-    ...(method === "POST" ? { body } : {}),
-  });
+  // --no-follow-redirects: walk the redirect chain one hop at a time
+  // (redirect: "manual"), printing each hop's status + Location, so a
+  // host-level redirect (e.g. bare domain -> www) can be verified as
+  // permanent and loop-free rather than silently followed. The final
+  // non-redirect response then falls through to the normal body handling.
+  let res: Response;
+  if (args["no-follow-redirects"] === true) {
+    let url = endpoint;
+    const seen = new Set<string>();
+    for (let hop = 0; ; hop++) {
+      res = await fetch(url, {
+        method,
+        redirect: "manual",
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)",
+          ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+        },
+        ...(method === "POST" ? { body } : {}),
+      });
+      const location = res.headers.get("location");
+      console.log(`hop ${hop}: ${url} -> HTTP ${res.status}${location ? ` Location: ${location}` : ""}`);
+      if (res.status < 300 || res.status >= 400 || !location) break;
+      seen.add(url);
+      url = new URL(location, url).toString();
+      if (seen.has(url)) {
+        console.log(`::error::Redirect loop: ${url} was already visited.`);
+        break;
+      }
+      if (hop >= 4) {
+        console.log("::warning::Stopped after 5 redirect hops.");
+        break;
+      }
+    }
+  } else {
+    res = await fetch(endpoint, {
+      method,
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        "user-agent": "ElectronicCPHSourceInspector/1.0 (+https://electroniccph.com/about; diagnostic)",
+        ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+      },
+      ...(method === "POST" ? { body } : {}),
+    });
+  }
   console.log(`HTTP status: ${res.status}`);
   console.log(`content-type: ${res.headers.get("content-type") ?? "(none)"}`);
   console.log(`content-length: ${res.headers.get("content-length") ?? "(unknown)"}`);

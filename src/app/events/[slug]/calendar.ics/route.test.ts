@@ -131,7 +131,7 @@ describe("GET /events/[slug]/calendar.ics", () => {
     vi.mocked(getEventBySlugWithVenue).mockResolvedValue(makeEvent({ slug: "fast-forward" }));
     const res = await callRoute("fast-forward");
     const body = await res.text();
-    expect(body).toContain("URL:https://electroniccph.com/events/fast-forward");
+    expect(body).toContain("URL:https://www.electroniccph.com/events/fast-forward");
   });
 
   it("applies the same venue-name title cleanup as the event detail page (e.g. Pumpehuset prefix stripping)", async () => {

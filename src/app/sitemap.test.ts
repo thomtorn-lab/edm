@@ -113,7 +113,7 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
 
     const urls = result.map((r) => r.url);
     for (const route of STATIC_ROUTES) {
-      expect(urls).toContain(`https://electroniccph.com${route}`);
+      expect(urls).toContain(`https://www.electroniccph.com${route}`);
     }
   });
 
@@ -124,7 +124,7 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
-    expect(result.map((r) => r.url)).toContain("https://electroniccph.com/events/mocked-event-slug");
+    expect(result.map((r) => r.url)).toContain("https://www.electroniccph.com/events/mocked-event-slug");
   });
 
   it("includes mocked venue URLs", async () => {
@@ -134,7 +134,7 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
-    expect(result.map((r) => r.url)).toContain("https://electroniccph.com/venues/mocked-venue-slug");
+    expect(result.map((r) => r.url)).toContain("https://www.electroniccph.com/venues/mocked-venue-slug");
   });
 
   it("includes every static-registry festival URL", async () => {
@@ -145,7 +145,7 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
 
     const urls = result.map((r) => r.url);
     for (const festival of FESTIVALS) {
-      expect(urls).toContain(`https://electroniccph.com/festivals/${festival.slug}`);
+      expect(urls).toContain(`https://www.electroniccph.com/festivals/${festival.slug}`);
     }
   });
 
@@ -175,9 +175,9 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     const result = await sitemap();
 
     const urls = result.map((r) => r.url);
-    expect(urls).toContain("https://electroniccph.com/venues/vega");
-    expect(urls).toContain("https://electroniccph.com/venues/h15");
-    expect(urls).not.toContain("https://electroniccph.com/venues/vega-ideal-bar");
+    expect(urls).toContain("https://www.electroniccph.com/venues/vega");
+    expect(urls).toContain("https://www.electroniccph.com/venues/h15");
+    expect(urls).not.toContain("https://www.electroniccph.com/venues/vega-ideal-bar");
   });
 
   it("preserves existing URL/mapping semantics: only published events (as returned by getPublishedEventsWithVenue) become event routes, keyed by slug", async () => {
@@ -192,6 +192,19 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
 
     const eventEntries = result.filter((r) => r.url.includes("/events/"));
     expect(eventEntries).toHaveLength(1);
-    expect(eventEntries[0].url).toBe("https://electroniccph.com/events/published-event");
+    expect(eventEntries[0].url).toBe("https://www.electroniccph.com/events/published-event");
+  });
+});
+
+describe("sitemap/robots — single www origin (domain consistency, 2026-10-06)", () => {
+  it("every sitemap URL and the robots.txt sitemap reference use https://www.electroniccph.com, never the redirecting bare host", async () => {
+    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
+    vi.mocked(getVenues).mockResolvedValue([]);
+    const { default: sitemap } = await import("./sitemap");
+    const { default: robots } = await import("./robots");
+    const result = await sitemap();
+    expect(result.length).toBeGreaterThan(0);
+    for (const entry of result) expect(entry.url.startsWith("https://www.electroniccph.com/")).toBe(true);
+    expect(robots().sitemap).toBe("https://www.electroniccph.com/sitemap.xml");
   });
 });

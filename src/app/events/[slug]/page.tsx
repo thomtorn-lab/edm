@@ -8,6 +8,7 @@ import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
+import { SITE_URL } from "@/lib/siteUrl";
 import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
@@ -81,7 +82,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const artistVideoPreview = await getArtistYoutubePreviewForLineup(event.artists);
-  const canonicalUrl = `https://electroniccph.com/events/${event.slug}`;
+  const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
   const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
   const calendarInput = {
