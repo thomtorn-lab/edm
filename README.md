@@ -57,6 +57,34 @@ Two deliberately separate entry points — never run the dev one against a real 
   Proven end-to-end (empty database → migrate → this bootstrap → a real live Hangaren sync → a
   second bootstrap run) by `npm run db:verify-bootstrap`.
 
+## Schema migrations reach Production automatically
+
+`npm run build` runs `src/db/migrateOnDeploy.ts` before `next build`. On a **Vercel Production**
+build it applies any pending migration in `src/db/migrations/`; if that fails for any reason the
+build fails, so the new code is never promoted and the current deployment keeps serving (and the
+GitHub Actions syncs, which all call the deployed `/api/sync/*`, keep running the old code too).
+Local builds and Vercel Preview builds skip it. Details: `src/db/deployMigrations.ts`.
+
+- **How it knows it's Production:** `VERCEL`/`NOW_BUILDER` (always set by Vercel's builder) mark a
+  Vercel build; `VERCEL_TARGET_ENV`, falling back to `VERCEL_ENV`, says which environment. If a
+  Vercel build ever lacks both, it can't tell Production from Preview, so it applies nothing and
+  only checks, read-only: no pending migrations → build continues; pending migrations → build
+  fails (apply them with the workflow below, then redeploy). Code can't ship ahead of its schema
+  either way.
+
+- **All pending migrations run in one transaction** behind an advisory lock: a failure applies
+  nothing, and two Production builds at once can't both apply the same migration (the second waits,
+  then finds nothing pending). DDL gives up after a 10s lock wait rather than stalling live queries.
+- **Only additive statements are applied automatically** — `CREATE TABLE`, `ADD COLUMN` (nullable,
+  or `NOT NULL` with a `DEFAULT`), `ADD CONSTRAINT … FOREIGN KEY`, non-unique `CREATE INDEX`. These
+  are the only shapes that can't break the deployment still serving while the build runs (or a
+  Vercel instant rollback). Anything else (drop, rename, type change, `SET NOT NULL`, data
+  `UPDATE`) fails the build on purpose. To ship one: first deploy code that no longer depends on
+  the old shape; then merge the migration (its build will fail), apply it with the "Prepare
+  Production Database" workflow (`migrations_only`), and redeploy.
+- Bookkeeping is Drizzle's own `drizzle.__drizzle_migrations` table, so `npm run db:migrate` and
+  the manual workflow below stay fully interchangeable with it.
+
 ## Preparing the production database
 
 `.github/workflows/prepare-production-db.yml` runs the two commands a real deployment's database
