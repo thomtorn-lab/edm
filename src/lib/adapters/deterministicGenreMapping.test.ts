@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  countGenreKeywordMentions,
   deterministicGenreFromText,
   genreHasTextualSupport,
   hasExplicitDjOrRaveSignal,
@@ -367,33 +366,5 @@ describe("genreHasTextualSupport (Billetto genre-tag contradiction guard, 2026-1
   it("a genre with multiple KEYWORD_MAP entries (e.g. psytrance via 'psy' or 'psytrance') is supported by either", () => {
     expect(genreHasTextualSupport("psytrance", "A psytrance night.")).toBe(true);
     expect(genreHasTextualSupport("psytrance", "A psy night.")).toBe(true);
-  });
-});
-
-describe("countGenreKeywordMentions (Billetto genre-tag contradiction guard precision fix, 2026-10-07)", () => {
-  it("counts a single mention as 1", () => {
-    expect(countGenreKeywordMentions("trance", "A night of trance.")).toBe(1);
-  });
-
-  it("counts two separate mentions as 2, across both Danish and English phrasing (the real EleKtro Universal shape)", () => {
-    expect(
-      countGenreKeywordMentions(
-        "trance",
-        "kroppen forenes med musikken i ren trance, progressiv, fullon. body and music merge into pure trance, progressive, full-on.",
-      ),
-    ).toBe(2);
-  });
-
-  it("returns 0 when the genre's own keyword is entirely absent", () => {
-    expect(countGenreKeywordMentions("techno", "Pure trance, progressive, and fullon energy.")).toBe(0);
-  });
-
-  it("a single incidental homonym mention (e.g. 'house' meaning a literal building, 'garage' meaning a literal garage) counts as exactly 1 — below the 2-mention bar the contradiction guard requires", () => {
-    expect(countGenreKeywordMentions("house", "The party moves into the house as the night goes on.")).toBe(1);
-    expect(countGenreKeywordMentions("garage", "Enter through the garage door at the back.")).toBe(1);
-  });
-
-  it("a genuinely repeated genre word counts every occurrence, not just distinct ones", () => {
-    expect(countGenreKeywordMentions("garage", "A garage night — proper UK garage, 2-step garage, real garage all night.")).toBe(4);
   });
 });
