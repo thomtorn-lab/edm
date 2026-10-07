@@ -6,8 +6,7 @@ import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
-
-const SITE_URL = "https://electroniccph.com";
+import { SITE_URL } from "@/lib/siteUrl";
 
 /**
  * hasArtistPreview (homepage VIDEO indicator work, 2026-09-26) is computed

@@ -7,8 +7,7 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 import { NEWSLETTER_CONSENT_PURPOSE } from "@/lib/newsletter/consent";
 import { triggerRetentionSweep } from "@/lib/newsletter/retentionSweep";
 import { getActiveTestAllowlist, isEmailAllowlistedForTest } from "@/lib/newsletter/testAllowlist";
-
-const SITE_URL = "https://electroniccph.com";
+import { SITE_URL } from "@/lib/siteUrl";
 
 /**
  * Always returns the same generic success response regardless of whether
