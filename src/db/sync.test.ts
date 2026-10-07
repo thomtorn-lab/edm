@@ -735,6 +735,102 @@ describe("Pylonen DQ identity stability across the bare -> detail-page lifecycle
   });
 });
 
+/**
+ * Discovery description persistence fix (2026-10-07): the review-queue
+ * insertDiscoveryItem call previously omitted raw.description entirely, even
+ * though it was already extracted and already in scope (relevanceText reads
+ * the same field just above) — every row routed to review, as opposed to
+ * auto-publish, got a hardcoded-null description forever. Fixed by passing
+ * raw.description straight through, the same way the auto_publish branch's
+ * createEvent call already does.
+ */
+describe("Discovery description persistence (2026-10-07)", () => {
+  function mockThreeSelects(linksResult: unknown[], pendingResult: unknown[], ignoredResult: unknown[]) {
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once(linksResult))
+      .mockImplementationOnce(() => once(pendingResult))
+      .mockImplementationOnce(() => once(ignoredResult));
+  }
+
+  it("persists a real organizer-written description onto a brand-new review-queue row", async () => {
+    mockThreeSelects([], [], []);
+    const candidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      description: "A night of deep house and techno at an intimate venue.",
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([candidate]));
+    const result = await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(result.queuedForReview).toBe(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "A night of deep house and techno at an intimate venue." }),
+    );
+  });
+
+  it("passes a null description through unchanged — never forces empty-string or omits the field", async () => {
+    mockThreeSelects([], [], []);
+    const candidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      description: null,
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([candidate]));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ description: null }));
+  });
+
+  it("a later re-sync of an already-pending row never touches description — an admin's manual edit to a previously-queued row's description can never be overwritten by a subsequent sync", async () => {
+    const pendingRow = {
+      id: "dq-melting",
+      sourceUrl: "https://billetto.dk/e/melting-monday-1",
+      status: "pending",
+      predictedGenre: null,
+      genreConfidence: "low" as const,
+      overriddenFields: ["description"],
+      overallConfidence: "low" as const,
+      missingFields: [],
+      probableSubVenue: null,
+      suspectedDuplicateOfEventId: null,
+      venueResolvedDecision: null,
+      venueResolvedHoldReason: null,
+      holdReason: null,
+      probableTicketUrl: null,
+      probableOfficialEventUrl: null,
+    };
+    mockThreeSelects([], [pendingRow], []);
+    // The adapter now reports a DIFFERENT description text on this re-sync —
+    // simulating the source page's own copy changing after an admin already
+    // hand-edited this row's description in the admin UI.
+    const candidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      description: "Updated organizer copy, different from the admin's edit.",
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+    };
+    const adapter = fakeAdapter(() => Promise.resolve([candidate]));
+    await runSourceSync("src-billetto", "Billetto", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    const [, patch] = vi.mocked(applyDiscoveryClassificationUpdate).mock.calls[0];
+    expect(patch).not.toHaveProperty("description");
+  });
+});
+
 describe("trusted-electronic sources — a complete Hangaren/Culture Box candidate auto-publishes even with unresolved genre (Section 6, corrected 2026-08-24)", () => {
   const hangarenVenues: Venue[] = [
     {
