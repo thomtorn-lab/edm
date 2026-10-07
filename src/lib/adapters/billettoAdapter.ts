@@ -1,5 +1,5 @@
 import { genreConfidenceForEvidence } from "../classification";
-import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, genreHasTextualSupport, hasRichGenreEvidence } from "./deterministicGenreMapping";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -297,10 +297,36 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
   const artists = mapHeadliners(event.headliners);
 
   const categoryGenre = genreFromBillettoCategorization(event.categorization);
-  let genreHint: GenreSlug | null = categoryGenre;
-  let genreConfidenceHint = categoryGenre ? genreConfidenceForEvidence("official-source-metadata") : null;
+  const genreEvidenceText = `${title} ${description ?? ""}`;
+  // Genre-tag contradiction guard (EleKtro Universal misclassification,
+  // 2026-10-07): a trusted category tag is Billetto's own organizer-chosen
+  // categorization — generally reliable (see module doc comment) — but a
+  // real live event was tagged "techno" while its own Danish+English
+  // description explicitly and repeatedly says "trance, progressiv/
+  // progressive, fullon" and never once says "techno". Deliberately narrow,
+  // same spirit as the untrusted-subcategory fallback just below: only
+  // overridden when the tag's own genre word has ZERO support anywhere in
+  // the event's own text AND that text separately carries
+  // hasRichGenreEvidence-caliber (repeated/corroborated, never a single
+  // incidental or influence-qualified mention — see that function's own doc
+  // comment) evidence resolving to one different, specific genre. An
+  // ordinary tagged event whose description simply never repeats the tag's
+  // own word (the overwhelming majority — most descriptions don't restate
+  // the genre at all) is unaffected: hasRichGenreEvidence requires real
+  // corroboration elsewhere in the SAME text, so a sparse or genre-silent
+  // description keeps its trusted tag exactly as before.
+  const categoryGenreContradictedByText =
+    categoryGenre != null &&
+    !genreHasTextualSupport(categoryGenre, genreEvidenceText) &&
+    hasRichGenreEvidence(genreEvidenceText) &&
+    (() => {
+      const textGenre = deterministicGenreFromText(genreEvidenceText);
+      return textGenre != null && textGenre !== categoryGenre;
+    })();
+  let genreHint: GenreSlug | null = categoryGenreContradictedByText ? null : categoryGenre;
+  let genreConfidenceHint = genreHint ? genreConfidenceForEvidence("official-source-metadata") : null;
   if (!genreHint) {
-    const textGenre = deterministicGenreFromText(`${title} ${description ?? ""}`);
+    const textGenre = deterministicGenreFromText(genreEvidenceText);
     if (textGenre) {
       genreHint = textGenre;
       // Billetto gave its own categorization for this event but it did NOT

@@ -100,6 +100,21 @@ export function deterministicGenreFromText(text: string): GenreSlug | null {
 }
 
 /**
+ * Whether `genre`'s own KEYWORD_MAP keyword(s) appear anywhere in `text`
+ * (Billetto genre-tag contradiction guard, 2026-10-07) — used to tell
+ * "this genre has zero textual support" apart from "this genre has some
+ * support, just not the loudest". Reuses the exact same patterns
+ * deterministicGenreFromText itself matches against (same lightly-cleaned
+ * text), so a genre whose only KEYWORD_MAP entry is the bare word it names
+ * (e.g. "techno") returns false only when that word is truly absent — never
+ * a guess about intent.
+ */
+export function genreHasTextualSupport(genre: GenreSlug, text: string): boolean {
+  const cleaned = lightlyCleanText(text);
+  return KEYWORD_MAP.some(([pattern, mapped]) => mapped === genre && pattern.test(cleaned));
+}
+
+/**
  * Gaps 4A/4B (KultuNaut publish work package, 2026-09-05) — evidence-
  * STRENGTH signals for hasRichGenreEvidence below, deliberately NOT applied
  * inside deterministicGenreFromText's own matching. An earlier version of
