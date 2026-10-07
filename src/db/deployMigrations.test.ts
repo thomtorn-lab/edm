@@ -10,6 +10,7 @@ import {
   applyPendingMigrations,
   decideMigration,
   findRejectedStatements,
+  listPendingMigrations,
   readTaggedMigrations,
   rejectReason,
   splitStatements,
@@ -24,19 +25,29 @@ function synthetic(tag: string, folderMillis: number, sql: string[]): TaggedMigr
 }
 
 describe("decideMigration", () => {
-  it("skips outside Vercel (local `npm run build`, CI)", () => {
-    expect(decideMigration({ DATABASE_URL: "postgres://x" }).action).toBe("skip");
+  const DB = { DATABASE_URL: "postgres://x" };
+  it("skips outside Vercel (local `npm run build`, CI), even with a DATABASE_URL", () => {
+    expect(decideMigration({ ...DB }).action).toBe("skip");
+    expect(decideMigration({ ...DB, VERCEL_ENV: "production" }).action).toBe("skip"); // stray var, no builder marker
   });
-  it("skips Preview and Development builds even with a DATABASE_URL", () => {
-    expect(decideMigration({ VERCEL: "1", VERCEL_ENV: "preview", DATABASE_URL: "postgres://x" }).action).toBe("skip");
-    expect(decideMigration({ VERCEL: "1", VERCEL_ENV: "development", DATABASE_URL: "postgres://x" }).action).toBe("skip");
+  it("skips Preview, Development and custom-environment builds", () => {
+    expect(decideMigration({ ...DB, VERCEL: "1", VERCEL_ENV: "preview" }).action).toBe("skip");
+    expect(decideMigration({ ...DB, VERCEL: "1", VERCEL_ENV: "development" }).action).toBe("skip");
+    // Custom environment: VERCEL_ENV says "preview", VERCEL_TARGET_ENV has the real name.
+    expect(decideMigration({ ...DB, VERCEL: "1", VERCEL_ENV: "preview", VERCEL_TARGET_ENV: "staging" }).action).toBe("skip");
   });
-  it("migrates only on a Vercel Production build", () => {
-    expect(decideMigration({ VERCEL: "1", VERCEL_ENV: "production", DATABASE_URL: "postgres://x" }).action).toBe("migrate");
+  it("migrates on a Vercel Production build (VERCEL or NOW_BUILDER; VERCEL_TARGET_ENV or VERCEL_ENV)", () => {
+    expect(decideMigration({ ...DB, VERCEL: "1", VERCEL_ENV: "production" }).action).toBe("migrate");
+    expect(decideMigration({ ...DB, VERCEL: "1", VERCEL_TARGET_ENV: "production" }).action).toBe("migrate");
+    expect(decideMigration({ ...DB, NOW_BUILDER: "1", VERCEL_ENV: "production" }).action).toBe("migrate");
   });
-  it("fails closed when on Vercel but the environment is unknown, or Production has no DATABASE_URL", () => {
-    expect(decideMigration({ VERCEL: "1", DATABASE_URL: "postgres://x" }).action).toBe("fail");
+  it("only verifies (never applies) on a Vercel build whose environment isn't exposed", () => {
+    expect(decideMigration({ ...DB, VERCEL: "1" }).action).toBe("verify");
+    expect(decideMigration({ ...DB, NOW_BUILDER: "1" }).action).toBe("verify");
+  });
+  it("fails a Production or unknown-environment Vercel build that has no DATABASE_URL", () => {
     expect(decideMigration({ VERCEL: "1", VERCEL_ENV: "production" }).action).toBe("fail");
+    expect(decideMigration({ VERCEL: "1" }).action).toBe("fail");
   });
 });
 
@@ -167,6 +178,25 @@ describe.skipIf(!ADMIN_URL)("applyPendingMigrations against real Postgres", () =
       expect(await appliedCount(c)).toBe(realMigrations.length);
       // …and this runner then agrees nothing is pending.
       expect((await applyPendingMigrations(c, realMigrations)).applied).toEqual([]);
+    } finally {
+      await c.end();
+    }
+  });
+
+  it("verify mode is read-only: reports pending migrations without creating or changing anything", async () => {
+    const c = await connect(await freshDb());
+    try {
+      // Brand-new database: everything pending, and no drizzle schema gets created by checking.
+      expect(await listPendingMigrations(c, realMigrations)).toEqual(realMigrations.map((m) => m.tag));
+      const { rowCount } = await c.query(`SELECT 1 FROM information_schema.schemata WHERE schema_name = 'drizzle'`);
+      expect(rowCount).toBe(0);
+      // Partially migrated: exactly the remainder is reported, nothing is applied.
+      await applyPendingMigrations(c, realMigrations.slice(0, -1));
+      expect(await listPendingMigrations(c, realMigrations)).toEqual([realMigrations.at(-1)!.tag]);
+      expect(await appliedCount(c)).toBe(realMigrations.length - 1);
+      // Up to date: nothing pending.
+      await applyPendingMigrations(c, realMigrations);
+      expect(await listPendingMigrations(c, realMigrations)).toEqual([]);
     } finally {
       await c.end();
     }

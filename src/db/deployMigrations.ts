@@ -39,20 +39,36 @@ export type DeployEnv = Record<string, string | undefined>;
 
 export type MigrationDecision =
   | { action: "migrate" }
+  | { action: "verify"; reason: string }
   | { action: "skip"; reason: string }
   | { action: "fail"; reason: string };
 
-/** Only a Vercel Production build ever touches the database. Fails closed when it can't tell. */
+/**
+ * Only a Vercel Production build ever writes to the database.
+ *
+ * "Is this a Vercel build" uses VERCEL / NOW_BUILDER, which Vercel's builder
+ * sets unconditionally before running the build command (vercel CLI 62.x
+ * `build`: `process.env.VERCEL="1", process.env.NOW_BUILDER="1"`).
+ * "Which environment" uses VERCEL_TARGET_ENV (custom environments report
+ * their own name there, VERCEL_ENV reports them as "preview") falling back
+ * to VERCEL_ENV. Those are project system environment variables; if a
+ * project ever stops exposing them, the build can't tell Production from
+ * Preview — so it neither applies migrations nor blindly fails: it only
+ * verifies (read-only) that nothing is pending, and fails the build if
+ * something is, so code can never be promoted ahead of its schema.
+ */
 export function decideMigration(env: DeployEnv): MigrationDecision {
-  if (!env.VERCEL) return { action: "skip", reason: "not a Vercel build (local/CI) — migrations not run" };
-  if (!env.VERCEL_ENV) {
-    return { action: "fail", reason: "VERCEL is set but VERCEL_ENV is not — refusing to guess whether this is Production" };
+  if (!env.VERCEL && !env.NOW_BUILDER) return { action: "skip", reason: "not a Vercel build (local/CI) — migrations not run" };
+  const target = env.VERCEL_TARGET_ENV || env.VERCEL_ENV;
+  if (target && target !== "production") {
+    return { action: "skip", reason: `Vercel ${target} build — only Production builds migrate` };
   }
-  if (env.VERCEL_ENV !== "production") {
-    return { action: "skip", reason: `VERCEL_ENV=${env.VERCEL_ENV} — only Production builds migrate` };
-  }
-  if (!env.DATABASE_URL) return { action: "fail", reason: "Production build without DATABASE_URL" };
-  return { action: "migrate" };
+  if (!env.DATABASE_URL) return { action: "fail", reason: `Vercel ${target ?? "build of unknown environment"} without DATABASE_URL` };
+  if (target === "production") return { action: "migrate" };
+  return {
+    action: "verify",
+    reason: "Vercel build without VERCEL_TARGET_ENV/VERCEL_ENV — cannot tell whether this is Production, so migrations are only checked, never applied",
+  };
 }
 
 /**
@@ -149,6 +165,25 @@ export class UnsafeMigrationError extends Error {
   }
 }
 
+function pendingAfter(rows: Record<string, unknown>[], migrations: TaggedMigration[]): TaggedMigration[] {
+  const last = rows[0] ? Number(rows[0].created_at) : null;
+  return migrations.filter((m) => last === null || last < m.folderMillis);
+}
+
+/** Read-only: which migrations the database has not recorded yet (same rule as Drizzle's migrator). */
+export async function listPendingMigrations(client: QueryClient, migrations: TaggedMigration[]): Promise<string[]> {
+  await client.query("BEGIN READ ONLY");
+  try {
+    const { rows: exists } = await client.query(`SELECT to_regclass('"${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}"') AS t`);
+    const { rows } = exists[0]?.t
+      ? await client.query(`SELECT created_at FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" ORDER BY created_at DESC LIMIT 1`)
+      : { rows: [] };
+    return pendingAfter(rows, migrations).map((m) => m.tag);
+  } finally {
+    await client.query("ROLLBACK").catch(() => {});
+  }
+}
+
 /**
  * Applies every pending migration in one transaction, serialised by an
  * advisory lock. Any error (including an unsafe statement or a lock wait
@@ -174,8 +209,7 @@ export async function applyPendingMigrations(
     const { rows } = await client.query(
       `SELECT created_at FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" ORDER BY created_at DESC LIMIT 1`,
     );
-    const last = rows[0] ? Number(rows[0].created_at) : null;
-    const pending = migrations.filter((m) => last === null || last < m.folderMillis);
+    const pending = pendingAfter(rows, migrations);
 
     const rejected = findRejectedStatements(pending);
     if (rejected.length > 0) throw new UnsafeMigrationError(rejected);

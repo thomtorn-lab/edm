@@ -65,6 +65,13 @@ build fails, so the new code is never promoted and the current deployment keeps 
 GitHub Actions syncs, which all call the deployed `/api/sync/*`, keep running the old code too).
 Local builds and Vercel Preview builds skip it. Details: `src/db/deployMigrations.ts`.
 
+- **How it knows it's Production:** `VERCEL`/`NOW_BUILDER` (always set by Vercel's builder) mark a
+  Vercel build; `VERCEL_TARGET_ENV`, falling back to `VERCEL_ENV`, says which environment. If a
+  Vercel build ever lacks both, it can't tell Production from Preview, so it applies nothing and
+  only checks, read-only: no pending migrations → build continues; pending migrations → build
+  fails (apply them with the workflow below, then redeploy). Code can't ship ahead of its schema
+  either way.
+
 - **All pending migrations run in one transaction** behind an advisory lock: a failure applies
   nothing, and two Production builds at once can't both apply the same migration (the second waits,
   then finds nothing pending). DDL gives up after a 10s lock wait rather than stalling live queries.
