@@ -633,6 +633,17 @@ async function runSourceSyncLocked(
       const inserted = await insertDiscoveryItem({
         id: queueId,
         probableTitle: raw.title || "(untitled)",
+        // Discovery description persistence fix: the adapter's own
+        // extraction already reaches this point (relevanceText above reads
+        // the same raw.description), but this insert previously omitted it
+        // entirely — review-queue rows got a hardcoded-null description
+        // forever, unlike the auto_publish branch's createEvent call, which
+        // has always passed raw.description through. Insert-time only: a
+        // later re-sync of an already-pending row never touches description
+        // (see DiscoveryQueueClassificationPatch in src/lib/sync.ts, which
+        // has no description field), so this can never overwrite an admin's
+        // own edit to this field.
+        description: raw.description,
         probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
         // Carried straight from the adapter's own extraction — real data
         // honestly found this run must never be silently dropped just
