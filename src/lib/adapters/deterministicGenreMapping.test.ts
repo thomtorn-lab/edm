@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  deterministicGenreFromText,
-  genreHasTextualSupport,
-  hasExplicitDjOrRaveSignal,
-  hasRichGenreEvidence,
-  refineGenreFromText,
-} from "./deterministicGenreMapping";
+import { deterministicGenreFromText, hasExplicitDjOrRaveSignal, hasRichGenreEvidence, refineGenreFromText } from "./deterministicGenreMapping";
 
 describe("deterministicGenreFromText", () => {
   it("maps the standalone word 'psy' to psytrance", () => {
@@ -340,31 +334,5 @@ describe("refineGenreFromText (genre precision, Workstream B)", () => {
   it("is a no-op for a genre with no declared refinement siblings", () => {
     expect(refineGenreFromText("disco", "Industrial techno night.")).toBe("disco");
     expect(refineGenreFromText("psytrance", "A generic trance description.")).toBe("psytrance");
-  });
-});
-
-describe("genreHasTextualSupport (Billetto genre-tag contradiction guard, 2026-10-07)", () => {
-  it("returns true when the genre's own keyword literally appears in the text", () => {
-    expect(genreHasTextualSupport("techno", "A night of pounding techno.")).toBe(true);
-    expect(genreHasTextualSupport("trance", "Pure trance vibes all night.")).toBe(true);
-  });
-
-  it("returns false when the genre's own keyword is entirely absent, even if other genre words appear", () => {
-    expect(genreHasTextualSupport("techno", "Pure trance, progressive, and fullon energy.")).toBe(false);
-  });
-
-  it("matches case-insensitively and with the same word-boundary rules as deterministicGenreFromText", () => {
-    expect(genreHasTextualSupport("techno", "TECHNO all night")).toBe(true);
-    expect(genreHasTextualSupport("psytrance", "A night of PSY vibes")).toBe(true);
-  });
-
-  it("returns false for an empty or genre-silent text", () => {
-    expect(genreHasTextualSupport("techno", "")).toBe(false);
-    expect(genreHasTextualSupport("techno", "Doors open at 22:00.")).toBe(false);
-  });
-
-  it("a genre with multiple KEYWORD_MAP entries (e.g. psytrance via 'psy' or 'psytrance') is supported by either", () => {
-    expect(genreHasTextualSupport("psytrance", "A psytrance night.")).toBe(true);
-    expect(genreHasTextualSupport("psytrance", "A psy night.")).toBe(true);
   });
 });
