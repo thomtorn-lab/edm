@@ -379,6 +379,36 @@ describe("mapBillettoEvent", () => {
       expect(mapped!.genreConfidenceHint).toBe("high");
     });
 
+    it("NEGATIVE CONTROL (precision fix, merge review 2026-10-07): a single incidental 'house' mention meaning a literal building — paired with generic club context — must never override a trusted tag; this exact ambiguity is already a documented live false positive elsewhere in this file (ECSTATIC DANCE et al.)", () => {
+      const literalHouse: BillettoEvent = {
+        ...elektroUniversal,
+        description: "The party moves from the garden into the house as the night goes on. Club night vibes guaranteed.",
+      };
+      const mapped = mapBillettoEvent(literalHouse);
+      expect(mapped!.genreHint).toBe("techno");
+      expect(mapped!.genreConfidenceHint).toBe("high");
+    });
+
+    it("NEGATIVE CONTROL (precision fix, merge review 2026-10-07): a single incidental 'garage' mention meaning a literal garage door — paired with generic DJ/club context — must never override a trusted tag", () => {
+      const literalGarage: BillettoEvent = {
+        ...elektroUniversal,
+        description: "Enter through the garage door at the back. DJ sets run all night, club night vibes guaranteed.",
+      };
+      const mapped = mapBillettoEvent(literalGarage);
+      expect(mapped!.genreHint).toBe("techno");
+      expect(mapped!.genreConfidenceHint).toBe("high");
+    });
+
+    it("a genuinely repeated (2+) alternative genre still overrides, even though it's below hasRichGenreEvidence's own 'rich' bar in a different sense — confirms the guard requires independent two-mention corroboration of the SAME alternative genre, not just any rich-evidence signal", () => {
+      const repeatedGarage: BillettoEvent = {
+        ...elektroUniversal,
+        description: "A garage night through and through — proper UK garage, 2-step garage, the real garage sound all night.",
+      };
+      const mapped = mapBillettoEvent(repeatedGarage);
+      expect(mapped!.genreHint).toBe("garage");
+      expect(mapped!.genreConfidenceHint).toBe("medium");
+    });
+
     it("generalizes beyond techno/trance: a house-tagged event richly and exclusively contradicted by techno text defers to techno", () => {
       const houseTaggedButTechno: BillettoEvent = {
         ...elektroUniversal,

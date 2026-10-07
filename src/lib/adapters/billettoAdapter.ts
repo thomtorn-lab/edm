@@ -1,5 +1,5 @@
 import { genreConfidenceForEvidence } from "../classification";
-import { deterministicGenreFromText, genreHasTextualSupport, hasRichGenreEvidence } from "./deterministicGenreMapping";
+import { countGenreKeywordMentions, deterministicGenreFromText, genreHasTextualSupport } from "./deterministicGenreMapping";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -306,22 +306,30 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
   // progressive, fullon" and never once says "techno". Deliberately narrow,
   // same spirit as the untrusted-subcategory fallback just below: only
   // overridden when the tag's own genre word has ZERO support anywhere in
-  // the event's own text AND that text separately carries
-  // hasRichGenreEvidence-caliber (repeated/corroborated, never a single
-  // incidental or influence-qualified mention — see that function's own doc
-  // comment) evidence resolving to one different, specific genre. An
-  // ordinary tagged event whose description simply never repeats the tag's
-  // own word (the overwhelming majority — most descriptions don't restate
-  // the genre at all) is unaffected: hasRichGenreEvidence requires real
-  // corroboration elsewhere in the SAME text, so a sparse or genre-silent
-  // description keeps its trusted tag exactly as before.
+  // the event's own text AND that text independently names ONE different,
+  // specific genre at LEAST TWICE (countGenreKeywordMentions >= 2) — see
+  // that function's own doc comment for why its single-mention-plus-context
+  // allowance (hasRichGenreEvidence's weaker branch) is deliberately NOT
+  // used here: a focused precision pass (2026-10-07 merge review) found two
+  // real false-positive shapes reachable with only one mention — "house"
+  // (already a documented live false positive elsewhere in this file —
+  // ECSTATIC DANCE/Kresten Osgood/Dansk Danseteater, each a bare "house"
+  // inside "out of the house"/"publishing house"/"the Opera House") and
+  // "garage" (identical ambiguity: a literal garage door) — each paired
+  // with an unrelated generic club/DJ-context phrase was enough to flip an
+  // already-correct trusted tag. Requiring two independent mentions closes
+  // both without narrowing the EleKtro Universal case itself: its own text
+  // says "trance" exactly twice (once in each language). An ordinary tagged
+  // event whose description simply never repeats the tag's own word (the
+  // overwhelming majority — most descriptions don't restate the genre at
+  // all) is unaffected either way: the alternative genre must independently
+  // clear the same two-mention bar.
   const categoryGenreContradictedByText =
     categoryGenre != null &&
     !genreHasTextualSupport(categoryGenre, genreEvidenceText) &&
-    hasRichGenreEvidence(genreEvidenceText) &&
     (() => {
       const textGenre = deterministicGenreFromText(genreEvidenceText);
-      return textGenre != null && textGenre !== categoryGenre;
+      return textGenre != null && textGenre !== categoryGenre && countGenreKeywordMentions(textGenre, genreEvidenceText) >= 2;
     })();
   let genreHint: GenreSlug | null = categoryGenreContradictedByText ? null : categoryGenre;
   let genreConfidenceHint = genreHint ? genreConfidenceForEvidence("official-source-metadata") : null;

@@ -115,6 +115,43 @@ export function genreHasTextualSupport(genre: GenreSlug, text: string): boolean 
 }
 
 /**
+ * How many times `genre`'s own KEYWORD_MAP keyword(s) appear in `text`
+ * (Billetto genre-tag contradiction guard precision fix, 2026-10-07) — a
+ * single-mention lower bar is a real, demonstrated false-positive source:
+ * "house" (already a documented live false positive elsewhere in this
+ * codebase — see billettoAdapter.ts's own ECSTATIC DANCE/Kresten Osgood/
+ * Dansk Danseteater examples, all a bare "house" matching inside "out of
+ * the house"/"publishing house"/"the Opera House") and "garage" (the same
+ * ambiguity shape — a literal garage door, not the genre) can each surface
+ * from one incidental, non-musical mention. Paired with any generic club/
+ * DJ-context phrase elsewhere in an otherwise ordinary description,
+ * hasRichGenreEvidence's "1 mention + context" allowance alone is not
+ * reliable enough to justify overriding an already-TRUSTED, high-confidence
+ * category tag (a materially higher-stakes decision than hasRichGenreEvidence's
+ * existing uses, which only ever promote an evidence TIER, never discard an
+ * already-trusted one) — see genreCategoryContradiction's own doc comment
+ * in billettoAdapter.ts for the exact guard this backs. Counts every match
+ * of every KEYWORD_MAP pattern that resolves to `genre` (mirrors
+ * countGenreMentions' own double-counting tolerance for an overlapping
+ * compound pattern — never a concern here since this only ever counts
+ * patterns already scoped to one single genre).
+ */
+export function countGenreKeywordMentions(genre: GenreSlug, text: string): number {
+  const cleaned = lightlyCleanText(text);
+  let count = 0;
+  for (const [pattern, mapped] of KEYWORD_MAP) {
+    if (mapped !== genre) continue;
+    const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    let match: RegExpExecArray | null;
+    while ((match = global.exec(cleaned))) {
+      count++;
+      if (match.index === global.lastIndex) global.lastIndex++; // guard against a zero-length match looping forever
+    }
+  }
+  return count;
+}
+
+/**
  * Gaps 4A/4B (KultuNaut publish work package, 2026-09-05) — evidence-
  * STRENGTH signals for hasRichGenreEvidence below, deliberately NOT applied
  * inside deterministicGenreFromText's own matching. An earlier version of
