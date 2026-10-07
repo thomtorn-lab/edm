@@ -80,4 +80,14 @@ describe("NewsletterSignupForm", () => {
     expect(honeypot).toBeTruthy();
     expect(honeypot?.getAttribute("tabindex")).toBe("-1");
   });
+
+  it("consent-copy audit (2026-10-07): states the brand, what's sent, genre tailoring, and that unsubscribing is always available — at the signup surface itself, not only downstream", () => {
+    render(<NewsletterSignupForm />);
+    const description = screen.getByText(
+      "Electronic CPH weekly newsletter — Copenhagen electronic music events based on the genres you choose. You can unsubscribe at any time.",
+    );
+    expect(description).toBeTruthy();
+    expect(screen.getByLabelText("Weekly newsletter").getAttribute("aria-describedby")).toBe("newsletter-email-description");
+    expect(description.id).toBe("newsletter-email-description");
+  });
 });

@@ -9,7 +9,7 @@
  * answerable by looking up this tag in git history, without storing the
  * full consent text (or anything else, like an IP address) per subscriber.
  */
-export const NEWSLETTER_CONSENT_VERSION = "2026-10-06";
+export const NEWSLETTER_CONSENT_VERSION = "2026-10-07";
 
 /**
  * The exact purpose consent is being collected for, in one sentence —
@@ -18,4 +18,4 @@ export const NEWSLETTER_CONSENT_VERSION = "2026-10-06";
  * auditable meaning without re-reading three separate files.
  */
 export const NEWSLETTER_CONSENT_PURPOSE =
-  "To send you the Electronic CPH weekly newsletter (upcoming electronic music events in Copenhagen, filtered by the genres you choose).";
+  "To send you the Electronic CPH weekly newsletter (upcoming electronic music events in Copenhagen, filtered by the genres you choose). You can unsubscribe at any time.";

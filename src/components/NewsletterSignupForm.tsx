@@ -66,7 +66,7 @@ export default function NewsletterSignupForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-1.5">
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
         <label htmlFor="newsletter-email" className="shrink-0 text-xs font-semibold uppercase tracking-wide text-text-secondary">
           Weekly newsletter
@@ -81,7 +81,7 @@ export default function NewsletterSignupForm() {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
             aria-invalid={fieldError ? true : undefined}
-            aria-describedby={fieldError ? "newsletter-email-error" : undefined}
+            aria-describedby={fieldError ? "newsletter-email-error" : "newsletter-email-description"}
             className="w-full min-w-0 rounded border border-border-strong bg-surface-1 px-3 py-1.5 text-base leading-5 text-text-primary placeholder:text-text-tertiary focus:border-accent sm:w-56 sm:text-xs"
           />
           {/* Honeypot — hidden from real visitors via CSS, never via a
@@ -105,6 +105,18 @@ export default function NewsletterSignupForm() {
           </button>
         </div>
       </div>
+      {/* Consent-copy audit (2026-10-07): the compact label/input/button row
+          above names neither the brand, what's actually sent, nor that
+          unsubscribing is always available — all of which NEWSLETTER_CONSENT_PURPOSE
+          already states, but only from the confirmation email/confirm page
+          onward (see src/lib/newsletter/consent.ts). This one line closes
+          that gap at the first touchpoint, before an email address is even
+          entered — plain text, not a checkbox (no consent checkbox exists
+          in this flow; see this file's own module doc comment). */}
+      <p id="newsletter-email-description" className="text-xs text-text-tertiary">
+        Electronic CPH weekly newsletter — Copenhagen electronic music events based on the genres you choose. You can
+        unsubscribe at any time.
+      </p>
       {fieldError && (
         <p id="newsletter-email-error" role="alert" className="text-xs text-status-bad">{fieldError}</p>
       )}
