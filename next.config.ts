@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { SITE_URL } from "./src/lib/siteUrl";
 
 const nextConfig: NextConfig = {
   /**
@@ -21,6 +22,26 @@ const nextConfig: NextConfig = {
    *   them dynamically (searchParams usage forces that), but this removes
    *   any dependency on that remaining true as an implementation detail.
    */
+  /**
+   * Retired event URLs (2026-10-07). /events/[slug] only serves published
+   * events, so an admin-unpublished duplicate's old URL 404s even though the
+   * same real event lives on under a new slug. One entry per known case:
+   * - Sunday Psy, Hangaren, 13 Sep 2026: the synced "Sunday Psy: Maurinstarr,
+   *   Milo Makua, RunaRift, Afgang" (e-ed02665a, public 24 Aug–8 Sep) was
+   *   replaced by the admin-created e-b4a8bd2e — same official Hangaren URL,
+   *   RA ticket, venue and start time.
+   * Absolute www destination, so the redirect lands on the canonical host in
+   * a single hop.
+   */
+  async redirects() {
+    return [
+      {
+        source: "/events/sunday-psy-maurinstarr-milo-makua-runarift-afgang-e-ed02665a",
+        destination: `${SITE_URL}/events/sunday-psy-e-b4a8bd2e`,
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
