@@ -41,18 +41,33 @@ export default function PrivacyPage() {
           used for anything beyond replying to you or reviewing the suggestion.
         </p>
         {isNewsletterEnabled() && (
-          <p>
-            If you sign up for the weekly newsletter, we store your email address and, if you choose, your genre
-            preferences — nothing else, and we don&rsquo;t collect your IP address or any other identifier for this
-            purpose. The legal basis for this is your consent, given by confirming via a link we email you (so
-            nobody can sign up an address that isn&rsquo;t theirs) — you can withdraw it at any time via the
-            one-click unsubscribe link in every newsletter. Unsubscribing deletes your email address and
-            preferences immediately; we don&rsquo;t keep a copy. We don&rsquo;t use open or click tracking in
-            newsletter emails. Sending is handled by Resend (resend.com), acting as our processor for this purpose
-            only. We keep a short record of each week&rsquo;s send (which address, which content) for up to 30
-            days to debug delivery problems, then delete it automatically; an unconfirmed signup that&rsquo;s
-            never clicked its confirmation link is also deleted automatically after 30 days.
-          </p>
+          <>
+            <p>
+              If you sign up for the weekly newsletter, we store your email address and, if you choose, your
+              genre preferences in our application database. We do not deliberately collect or use your IP
+              address or other identifiers for newsletter personalization or marketing purposes.
+            </p>
+            <p>
+              The legal basis for this processing is your consent, given by confirming via the link we email
+              you. You can withdraw your consent at any time using the unsubscribe link in every newsletter.
+            </p>
+            <p>
+              Unsubscribing deletes your email address and genre preferences from our application database
+              immediately.
+            </p>
+            <p>
+              Our hosting, database and email-sending providers may process standard technical logs or
+              backups as part of operating their services, subject to their own retention and
+              data-processing terms.
+            </p>
+            <p>We do not use open or click tracking in newsletter emails.</p>
+            <p>
+              Sending is handled by Resend as our email processor. We keep a short record of each
+              week&rsquo;s send for up to 30 days to troubleshoot delivery problems, then delete it
+              automatically. An unconfirmed signup that is never confirmed is also deleted automatically
+              after 30 days.
+            </p>
+          </>
         )}
         <p>
           If that ever changes — if we add any other non-essential tracking that requires consent — this
