@@ -405,6 +405,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // labels, not paragraphs, so line breaks collapse to spaces there.
   if (raw.description) raw.description = normalizeExtractedText(raw.description);
   if (raw.relevanceText) raw.relevanceText = normalizeExtractedText(raw.relevanceText);
+  if (raw.structuredGenreField) raw.structuredGenreField = normalizeExtractedText(raw.structuredGenreField, { singleLine: true });
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });
   raw.artists = raw.artists.map((a) => normalizeExtractedText(a, { singleLine: true }));
 
@@ -454,13 +455,15 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   }
 
   // CONSERVATIVE SECONDARY-GENRE SUGGESTION (Discovery secondary-genre V1,
-  // 2026-10-08) — future events only (a past/undated candidate is never
-  // worth suggesting a second genre for), and only ever from the SAME
-  // relevanceText genre resolution already used, never a fresh pass over
-  // different evidence. See suggestSecondaryGenre's own doc comment for the
-  // exact, narrow evidence patterns and abstention rules.
+  // 2026-10-08; revised 2026-10-08 to drop free-text inference entirely —
+  // see secondaryGenreSuggestion.ts's header comment) — future events only
+  // (a past/undated candidate is never worth suggesting a second genre
+  // for), and consulting ONLY raw.structuredGenreField, the adapter-verified
+  // structured genre field — never relevanceText/description free prose, so
+  // an artist bio or venue-boilerplate paragraph can never be mistaken for
+  // event-level genre evidence here.
   const isFutureEvent = raw.startDatetime != null && !isPastEvent({ startDatetime: raw.startDatetime, endDatetime: raw.endDatetime }, new Date());
-  const secondaryGenreSuggestion = isFutureEvent ? suggestSecondaryGenre(relevanceText, genre, genreConfidence) : null;
+  const secondaryGenreSuggestion = isFutureEvent ? suggestSecondaryGenre(raw.structuredGenreField, genre, genreConfidence) : null;
 
   // DEDUPLICATION
   let duplicateOfEventId: string | null = null;

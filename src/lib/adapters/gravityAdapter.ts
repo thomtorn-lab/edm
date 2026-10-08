@@ -123,6 +123,15 @@ interface GravityCoreFields {
   venueName: string;
   description: string | null;
   genreEvidenceText: string;
+  /**
+   * The old template's own "Music:" info-row value, verbatim — genuine
+   * structural HTML provenance (extractInfoRow's label-then-span parse of
+   * THIS detail page), never a free-text label scan (see
+   * RawCandidateEvent.structuredGenreField's doc comment). Null on the new
+   * JSON-LD template, which drops the info-row entirely and has no
+   * equivalent dedicated genre field.
+   */
+  structuredGenreField: string | null;
 }
 
 /**
@@ -164,7 +173,7 @@ function tryOldTemplateFields(html: string, dateKey: DateKey): GravityCoreFields
   const description = [fullDescriptionText, musicText ? `Music: ${musicText}` : null].filter(Boolean).join(" ") || null;
   const genreEvidenceText = [musicText, fullDescriptionText].filter(Boolean).join(" ");
 
-  return { startDatetime, endDatetime, venueName, description, genreEvidenceText };
+  return { startDatetime, endDatetime, venueName, description, genreEvidenceText, structuredGenreField: musicText };
 }
 
 /**
@@ -188,7 +197,11 @@ function tryJsonLdFields(html: string): GravityCoreFields | null {
   const fullDescriptionText = jsonLd.description ? decodeHtmlEntities(jsonLd.description).trim() : "";
   const description = fullDescriptionText || null;
 
-  return { startDatetime, endDatetime, venueName, description, genreEvidenceText: fullDescriptionText };
+  // The new JSON-LD template drops the old info-rows entirely and carries
+  // no equivalent dedicated genre field — only a free-text `description`,
+  // which is exactly the kind of text structuredGenreField must never be
+  // populated from (see its doc comment).
+  return { startDatetime, endDatetime, venueName, description, genreEvidenceText: fullDescriptionText, structuredGenreField: null };
 }
 
 export interface GravityListingEntry {
@@ -241,7 +254,7 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
   // path throws on its own; only exhausting both is a real failure.
   const fields = tryOldTemplateFields(html, entry.dateKey) ?? tryJsonLdFields(html);
   if (!fields) throw new Error(`Gravity detail page has no parseable start/end time (${detailUrl})`);
-  const { startDatetime, endDatetime, venueName, description, genreEvidenceText } = fields;
+  const { startDatetime, endDatetime, venueName, description, genreEvidenceText, structuredGenreField } = fields;
 
   // Genre evidence: whichever path matched already folds its own
   // event-specific genre text (the old template's "Music:" row, or the new
@@ -274,6 +287,7 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
     // after the truncation boundary, exactly the class of bug that
     // produced a real false positive on ALICE.
     relevanceText: genreEvidenceText || null,
+    structuredGenreField,
     artists: [artistName],
     startDatetime,
     endDatetime,

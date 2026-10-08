@@ -1943,12 +1943,12 @@ describe("Discovery secondary-genre V1 (2026-10-08) — insert-time only, never 
       venueName: null,
       genreHint: "house",
       genreConfidenceHint: "high",
-      description: "A multi-room journey through house and techno.",
+      structuredGenreField: "House, Techno",
       ...overrides,
     };
   }
 
-  it("a brand-new pending row gets predictedSecondaryGenre when the future candidate's own text qualifies", async () => {
+  it("a brand-new pending row gets predictedSecondaryGenre when the future candidate's own verified structured genre field qualifies", async () => {
     mockThreeSelects([], [], []);
     const adapter = fakeAdapter(() => Promise.resolve([qualifyingCandidate({ startDatetime: "2027-06-19T22:00:00Z" })]));
     await runSourceSync("src-culture-box", "Culture Box", adapter);

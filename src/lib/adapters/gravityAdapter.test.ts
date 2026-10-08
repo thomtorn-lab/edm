@@ -71,6 +71,13 @@ describe("parseGravityEventDetailHtml", () => {
     expect(candidate.genreHint).not.toBeNull();
     expect(candidate.genreConfidenceHint).toBe("high");
     expect(candidate.description).toContain("Music:");
+    // Secondary-genre V1 revision, 2026-10-08: the old template's "Music:"
+    // info-row value is threaded through as structuredGenreField — the
+    // ONLY evidence suggestSecondaryGenre ever consumes — with genuine
+    // structural HTML provenance (extractInfoRow's label-then-span parse of
+    // this exact page), never a free-text label scan.
+    expect(candidate.structuredGenreField).toBeTruthy();
+    expect(candidate.structuredGenreField).not.toContain("Music:"); // the raw field VALUE only, label already stripped by extractInfoRow
   });
 
   it("CamelPhat: real detail page is on the new JSON-LD template (no icon-box info-rows) — resolves via the JSON-LD fallback path", () => {
@@ -90,6 +97,11 @@ describe("parseGravityEventDetailHtml", () => {
     // longer exists on this page), so genreHint correctly resolves to no
     // hint rather than a guessed/remembered one.
     expect(candidate.genreHint).toBeNull();
+    // The new JSON-LD template drops the old info-rows entirely and has no
+    // equivalent dedicated genre field at all — structuredGenreField must
+    // stay null rather than falling back to the free-text JSON-LD
+    // description (secondary-genre V1 revision, 2026-10-08).
+    expect(candidate.structuredGenreField).toBeNull();
   });
 
   it("CamelPhat: real venue name from JSON-LD resolves against the existing registry to TAP1 (v-tap1)", () => {

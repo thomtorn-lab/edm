@@ -58,17 +58,17 @@ describe("runIngestionPipeline", () => {
     expect(result.decision).toBe("hold");
   });
 
-  describe("secondaryGenreSuggestion (Discovery secondary-genre V1)", () => {
+  describe("secondaryGenreSuggestion (Discovery secondary-genre V1, revised 2026-10-08: structured-field-only)", () => {
     const FUTURE = "2027-06-19T22:00:00+02:00";
     const PAST = "2026-01-10T22:00:00+01:00";
 
-    it("suggests a secondary genre for a future event with qualifying same-clause co-mention evidence", () => {
+    it("suggests a secondary genre for a future event with a verified structured genre field", () => {
       const result = runIngestionPipeline(
         raw({
           startDatetime: FUTURE,
           genreHint: "house",
           genreConfidenceHint: "high",
-          description: "A multi-room journey through house and techno.",
+          structuredGenreField: "House, Techno",
         }),
         { venues: VENUES, existingEvents: [] },
       );
@@ -82,7 +82,7 @@ describe("runIngestionPipeline", () => {
           startDatetime: PAST,
           genreHint: "house",
           genreConfidenceHint: "high",
-          description: "A multi-room journey through house and techno.",
+          structuredGenreField: "House, Techno",
         }),
         { venues: VENUES, existingEvents: [] },
       );
@@ -96,10 +96,29 @@ describe("runIngestionPipeline", () => {
           startDatetime: null,
           genreHint: "house",
           genreConfidenceHint: "high",
-          description: "A multi-room journey through house and techno.",
+          structuredGenreField: "House, Techno",
         }),
         { venues: VENUES, existingEvents: [] },
       );
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("free-text description/relevanceText co-mentions are never consulted, even when they contain a clean two-genre clause", () => {
+      // The exact wording that drove the ORIGINAL (reverted) same-clause
+      // free-text rule — now must abstain, because no structuredGenreField
+      // was supplied, proving the pipeline no longer reads relevanceText/
+      // description for this feature at all.
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A multi-room journey through house and techno.",
+          relevanceText: "A multi-room journey through house and techno.",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBe("house");
       expect(result.secondaryGenreSuggestion).toBeNull();
     });
 
@@ -113,7 +132,8 @@ describe("runIngestionPipeline", () => {
           startDatetime: FUTURE,
           genreHint: "house",
           genreConfidenceHint: "high",
-          description: "A multi-room journey through house and techno.",
+          description: "A great night out, doors at 22:00.",
+          structuredGenreField: "House, Techno",
         }),
         { venues: VENUES, existingEvents: [] },
       );
@@ -128,7 +148,14 @@ describe("runIngestionPipeline", () => {
 
     it("never suggests a secondary when the primary genre is unresolved", () => {
       const result = runIngestionPipeline(
-        raw({ startDatetime: FUTURE, genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+        raw({
+          startDatetime: FUTURE,
+          genreHint: null,
+          genreConfidenceHint: null,
+          title: "Friday Night Out",
+          description: "Drinks and vibes.",
+          structuredGenreField: "House, Techno",
+        }),
         { venues: VENUES, existingEvents: [] },
       );
       expect(result.genre).toBeNull();
@@ -143,6 +170,68 @@ describe("runIngestionPipeline", () => {
       const enriched = applyEnrichedGenre(unresolved, "house", "medium", "", false);
       expect(enriched.genre).toBe("house");
       expect(enriched.secondaryGenreSuggestion).toBeNull();
+    });
+
+    describe("former free-text false-positive shapes, now routed through description/relevanceText only (no structuredGenreField) — must all abstain end-to-end", () => {
+      it("support-act biography co-mentioning two genres", () => {
+        const text = "Headliner X plays techno all night. Support act Y is known for blending techno and trance influences in her sets.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "techno", genreConfidenceHint: "high", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("techno");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("artist biography co-mentioning two genres", () => {
+        const text = "Nico Moreno is known for his hard techno sound, blending techno and trance across his sets.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "hard-techno", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("hard-techno");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("venue boilerplate co-mentioning two genres", () => {
+        const text = "This club regularly hosts a mix of house and techno. Tonight's lineup TBA.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("house");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("venue boilerplate containing a literal 'Music:' label embedded in free prose", () => {
+        const text = "Music: this venue's regular programme spans house and techno depending on the week.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("house");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("venue boilerplate containing a literal 'Genre:' label embedded in free prose", () => {
+        const text = "Genre: a general mix of house and techno is typical for this room, exact lineup varies.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("house");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("artist bio containing a literal 'Music:' label embedded mid-paragraph", () => {
+        const text = "About the artist. Music: her sound draws equally on techno and trance influences from her Berlin years.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "techno", genreConfidenceHint: "high", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("techno");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
     });
   });
 
