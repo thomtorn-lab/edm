@@ -104,6 +104,7 @@ describe("EventManager — post-save button state (admin/manual-event work packa
     render(<EventManager events={[makeEvent()]} venues={VENUES} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "duplicate" } });
     const confirmButton = screen.getByRole("button", { name: "Confirm unpublish" }) as HTMLButtonElement;
     fireEvent.click(confirmButton);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -114,6 +115,7 @@ describe("EventManager — post-save button state (admin/manual-event work packa
     // Re-open the confirmation panel and confirm a second time — would be
     // permanently disabled/stuck before this fix.
     fireEvent.click(reopenButton);
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "duplicate" } });
     fireEvent.click(screen.getByRole("button", { name: "Confirm unpublish" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
@@ -141,6 +143,79 @@ describe("EventManager — admin unpublish + Publish Again (admin unpublish/canc
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("combobox", { name: "Reason" })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("has no preselected reason: the dialog opens on a placeholder and Confirm unpublish is disabled until a reason is chosen", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    const select = screen.getByRole("combobox", { name: "Reason" }) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(screen.getByRole("option", { name: "Choose a reason…" })).toBeTruthy();
+    const confirmButton = screen.getByRole("button", { name: "Confirm unpublish" }) as HTMLButtonElement;
+    expect(confirmButton.disabled).toBe(true);
+
+    fireEvent.click(confirmButton);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps every existing reason selectable, and enables Confirm unpublish once one is chosen", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    for (const label of ["Cancelled", "Irrelevant", "Duplicate", "Incorrect data", "Other"]) {
+      expect(screen.getByRole("option", { name: label })).toBeTruthy();
+    }
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "irrelevant" } });
+    expect((screen.getByRole("button", { name: "Confirm unpublish" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("posts the reason the admin actually chose (not a default)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "duplicate" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unpublish" }));
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/e-1/unpublish",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "duplicate", note: null }) }),
+      ),
+    );
+  });
+
+  it("Cancel clears the chosen reason, so reopening the dialog requires choosing again", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "other" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    expect((screen.getByRole("combobox", { name: "Reason" }) as HTMLSelectElement).value).toBe("");
+    expect((screen.getByRole("button", { name: "Confirm unpublish" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a completed unpublish clears the reason, so the next unpublish requires choosing again", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "cancelled" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unpublish" }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unpublish" }));
+    expect((screen.getByRole("combobox", { name: "Reason" }) as HTMLSelectElement).value).toBe("");
+    expect((screen.getByRole("button", { name: "Confirm unpublish" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("Confirm unpublish posts the selected reason (and null note by default) to /unpublish", async () => {
