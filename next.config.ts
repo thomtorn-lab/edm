@@ -30,6 +30,11 @@ const nextConfig: NextConfig = {
    *   Milo Makua, RunaRift, Afgang" (e-ed02665a, public 24 Aug–8 Sep) was
    *   replaced by the admin-created e-b4a8bd2e — same official Hangaren URL,
    *   RA ticket, venue and start time.
+   * - Culture Box, 28 Aug 2026: the Red Box room record e-a6cc4454 (public
+   *   19–21 Aug) was hidden by the one-time Culture Box room consolidation
+   *   (src/db/cultureBoxRoomConsolidation.ts) into the combined Black Box ·
+   *   Red Box record e-cb859d30 — same night, same culture-box.com event page
+   *   (only the #red-box fragment differs).
    * Absolute www destination, so the redirect lands on the canonical host in
    * a single hop.
    */
@@ -38,6 +43,11 @@ const nextConfig: NextConfig = {
       {
         source: "/events/sunday-psy-maurinstarr-milo-makua-runarift-afgang-e-ed02665a",
         destination: `${SITE_URL}/events/sunday-psy-e-b4a8bd2e`,
+        permanent: true,
+      },
+      {
+        source: "/events/red-box-fia2thefloor-amittet-tinki-delff-e-a6cc4454",
+        destination: `${SITE_URL}/events/black-box-taxman-dwonji-bobby-6-killa-hdn-dj-breakfast-maxi-mo-l-a-d-j-e-cb859d30`,
         permanent: true,
       },
     ];
