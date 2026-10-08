@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { deterministicGenreFromText, hasExplicitDjOrRaveSignal, hasRichGenreEvidence, refineGenreFromText } from "./deterministicGenreMapping";
+import {
+  deterministicGenreFromText,
+  findAllGenreMatches,
+  hasExplicitDjOrRaveSignal,
+  hasRichGenreEvidence,
+  refineGenreFromText,
+} from "./deterministicGenreMapping";
 
 describe("deterministicGenreFromText", () => {
   it("maps the standalone word 'psy' to psytrance", () => {
@@ -334,5 +340,31 @@ describe("refineGenreFromText (genre precision, Workstream B)", () => {
   it("is a no-op for a genre with no declared refinement siblings", () => {
     expect(refineGenreFromText("disco", "Industrial techno night.")).toBe("disco");
     expect(refineGenreFromText("psytrance", "A generic trance description.")).toBe("psytrance");
+  });
+});
+
+describe("findAllGenreMatches (secondary-genre suggestion building block, 2026-10-08)", () => {
+  it("returns every distinct genre family mentioned, in order of appearance", () => {
+    const matches = findAllGenreMatches("A night of house and techno for everyone.");
+    expect(matches.map((m) => m.genre)).toEqual(["house", "techno"]);
+  });
+
+  it("a single 'hard techno' mention is only ever one match (hard-techno), never also a separate bare 'techno' match on the same span", () => {
+    const matches = findAllGenreMatches("A hard techno night.");
+    expect(matches.map((m) => m.genre)).toEqual(["hard-techno"]);
+  });
+
+  it("the same genre family mentioned twice is reported twice (callers that want distinct families dedupe themselves)", () => {
+    const matches = findAllGenreMatches("Techno all night. Pure techno vibes.");
+    expect(matches.map((m) => m.genre)).toEqual(["techno", "techno"]);
+  });
+
+  it("returns an empty array when no genre keyword is present", () => {
+    expect(findAllGenreMatches("Drinks and vibes, doors at 22:00.")).toEqual([]);
+  });
+
+  it("never lets a later, broader pattern re-claim a span an earlier, more specific pattern already matched (melodic techno stays one match, not also a bare techno match)", () => {
+    const matches = findAllGenreMatches("Melodic techno all night.");
+    expect(matches.map((m) => m.genre)).toEqual(["melodic-techno"]);
   });
 });

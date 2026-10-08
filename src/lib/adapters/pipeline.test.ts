@@ -58,6 +58,183 @@ describe("runIngestionPipeline", () => {
     expect(result.decision).toBe("hold");
   });
 
+  describe("secondaryGenreSuggestion (Discovery secondary-genre V1, revised 2026-10-08: structured-field-only)", () => {
+    const FUTURE = "2027-06-19T22:00:00+02:00";
+    const PAST = "2026-01-10T22:00:00+01:00";
+
+    it("suggests a secondary genre for a future event with a verified structured genre field", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          structuredGenreField: "House, Techno",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBe("house");
+      expect(result.secondaryGenreSuggestion).toBe("techno");
+    });
+
+    it("future-only: the identical candidate, dated in the past, never gets a secondary suggestion", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: PAST,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          structuredGenreField: "House, Techno",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBe("house"); // primary resolution itself is unaffected by date
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("no startDatetime at all never gets a secondary suggestion (nothing to confirm is a future event)", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: null,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          structuredGenreField: "House, Techno",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("free-text description/relevanceText co-mentions are never consulted, even when they contain a clean two-genre clause", () => {
+      // The exact wording that drove the ORIGINAL (reverted) same-clause
+      // free-text rule — now must abstain, because no structuredGenreField
+      // was supplied, proving the pipeline no longer reads relevanceText/
+      // description for this feature at all.
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A multi-room journey through house and techno.",
+          relevanceText: "A multi-room journey through house and techno.",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBe("house");
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("the resolved primary genre, confidence and decision are byte-identical whether or not a secondary is suggested", () => {
+      const withoutSecondary = runIngestionPipeline(
+        raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "high", description: "A great night out, doors at 22:00." }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      const withSecondary = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A great night out, doors at 22:00.",
+          structuredGenreField: "House, Techno",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(withSecondary.secondaryGenreSuggestion).toBe("techno");
+      expect(withoutSecondary.secondaryGenreSuggestion).toBeNull();
+      // Everything about the PRIMARY classification is identical regardless —
+      // the secondary suggestion is a pure addition, never a side effect on it.
+      expect(withSecondary.genre).toBe(withoutSecondary.genre);
+      expect(withSecondary.genreConfidence).toBe(withoutSecondary.genreConfidence);
+      expect(withSecondary.decision).toBe(withoutSecondary.decision);
+    });
+
+    it("never suggests a secondary when the primary genre is unresolved", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: null,
+          genreConfidenceHint: null,
+          title: "Friday Night Out",
+          description: "Drinks and vibes.",
+          structuredGenreField: "House, Techno",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBeNull();
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("applyEnrichedGenre never produces a secondary suggestion out of thin air (enrichment only ever touches null/generic-floor primaries, which this module structurally never pairs against)", () => {
+      const unresolved = runIngestionPipeline(
+        raw({ startDatetime: FUTURE, genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      const enriched = applyEnrichedGenre(unresolved, "house", "medium", "", false);
+      expect(enriched.genre).toBe("house");
+      expect(enriched.secondaryGenreSuggestion).toBeNull();
+    });
+
+    describe("former free-text false-positive shapes, now routed through description/relevanceText only (no structuredGenreField) — must all abstain end-to-end", () => {
+      it("support-act biography co-mentioning two genres", () => {
+        const text = "Headliner X plays techno all night. Support act Y is known for blending techno and trance influences in her sets.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "techno", genreConfidenceHint: "high", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("techno");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("artist biography co-mentioning two genres", () => {
+        const text = "Nico Moreno is known for his hard techno sound, blending techno and trance across his sets.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "hard-techno", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("hard-techno");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("venue boilerplate co-mentioning two genres", () => {
+        const text = "This club regularly hosts a mix of house and techno. Tonight's lineup TBA.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("house");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("venue boilerplate containing a literal 'Music:' label embedded in free prose", () => {
+        const text = "Music: this venue's regular programme spans house and techno depending on the week.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("house");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("venue boilerplate containing a literal 'Genre:' label embedded in free prose", () => {
+        const text = "Genre: a general mix of house and techno is typical for this room, exact lineup varies.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "medium", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("house");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+
+      it("artist bio containing a literal 'Music:' label embedded mid-paragraph", () => {
+        const text = "About the artist. Music: her sound draws equally on techno and trance influences from her Berlin years.";
+        const result = runIngestionPipeline(
+          raw({ startDatetime: FUTURE, genreHint: "techno", genreConfidenceHint: "high", description: text, relevanceText: text }),
+          { venues: VENUES, existingEvents: [] },
+        );
+        expect(result.genre).toBe("techno");
+        expect(result.secondaryGenreSuggestion).toBeNull();
+      });
+    });
+  });
+
   it("routes a likely duplicate to the review queue instead of auto-publishing", () => {
     const existing: ExistingEventForDedup[] = [
       { id: "e-existing", title: "Box Standard", artists: ["NAILS", "TEODORA LUX"], venueId: "v-culture-box", startDatetime: "2026-08-14T23:00:00+02:00", adminUnpublished: false },

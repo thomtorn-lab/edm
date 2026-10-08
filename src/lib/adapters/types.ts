@@ -59,6 +59,29 @@ export interface RawCandidateEvent {
    * completely unaffected by this field's existence.
    */
   relevanceText?: string | null;
+  /**
+   * A dedicated, event-level genre-listing field — e.g. Gravity's own
+   * "Music:" info-row — extracted via genuine structural parsing of the
+   * source's own markup/schema (a specific HTML shape, a specific JSON-LD
+   * property), NOT by scanning free prose for text that merely looks like a
+   * labeled field (secondary-genre V1 revision, 2026-10-08 — see
+   * secondaryGenreSuggestion.ts). This is the ONLY evidence
+   * `suggestSecondaryGenre` ever consumes: an earlier version of that module
+   * also matched a "Music:"/"Genre:" label anywhere inside `relevanceText`
+   * (free text), which an adversarial or merely coincidental artist-bio or
+   * venue-boilerplate paragraph containing that same label shape could
+   * trigger with no real event-level meaning at all. Populate this ONLY when
+   * the adapter's own extraction code can point at the specific source
+   * structure that ties the value to THIS event (see gravityAdapter.ts's
+   * `musicText`, read out of a `<strong>Music:</strong><span>...</span>`
+   * info-row unique to Gravity's old detail-page template) — never a
+   * same-named field whose provenance or event-level meaning hasn't been
+   * individually verified for that source (do not assume an identically
+   * named field is equally trustworthy across adapters). Optional/nullable:
+   * omitted or null means the adapter has no such verified field — the most
+   * common case by far — and `suggestSecondaryGenre` always abstains then.
+   */
+  structuredGenreField?: string | null;
   artists: string[];
   startDatetime: string | null;
   endDatetime: string | null;
