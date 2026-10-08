@@ -58,6 +58,94 @@ describe("runIngestionPipeline", () => {
     expect(result.decision).toBe("hold");
   });
 
+  describe("secondaryGenreSuggestion (Discovery secondary-genre V1)", () => {
+    const FUTURE = "2027-06-19T22:00:00+02:00";
+    const PAST = "2026-01-10T22:00:00+01:00";
+
+    it("suggests a secondary genre for a future event with qualifying same-clause co-mention evidence", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A multi-room journey through house and techno.",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBe("house");
+      expect(result.secondaryGenreSuggestion).toBe("techno");
+    });
+
+    it("future-only: the identical candidate, dated in the past, never gets a secondary suggestion", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: PAST,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A multi-room journey through house and techno.",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBe("house"); // primary resolution itself is unaffected by date
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("no startDatetime at all never gets a secondary suggestion (nothing to confirm is a future event)", () => {
+      const result = runIngestionPipeline(
+        raw({
+          startDatetime: null,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A multi-room journey through house and techno.",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("the resolved primary genre, confidence and decision are byte-identical whether or not a secondary is suggested", () => {
+      const withoutSecondary = runIngestionPipeline(
+        raw({ startDatetime: FUTURE, genreHint: "house", genreConfidenceHint: "high", description: "A great night out, doors at 22:00." }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      const withSecondary = runIngestionPipeline(
+        raw({
+          startDatetime: FUTURE,
+          genreHint: "house",
+          genreConfidenceHint: "high",
+          description: "A multi-room journey through house and techno.",
+        }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(withSecondary.secondaryGenreSuggestion).toBe("techno");
+      expect(withoutSecondary.secondaryGenreSuggestion).toBeNull();
+      // Everything about the PRIMARY classification is identical regardless —
+      // the secondary suggestion is a pure addition, never a side effect on it.
+      expect(withSecondary.genre).toBe(withoutSecondary.genre);
+      expect(withSecondary.genreConfidence).toBe(withoutSecondary.genreConfidence);
+      expect(withSecondary.decision).toBe(withoutSecondary.decision);
+    });
+
+    it("never suggests a secondary when the primary genre is unresolved", () => {
+      const result = runIngestionPipeline(
+        raw({ startDatetime: FUTURE, genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      expect(result.genre).toBeNull();
+      expect(result.secondaryGenreSuggestion).toBeNull();
+    });
+
+    it("applyEnrichedGenre never produces a secondary suggestion out of thin air (enrichment only ever touches null/generic-floor primaries, which this module structurally never pairs against)", () => {
+      const unresolved = runIngestionPipeline(
+        raw({ startDatetime: FUTURE, genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+        { venues: VENUES, existingEvents: [] },
+      );
+      const enriched = applyEnrichedGenre(unresolved, "house", "medium", "", false);
+      expect(enriched.genre).toBe("house");
+      expect(enriched.secondaryGenreSuggestion).toBeNull();
+    });
+  });
+
   it("routes a likely duplicate to the review queue instead of auto-publishing", () => {
     const existing: ExistingEventForDedup[] = [
       { id: "e-existing", title: "Box Standard", artists: ["NAILS", "TEODORA LUX"], venueId: "v-culture-box", startDatetime: "2026-08-14T23:00:00+02:00", adminUnpublished: false },

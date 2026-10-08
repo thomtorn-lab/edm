@@ -667,6 +667,13 @@ async function runSourceSyncLocked(
         sourceId,
         detectedLineup: result.normalizedArtists,
         predictedGenre: result.genre,
+        // Discovery secondary-genre V1 (2026-10-08) — an admin-reviewable
+        // suggestion only, insert-time only: a brand-new row is the only
+        // place this is ever set. Resyncing an already-pending row
+        // (buildDiscoveryQueueClassificationPatch below) never touches this
+        // field, so an admin's own manual secondary-genre pick — or simply
+        // having left it blank — can never be overwritten by a later sync.
+        predictedSecondaryGenre: result.secondaryGenreSuggestion,
         genreConfidence: result.genreConfidence,
         suspectedDuplicateOfEventId: result.duplicateOfEventId,
         missingFields: result.missingFields,

@@ -132,6 +132,7 @@ vi.mock("./writes", () => ({
       sourceName: item.sourceName,
       sourceUrl: item.sourceUrl,
       predictedGenre: item.predictedGenre,
+      predictedSecondaryGenre: item.predictedSecondaryGenre,
       genreConfidence: item.genreConfidence,
       overallConfidence: item.overallConfidence,
       missingFields: item.missingFields,
@@ -1918,5 +1919,86 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
     expect(result.outcome).toBe("failed");
     expect(mockedInsert).not.toHaveBeenCalled();
     expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("Discovery secondary-genre V1 (2026-10-08) — insert-time only, never overwrites a resync", () => {
+  function mockThreeSelects(linksResult: unknown[], pendingResult: unknown[], ignoredResult: unknown[]) {
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once(linksResult))
+      .mockImplementationOnce(() => once(pendingResult))
+      .mockImplementationOnce(() => once(ignoredResult));
+  }
+
+  // venueName: null forces a "hold" decision (missing venue) rather than
+  // Culture Box's own trusted-electronic auto-publish — the only way to
+  // reach insertDiscoveryItem at all with a real genre still resolved.
+  function qualifyingCandidate(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return {
+      ...rawCandidate,
+      venueName: null,
+      genreHint: "house",
+      genreConfidenceHint: "high",
+      description: "A multi-room journey through house and techno.",
+      ...overrides,
+    };
+  }
+
+  it("a brand-new pending row gets predictedSecondaryGenre when the future candidate's own text qualifies", async () => {
+    mockThreeSelects([], [], []);
+    const adapter = fakeAdapter(() => Promise.resolve([qualifyingCandidate({ startDatetime: "2027-06-19T22:00:00Z" })]));
+    await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    const inserted = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(inserted.predictedGenre).toBe("house");
+    expect(inserted.predictedSecondaryGenre).toBe("techno");
+  });
+
+  it("a past-dated candidate never gets predictedSecondaryGenre, even with identical qualifying text", async () => {
+    mockThreeSelects([], [], []);
+    const adapter = fakeAdapter(() => Promise.resolve([qualifyingCandidate({ startDatetime: "2026-01-10T22:00:00Z" })]));
+    await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    const inserted = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(inserted.predictedGenre).toBe("house"); // primary resolution itself is unaffected by date
+    expect(inserted.predictedSecondaryGenre).toBeNull();
+  });
+
+  it("resyncing an already-pending row never sets predictedSecondaryGenre, even when the fresh evidence would otherwise qualify — an admin's own manual pick (or the lack of one) can never be overwritten by a later sync", async () => {
+    mockThreeSelects(
+      [],
+      [
+        {
+          id: "dq-existing",
+          sourceUrl: rawCandidate.officialEventUrl,
+          status: "pending",
+          predictedGenre: "house",
+          genreConfidence: "high",
+          overriddenFields: [],
+          overallConfidence: "medium",
+          missingFields: ["venue"],
+          probableSubVenue: null,
+          suspectedDuplicateOfEventId: null,
+          venueResolvedDecision: null,
+          venueResolvedHoldReason: null,
+          holdReason: "incomplete_data",
+          probableTicketUrl: null,
+          probableOfficialEventUrl: null,
+        },
+      ],
+      [],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([qualifyingCandidate({ startDatetime: "2027-06-19T22:00:00Z" })]));
+    await runSourceSync("src-culture-box", "Culture Box", adapter);
+
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    const [, patch] = vi.mocked(applyDiscoveryClassificationUpdate).mock.calls[0];
+    expect(patch).not.toHaveProperty("predictedSecondaryGenre");
   });
 });

@@ -1304,6 +1304,12 @@ export async function insertDiscoveryItem(item: {
   sourceId?: string | null;
   detectedLineup: string[];
   predictedGenre: GenreSlug | null;
+  /** Conservative automatic secondary-genre suggestion (Discovery secondary-
+   *  genre V1, 2026-10-08) — see src/lib/adapters/secondaryGenreSuggestion.ts.
+   *  Insert-time only, same convention as `description` above: never set by
+   *  any later resync of an already-pending row, so it can never overwrite
+   *  an admin's own manual secondary-genre pick (or the lack of one). */
+  predictedSecondaryGenre?: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
   suspectedDuplicateOfEventId: string | null;
   missingFields: string[];

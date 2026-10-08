@@ -18,7 +18,9 @@ import {
   type RelevanceLevel,
 } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
+import { suggestSecondaryGenre } from "./secondaryGenreSuggestion";
 import { sanitizeExtractedTitle, normalizeExtractedText } from "./htmlExtraction";
+import { isPastEvent } from "../datetime";
 import type { RawCandidateEvent } from "./types";
 
 /**
@@ -120,6 +122,17 @@ export interface PipelineResult {
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
+  /**
+   * Conservative automatic secondary-genre suggestion (Discovery secondary-
+   * genre V1, 2026-10-08) — see secondaryGenreSuggestion.ts for the exact,
+   * narrow evidence patterns this requires. Deliberately NOT written to
+   * `genre`/`subgenres` here or anywhere in this file: it only ever reaches
+   * `discovery_queue.predicted_secondary_genre` on a brand-new row (see
+   * src/db/sync.ts's insertDiscoveryItem call), as an admin-reviewable
+   * suggestion — never the auto-publish-direct-to-event path, never an
+   * existing row's resync patch. Null far more often than not, by design.
+   */
+  secondaryGenreSuggestion: GenreSlug | null;
   /** The multi-signal relevance verdict (see relevance.ts::assessRelevance)
    *  computed against whatever evidence was available this run — exposed so
    *  callers (sync.ts's weak-evidence enrichment trigger, the
@@ -440,6 +453,15 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     genre = refineGenreFromText(genre, relevanceText);
   }
 
+  // CONSERVATIVE SECONDARY-GENRE SUGGESTION (Discovery secondary-genre V1,
+  // 2026-10-08) — future events only (a past/undated candidate is never
+  // worth suggesting a second genre for), and only ever from the SAME
+  // relevanceText genre resolution already used, never a fresh pass over
+  // different evidence. See suggestSecondaryGenre's own doc comment for the
+  // exact, narrow evidence patterns and abstention rules.
+  const isFutureEvent = raw.startDatetime != null && !isPastEvent({ startDatetime: raw.startDatetime, endDatetime: raw.endDatetime }, new Date());
+  const secondaryGenreSuggestion = isFutureEvent ? suggestSecondaryGenre(relevanceText, genre, genreConfidence) : null;
+
   // DEDUPLICATION
   let duplicateOfEventId: string | null = null;
   let duplicateConfidence: "high" | "medium" | "low" | "none" = "none";
@@ -569,6 +591,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     normalizedArtists,
     genre,
     genreConfidence,
+    secondaryGenreSuggestion,
     relevance,
     duplicateOfEventId,
     duplicateConfidence,

@@ -100,6 +100,45 @@ export function deterministicGenreFromText(text: string): GenreSlug | null {
 }
 
 /**
+ * Every KEYWORD_MAP match in `text`, in order of appearance — the building
+ * block for the conservative automatic secondary-genre suggestion (see
+ * secondaryGenreSuggestion.ts). Reuses the exact same patterns and the same
+ * lightly-cleaned text deterministicGenreFromText itself matches against, so
+ * nothing here can ever read a text differently than single-genre
+ * classification already does — this only reports every match found instead
+ * of stopping at the first.
+ *
+ * Matches are non-overlapping, same specific-before-general precedence as
+ * deterministicGenreFromText's own early-return order (KEYWORD_MAP's
+ * declared order): once a span of text is claimed by an earlier-tried
+ * pattern (e.g. "hard techno"), a later, broader pattern (bare "techno")
+ * is never also allowed to match the same span — without this, a single
+ * "hard techno" mention would wrongly look like two distinct genre families
+ * ("hard-techno" AND "techno") instead of one.
+ */
+export function findAllGenreMatches(text: string): { genre: GenreSlug; index: number }[] {
+  const cleaned = lightlyCleanText(text);
+  const claimed: [number, number][] = [];
+  const matches: { genre: GenreSlug; index: number }[] = [];
+  const overlapsClaimed = (start: number, end: number) => claimed.some(([s, e]) => start < e && end > s);
+
+  for (const [pattern, genre] of KEYWORD_MAP) {
+    const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    let match: RegExpExecArray | null;
+    while ((match = global.exec(cleaned))) {
+      const start = match.index;
+      const end = start + match[0].length;
+      if (!overlapsClaimed(start, end)) {
+        claimed.push([start, end]);
+        matches.push({ genre, index: start });
+      }
+      if (match.index === global.lastIndex) global.lastIndex++; // guard against a zero-length match looping forever
+    }
+  }
+  return matches.sort((a, b) => a.index - b.index);
+}
+
+/**
  * Gaps 4A/4B (KultuNaut publish work package, 2026-09-05) — evidence-
  * STRENGTH signals for hasRichGenreEvidence below, deliberately NOT applied
  * inside deterministicGenreFromText's own matching. An earlier version of
