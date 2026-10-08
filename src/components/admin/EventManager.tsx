@@ -62,10 +62,20 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
   const [postponed, setPostponed] = useState(event.postponed);
 
   const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
-  const [unpublishReason, setUnpublishReason] = useState<AdminUnpublishReason>("cancelled");
+  // No preselected reason (2026-10-08): a "cancelled" default was being
+  // recorded for unpublishes that were really duplicates or editorial
+  // removals, so the admin must now pick one explicitly every time.
+  const [unpublishReason, setUnpublishReason] = useState<AdminUnpublishReason | "">("");
   const [unpublishNote, setUnpublishNote] = useState("");
 
+  function closeUnpublish() {
+    setConfirmingUnpublish(false);
+    setUnpublishReason("");
+    setUnpublishNote("");
+  }
+
   async function confirmUnpublish() {
+    if (!unpublishReason) return;
     setBusy(true);
     setError(null);
     try {
@@ -79,8 +89,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
         setError(json.error ?? "Unpublish failed.");
         return;
       }
-      setConfirmingUnpublish(false);
-      setUnpublishNote("");
+      closeUnpublish();
       router.refresh();
     } finally {
       setBusy(false);
@@ -327,6 +336,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               onChange={(e) => setUnpublishReason(e.target.value as AdminUnpublishReason)}
               className={inputCls}
             >
+              <option value="" disabled>Choose a reason…</option>
               {UNPUBLISH_REASONS.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
@@ -346,10 +356,10 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
             This removes the event from the public site immediately. It stays in admin and can be published again later.
           </p>
           <div className="flex gap-2 pt-1">
-            <button type="button" disabled={busy} onClick={confirmUnpublish} className="rounded border border-status-bad/40 bg-status-bad/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-status-bad hover:bg-status-bad/20 disabled:opacity-50">
+            <button type="button" disabled={busy || !unpublishReason} onClick={confirmUnpublish} className="rounded border border-status-bad/40 bg-status-bad/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-status-bad hover:bg-status-bad/20 disabled:opacity-50">
               Confirm unpublish
             </button>
-            <button type="button" disabled={busy} onClick={() => { setConfirmingUnpublish(false); setUnpublishNote(""); }} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+            <button type="button" disabled={busy} onClick={closeUnpublish} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
               Cancel
             </button>
           </div>
