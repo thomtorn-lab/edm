@@ -11,15 +11,16 @@
 export default function SoundcloudLinks({ artists }: { artists: { name: string; url: string }[] }) {
   return (
     <div id="soundcloud" className="mt-6 scroll-mt-4">
-      {/* Official SoundCloud wordmark (white, for dark backgrounds) — per
-          SoundCloud's own brand guidelines this is used as-is, never
-          recreated or recolored by hand. Height fixes the mark at its
-          minimum legible size; width is intrinsic so the logo's own
-          proportions are preserved. */}
+      {/* Official SoundCloud wordmark PNG, sourced as-is from SoundCloud's
+          own developers.soundcloud.com asset host (public/brand/) — never
+          recreated or recolored by hand. Native 200×24; height fixes the
+          mark at its minimum legible size while width:auto preserves the
+          source file's own aspect ratio exactly. */}
       <img
-        src="/brand/soundcloud-logo-white.svg"
+        src="/brand/soundcloud-logo-white.png"
         alt="SoundCloud"
-        height={14}
+        width={200}
+        height={24}
         className="h-3.5 w-auto"
       />
       <ul className="mt-2 flex flex-col gap-1.5">
