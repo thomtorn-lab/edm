@@ -109,6 +109,15 @@ describe("EventRow — Source CTA visibility rule (public source-link visibility
   });
 });
 
+/**
+ * The genre text span by its full visible text. The plain "Techno" label is a
+ * link inside that span (genre landing page pilot, 2026-10-09), so the text
+ * is split across elements and a plain string matcher can't see it whole.
+ */
+function genreSpan(text: string): HTMLElement {
+  return screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === text);
+}
+
 describe("EventRow — genre display and ticket/free CTA", () => {
   afterEach(cleanup);
 
@@ -120,7 +129,7 @@ describe("EventRow — genre display and ticket/free CTA", () => {
 
   it("displays two genres in PRIMARY, SECONDARY order, joined by ' · ', plain text (max-two-genres-per-event, 2026-10-05)", () => {
     render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "progressive-house"] as GenreSlug[] })} />);
-    expect(screen.getByText("Techno · Progressive House")).toBeTruthy();
+    expect(genreSpan("Techno · Progressive House")).toBeTruthy();
   });
 
   it("shows only one genre, unchanged, for an ordinary single-genre event", () => {
@@ -136,15 +145,33 @@ describe("EventRow — genre display and ticket/free CTA", () => {
 
   it("caps the genre text at two even if a stored event somehow carries more than two subgenres", () => {
     render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno", "house"] as GenreSlug[] })} />);
-    expect(screen.getByText("Techno · Melodic Techno")).toBeTruthy();
+    expect(genreSpan("Techno · Melodic Techno")).toBeTruthy();
   });
 
   it("renders no genre badges/pills — the two-genre text stays a plain inline span, same element type as the single-genre case", () => {
     render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno"] as GenreSlug[] })} />);
-    const genreText = screen.getByText("Techno · Melodic Techno");
+    const genreText = genreSpan("Techno · Melodic Techno");
     expect(genreText.tagName).toBe("SPAN");
     expect(genreText.className).not.toContain("rounded-full");
     expect(genreText.className).not.toContain("border");
+  });
+
+  it("links the plain Techno label to /genres/techno, as a sibling of the title link (genre landing page pilot)", () => {
+    render(<EventRow event={makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno"] as GenreSlug[] })} />);
+    const technoLink = screen.getByRole("link", { name: "Techno" });
+    expect(technoLink.getAttribute("href")).toBe("/genres/techno");
+    expect(technoLink.closest("a")).toBe(technoLink);
+    expect(screen.getByRole("link", { name: /Test Event/ }).contains(technoLink)).toBe(false);
+  });
+
+  it("keeps subgenre and other-genre labels as plain text — only the Techno label links", () => {
+    render(<EventRow event={makeEvent({ primaryGenre: "melodic-techno", subgenres: ["melodic-techno", "industrial"] as GenreSlug[] })} />);
+    expect(genreSpan("Melodic Techno · Industrial")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Melodic Techno|Industrial/ })).toBeNull();
+    cleanup();
+    render(<EventRow event={makeEvent({ primaryGenre: "hard-techno", subgenres: ["hard-techno", "house"] as GenreSlug[] })} />);
+    expect(screen.queryByRole("link", { name: /Hard Techno|House/ })).toBeNull();
+    expect(document.querySelector('a[href^="/genres/"]')).toBeNull();
   });
 
   it("long two-genre combinations sit in the same flex-wrap metadata row and never force extra markup", () => {

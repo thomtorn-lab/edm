@@ -1,7 +1,8 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import type { EventWithVenue } from "@/lib/queries";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
-import { displayGenres } from "@/lib/taxonomy";
+import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { getSoundcloudPilotArtists } from "@/lib/soundcloudPilot";
@@ -93,7 +94,29 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               <>
                 <span aria-hidden className="text-text-tertiary">·</span>
                 <span className="font-medium uppercase tracking-wide text-text-tertiary">
-                  {genres.map((g) => g.shortLabel).join(" · ")}
+                  {/* A genre that has its own landing page (only Techno so
+                      far) is a plain crawlable link to it, a sibling of the
+                      title link rather than nested in it; every other genre
+                      stays plain text. The homepage genre filter is separate
+                      UI and unaffected. */}
+                  {genres.map((g, i) => {
+                    const href = genreLabelPagePath(g.slug);
+                    return (
+                      <Fragment key={g.slug}>
+                        {i > 0 && " · "}
+                        {href ? (
+                          <Link
+                            href={href}
+                            className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+                          >
+                            {g.shortLabel}
+                          </Link>
+                        ) : (
+                          g.shortLabel
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </span>
               </>
             )}

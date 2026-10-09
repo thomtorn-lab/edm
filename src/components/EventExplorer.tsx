@@ -12,7 +12,7 @@ import {
 } from "@/lib/datetime";
 import { formatMonthAbbrTitleCase, formatMonthFull } from "@/lib/format";
 import { eventMatchesQuery } from "@/lib/search";
-import { MAIN_GENRES, mainGenreOf, type MainGenreSlug } from "@/lib/taxonomy";
+import { MAIN_GENRES, matchesMainGenre, type MainGenreSlug } from "@/lib/taxonomy";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
 
@@ -64,7 +64,7 @@ function applyFilters(
     if (mode === "tonight" && !isTonight(e, now)) return false;
     if (mode === "weekend" && !isThisWeekend(e, now)) return false;
     if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
-    if (genre !== "all" && !e.subgenres.some((s) => mainGenreOf(s) === genre)) return false;
+    if (genre !== "all" && !matchesMainGenre(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
     return true;
