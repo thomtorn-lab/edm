@@ -34,6 +34,10 @@ const bigShoulders = localFont({
   // the page. "Big Shoulders Fallback" (globals.css) is width-matched instead.
   adjustFontFallback: false,
   fallback: ["Big Shoulders Fallback"],
+  // With a width-matched fallback the swap no longer moves anything, so
+  // preloading (three extra high-priority requests competing with the HTML
+  // and Inter on slow connections) would only delay LCP.
+  preload: false,
 });
 
 export const metadata: Metadata = {
