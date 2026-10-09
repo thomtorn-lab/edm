@@ -904,31 +904,32 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
   });
 });
 
-describe("EventRow — one-event SoundCloud UX pilot (2026-10-09)", () => {
+describe("EventRow — one-event SoundCloud UX pilot (2026-10-09), relabeled to AUDIO (UI-refinement round)", () => {
   afterEach(cleanup);
 
   const PILOT_EVENT_ID = "e-bf9d6551";
   const PILOT_ARTISTS = ["TIM ANDRESEN", "REXIE LEX"];
 
-  it("shows the SOUNDCLOUD indicator for the pilot event when its own verified artists are in the lineup", () => {
+  it("shows the AUDIO indicator for the pilot event when its own verified artists are in the lineup", () => {
     render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
-    expect(screen.getByText("Soundcloud")).toBeTruthy();
-    expect(screen.getByLabelText("Go to SoundCloud links for Test Event")).toBeTruthy();
+    expect(screen.getByText("Audio")).toBeTruthy();
+    expect(screen.queryByText("Soundcloud")).toBeNull();
+    expect(screen.getByLabelText("Go to audio links for Test Event")).toBeTruthy();
   });
 
-  it("shows no SOUNDCLOUD indicator for any other event, even with the exact same verified artist names in its lineup", () => {
+  it("shows no AUDIO indicator for any other event, even with the exact same verified artist names in its lineup", () => {
     render(<EventRow event={makeEvent({ id: "e-some-other-event", artists: PILOT_ARTISTS })} />);
-    expect(screen.queryByText("Soundcloud")).toBeNull();
+    expect(screen.queryByText("Audio")).toBeNull();
   });
 
-  it("shows no SOUNDCLOUD indicator for the pilot event id if its lineup no longer contains either verified artist", () => {
+  it("shows no AUDIO indicator for the pilot event id if its lineup no longer contains either verified artist", () => {
     render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: ["SOMEONE ELSE"] })} />);
-    expect(screen.queryByText("Soundcloud")).toBeNull();
+    expect(screen.queryByText("Audio")).toBeNull();
   });
 
   it("deep-links to the event detail page's #soundcloud anchor, not the plain event URL, and navigates in the same tab", () => {
     render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
-    const link = screen.getByRole("link", { name: "Go to SoundCloud links for Test Event" });
+    const link = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(link.tagName).toBe("A");
     expect(link.getAttribute("href")).toBe("/events/test-event#soundcloud");
     expect(link.getAttribute("target")).toBeNull();
@@ -937,8 +938,14 @@ describe("EventRow — one-event SoundCloud UX pilot (2026-10-09)", () => {
 
   it("never links directly to soundcloud.com from the overview", () => {
     render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
-    const link = screen.getByRole("link", { name: "Go to SoundCloud links for Test Event" });
+    const link = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(link.getAttribute("href")).not.toContain("soundcloud.com");
+  });
+
+  it("keeps the music-note glyph", () => {
+    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
+    const link = screen.getByRole("link", { name: "Go to audio links for Test Event" });
+    expect(link.textContent).toContain("♫");
   });
 
   it("can render alongside the VIDEO indicator as siblings in the same metadata row", () => {
@@ -946,16 +953,14 @@ describe("EventRow — one-event SoundCloud UX pilot (2026-10-09)", () => {
       <EventRow event={{ ...makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasArtistPreview: true }} />,
     );
     const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
-    const soundcloudLink = screen.getByRole("link", { name: "Go to SoundCloud links for Test Event" });
-    expect(videoLink.parentElement).toBe(soundcloudLink.parentElement);
+    const audioLink = screen.getByRole("link", { name: "Go to audio links for Test Event" });
+    expect(videoLink.parentElement).toBe(audioLink.parentElement);
   });
 
-  it("matches the VIDEO badge's pill styling (same border/rounded shape, no filled-accent treatment)", () => {
-    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
-    const videoPillLikeClasses = "inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary";
-    const link = screen.getByRole("link", { name: "Go to SoundCloud links for Test Event" });
-    for (const cls of videoPillLikeClasses.split(" ")) {
-      expect(link.className).toContain(cls);
-    }
+  it("matches the VIDEO badge's pill styling exactly (same border/rounded shape/size/spacing, no filled-accent treatment)", () => {
+    render(<EventRow event={{ ...makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasArtistPreview: true }} />);
+    const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
+    const audioLink = screen.getByRole("link", { name: "Go to audio links for Test Event" });
+    expect(audioLink.className).toBe(videoLink.className);
   });
 });
