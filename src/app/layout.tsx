@@ -27,7 +27,7 @@ const bigShoulders = localFont({
     { path: "../../node_modules/@fontsource/big-shoulders/files/big-shoulders-latin-800-normal.woff2", weight: "800", style: "normal" },
   ],
   variable: "--font-big-shoulders",
-  display: "swap",
+  display: "block",
 });
 
 export const metadata: Metadata = {
