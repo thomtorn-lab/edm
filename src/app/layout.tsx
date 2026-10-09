@@ -1,14 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import PrivacyAwareAnalytics from "@/components/PrivacyAwareAnalytics";
-// Self-hosted via @fontsource instead of next/font/google: Big Shoulders'
-// dynamic Google Fonts CSS response was serving the same (stale/broken)
-// asset URL for all three weights, 404ing at build time. Fontsource
-// vendors the actual font files through npm, so the build no longer
-// depends on fetching anything from fonts.googleapis.com/gstatic.com.
-import "@fontsource/big-shoulders/latin-600.css";
-import "@fontsource/big-shoulders/latin-700.css";
-import "@fontsource/big-shoulders/latin-800.css";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -17,6 +10,23 @@ import { SITE_URL } from "@/lib/siteUrl";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Big Shoulders (display font) is loaded with next/font/local from the
+// woff2 files @fontsource/big-shoulders already vendors through npm — not
+// next/font/google, whose Big Shoulders CSS once served one broken asset URL
+// for all three weights and 404'd the build. next/font self-hosts and
+// preloads the files and generates a metric-adjusted fallback face, so the
+// swap from the fallback to Big Shoulders no longer resizes the header and
+// shifts the page (CLS) the way the plain @fontsource @font-face rules did.
+const bigShoulders = localFont({
+  src: [
+    { path: "../../node_modules/@fontsource/big-shoulders/files/big-shoulders-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../../node_modules/@fontsource/big-shoulders/files/big-shoulders-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "../../node_modules/@fontsource/big-shoulders/files/big-shoulders-latin-800-normal.woff2", weight: "800", style: "normal" },
+  ],
+  variable: "--font-big-shoulders",
   display: "swap",
 });
 
@@ -44,7 +54,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${bigShoulders.variable} h-full`}>
       <body className="min-h-full flex flex-col relative">
         <Header />
         <main className="flex-1 relative z-[1]">{children}</main>
