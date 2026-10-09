@@ -153,19 +153,21 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             {soundcloudPilotArtists.length > 0 && (
               <>
                 <span aria-hidden className="text-text-tertiary">·</span>
-                {/* One-event SoundCloud UX pilot (2026-10-09) — same pill
+                {/* One-event SoundCloud UX pilot (2026-10-09), relabeled to
+                    "AUDIO" per UI-refinement round — same pill
                     shape/typography/spacing as the VIDEO badge above, so the
                     two read as siblings. Deep-links to the event page's own
-                    SoundCloud section (`#soundcloud`), exactly like VIDEO's
+                    SoundCloud section (`#soundcloud`, unchanged — only the
+                    visible/accessible label changed), exactly like VIDEO's
                     `#video` deep-link — never straight to soundcloud.com
                     from the overview. */}
                 <Link
                   href={`${eventHref}#soundcloud`}
-                  aria-label={`Go to SoundCloud links for ${title}`}
+                  aria-label={`Go to audio links for ${title}`}
                   className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
                 >
                   <span aria-hidden="true" className="text-accent">♫</span>
-                  Soundcloud
+                  Audio
                 </Link>
               </>
             )}

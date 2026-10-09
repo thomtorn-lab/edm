@@ -1080,6 +1080,34 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
     expect(anchor!.querySelector("iframe")).toBeNull();
   });
 
+  it("shows only the artist name and the ↗ glyph per link — no repeated 'on SoundCloud' text (UI-refinement round)", async () => {
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
+
+    const anchor = document.getElementById("soundcloud")!;
+    const links = Array.from(anchor.querySelectorAll("a"));
+    const visibleTexts = links.map((a) =>
+      Array.from(a.childNodes)
+        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .map((n) => n.textContent)
+        .join(""),
+    );
+    expect(visibleTexts.sort()).toEqual(["REXIE LEX ↗", "TIM ANDRESEN ↗"]);
+    expect(anchor.textContent).not.toContain("on SoundCloud");
+  });
+
+  it("replaces the plain-text heading with the official SoundCloud wordmark image, not hand-drawn markup", async () => {
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
+
+    const anchor = document.getElementById("soundcloud")!;
+    expect(screen.queryByText("SoundCloud")).toBeNull();
+    const logo = anchor.querySelector("img")!;
+    expect(logo).not.toBeNull();
+    expect(logo.getAttribute("alt")).toBe("SoundCloud");
+    // No inline <svg> hand-authored in the component — the mark is a real
+    // image asset, never redrawn/recolored in code.
+    expect(anchor.querySelector("svg")).toBeNull();
+  });
+
   it("no #soundcloud section exists for any other event, even with the exact same artist names in its lineup", async () => {
     await renderPage(makeEvent({ id: "e-some-other-event", artists: PILOT_ARTISTS }));
     expect(document.getElementById("soundcloud")).toBeNull();
