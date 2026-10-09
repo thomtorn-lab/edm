@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getEventsForVenue, getVenues } from "@/lib/queries";
 import { isPastEvent } from "@/lib/datetime";
-import { CURATED_VENUE_SLUGS, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
+import { CURATED_VENUE_SLUGS, getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import type { Venue } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -37,6 +37,17 @@ export default async function VenuesPage() {
     }),
   );
 
+  // Every other venue page (sitemap/link hygiene, 2026-10-09): non-curated
+  // venues still have real, indexable /venues/[slug] pages listed in the
+  // sitemap, so they get a plain crawlable link here — below, and visually
+  // secondary to, the curated cards, which stay exactly as they are. Grouped
+  // members (e.g. Ideal Bar) are skipped: their URL redirects to the group's
+  // primary page.
+  const curatedSlugs = new Set(CURATED_VENUE_SLUGS);
+  const otherVenues = registryVenues
+    .filter((v) => !curatedSlugs.has(v.slug) && !getPublicVenueGroupPrimaryId(v.id))
+    .sort((a, b) => publicVenueLabel(a).localeCompare(publicVenueLabel(b), "da"));
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-tight text-accent sm:text-4xl">
@@ -60,6 +71,26 @@ export default async function VenuesPage() {
           ) : null,
         )}
       </ul>
+
+      {otherVenues.length > 0 && (
+        <section className="mt-10" aria-labelledby="other-venues">
+          <h2 id="other-venues" className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+            Other venues
+          </h2>
+          <ul aria-labelledby="other-venues" className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-text-secondary">
+            {otherVenues.map((v) => (
+              <li key={v.id}>
+                <Link
+                  href={`/venues/${v.slug}`}
+                  className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+                >
+                  {publicVenueLabel(v)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

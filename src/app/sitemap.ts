@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
-import { FESTIVALS } from "@/lib/data/festivals";
 import { getPublicVenueGroupPrimaryId } from "@/lib/data/venues";
 import { SITE_URL } from "@/lib/siteUrl";
 
@@ -56,12 +55,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     }));
 
-  const festivalRoutes: MetadataRoute.Sitemap = FESTIVALS.map((festival) => ({
-    url: `${SITE_URL}/festivals/${festival.slug}`,
-    lastModified: now,
-    changeFrequency: "monthly",
-    priority: 0.4,
-  }));
-
-  return [...staticRoutes, ...eventRoutes, ...venueRoutes, ...festivalRoutes];
+  // /festivals/[slug] URLs are deliberately absent (sitemap/link hygiene,
+  // 2026-10-09): that route only permanently redirects to /festivals, and a
+  // sitemap must list final, 200-responding URLs only.
+  return [...staticRoutes, ...eventRoutes, ...venueRoutes];
 }

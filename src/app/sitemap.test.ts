@@ -137,16 +137,19 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     expect(result.map((r) => r.url)).toContain("https://www.electroniccph.com/venues/mocked-venue-slug");
   });
 
-  it("includes every static-registry festival URL", async () => {
+  it("lists no /festivals/[slug] URL — that route only redirects to /festivals (sitemap hygiene, 2026-10-09)", async () => {
     vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
     vi.mocked(getVenues).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
     const urls = result.map((r) => r.url);
+    expect(FESTIVALS.length).toBeGreaterThan(0);
     for (const festival of FESTIVALS) {
-      expect(urls).toContain(`https://www.electroniccph.com/festivals/${festival.slug}`);
+      expect(urls).not.toContain(`https://www.electroniccph.com/festivals/${festival.slug}`);
     }
+    expect(urls.filter((u) => u.includes("/festivals/"))).toEqual([]);
+    expect(urls).toContain("https://www.electroniccph.com/festivals");
   });
 
   it("has no duplicate URLs across static, event, venue and festival routes", async () => {
