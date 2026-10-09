@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { GENRES, MAIN_GENRES, displayGenres, getGenre, mainGenreOf, type MainGenreSlug } from "./taxonomy";
+import {
+  GENRES,
+  MAIN_GENRES,
+  displayGenres,
+  genreLabelPagePath,
+  getGenre,
+  mainGenreOf,
+  mainGenrePagePath,
+  matchesMainGenre,
+  type GenreSlug,
+  type MainGenreSlug,
+} from "./taxonomy";
 
 describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
   it("never exposes 'D&B' anywhere — Drum & Bass is always spelled out, including in dense/short labels", () => {
@@ -116,5 +127,27 @@ describe("genre filter inheritance — mainGenreOf still groups a precise subgen
 
   it("hard-techno stays its own filter group, distinct from techno", () => {
     expect(mainGenreOf("hard-techno")).toBe("hard-techno");
+  });
+});
+
+describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
+  it("matchesMainGenre: Techno covers exactly techno, melodic-techno, minimal-techno and industrial — not hard-techno", () => {
+    const technoMembers = GENRES.map((g) => g.slug).filter((slug) => matchesMainGenre([slug], "techno"));
+    expect(technoMembers.sort()).toEqual(["industrial", "melodic-techno", "minimal-techno", "techno"]);
+    expect(matchesMainGenre(["hard-techno"], "techno")).toBe(false);
+    expect(matchesMainGenre(["house", "industrial"] as GenreSlug[], "techno")).toBe(true);
+    expect(matchesMainGenre([], "techno")).toBe(false);
+  });
+
+  it("only Techno has a landing page so far", () => {
+    expect(mainGenrePagePath("techno")).toBe("/genres/techno");
+    for (const g of MAIN_GENRES.filter((m) => m.slug !== "techno")) expect(mainGenrePagePath(g.slug), g.slug).toBeNull();
+  });
+
+  it("genreLabelPagePath links only the plain Techno label, never a subgenre label", () => {
+    expect(genreLabelPagePath("techno")).toBe("/genres/techno");
+    for (const slug of ["melodic-techno", "minimal-techno", "industrial", "hard-techno", "house"] as GenreSlug[]) {
+      expect(genreLabelPagePath(slug), slug).toBeNull();
+    }
   });
 });

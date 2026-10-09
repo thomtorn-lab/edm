@@ -514,6 +514,13 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(techno.compareDocumentPosition(melodicTechno) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("links the Techno genre tag to /genres/techno; subgenre tags stay plain (genre landing page pilot, 2026-10-09)", async () => {
+    await renderPage(makeEvent({ primaryGenre: "techno", subgenres: ["techno", "melodic-techno"] }));
+    expect(screen.getByRole("link", { name: "Techno" }).getAttribute("href")).toBe("/genres/techno");
+    expect(screen.getByText("Melodic Techno").tagName).toBe("SPAN");
+    expect(screen.queryByRole("link", { name: "Melodic Techno" })).toBeNull();
+  });
+
   it("never shows the same genre twice, even if subgenres repeats a slug", async () => {
     await renderPage(makeEvent({ primaryGenre: "techno", subgenres: ["techno", "techno"] }));
     expect(screen.getAllByText("Techno")).toHaveLength(1);

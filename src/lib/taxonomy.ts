@@ -203,6 +203,39 @@ export function mainGenreOf(slug: GenreSlug): MainGenreSlug {
 }
 
 /**
+ * Whether an event belongs under a broad filter group — the one rule both
+ * the homepage genre filter (EventExplorer.tsx) and the /genres/techno
+ * landing page use, so the two can never disagree about which events count
+ * as e.g. "Techno".
+ */
+export function matchesMainGenre(subgenres: readonly GenreSlug[], genre: MainGenreSlug): boolean {
+  return subgenres.some((slug) => mainGenreOf(slug) === genre);
+}
+
+/**
+ * Filter groups that have their own crawlable landing page (SEO pilot,
+ * 2026-10-09: Techno only). Every other group stays filter-only until it
+ * gets a page of its own.
+ */
+const MAIN_GENRE_PAGE_PATHS: Partial<Record<MainGenreSlug, string>> = {
+  techno: "/genres/techno",
+};
+
+export function mainGenrePagePath(genre: MainGenreSlug): string | null {
+  return MAIN_GENRE_PAGE_PATHS[genre] ?? null;
+}
+
+/**
+ * The landing page a display genre label links to: only a label that IS
+ * the group itself (the plain "Techno" badge) links — a precise subgenre
+ * badge such as "Melodic Techno" or "Industrial" stays plain text, since
+ * the page is about Techno as a whole, not that subgenre.
+ */
+export function genreLabelPagePath(slug: GenreSlug): string | null {
+  return slug === mainGenreOf(slug) ? mainGenrePagePath(mainGenreOf(slug)) : null;
+}
+
+/**
  * Public-facing genre badge(s) for an event (genre/subgenre taxonomy +
  * display integrity audit, 2026-09-11). Shows the exact genre(s) an admin
  * selected or the classification pipeline resolved, verbatim — "Deep

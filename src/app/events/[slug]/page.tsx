@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getArtistYoutubePreviewForLineup, getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/queries";
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
-import { displayGenres } from "@/lib/taxonomy";
+import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, outlookCalendarUrl } from "@/lib/ics";
@@ -154,11 +154,21 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           <div className="sm:col-span-2">
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</dt>
             <dd className="mt-1.5 flex flex-wrap gap-1.5">
-              {genres.map((g) => (
-                <span key={g.slug} className="rounded-[3px] border border-border-strong px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-text-secondary">
-                  {g.label}
-                </span>
-              ))}
+              {genres.map((g) => {
+                const className = "rounded-[3px] border border-border-strong px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-text-secondary";
+                const href = genreLabelPagePath(g.slug);
+                // Only a genre with its own landing page (Techno so far)
+                // links; the tag looks the same either way.
+                return href ? (
+                  <Link key={g.slug} href={href} className={`${className} transition-colors duration-150 hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary`}>
+                    {g.label}
+                  </Link>
+                ) : (
+                  <span key={g.slug} className={className}>
+                    {g.label}
+                  </span>
+                );
+              })}
             </dd>
           </div>
         )}
