@@ -14,6 +14,8 @@ import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
 import ArtistVideoPreview from "@/components/ArtistVideoPreview";
+import SoundcloudLinks from "@/components/SoundcloudLinks";
+import { getSoundcloudPilotArtists } from "@/lib/soundcloudPilot";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -82,6 +84,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const artistVideoPreview = await getArtistYoutubePreviewForLineup(event.artists);
+  const soundcloudPilotArtists = getSoundcloudPilotArtists(event.id, event.artists);
   const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
   const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
@@ -237,6 +240,8 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           videoTitle={artistVideoPreview.videoTitle}
         />
       )}
+
+      {soundcloudPilotArtists.length > 0 && <SoundcloudLinks artists={soundcloudPilotArtists} />}
 
       <div className="mt-8">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Add to calendar</h2>
