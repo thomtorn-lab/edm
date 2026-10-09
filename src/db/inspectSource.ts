@@ -2491,6 +2491,42 @@ async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, stri
   console.log(JSON.stringify(dqByGenre.rows, null, 2));
 }
 
+/**
+ * THROWAWAY investigation mode (SoundCloud UX pilot event-selection,
+ * 2026-10-09) — lists upcoming published events with their full lineup and
+ * genre labels, so a pilot event can be picked by hand. Not wired into any
+ * permanent workflow input list; dispatched only on a disposable
+ * investigation branch and never intended to reach the integration branch.
+ */
+async function modeSoundcloudPilotCandidates(client: Client, args: Record<string, string | boolean>) {
+  const { isPastEvent } = await import("@/lib/datetime");
+  const limit = typeof args.limit === "string" && args.limit ? Number(args.limit) : 30;
+  const rows = await client.query(
+    `SELECT e.id, e.slug, e.title, e.artists, e.subgenres, e.start_datetime, e.end_datetime, v.name AS venue_name
+     FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+     WHERE e.published = true ORDER BY e.start_datetime`,
+  );
+  const now = new Date();
+  const upcoming = rows.rows.filter(
+    (r) => !isPastEvent({ startDatetime: new Date(r.start_datetime as string).toISOString(), endDatetime: r.end_datetime ? new Date(r.end_datetime as string).toISOString() : null }, now),
+  );
+  section(`Upcoming published events (${upcoming.length} total, showing up to ${limit}, multi-artist first)`);
+  const sorted = [...upcoming].sort((a, b) => (b.artists as string[]).length - (a.artists as string[]).length);
+  for (const r of sorted.slice(0, limit)) {
+    console.log(
+      JSON.stringify({
+        id: r.id,
+        slug: r.slug,
+        title: r.title,
+        artists: r.artists,
+        subgenres: r.subgenres,
+        venue: r.venue_name,
+        start: new Date(r.start_datetime as string).toISOString(),
+      }),
+    );
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
@@ -2526,6 +2562,7 @@ async function main() {
     "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
     "migration-status": modeMigrationStatus,
+    "soundcloud-pilot-candidates": modeSoundcloudPilotCandidates,
   };
 
   if (mode === "reachability") {
