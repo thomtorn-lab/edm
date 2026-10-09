@@ -17,9 +17,9 @@ const inter = Inter({
 // woff2 files @fontsource/big-shoulders already vendors through npm — not
 // next/font/google, whose Big Shoulders CSS once served one broken asset URL
 // for all three weights and 404'd the build. next/font self-hosts and
-// preloads the files and generates a metric-adjusted fallback face, so the
-// swap from the fallback to Big Shoulders no longer resizes the header and
-// shifts the page (CLS) the way the plain @fontsource @font-face rules did.
+// preloads the files; together with the width-matched fallback face below,
+// the swap from the fallback to Big Shoulders no longer resizes the header
+// and shifts the page (CLS) the way the plain @fontsource rules did.
 const bigShoulders = localFont({
   src: [
     { path: "../../node_modules/@fontsource/big-shoulders/files/big-shoulders-latin-600-normal.woff2", weight: "600", style: "normal" },
@@ -27,7 +27,13 @@ const bigShoulders = localFont({
     { path: "../../node_modules/@fontsource/big-shoulders/files/big-shoulders-latin-800-normal.woff2", weight: "800", style: "normal" },
   ],
   variable: "--font-big-shoulders",
-  display: "block",
+  display: "swap",
+  // next/font's automatic Arial fallback only matches Big Shoulders' height,
+  // not its very condensed width, so the header logo rendered ~50% wider
+  // before the font arrived, wrapped the nav onto a second row and shifted
+  // the page. "Big Shoulders Fallback" (globals.css) is width-matched instead.
+  adjustFontFallback: false,
+  fallback: ["Big Shoulders Fallback"],
 });
 
 export const metadata: Metadata = {

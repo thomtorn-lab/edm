@@ -35,6 +35,21 @@
      src/app/layout.tsx), like --font-inter. */
 }
 
+/* Width-matched fallback for Big Shoulders (see src/app/layout.tsx): a
+   common sans scaled down so text set in it takes about as much horizontal
+   room as the condensed Big Shoulders, so nothing wraps differently — and
+   the page doesn't shift — while the web font is still loading. Arial and
+   Liberation Sans share metrics; Roboto (Android) and Helvetica (Apple) are
+   close enough to stay within the same widths. */
+@font-face {
+  font-family: "Big Shoulders Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica"), local("Roboto");
+  size-adjust: 70%;
+  ascent-override: 140%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface-1: var(--surface-1);
