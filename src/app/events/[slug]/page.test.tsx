@@ -1049,6 +1049,53 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
   });
 });
 
+describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () => {
+  afterEach(cleanup);
+
+  const PILOT_EVENT_ID = "e-bf9d6551";
+  const PILOT_ARTISTS = ["TIM ANDRESEN", "REXIE LEX"];
+
+  it("renders a #soundcloud section listing only the verified pilot artists, with real external links", async () => {
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: [...PILOT_ARTISTS, "SOME OTHER ARTIST"] }));
+
+    const anchor = document.getElementById("soundcloud");
+    expect(anchor).not.toBeNull();
+    const links = anchor!.querySelectorAll("a");
+    expect(links).toHaveLength(2);
+    const hrefs = Array.from(links).map((a) => a.getAttribute("href"));
+    expect(hrefs).toContain("https://soundcloud.com/tim-andresen");
+    expect(hrefs).toContain("https://soundcloud.com/rexie_lex");
+    for (const link of links) {
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+    // Never embeds a player/iframe for SoundCloud.
+    expect(anchor!.querySelector("iframe")).toBeNull();
+  });
+
+  it("no #soundcloud section exists for any other event, even with the exact same artist names in its lineup", async () => {
+    await renderPage(makeEvent({ id: "e-some-other-event", artists: PILOT_ARTISTS }));
+    expect(document.getElementById("soundcloud")).toBeNull();
+  });
+
+  it("no #soundcloud section exists for the pilot event id if its lineup no longer contains either verified artist", async () => {
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: ["SOMEONE ELSE"] }));
+    expect(document.getElementById("soundcloud")).toBeNull();
+  });
+
+  it("can render alongside the Artist Preview video section", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Tim Andresen",
+      videoId: "abc123XYZ",
+      videoTitle: "Tim Andresen DJ Set",
+      channelTitle: "Tim Andresen",
+    });
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
+    expect(document.getElementById("video")).not.toBeNull();
+    expect(document.getElementById("soundcloud")).not.toBeNull();
+  });
+});
+
 describe("Event detail page — SEO <title> and meta description (2026-10-06)", () => {
   it("emits an absolute title (no second brand from the layout template) and a factual description; canonical/OG unchanged", async () => {
     const { generateMetadata } = await import("./page");

@@ -4,6 +4,7 @@ import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
+import { getSoundcloudPilotArtists } from "@/lib/soundcloudPilot";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 import { SITE_URL } from "@/lib/siteUrl";
@@ -27,6 +28,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
+  // One-event SoundCloud UX pilot (2026-10-09) — empty for every event
+  // except the single hand-picked pilot event; see soundcloudPilot.ts's own
+  // doc comment for the full scope/verification discipline.
+  const soundcloudPilotArtists = getSoundcloudPilotArtists(event.id, event.artists);
   // Single source of truth for this row's own event-detail URL (mobile/video
   // affordance polish, 2026-09-26) — reused by both the title link and the
   // VIDEO badge link below, so there is only ever one place that constructs
@@ -119,6 +124,25 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 >
                   <span aria-hidden="true" className="text-accent">▶</span>
                   Video
+                </Link>
+              </>
+            )}
+            {soundcloudPilotArtists.length > 0 && (
+              <>
+                <span aria-hidden className="text-text-tertiary">·</span>
+                {/* One-event SoundCloud UX pilot (2026-10-09) — same pill
+                    shape/typography/spacing as the VIDEO badge above, so the
+                    two read as siblings. Deep-links to the event page's own
+                    SoundCloud section (`#soundcloud`), exactly like VIDEO's
+                    `#video` deep-link — never straight to soundcloud.com
+                    from the overview. */}
+                <Link
+                  href={`${eventHref}#soundcloud`}
+                  aria-label={`Go to SoundCloud links for ${title}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
+                >
+                  <span aria-hidden="true" className="text-accent">♫</span>
+                  Soundcloud
                 </Link>
               </>
             )}
