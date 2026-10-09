@@ -36,10 +36,10 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
   },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  // No site-wide `robots` here: "index, follow" is already the default when
+  // no robots tag exists, and an explicit layout value was also inherited
+  // by the 404 page, contradicting the `noindex` Next.js injects there.
+  // Pages that must not be indexed set their own `robots` metadata.
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
