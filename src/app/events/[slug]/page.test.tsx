@@ -650,21 +650,21 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     expect(calendarSection?.contains(shareButton)).toBe(false);
   });
 
-  it("2. Share renders alongside the primary CTA row, ahead of About/Add to calendar (UX polish, 2026-09-26: Share moved up from below Artist Preview into the event-action row, so it's associated with the event's actions rather than the video)", async () => {
+  it("2. Share renders alongside the primary CTA row, ahead of Add to calendar/About (content-order revision, 2026-10-09: Add to calendar/VIDEO/SOUNDCLOUD moved ahead of About)", async () => {
     await renderPage(
       makeEvent({ description: "Some description.", officialEventUrl: "https://venue.example.com/event" }),
     );
     const genreDt = screen.getByText("Genre");
     const officialEventCta = screen.getByText(/^Official event/i);
     const shareButton = screen.getByRole("button", { name: /^Share /i });
-    const aboutHeading = screen.getByText("About");
     const addToCalendarHeading = screen.getByText("Add to calendar");
+    const aboutHeading = screen.getByText("About");
 
-    // New order: Genre -> primary CTA -> Share (same row) -> About -> Add to calendar.
+    // Current order: Genre -> primary CTA -> Share (same row) -> Add to calendar -> About.
     expect(genreDt.compareDocumentPosition(officialEventCta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(officialEventCta.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(shareButton.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(aboutHeading.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(addToCalendarHeading.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("Share sits in the same container as the primary CTA (Tickets/Official event), not a separate block", async () => {
@@ -969,10 +969,10 @@ describe("Event detail page — mobile action-row polish (2026-09-26: ~40px/12px
   });
 });
 
-describe("Event detail page — Artist Preview positioned below About, ahead of Add to calendar (event-detail CTA hierarchy work, 2026-09-26; Share relocated into the CTA row, UX polish 2026-09-26)", () => {
+describe("Event detail page — Artist Preview positioned below Add to calendar, ahead of About (content-order revision, 2026-10-09)", () => {
   afterEach(cleanup);
 
-  it("renders the Artist Preview embed below the About heading", async () => {
+  it("renders the Artist Preview embed above the About heading (previously rendered below it)", async () => {
     vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -984,10 +984,10 @@ describe("Event detail page — Artist Preview positioned below About, ahead of 
     const aboutHeading = screen.getByText("About");
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(aboutHeading.compareDocumentPosition(iframe!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(iframe!.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("renders the Artist Preview embed above Add to calendar, but below Share (Share moved up into the CTA row, UX polish 2026-09-26)", async () => {
+  it("renders the Artist Preview embed below Add to calendar, which itself sits right below Share (content-order revision, 2026-10-09)", async () => {
     vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -999,8 +999,8 @@ describe("Event detail page — Artist Preview positioned below About, ahead of 
     const iframe = document.querySelector("iframe")!;
     const shareButton = screen.getByRole("button", { name: /^Share /i });
     const addToCalendarHeading = screen.getByText("Add to calendar");
-    expect(shareButton.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(iframe.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(addToCalendarHeading.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("Artist Preview never appears before the Tickets/Official event CTA", async () => {
@@ -1128,6 +1128,22 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
     await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
     expect(document.getElementById("video")).not.toBeNull();
     expect(document.getElementById("soundcloud")).not.toBeNull();
+  });
+
+  it("renders in the order VIDEO -> SOUNDCLOUD -> About (content-order revision, 2026-10-09)", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+      artistName: "Tim Andresen",
+      videoId: "abc123XYZ",
+      videoTitle: "Tim Andresen DJ Set",
+      channelTitle: "Tim Andresen",
+    });
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS, description: "Some description." }));
+
+    const videoSection = document.getElementById("video")!;
+    const soundcloudSection = document.getElementById("soundcloud")!;
+    const aboutHeading = screen.getByText("About");
+    expect(videoSection.compareDocumentPosition(soundcloudSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(soundcloudSection.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

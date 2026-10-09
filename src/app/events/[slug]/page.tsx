@@ -236,23 +236,14 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         />
       </div>
 
-      {event.description && (
-        <div className="mt-8">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
-        </div>
-      )}
-
-      {artistVideoPreview && (
-        <ArtistVideoPreview
-          artistName={artistVideoPreview.artistName}
-          videoId={artistVideoPreview.videoId}
-          videoTitle={artistVideoPreview.videoTitle}
-        />
-      )}
-
-      {soundcloudPilotArtists.length > 0 && <SoundcloudLinks artists={soundcloudPilotArtists} />}
-
+      {/* Content-order revision (2026-10-09): Add to calendar now sits
+          immediately below the primary/Share action row — directly below the
+          user's primary task on the page, instead of competing for
+          attention below a potentially long About description. VIDEO and
+          SOUNDCLOUD (both optional, same conditional rendering as before)
+          follow it; About moves to last among this group so a long
+          description no longer pushes every other section down the page.
+          Styling/spacing of each block is otherwise unchanged. */}
       <div className="mt-8">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Add to calendar</h2>
         <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
@@ -267,6 +258,23 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           </a>
         </div>
       </div>
+
+      {artistVideoPreview && (
+        <ArtistVideoPreview
+          artistName={artistVideoPreview.artistName}
+          videoId={artistVideoPreview.videoId}
+          videoTitle={artistVideoPreview.videoTitle}
+        />
+      )}
+
+      {soundcloudPilotArtists.length > 0 && <SoundcloudLinks artists={soundcloudPilotArtists} />}
+
+      {event.description && (
+        <div className="mt-8">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
+        </div>
+      )}
 
       {/* Discreet, non-CTA provenance (public source-link visibility work
           package, 2026-09-07; revised same day to read from ALL of the
