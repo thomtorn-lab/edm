@@ -14,6 +14,7 @@ import type { Metadata } from "next";
  */
 
 vi.mock("next/font/google", () => ({ Inter: () => ({ variable: "font-inter", className: "font-inter" }) }));
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "font-big-shoulders", className: "font-big-shoulders" }) }));
 vi.mock("@/lib/queries", () => ({}));
 vi.mock("@/db/newsletter", () => ({}));
 
