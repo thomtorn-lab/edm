@@ -258,6 +258,37 @@ export function findPendingRowToResolve(
 }
 
 /**
+ * Splits every pending discovery_queue row into the ones THIS sync's source
+ * owns (keyed by sourceUrl — the only rows a sync may refresh or resolve)
+ * and the bare URLs pending under any OTHER owner (another registered
+ * source, or an admin "Add event from URL" row with sourceId null).
+ *
+ * Cross-source queue collision fix (2026-10-10): src/db/sync.ts previously
+ * keyed ALL pending rows by sourceUrl alone, so an admin row created for the
+ * same Poolen URL a Poolen row was already pending under silently replaced
+ * it in the map — every later Poolen sync then refreshed the admin row's
+ * lastSeenAt/classification instead of its own, and the Poolen row went
+ * stale (real Production case: Yousuke Yukimatsu, dq-d70a7a0c vs. admin row
+ * dq-baf94b14). Other-owner URLs are still returned so the caller can keep
+ * the pre-existing "never queue a second pending row for a URL that's
+ * already awaiting review" behavior without ever writing to that row.
+ * Ignored rows are deliberately NOT handled here — Ignore Persistence stays
+ * identity-based across sources (see isIgnoredCandidate below).
+ */
+export function indexPendingRowsForSource<T extends { sourceUrl: string; sourceId: string | null }>(
+  pendingRows: T[],
+  sourceId: string,
+): { ownPendingByUrl: Map<string, T>; otherOwnerPendingUrls: Set<string> } {
+  const ownPendingByUrl = new Map<string, T>();
+  const otherOwnerPendingUrls = new Set<string>();
+  for (const row of pendingRows) {
+    if (row.sourceId === sourceId) ownPendingByUrl.set(row.sourceUrl, row);
+    else otherOwnerPendingUrls.add(row.sourceUrl);
+  }
+  return { ownPendingByUrl, otherOwnerPendingUrls };
+}
+
+/**
  * Whether a fresh sync candidate must be skipped entirely — never spawning a
  * new discovery_queue row — because an admin already explicitly ignored this
  * exact same discovered-event identity (Ignore Persistence fix, 2026-09-11).
