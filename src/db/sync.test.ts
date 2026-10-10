@@ -873,6 +873,54 @@ describe("Cross-source queue collision — a sync only ever refreshes or resolve
     expect(resolveDiscoveryItemAsPublished).not.toHaveBeenCalled();
   });
 
+  it("8. multiple sources discovering the same real event under their OWN URLs each keep refreshing their own row — the fix never merges or suppresses them (event-level dedup is unchanged and separate)", async () => {
+    const KULTUNAUT_URL = "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20350613";
+    const kultunautRow = pending("dq-kultunaut", "src-kultunaut", { sourceUrl: KULTUNAUT_URL, probableOfficialEventUrl: KULTUNAUT_URL });
+    mockThreeSelects([], [pending("dq-poolen", "src-poolen"), kultunautRow], []);
+    await runSourceSync("src-poolen", "Poolen", fakeAdapter(() => Promise.resolve([yukimatsu])));
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-poolen", expect.anything());
+
+    vi.mocked(applyDiscoveryClassificationUpdate).mockClear();
+    mockThreeSelects([], [pending("dq-poolen", "src-poolen"), kultunautRow], []);
+    const kultunautCandidate: RawCandidateEvent = {
+      ...yukimatsu,
+      sourceId: "src-kultunaut",
+      sourceUrl: KULTUNAUT_URL,
+      officialEventUrl: KULTUNAUT_URL,
+      title: "¥ØU$UKeuro ¥UK1MAT$U (Yousuke Yukimatsu) - Copenhagen",
+    };
+    await runSourceSync("src-kultunaut", "KultuNaut", fakeAdapter(() => Promise.resolve([kultunautCandidate])));
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-kultunaut", expect.anything());
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("9. KNOWN LIMITATION, pinned deliberately: a source auto-publishing an event never resolves another owner's pending row for the same URL — the admin resolves that row by hand", async () => {
+    const hangarenVenue: Venue = {
+      id: "v-hangaren", slug: "hangaren", name: "Hangaren", aliases: [], address: "", city: "Copenhagen",
+      postalCode: "", websiteUrl: null, description: "", shortDescription: null, venueProfile: null,
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce([hangarenVenue]);
+    const HANGAREN_URL = "https://www.hangaren.dk/events/miley-serious";
+    mockThreeSelects([], [pending("dq-admin", null, { sourceUrl: HANGAREN_URL })], []);
+    const miley: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-hangaren",
+      title: "Miley Serious",
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      officialEventUrl: HANGAREN_URL,
+    };
+    const result = await runSourceSync("src-hangaren", "Hangaren", fakeAdapter(() => Promise.resolve([miley])));
+
+    const { resolveDiscoveryItemAsPublished } = await import("./writes");
+    expect(result.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(resolveDiscoveryItemAsPublished).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
   it("7. a genuinely new URL with no pending row anywhere is still queued normally", async () => {
     mockThreeSelects([], [pending("dq-admin", null)], []);
     const other: RawCandidateEvent = { ...yukimatsu, title: "Some Other Night", officialEventUrl: "https://poolen.dk/concerts/other/" };
