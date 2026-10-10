@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { EventWithVenue } from "@/lib/queries";
+import type { HomepageEvent } from "@/lib/homepageEvents";
 import {
   groupByMonth,
   isNextWeekend,
@@ -53,13 +53,13 @@ function isSectionVisible(el: HTMLElement): boolean {
  * — the actual filter logic.
  */
 function applyFilters(
-  upcoming: EventWithVenue[],
+  upcoming: HomepageEvent[],
   now: Date,
   mode: Mode,
   genre: MainGenreSlug | "all",
   venueId: string | "all",
   query: string
-): EventWithVenue[] {
+): HomepageEvent[] {
   return upcoming.filter((e) => {
     if (mode === "tonight" && !isTonight(e, now)) return false;
     if (mode === "weekend" && !isThisWeekend(e, now)) return false;
@@ -108,7 +108,13 @@ export default function EventExplorer({
   events,
   serverNow,
 }: {
-  events: EventWithVenue[];
+  /**
+   * Upcoming events only, as the minimal HomepageEvent projection — the
+   * server (app/page.tsx) already drops events that are past at
+   * `serverNow`; `upcoming` below still re-applies isPastEvent as `now`
+   * advances while the page stays open.
+   */
+  events: HomepageEvent[];
   /**
    * ISO timestamp for "now" at the moment the server rendered this page
    * (see app/page.tsx). Used as the initial value so the very first render

@@ -2,7 +2,11 @@ import type { EventRecord, Venue } from "./types";
 import { getGenre } from "./taxonomy";
 
 /** Free-text search over title, artists, lineup, venue and subgenre (spec section 5). */
-export function eventMatchesQuery(event: EventRecord, venue: Venue | undefined, query: string): boolean {
+export function eventMatchesQuery(
+  event: Pick<EventRecord, "title" | "artists" | "subgenres" | "primaryGenre">,
+  venue: Pick<Venue, "name" | "aliases"> | undefined,
+  query: string,
+): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
 

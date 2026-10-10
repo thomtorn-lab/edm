@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getArtistPreviewAvailabilityForLineups, getPublishedEventsWithVenue } from "@/lib/queries";
+import { toHomepageEvent, upcomingForHomepage } from "@/lib/homepageEvents";
 import EventExplorer from "@/components/EventExplorer";
 import NewsletterSignupForm from "@/components/NewsletterSignupForm";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
@@ -13,7 +14,17 @@ export const metadata: Metadata = {
 export const revalidate = 0;
 
 export default async function HomePage() {
-  const events = await getPublishedEventsWithVenue();
+  // Computed here (server request time, same as /venues/[slug]) rather than
+  // left for the client to fill in post-hydration — see EventExplorer's
+  // `serverNow` prop doc comment for why. The same instant decides which
+  // events are still upcoming below, so the server never ships an event
+  // EventExplorer's own isPastEvent check would immediately drop.
+  const now = new Date();
+  const serverNow = now.toISOString();
+  // Only upcoming events, as the minimal HomepageEvent projection
+  // (performance work, 2026-10-10): past events and fields nothing on the
+  // page reads used to make up most of this page's HTML/RSC payload.
+  const events = upcomingForHomepage(await getPublishedEventsWithVenue(), now);
   // Homepage VIDEO indicator (2026-09-26): ONE batched query for every
   // event's lineup combined (never per-event — see
   // getArtistPreviewAvailabilityForLineups's own doc comment), reusing the
@@ -22,11 +33,7 @@ export default async function HomePage() {
   // actually render an Artist Preview. No YouTube API call and no matcher
   // execution happen here — this only reads the existing cache table.
   const previewAvailability = await getArtistPreviewAvailabilityForLineups(events.map((e) => e.artists));
-  const eventsWithPreview = events.map((event, i) => ({ ...event, hasArtistPreview: previewAvailability[i] }));
-  // Computed here (server request time, same as /venues/[slug]) rather than
-  // left for the client to fill in post-hydration — see EventExplorer's
-  // `serverNow` prop doc comment for why.
-  const serverNow = new Date().toISOString();
+  const homepageEvents = events.map((event, i) => toHomepageEvent(event, previewAvailability[i]));
 
   return (
     <div>
@@ -52,7 +59,7 @@ export default async function HomePage() {
           </div>
         )}
       </div>
-      <EventExplorer events={eventsWithPreview} serverNow={serverNow} />
+      <EventExplorer events={homepageEvents} serverNow={serverNow} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import type { EventWithVenue } from "@/lib/queries";
+import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
@@ -18,7 +18,6 @@ import { SITE_URL } from "@/lib/siteUrl";
  * passing plain EventWithVenue objects unchanged and simply render no
  * indicator (a safe default, not a regression).
  */
-type EventRowEvent = EventWithVenue & { hasArtistPreview?: boolean };
 
 export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);

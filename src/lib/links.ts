@@ -150,7 +150,20 @@ function officialUrlRole(
  * ever produced here, that fallback lands on Official event automatically,
  * or on nothing at all if none exists).
  */
-export function getExternalLinks(event: EventRecord, max?: number): ExternalLink[] {
+export function getExternalLinks(
+  event: Pick<
+    EventRecord,
+    | "officialEventUrl"
+    | "ticketUrl"
+    | "facebookUrl"
+    | "residentAdvisorUrl"
+    | "otherSourceUrls"
+    | "canonicalSourceId"
+    | "overriddenFields"
+    | "soldOut"
+  >,
+  max?: number,
+): ExternalLink[] {
   const seen = new Set<string>();
   const links: ExternalLink[] = [];
 
