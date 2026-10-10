@@ -636,6 +636,7 @@ describe("Pylonen DQ identity stability across the bare -> detail-page lifecycle
   function pendingRow(overrides: Record<string, unknown> = {}) {
     return {
       id: "dq-myrk",
+      sourceId: "src-pylonen",
       sourceUrl: SYNTHETIC_URL,
       status: "pending",
       predictedGenre: "techno",
@@ -737,6 +738,202 @@ describe("Pylonen DQ identity stability across the bare -> detail-page lifecycle
 });
 
 /**
+ * Cross-source queue collision fix (2026-10-10). runSourceSyncLocked loads
+ * EVERY pending discovery_queue row, but previously keyed them by sourceUrl
+ * alone — so an admin "Add event from URL" row (sourceId null) or another
+ * registered source's row sharing the same URL silently replaced this
+ * source's own row in the lookup. Real Production case: Poolen's own
+ * Yousuke Yukimatsu row (dq-d70a7a0c) stopped being refreshed the moment an
+ * admin row for the same Poolen URL (dq-baf94b14) was created; every later
+ * Poolen sync bumped the admin row's lastSeenAt instead, and the Poolen row
+ * fell into Past / stale. A sync may now only refresh or resolve rows its
+ * own source owns; another owner's pending row for the same URL is never
+ * touched, and (unchanged from before) never gets a second row queued
+ * beside it.
+ */
+describe("Cross-source queue collision — a sync only ever refreshes or resolves its own source's pending rows (2026-10-10)", () => {
+  function mockThreeSelects(linksResult: unknown[], pendingResult: unknown[], ignoredResult: unknown[]) {
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once(linksResult))
+      .mockImplementationOnce(() => once(pendingResult))
+      .mockImplementationOnce(() => once(ignoredResult));
+  }
+
+  const POOLEN_URL = "https://poolen.dk/concerts/yousuke-yukimatsu/";
+
+  function pending(id: string, sourceId: string | null, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      sourceId,
+      sourceUrl: POOLEN_URL,
+      status: "pending",
+      predictedGenre: null,
+      genreConfidence: "low",
+      overriddenFields: [],
+      overallConfidence: "low",
+      missingFields: [],
+      probableSubVenue: null,
+      suspectedDuplicateOfEventId: null,
+      venueResolvedDecision: null,
+      venueResolvedHoldReason: null,
+      holdReason: "no_genre_evidence",
+      probableTicketUrl: null,
+      probableOfficialEventUrl: POOLEN_URL,
+      ...overrides,
+    };
+  }
+
+  const yukimatsu: RawCandidateEvent = {
+    ...rawCandidate,
+    sourceId: "src-poolen",
+    sourceUrl: "https://poolen.dk/da/",
+    title: "¥ØU$UK€ ¥UK1MAT$U",
+    artists: ["¥ØU$UK€ ¥UK1MAT$U"],
+    startDatetime: "2027-03-24T18:30:00.000Z",
+    venueName: "Poolen",
+    officialEventUrl: POOLEN_URL,
+  };
+
+  it("1. REGRESSION (Yukimatsu): with the source's own row AND a later admin row for the same URL, the sync refreshes only its own row — listed last, the admin row no longer wins the lookup", async () => {
+    mockThreeSelects([], [pending("dq-poolen", "src-poolen"), pending("dq-admin", null)], []);
+    vi.setSystemTime(new Date("2026-10-10T12:37:00Z"));
+    const adapter = fakeAdapter(() => Promise.resolve([yukimatsu]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith(
+      "dq-poolen",
+      expect.objectContaining({ lastSeenAt: new Date("2026-10-10T12:37:00Z") }),
+    );
+    expect(applyDiscoveryClassificationUpdate).not.toHaveBeenCalledWith("dq-admin", expect.anything());
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("2. the same holds whichever order the rows come back in (no ORDER BY on the pending query)", async () => {
+    mockThreeSelects([], [pending("dq-admin", null), pending("dq-poolen", "src-poolen")], []);
+    const adapter = fakeAdapter(() => Promise.resolve([yukimatsu]));
+    await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-poolen", expect.anything());
+  });
+
+  it("3. an admin-created row alone (sourceId null) for the same URL is never refreshed by a source sync, and no second pending row is queued beside it", async () => {
+    mockThreeSelects([], [pending("dq-admin", null)], []);
+    const adapter = fakeAdapter(() => Promise.resolve([yukimatsu]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    expect(result.queuedForReview).toBe(0);
+  });
+
+  it("4. another REGISTERED source's pending row for the same URL is likewise never refreshed, and no duplicate row is queued", async () => {
+    mockThreeSelects([], [pending("dq-kultunaut", "src-kultunaut")], []);
+    const adapter = fakeAdapter(() => Promise.resolve([yukimatsu]));
+    await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("5. a matched existing event resolves only this source's own pending row as published — never another owner's row for the same URL", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({ id: "e-yukimatsu", officialEventUrl: POOLEN_URL, canonicalSourceId: "src-poolen" }),
+    ]);
+    mockThreeSelects(
+      [{ eventId: "e-yukimatsu", sourceUrl: POOLEN_URL }],
+      [pending("dq-poolen", "src-poolen"), pending("dq-admin", null)],
+      [],
+    );
+    const adapter = fakeAdapter(() => Promise.resolve([yukimatsu]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    const { resolveDiscoveryItemAsPublished } = await import("./writes");
+    expect(result.updated).toBe(1);
+    expect(resolveDiscoveryItemAsPublished).toHaveBeenCalledTimes(1);
+    expect(resolveDiscoveryItemAsPublished).toHaveBeenCalledWith("dq-poolen");
+  });
+
+  it("6. a matched existing event never resolves an admin row when the source has no pending row of its own", async () => {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({ id: "e-yukimatsu", officialEventUrl: POOLEN_URL, canonicalSourceId: "src-poolen" }),
+    ]);
+    mockThreeSelects([{ eventId: "e-yukimatsu", sourceUrl: POOLEN_URL }], [pending("dq-admin", null)], []);
+    const adapter = fakeAdapter(() => Promise.resolve([yukimatsu]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    const { resolveDiscoveryItemAsPublished } = await import("./writes");
+    expect(result.updated).toBe(1);
+    expect(resolveDiscoveryItemAsPublished).not.toHaveBeenCalled();
+  });
+
+  it("8. multiple sources discovering the same real event under their OWN URLs each keep refreshing their own row — the fix never merges or suppresses them (event-level dedup is unchanged and separate)", async () => {
+    const KULTUNAUT_URL = "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=20350613";
+    const kultunautRow = pending("dq-kultunaut", "src-kultunaut", { sourceUrl: KULTUNAUT_URL, probableOfficialEventUrl: KULTUNAUT_URL });
+    mockThreeSelects([], [pending("dq-poolen", "src-poolen"), kultunautRow], []);
+    await runSourceSync("src-poolen", "Poolen", fakeAdapter(() => Promise.resolve([yukimatsu])));
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-poolen", expect.anything());
+
+    vi.mocked(applyDiscoveryClassificationUpdate).mockClear();
+    mockThreeSelects([], [pending("dq-poolen", "src-poolen"), kultunautRow], []);
+    const kultunautCandidate: RawCandidateEvent = {
+      ...yukimatsu,
+      sourceId: "src-kultunaut",
+      sourceUrl: KULTUNAUT_URL,
+      officialEventUrl: KULTUNAUT_URL,
+      title: "¥ØU$UKeuro ¥UK1MAT$U (Yousuke Yukimatsu) - Copenhagen",
+    };
+    await runSourceSync("src-kultunaut", "KultuNaut", fakeAdapter(() => Promise.resolve([kultunautCandidate])));
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledTimes(1);
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-kultunaut", expect.anything());
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("9. KNOWN LIMITATION, pinned deliberately: a source auto-publishing an event never resolves another owner's pending row for the same URL — the admin resolves that row by hand", async () => {
+    const hangarenVenue: Venue = {
+      id: "v-hangaren", slug: "hangaren", name: "Hangaren", aliases: [], address: "", city: "Copenhagen",
+      postalCode: "", websiteUrl: null, description: "", shortDescription: null, venueProfile: null,
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce([hangarenVenue]);
+    const HANGAREN_URL = "https://www.hangaren.dk/events/miley-serious";
+    mockThreeSelects([], [pending("dq-admin", null, { sourceUrl: HANGAREN_URL })], []);
+    const miley: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-hangaren",
+      title: "Miley Serious",
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      officialEventUrl: HANGAREN_URL,
+    };
+    const result = await runSourceSync("src-hangaren", "Hangaren", fakeAdapter(() => Promise.resolve([miley])));
+
+    const { resolveDiscoveryItemAsPublished } = await import("./writes");
+    expect(result.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(resolveDiscoveryItemAsPublished).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("7. a genuinely new URL with no pending row anywhere is still queued normally", async () => {
+    mockThreeSelects([], [pending("dq-admin", null)], []);
+    const other: RawCandidateEvent = { ...yukimatsu, title: "Some Other Night", officialEventUrl: "https://poolen.dk/concerts/other/" };
+    const adapter = fakeAdapter(() => Promise.resolve([other]));
+    const result = await runSourceSync("src-poolen", "Poolen", adapter);
+
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(insertDiscoveryItem).mock.calls[0][0].sourceUrl).toBe("https://poolen.dk/concerts/other/");
+    expect(result.queuedForReview).toBe(1);
+  });
+});
+
+/**
  * Discovery description persistence fix (2026-10-07): the review-queue
  * insertDiscoveryItem call previously omitted raw.description entirely, even
  * though it was already extracted and already in scope (relevanceText reads
@@ -795,6 +992,7 @@ describe("Discovery description persistence (2026-10-07)", () => {
   it("a later re-sync of an already-pending row never touches description — an admin's manual edit to a previously-queued row's description can never be overwritten by a subsequent sync", async () => {
     const pendingRow = {
       id: "dq-melting",
+      sourceId: "src-billetto",
       sourceUrl: "https://billetto.dk/e/melting-monday-1",
       status: "pending",
       predictedGenre: null,
@@ -896,6 +1094,7 @@ describe("trusted-electronic sources — a complete Hangaren/Culture Box candida
               return Promise.resolve([
                 {
                   id: "dq-miley-pending",
+                  sourceId: "src-hangaren",
                   sourceUrl: "https://www.hangaren.dk/events/miley-serious",
                   status: "pending",
                 },
@@ -1547,6 +1746,7 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
               return Promise.resolve([
                 {
                   id: "dq-electro-werkz",
+                  sourceId: "src-billetto",
                   sourceUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
                   status: "pending",
                   predictedGenre: "electro",
@@ -1646,6 +1846,7 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
               return Promise.resolve([
                 {
                   id: "dq-electro-werkz",
+                  sourceId: "src-billetto",
                   sourceUrl: "https://billetto.dk/e/electro-werkz-billetter-1982707",
                   status: "pending",
                 },
@@ -1864,6 +2065,7 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
               return Promise.resolve([
                 {
                   id: "dq-wyatt-e",
+                  sourceId: "src-billetto",
                   sourceUrl: "https://billetto.dk/e/wyatt-e-x-five-the-hierophant-billetter-1957514",
                   status: "pending",
                   predictedGenre: "electronic-other",
@@ -1975,6 +2177,7 @@ describe("Discovery secondary-genre V1 (2026-10-08) — insert-time only, never 
       [
         {
           id: "dq-existing",
+          sourceId: "src-culture-box",
           sourceUrl: rawCandidate.officialEventUrl,
           status: "pending",
           predictedGenre: "house",

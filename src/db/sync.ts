@@ -27,6 +27,7 @@ import {
   decidePublishedEventSyncAction,
   decideSourceCancellationSyncAction,
   findPendingRowToResolve,
+  indexPendingRowsForSource,
   findSyncMatch,
   isIgnoredCandidate,
   summarizeWriteErrors,
@@ -222,7 +223,10 @@ async function runSourceSyncLocked(
   const sourceCancellationPolicy = getSourceCancellationPolicy(sourceId);
 
   const linkedByUrl = new Map(links.map((l) => [l.sourceUrl, l.eventId]));
-  const pendingByUrl = new Map(pendingDiscovery.map((d) => [d.sourceUrl, d]));
+  // Only this source's own pending rows are ever refreshed/resolved here —
+  // see indexPendingRowsForSource's doc comment (cross-source queue
+  // collision fix, 2026-10-10).
+  const { ownPendingByUrl: pendingByUrl, otherOwnerPendingUrls } = indexPendingRowsForSource(pendingDiscovery, sourceId);
   const ignoredByUrl = new Set(ignoredDiscovery.map((d) => d.sourceUrl));
   const existingForDedup: ExistingEventForDedup[] = existingEventRows.map((e) => ({
     id: e.id,
@@ -626,6 +630,15 @@ async function runSourceSyncLocked(
       // check) and after the negative_relevance skip (same "never create a
       // row" shape) — the only thing this ever prevents is this insert.
       if (isIgnoredCandidate(dedupKey, ignoredByUrl)) {
+        continue;
+      }
+
+      // Another owner (a different source, or an admin "Add event from URL"
+      // row) already has this exact URL pending review — never queue a
+      // second row for it, and never touch that row either (cross-source
+      // queue collision fix, 2026-10-10; this preserves the pre-fix
+      // no-duplicate behavior without the old silent cross-owner refresh).
+      if (otherOwnerPendingUrls.has(dedupKey)) {
         continue;
       }
 

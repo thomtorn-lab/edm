@@ -7,6 +7,7 @@ import {
   decideSourceCancellationSyncAction,
   decideSyncLeaseAcquisition,
   findPendingRowToResolve,
+  indexPendingRowsForSource,
   findSyncMatch,
   isDiscoveryRowCurrent,
   isIgnoredCandidate,
@@ -122,6 +123,42 @@ describe("findPendingRowToResolve", () => {
 
   it("empty pending map -> null", () => {
     expect(findPendingRowToResolve("https://culture-box.com/event/fri-28-august/#black-box", new Map())).toBeNull();
+  });
+
+  describe("indexPendingRowsForSource (cross-source queue collision fix, 2026-10-10)", () => {
+    const URL = "https://poolen.dk/concerts/yousuke-yukimatsu/";
+
+    it("keys only this source's own rows; an admin row (sourceId null) for the same URL can no longer displace it, in either order", () => {
+      for (const rows of [
+        [{ id: "dq-poolen", sourceId: "src-poolen", sourceUrl: URL }, { id: "dq-admin", sourceId: null, sourceUrl: URL }],
+        [{ id: "dq-admin", sourceId: null, sourceUrl: URL }, { id: "dq-poolen", sourceId: "src-poolen", sourceUrl: URL }],
+      ]) {
+        const { ownPendingByUrl, otherOwnerPendingUrls } = indexPendingRowsForSource(rows, "src-poolen");
+        expect(findPendingRowToResolve(URL, ownPendingByUrl)).toBe("dq-poolen");
+        expect(otherOwnerPendingUrls.has(URL)).toBe(true);
+      }
+    });
+
+    it("another registered source's row is reported as an other-owner URL, never as this source's own", () => {
+      const { ownPendingByUrl, otherOwnerPendingUrls } = indexPendingRowsForSource(
+        [{ id: "dq-kultunaut", sourceId: "src-kultunaut", sourceUrl: URL }],
+        "src-poolen",
+      );
+      expect(ownPendingByUrl.size).toBe(0);
+      expect([...otherOwnerPendingUrls]).toEqual([URL]);
+    });
+
+    it("unrelated URLs from this source are all indexed — normal single-source behavior is unchanged", () => {
+      const { ownPendingByUrl, otherOwnerPendingUrls } = indexPendingRowsForSource(
+        [
+          { id: "dq-a", sourceId: "src-poolen", sourceUrl: "https://poolen.dk/concerts/a/" },
+          { id: "dq-b", sourceId: "src-poolen", sourceUrl: "https://poolen.dk/concerts/b/" },
+        ],
+        "src-poolen",
+      );
+      expect([...ownPendingByUrl.keys()]).toEqual(["https://poolen.dk/concerts/a/", "https://poolen.dk/concerts/b/"]);
+      expect(otherOwnerPendingUrls.size).toBe(0);
+    });
   });
 });
 
