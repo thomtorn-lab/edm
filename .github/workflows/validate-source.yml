@@ -70,9 +70,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate source_id format
+        # Every user-supplied value in this workflow reaches its shell scripts
+        # only through step-level env vars, expanded inside double quotes —
+        # never pasted into the script text via ${{ }} — so $, `, quotes,
+        # spaces, ;, |, backslash and newlines stay literal data (same
+        # pattern as inspect-source.yml; see src/db/validateSourceWorkflow.test.ts).
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
         run: |
-          if ! [[ "${{ inputs.source_id }}" =~ ^src-[a-z0-9-]+$ ]]; then
-            echo "::error::source_id must match src-[a-z0-9-]+ (e.g. src-hangaren), got: ${{ inputs.source_id }}"
+          if ! [[ "$INPUT_SOURCE_ID" =~ ^src-[a-z0-9-]+$ ]]; then
+            printf '::error::source_id must match src-[a-z0-9-]+ (e.g. src-hangaren), got: %s\n' "$INPUT_SOURCE_ID"
             exit 1
           fi
 
@@ -124,8 +131,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require explicit confirmation for a live sync
+        env:
+          INPUT_CONFIRM: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "VALIDATE-SOURCE" ]; then
+          if [ "$INPUT_CONFIRM" != "VALIDATE-SOURCE" ]; then
             echo "::error::run_live_sync is true but confirm did not match. Re-run and enter exactly: VALIDATE-SOURCE"
             exit 1
           fi
@@ -134,9 +143,10 @@ jobs:
         id: target
         env:
           SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          INPUT_PREVIEW_BASE_URL: ${{ inputs.preview_base_url }}
         run: |
           set -u
-          url="${{ inputs.preview_base_url }}"
+          url="$INPUT_PREVIEW_BASE_URL"
           if [ -z "$url" ]; then
             url="${SYNC_BASE_URL}"
             echo "No preview_base_url given — falling back to the repository variable SYNC_BASE_URL (same standing deployment sync-hangaren.yml targets)."
@@ -179,14 +189,15 @@ jobs:
       - name: Confirm the target deployment is actually reachable before touching anything
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          TARGET_BASE_URL: ${{ steps.target.outputs.base_url }}
         run: |
           set -u
           http_code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
             -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-            "${{ steps.target.outputs.base_url }}/")
+            "${TARGET_BASE_URL}/")
           echo "Target homepage HTTP status: ${http_code}"
           if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
-            echo "::error::Target base URL ${{ steps.target.outputs.base_url }} did not return 2xx (got ${http_code}) — stopping before any database read/write."
+            echo "::error::Target base URL ${TARGET_BASE_URL} did not return 2xx (got ${http_code}) — stopping before any database read/write."
             exit 1
           fi
 
@@ -200,32 +211,41 @@ jobs:
 
       - name: Resolve sync endpoint path
         id: endpoint
+        env:
+          INPUT_SYNC_ENDPOINT: ${{ inputs.sync_endpoint }}
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
         run: |
-          endpoint="${{ inputs.sync_endpoint }}"
+          endpoint="$INPUT_SYNC_ENDPOINT"
           if [ -z "$endpoint" ]; then
-            endpoint="${{ inputs.source_id }}"
+            endpoint="$INPUT_SOURCE_ID"
             endpoint="${endpoint#src-}"
           fi
           echo "path=${endpoint}" >> "$GITHUB_OUTPUT"
           echo "Resolved sync endpoint: /api/sync/${endpoint}"
 
       - name: "BEFORE snapshot"
-        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=snapshot --source="${{ inputs.source_id }}" --label="BEFORE (pre-sync)"
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=snapshot --source="$INPUT_SOURCE_ID" --label="BEFORE (pre-sync)"
 
       - name: Trigger sync N times (idempotency check)
         env:
           SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          INPUT_SYNC_COUNT: ${{ inputs.sync_count }}
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
+          TARGET_BASE_URL: ${{ steps.target.outputs.base_url }}
+          ENDPOINT_PATH: ${{ steps.endpoint.outputs.path }}
         run: |
           set -u
-          count="${{ inputs.sync_count }}"
+          count="$INPUT_SYNC_COUNT"
           for i in $(seq 1 "$count"); do
             echo "--- sync attempt $i/$count ---"
             response=$(curl -sS --max-time 180 -w '\n%{http_code}' \
               -X POST \
               -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
               -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${{ steps.target.outputs.base_url }}/api/sync/${{ steps.endpoint.outputs.path }}")
+              "${TARGET_BASE_URL}/api/sync/${ENDPOINT_PATH}")
             http_code=$(echo "$response" | tail -n1)
             body=$(echo "$response" | sed '$d')
             echo "HTTP status: ${http_code}"
@@ -237,17 +257,23 @@ jobs:
             if [ "$i" -gt 1 ]; then
               echo "Attempt $i is a re-run — a healthy adapter should report created:0 here (everything already exists as a published event or a pending discovery_queue row)."
             fi
-            node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=snapshot --source="${{ inputs.source_id }}" --label="AFTER SYNC #${i}"
+            node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=snapshot --source="$INPUT_SOURCE_ID" --label="AFTER SYNC #${i}"
           done
 
       - name: Source health verdict
-        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=health --source="${{ inputs.source_id }}"
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=health --source="$INPUT_SOURCE_ID"
 
       - name: Sync lock status (should be clear — sync already finished)
-        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=lock-status --source="${{ inputs.source_id }}"
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=lock-status --source="$INPUT_SOURCE_ID"
 
       - name: Discovery queue results
-        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=discovery-queue --source="${{ inputs.source_id }}" --limit=50
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
+        run: node --env-file=.env.local --import tsx src/db/inspectSource.ts --mode=discovery-queue --source="$INPUT_SOURCE_ID" --limit=50
 
       - name: Remove local env file
         if: always()
