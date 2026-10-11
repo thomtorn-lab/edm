@@ -101,7 +101,8 @@ function runInspect(overrides: Record<string, string>) {
   rmSync(argsOut, { force: true });
   const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", inspectStep!.run!], {
     cwd: scratch, // a stray `$(touch …)` would land here, where we look for it
-    env: { PATH: `${fakeBin}:${process.env.PATH}`, ARGV_OUT: argsOut, ...inputEnv(overrides) },
+    // NODE_ENV is required by Next's ProcessEnv typing; the scripts never read it.
+    env: { NODE_ENV: "test", PATH: `${fakeBin}:${process.env.PATH}`, ARGV_OUT: argsOut, ...inputEnv(overrides) },
     encoding: "utf-8",
   });
   const argv = existsSync(argsOut) ? readFileSync(argsOut, "utf-8").split("\0").slice(0, -1) : null;
@@ -262,7 +263,7 @@ describe("inspect-source.yml — source_id validation step", () => {
   const runValidate = (value: string) =>
     spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", validateStep!.run!], {
       cwd: scratch,
-      env: { PATH: process.env.PATH, INPUT_SOURCE_ID: value },
+      env: { NODE_ENV: "test", PATH: process.env.PATH, INPUT_SOURCE_ID: value },
       encoding: "utf-8",
     });
 
