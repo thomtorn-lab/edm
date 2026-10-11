@@ -143,9 +143,11 @@ jobs:
     steps:
       - name: Validate source_id format (when given)
         if: ${{ inputs.source_id != '' }}
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
         run: |
-          if ! [[ "${{ inputs.source_id }}" =~ ^src-[a-z0-9-]+$ ]]; then
-            echo "::error::source_id must match src-[a-z0-9-]+ (e.g. src-hangaren), got: ${{ inputs.source_id }}"
+          if ! [[ "$INPUT_SOURCE_ID" =~ ^src-[a-z0-9-]+$ ]]; then
+            printf '::error::source_id must match src-[a-z0-9-]+ (e.g. src-hangaren), got: %s\n' "$INPUT_SOURCE_ID"
             exit 1
           fi
 
@@ -182,32 +184,60 @@ jobs:
           BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
           BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          # Every user-supplied input is passed through the environment and
+          # only ever expanded inside double quotes below — never pasted into
+          # the script text via ${{ }} — so shell-sensitive characters ($, `,
+          # quotes, spaces, ;, |, backslash, newlines) reach inspectSource.ts as literal
+          # values (e.g. the artist name ¥ØU$UK€ ¥UK1MAT$U).
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
+          INPUT_ENDPOINT: ${{ inputs.endpoint }}
+          INPUT_SAVE_BODY_PATH: ${{ inputs.save_body_path }}
+          INPUT_PRINT_FULL_BODY: ${{ inputs.print_full_body }}
+          INPUT_NO_FOLLOW_REDIRECTS: ${{ inputs.no_follow_redirects }}
+          INPUT_BODY_START: ${{ inputs.body_start }}
+          INPUT_BODY_LENGTH: ${{ inputs.body_length }}
+          INPUT_METHOD: ${{ inputs.method }}
+          INPUT_BODY: ${{ inputs.body }}
+          INPUT_WITH_CREDENTIALS: ${{ inputs.with_credentials }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+          INPUT_DEDUP_TITLE: ${{ inputs.dedup_title }}
+          INPUT_DEDUP_ARTISTS: ${{ inputs.dedup_artists }}
+          INPUT_DEDUP_VENUE: ${{ inputs.dedup_venue }}
+          INPUT_DEDUP_SUBVENUE: ${{ inputs.dedup_subvenue }}
+          INPUT_DEDUP_START: ${{ inputs.dedup_start }}
+          INPUT_DEDUP_URL: ${{ inputs.dedup_url }}
+          INPUT_TABLE: ${{ inputs.table }}
+          INPUT_DETAIL_CATEGORY: ${{ inputs.detail_category }}
+          INPUT_DETAIL_SOURCE: ${{ inputs.detail_source }}
+          INPUT_DETAIL_LIMIT: ${{ inputs.detail_limit }}
+          INPUT_DETAIL_OFFSET: ${{ inputs.detail_offset }}
         run: |
           set -u
-          args=(--mode="${{ inputs.mode }}")
-          [ -n "${{ inputs.source_id }}" ] && args+=(--source="${{ inputs.source_id }}")
-          [ -n "${{ inputs.endpoint }}" ] && args+=(--endpoint="${{ inputs.endpoint }}")
-          [ -n "${{ inputs.save_body_path }}" ] && args+=(--save-body="${{ inputs.save_body_path }}")
-          [ "${{ inputs.print_full_body }}" = "true" ] && args+=(--print-full-body)
-          [ "${{ inputs.no_follow_redirects }}" = "true" ] && args+=(--no-follow-redirects)
-          [ -n "${{ inputs.body_start }}" ] && args+=(--body-start="${{ inputs.body_start }}")
-          [ -n "${{ inputs.body_length }}" ] && args+=(--body-length="${{ inputs.body_length }}")
-          [ -n "${{ inputs.method }}" ] && args+=(--method="${{ inputs.method }}")
-          [ -n "${{ inputs.body }}" ] && args+=(--body="${{ inputs.body }}")
-          [ "${{ inputs.with_credentials }}" = "true" ] && args+=(--with-credentials)
-          [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
-          [ -n "${{ inputs.dedup_title }}" ] && args+=(--title="${{ inputs.dedup_title }}")
-          [ -n "${{ inputs.dedup_artists }}" ] && args+=(--artists="${{ inputs.dedup_artists }}")
-          [ -n "${{ inputs.dedup_venue }}" ] && args+=(--venue="${{ inputs.dedup_venue }}")
-          [ -n "${{ inputs.dedup_subvenue }}" ] && args+=(--subvenue="${{ inputs.dedup_subvenue }}")
-          [ -n "${{ inputs.dedup_start }}" ] && args+=(--start="${{ inputs.dedup_start }}")
-          [ -n "${{ inputs.dedup_url }}" ] && args+=(--url="${{ inputs.dedup_url }}")
-          [ -n "${{ inputs.table }}" ] && args+=(--table="${{ inputs.table }}")
-          [ -n "${{ inputs.detail_category }}" ] && args+=(--detail-category="${{ inputs.detail_category }}")
-          [ -n "${{ inputs.detail_source }}" ] && args+=(--detail-source="${{ inputs.detail_source }}")
-          [ -n "${{ inputs.detail_limit }}" ] && args+=(--detail-limit="${{ inputs.detail_limit }}")
-          [ -n "${{ inputs.detail_offset }}" ] && args+=(--detail-offset="${{ inputs.detail_offset }}")
-          if [ "${{ inputs.mode }}" = "reachability" ] || [ "${{ inputs.mode }}" = "youtube-preview-dry-run" ]; then
+          args=(--mode="$INPUT_MODE")
+          [ -n "$INPUT_SOURCE_ID" ] && args+=(--source="$INPUT_SOURCE_ID")
+          [ -n "$INPUT_ENDPOINT" ] && args+=(--endpoint="$INPUT_ENDPOINT")
+          [ -n "$INPUT_SAVE_BODY_PATH" ] && args+=(--save-body="$INPUT_SAVE_BODY_PATH")
+          [ "$INPUT_PRINT_FULL_BODY" = "true" ] && args+=(--print-full-body)
+          [ "$INPUT_NO_FOLLOW_REDIRECTS" = "true" ] && args+=(--no-follow-redirects)
+          [ -n "$INPUT_BODY_START" ] && args+=(--body-start="$INPUT_BODY_START")
+          [ -n "$INPUT_BODY_LENGTH" ] && args+=(--body-length="$INPUT_BODY_LENGTH")
+          [ -n "$INPUT_METHOD" ] && args+=(--method="$INPUT_METHOD")
+          [ -n "$INPUT_BODY" ] && args+=(--body="$INPUT_BODY")
+          [ "$INPUT_WITH_CREDENTIALS" = "true" ] && args+=(--with-credentials)
+          [ -n "$INPUT_LIMIT" ] && args+=(--limit="$INPUT_LIMIT")
+          [ -n "$INPUT_DEDUP_TITLE" ] && args+=(--title="$INPUT_DEDUP_TITLE")
+          [ -n "$INPUT_DEDUP_ARTISTS" ] && args+=(--artists="$INPUT_DEDUP_ARTISTS")
+          [ -n "$INPUT_DEDUP_VENUE" ] && args+=(--venue="$INPUT_DEDUP_VENUE")
+          [ -n "$INPUT_DEDUP_SUBVENUE" ] && args+=(--subvenue="$INPUT_DEDUP_SUBVENUE")
+          [ -n "$INPUT_DEDUP_START" ] && args+=(--start="$INPUT_DEDUP_START")
+          [ -n "$INPUT_DEDUP_URL" ] && args+=(--url="$INPUT_DEDUP_URL")
+          [ -n "$INPUT_TABLE" ] && args+=(--table="$INPUT_TABLE")
+          [ -n "$INPUT_DETAIL_CATEGORY" ] && args+=(--detail-category="$INPUT_DETAIL_CATEGORY")
+          [ -n "$INPUT_DETAIL_SOURCE" ] && args+=(--detail-source="$INPUT_DETAIL_SOURCE")
+          [ -n "$INPUT_DETAIL_LIMIT" ] && args+=(--detail-limit="$INPUT_DETAIL_LIMIT")
+          [ -n "$INPUT_DETAIL_OFFSET" ] && args+=(--detail-offset="$INPUT_DETAIL_OFFSET")
+          if [ "$INPUT_MODE" = "reachability" ] || [ "$INPUT_MODE" = "youtube-preview-dry-run" ]; then
             node --import tsx src/db/inspectSource.ts "${args[@]}"
           else
             node --env-file=.env.local --import tsx src/db/inspectSource.ts "${args[@]}"

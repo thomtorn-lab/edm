@@ -72,6 +72,82 @@ describe("parsePoolenProgramHtml", () => {
     const urls = entries.map((e) => e.detailUrl);
     expect(new Set(urls).size).toBe(urls.length);
   });
+
+  it("decodes the real programme page's WordPress `&#038;` in a ticket URL to a plain `&`", () => {
+    const ca7riel = entries.find((e) => e.detailUrl === "https://poolen.dk/concerts/ca7riel-paco-amoroso/");
+    expect(ca7riel?.ticketUrl).toBe("https://www.ticketmaster.dk/event/1665380278?language=da-dk&brand=dk_livenation");
+  });
+
+  it("leaves every entity-free real ticket URL byte-for-byte unchanged, and no extracted ticket URL keeps an entity", () => {
+    const rawHrefs = [...PROGRAM_HTML.matchAll(/<a\s+class="pc-shows__action[^"]*"\s*href="([^"]+)"/g)].map((m) => m[1]);
+    const ticketUrls = entries.map((e) => e.ticketUrl).filter((u): u is string => u !== null);
+    expect(ticketUrls.length).toBe(rawHrefs.length);
+    for (const url of ticketUrls) expect(url).not.toMatch(/&(#\d+|#x[0-9a-f]+|[a-z]+);/i);
+    const entityFree = rawHrefs.filter((h) => !h.includes("&"));
+    expect(entityFree.length).toBeGreaterThan(0);
+    for (const href of entityFree) expect(ticketUrls).toContain(href);
+  });
+});
+
+describe("Poolen ticket URL HTML-entity decoding (programme and detail page)", () => {
+  // [description, raw href attribute text, expected decoded URL]
+  const cases: Array<[string, string, string]> = [
+    ["WordPress decimal &#038;", "https://t.example/e/1?a=1&#038;b=2", "https://t.example/e/1?a=1&b=2"],
+    ["named &amp;", "https://t.example/e/1?a=1&amp;b=2", "https://t.example/e/1?a=1&b=2"],
+    ["hex &#x26;", "https://t.example/e/1?a=1&#x26;b=2", "https://t.example/e/1?a=1&b=2"],
+    ["several entities in one URL", "https://t.example/e?a=1&#038;b=2&amp;c=3", "https://t.example/e?a=1&b=2&c=3"],
+    ["an ordinary bare & stays as-is", "https://t.example/e/1?a=1&b=2", "https://t.example/e/1?a=1&b=2"],
+    ["a bare & that only looks like a name (no semicolon) stays as-is", "https://t.example/e?x=1&copy=2", "https://t.example/e?x=1&copy=2"],
+    ["an unknown named entity is preserved, not mangled", "https://t.example/e?a=1&foo;b=2", "https://t.example/e?a=1&foo;b=2"],
+    ["percent-encoding is left alone (not URL-decoded)", "https://t.example/e?q=R%26B&#038;x=1", "https://t.example/e?q=R%26B&x=1"],
+    ["a double-escaped &amp;#038; is decoded exactly once", "https://t.example/e?a=1&amp;#038;b=2", "https://t.example/e?a=1&#038;b=2"],
+    ["an out-of-range numeric reference falls back to the raw href instead of dropping the event", "https://t.example/e?a=1&#99999999;b", "https://t.example/e?a=1&#99999999;b"],
+  ];
+
+  const programBlock = (href: string) => `
+    <ol class="pc-shows__list">
+      <li class="pc-shows__item is-hl-yellow">
+        <a class="pc-shows__title" href="https://poolen.dk/concerts/test-show/">
+          <span class="pc-shows__title-text">Test Show</span>
+        </a>
+        <time class="pc-shows__when" datetime="2026-10-02"></time>
+        <a
+          class="pc-shows__action pc-chip pc-chip--pink"
+          href="${href}"
+          target="_blank"
+        >Buy tix</a>
+      </li>
+    </ol>`;
+
+  const entry: PoolenProgramEntry = {
+    title: "Kevin de Vries & Massano",
+    detailUrl: "https://poolen.dk/concerts/kevin-de-vries-massano/",
+    ticketUrl: null,
+    dateText: "2026-10-02",
+  };
+
+  it.each(cases)("programme page: %s", (_desc, href, expected) => {
+    const [parsed] = parsePoolenProgramHtml(programBlock(href));
+    expect(parsed?.ticketUrl).toBe(expected);
+  });
+
+  it.each(cases)("detail page: %s", (_desc, href, expected) => {
+    const html = ELECTRONIC_HTML.replace(
+      'href="https://secure.tickster.com/j67gvutmnrgtf9j?c=6c52ydp"',
+      `href="${href}"`,
+    );
+    expect(html).not.toBe(ELECTRONIC_HTML); // the substitution really happened
+    expect(parsePoolenEventDetailHtml(html, entry).ticketUrl).toBe(expected);
+  });
+
+  it("does not re-decode the programme entry's (already decoded) fallback ticket URL", () => {
+    const withoutTicketLink = ELECTRONIC_HTML.replace(
+      /<a\s+class="pc-concert__action pc-chip pc-chip--pink"\s*href="[^"]+"/,
+      `<a class="pc-concert__action pc-chip pc-chip--pink"`,
+    );
+    const event = parsePoolenEventDetailHtml(withoutTicketLink, { ...entry, ticketUrl: "https://t.example/e?a=1&#038;literal" });
+    expect(event.ticketUrl).toBe("https://t.example/e?a=1&#038;literal");
+  });
 });
 
 describe("parsePoolenEventDetailHtml — electronic event with an explicit specific-subgenre keyword", () => {
@@ -133,7 +209,8 @@ describe("parsePoolenEventDetailHtml — non-electronic event must not be publis
     expect(event.venueName).toBe("Poolen");
     expect(event.startDatetime).toBe("2026-09-25T16:30:00.000Z"); // 18:30 CEST
     expect(event.priceFrom).toBe(445);
-    expect(event.ticketUrl).toBe("https://www.ticketmaster.dk/event/1665380278?language=da-dk&#038;brand=dk_livenation");
+    // The real page's href carries WordPress's `&#038;` — decoded to a plain `&`.
+    expect(event.ticketUrl).toBe("https://www.ticketmaster.dk/event/1665380278?language=da-dk&brand=dk_livenation");
   });
 
   it("resolves no genre hint at all — the bio is genuinely trap/rock/pop/experimental text with no electronic keyword anywhere", () => {

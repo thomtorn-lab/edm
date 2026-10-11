@@ -102,6 +102,24 @@ export interface PoolenProgramEntry {
  * (see parsePoolenEventDetailHtml), so a missing `<a>` here just means
  * ticketUrl stays null for that entry.
  */
+/**
+ * A captured `href="..."` value is still HTML attribute text, so entities
+ * in it must be decoded before it is usable as a URL — WordPress emits
+ * query-string ampersands as `&#038;` (and other templates use `&amp;`),
+ * which a browser decodes to `&` but which were previously stored verbatim
+ * (e.g. Ticketmaster's `?language=da-dk&#038;brand=dk_livenation`). Bare
+ * `&` (not followed by a recognised `name;`/`#nnn;`) passes through
+ * unchanged. If decoding ever throws (an out-of-range numeric reference),
+ * the raw value is kept rather than dropping the whole event over it.
+ */
+function decodeHrefAttribute(rawHref: string): string {
+  try {
+    return decodeHtmlEntities(rawHref).trim();
+  } catch {
+    return rawHref;
+  }
+}
+
 export function parsePoolenProgramHtml(html: string): PoolenProgramEntry[] {
   const blocks = html.match(/<li class="pc-shows__item[^"]*"[^>]*>[\s\S]*?<\/li>/g) ?? [];
   const results: PoolenProgramEntry[] = [];
@@ -121,7 +139,7 @@ export function parsePoolenProgramHtml(html: string): PoolenProgramEntry[] {
 
       const ticketMatch = block.match(/<a\s+class="pc-shows__action[^"]*"\s*href="([^"]+)"/);
 
-      results.push({ title, detailUrl, ticketUrl: ticketMatch ? ticketMatch[1] : null, dateText });
+      results.push({ title, detailUrl, ticketUrl: ticketMatch ? decodeHrefAttribute(ticketMatch[1]) : null, dateText });
     } catch {
       // A single malformed record must never take down the whole sync.
       continue;
@@ -178,7 +196,7 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
   // same as the pre-relaunch parser: only the unambiguous "Cancelled"/"Sold
   // out" values are trusted as hints, nothing else is guessed.
   const ticketLinkMatch = infoHtml.match(/<a\s+class="pc-concert__action[^"]*"\s*href="([^"]+)"/);
-  const ticketUrl = ticketLinkMatch ? ticketLinkMatch[1] : entry.ticketUrl;
+  const ticketUrl = ticketLinkMatch ? decodeHrefAttribute(ticketLinkMatch[1]) : entry.ticketUrl;
   const statusMatch = infoHtml.match(/<span class="pc-concert__action[^"]*">\s*([^<]+?)\s*<\/span>/);
   const statusText = statusMatch ? statusMatch[1].trim().toLowerCase() : null;
   const soldOutHint = statusText === "sold out" ? true : null;
