@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "purpose": "isolated scheduled QA persistence verification",
+  "test_id": "electroniccph-qa-persistence-2026-10-12",
+  "phase": "created",
+  "run_count": 0,
+  "created_date": "2026-10-12",
+  "last_run": null,
+  "history": [],
+  "production_data": false
+}
