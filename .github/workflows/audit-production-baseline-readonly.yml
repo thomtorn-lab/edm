@@ -9,7 +9,8 @@ name: Audit Production Baseline (Read-Only)
 # new-source-expansion baseline (Section 1) but deliberately generic and
 # reusable for any future "where do we stand right now" check.
 #
-# Safety: workflow_dispatch only. BEGIN, SET LOCAL default_transaction_read_only,
+# Safety: workflow_dispatch only. BEGIN READ ONLY (asserted via SHOW
+# transaction_read_only before any query; Postgres rejects every write),
 # SELECT-only queries, ROLLBACK — same pattern as every other read-only audit
 # workflow in this repo.
 
@@ -55,9 +56,12 @@ jobs:
 
           try {
             await client.connect();
-            await client.query("BEGIN");
-            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("BEGIN READ ONLY");
             await client.query("SET LOCAL statement_timeout = '25s'");
+            const ro = await client.query("SHOW transaction_read_only");
+            if (ro.rows[0]?.transaction_read_only !== "on") {
+              throw new Error("Refusing to run: transaction_read_only is \"" + ro.rows[0]?.transaction_read_only + "\", expected \"on\".");
+            }
 
             const upcoming = await client.query(
               `SELECT e.id, e.title, e.venue_id, v.name AS venue_name, e.canonical_source_id,

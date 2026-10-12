@@ -1,4 +1,5 @@
 import { Client } from "pg";
+import { beginReadOnlyTransaction } from "./readOnlyTransaction";
 import { getSourceHealth, describeSourceHealth } from "@/lib/sourceHealth";
 import { resolveVenue } from "@/lib/normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "@/lib/dedup";
@@ -51,8 +52,9 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  * Safety, matching the existing verify-db-readonly.yml / snapshot.cjs
  * convention used by this repo's preview-verification workflows:
  *   - Every DB-touching mode opens exactly ONE dedicated pg connection,
- *     BEGINs an explicit transaction, sets default_transaction_read_only via
- *     SET LOCAL (transaction-scoped, never session/role/database-scoped),
+ *     opens a genuinely read-only transaction (BEGIN READ ONLY, verified via
+ *     SHOW transaction_read_only before any query runs — see
+ *     src/db/readOnlyTransaction.ts; Postgres itself rejects any write),
  *     issues only SELECT statements, always ROLLBACKs, then closes the
  *     connection. No migration, seed, sync, or write path is ever reached
  *     from this file.
@@ -91,8 +93,7 @@ async function withReadOnlyTx<T>(fn: (client: Client) => Promise<T>): Promise<T>
   const client = new Client({ connectionString });
   await client.connect();
   try {
-    await client.query("BEGIN");
-    await client.query("SET LOCAL default_transaction_read_only = on");
+    await beginReadOnlyTransaction(client);
     await client.query("SET LOCAL statement_timeout = '20s'");
     const result = await fn(client);
     await client.query("ROLLBACK");
