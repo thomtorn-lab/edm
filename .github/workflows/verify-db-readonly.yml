@@ -11,8 +11,8 @@ name: Verify Database (Read-Only)
 #   - workflow_dispatch only — never runs on push/PR/schedule.
 #   - No migrations, no seed script, no application sync, no deployment.
 #   - The verification script opens exactly one dedicated pg connection,
-#     BEGINs an explicit transaction, sets `default_transaction_read_only`
-#     via SET LOCAL (transaction-scoped only, never session-scoped, never
+#     opens a genuinely read-only transaction (BEGIN READ ONLY, asserted via
+#     SHOW transaction_read_only — transaction-scoped only, never
 #     ALTER ROLE/ALTER DATABASE, never persisted), issues only SELECT
 #     statements, always ROLLBACKs, then explicitly closes the connection.
 #   - DATABASE_URL is read only into this step's environment — never
@@ -90,9 +90,12 @@ jobs:
 
           try {
             await client.connect();
-            await client.query("BEGIN");
-            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("BEGIN READ ONLY");
             await client.query("SET LOCAL statement_timeout = '20s'");
+            const ro = await client.query("SHOW transaction_read_only");
+            if (ro.rows[0]?.transaction_read_only !== "on") {
+              throw new Error("Refusing to run: transaction_read_only is \"" + ro.rows[0]?.transaction_read_only + "\", expected \"on\".");
+            }
 
             section("events: seedDev fixture IDs (e-001..e-052)");
             const evRes = await client.query(

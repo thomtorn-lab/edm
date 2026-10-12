@@ -15,8 +15,8 @@ name: Correct Final EDM Relevance Rule Exclusions
 #
 # Safety (tightened 2026-08-30 follow-up review — target precision):
 #   - workflow_dispatch only.
-#   - Default (`execute: false`) is a strictly READ-ONLY dry run: BEGIN,
-#     SET LOCAL default_transaction_read_only, SELECT and print the exact
+#   - Default (`execute: false`) is a strictly READ-ONLY dry run: BEGIN READ
+#     ONLY (asserted via SHOW transaction_read_only), SELECT and print the exact
 #     matching rows (id, exact title, venue name, source, start_datetime,
 #     published, primary_genre/confidence), ROLLBACK. No write happens.
 #   - The WRITE PATH (execute=true) matches ONLY on an EXACT title (case-
@@ -102,9 +102,15 @@ jobs:
 
           try {
             await client.connect();
-            await client.query("BEGIN");
+            // Dry run: a genuinely read-only transaction, so Postgres itself rejects
+            // any write. (SET LOCAL default_transaction_read_only only affected
+            // FUTURE transactions and never protected this one.)
+            await client.query(execute ? "BEGIN" : "BEGIN READ ONLY");
             if (!execute) {
-              await client.query("SET LOCAL default_transaction_read_only = on");
+              const ro = await client.query("SHOW transaction_read_only");
+              if (ro.rows[0]?.transaction_read_only !== "on") {
+                throw new Error("Refusing to run: transaction_read_only is \"" + ro.rows[0]?.transaction_read_only + "\", expected \"on\".");
+              }
             }
             await client.query("SET LOCAL statement_timeout = '20s'");
 

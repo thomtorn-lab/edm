@@ -7,7 +7,8 @@ name: Audit Source Completeness (Read-Only)
 # our own system actually holds — without inferring completeness from bare
 # row counts.
 #
-# Safety: workflow_dispatch only. BEGIN, SET LOCAL default_transaction_read_only,
+# Safety: workflow_dispatch only. BEGIN READ ONLY (asserted via SHOW
+# transaction_read_only before any query; Postgres rejects every write),
 # SELECT-only queries, ROLLBACK, explicit connection close — same pattern as
 # verify-db-readonly.yml and correct-final-relevance-exclusions.yml's dry run.
 
@@ -63,9 +64,12 @@ jobs:
 
           try {
             await client.connect();
-            await client.query("BEGIN");
-            await client.query("SET LOCAL default_transaction_read_only = on");
+            await client.query("BEGIN READ ONLY");
             await client.query("SET LOCAL statement_timeout = '25s'");
+            const ro = await client.query("SHOW transaction_read_only");
+            if (ro.rows[0]?.transaction_read_only !== "on") {
+              throw new Error("Refusing to run: transaction_read_only is \"" + ro.rows[0]?.transaction_read_only + "\", expected \"on\".");
+            }
 
             for (const sourceId of SOURCE_IDS) {
               console.log(`\n########## ${sourceId} ##########`);

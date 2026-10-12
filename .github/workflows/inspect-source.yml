@@ -11,7 +11,7 @@ name: Inspect Source
 # Safety, unchanged from the one-off workflows it replaces:
 #   - workflow_dispatch only — never runs on push/PR/schedule.
 #   - Every DB-touching mode opens one dedicated read-only Postgres
-#     transaction (BEGIN; SET LOCAL default_transaction_read_only = on;
+#     transaction (BEGIN READ ONLY, asserted via SHOW transaction_read_only;
 #     ...; ROLLBACK) — see src/db/inspectSource.ts's withReadOnlyTx.
 #   - No migration, seed, sync, or write path is ever reachable from here.
 #   - DATABASE_URL is read only into the step environment via .env.local,
