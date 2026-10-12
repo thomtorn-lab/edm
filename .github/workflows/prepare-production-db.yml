@@ -73,8 +73,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require explicit confirmation
+        # User inputs reach shell scripts only via step-level env vars expanded
+        # inside double quotes — never pasted into the script via ${{ }}. With
+        # the old interpolation, a confirm value containing two `"` (e.g.
+        # a" "b) made `[` error out (status 2) and this gate PASSED (fail-open);
+        # a quoted variable is always exactly one test operand. Same pattern as
+        # inspect-source.yml / validate-source.yml; see
+        # src/db/prepareProductionDbWorkflow.test.ts.
+        env:
+          INPUT_CONFIRM: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "PREPARE-PRODUCTION-DB" ]; then
+          if [ "$INPUT_CONFIRM" != "PREPARE-PRODUCTION-DB" ]; then
             echo "::error::Confirmation input did not match. Re-run this workflow and enter exactly: PREPARE-PRODUCTION-DB"
             exit 1
           fi
@@ -115,10 +124,14 @@ jobs:
 
       - name: Seed production reference data (full bootstrap, or one scoped source if source_id was given)
         if: ${{ !inputs.migrations_only }}
+        # source_id is passed literally to syncSourceRegistry.ts, which itself
+        # rejects anything not matching src-[a-z0-9-]+ or not in the registry.
+        env:
+          INPUT_SOURCE_ID: ${{ inputs.source_id }}
         run: |
-          if [ -n "${{ inputs.source_id }}" ]; then
-            echo "Scoped run: syncing only source id '${{ inputs.source_id }}' (no venue writes, no other source's row touched)."
-            npm run db:sync-source-registry -- "${{ inputs.source_id }}"
+          if [ -n "$INPUT_SOURCE_ID" ]; then
+            printf "Scoped run: syncing only source id '%s' (no venue writes, no other source's row touched).\n" "$INPUT_SOURCE_ID"
+            npm run db:sync-source-registry -- "$INPUT_SOURCE_ID"
           else
             npm run db:seed:production
           fi
