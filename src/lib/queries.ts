@@ -78,7 +78,14 @@ export async function getDiscoveryQueueForAdmin(): Promise<DiscoveryQueueItem[]>
 
 async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<EventWithVenue[]> {
   if (eventRows.length === 0) return [];
-  const venueRows = await db.select().from(venues);
+  // Only the venues these events actually reference (Supabase egress work,
+  // 2026-10-12): this used to read the whole venues table on every call, so
+  // a single event page, its calendar.ics download, and each per-venue
+  // getEventsForVenue call all shipped every venue row (long descriptions,
+  // profiles, rooms JSON) to look up one or a handful by id. The lookup below
+  // is by id only, so fetching just the referenced ids gives the same result.
+  const venueIds = [...new Set(eventRows.map((row) => row.venueId))];
+  const venueRows = await db.select().from(venues).where(inArray(venues.id, venueIds));
   const byId = new Map(venueRows.map((v) => [v.id, venueRowToRecord(v)]));
   const result: EventWithVenue[] = [];
   for (const row of eventRows) {
@@ -175,15 +182,35 @@ function isAcceptedPreviewRow<
   return Boolean(row && row.status === "accepted" && !row.manualBlock && row.videoId);
 }
 
+/**
+ * Column projections for the two render-time cache reads below (Supabase
+ * egress work, 2026-10-12). Neither read ever uses `evidence` (the full
+ * YouTube search record kept for audits and re-verification, by far the
+ * largest column), `query`, the channel id or the timestamps, so they are
+ * never fetched here. The write/match path (src/db/youtubePreview.ts) and
+ * the diagnostics keep reading whole rows.
+ */
+const previewAvailabilityColumns = {
+  artistNameNormalized: artistYoutubePreviewCache.artistNameNormalized,
+  status: artistYoutubePreviewCache.status,
+  manualBlock: artistYoutubePreviewCache.manualBlock,
+  videoId: artistYoutubePreviewCache.videoId,
+};
+const previewDetailColumns = {
+  ...previewAvailabilityColumns,
+  videoTitle: artistYoutubePreviewCache.videoTitle,
+  channelTitle: artistYoutubePreviewCache.channelTitle,
+};
+
 export async function getArtistYoutubePreviewForLineup(artistNames: string[]): Promise<ArtistYoutubePreview | null> {
   if (artistNames.length === 0) return null;
   const normalizedToRaw = new Map(artistNames.map((name) => [normalizeArtistName(cleanArtistDisplayName(name)), name]));
   const normalizedNames = [...normalizedToRaw.keys()];
 
-  let rows: (typeof artistYoutubePreviewCache.$inferSelect)[];
+  let rows: Pick<typeof artistYoutubePreviewCache.$inferSelect, keyof typeof previewDetailColumns>[];
   try {
     rows = await db
-      .select()
+      .select(previewDetailColumns)
       .from(artistYoutubePreviewCache)
       .where(inArray(artistYoutubePreviewCache.artistNameNormalized, normalizedNames));
   } catch (err) {
@@ -234,10 +261,10 @@ export async function getArtistPreviewAvailabilityForLineups(lineups: string[][]
   }
   if (allNormalized.size === 0) return lineups.map(() => false);
 
-  let rows: (typeof artistYoutubePreviewCache.$inferSelect)[];
+  let rows: Pick<typeof artistYoutubePreviewCache.$inferSelect, keyof typeof previewAvailabilityColumns>[];
   try {
     rows = await db
-      .select()
+      .select(previewAvailabilityColumns)
       .from(artistYoutubePreviewCache)
       .where(inArray(artistYoutubePreviewCache.artistNameNormalized, [...allNormalized]));
   } catch (err) {
