@@ -1,0 +1,75 @@
+name: Audit Published Events Window (Read-Only)
+
+# Read-only editorial screening input: every PUBLISHED event taking place in
+# a Copenhagen-local date window — including events with no canonical source
+# (admin-pasted), which the per-source "Audit Event Forensics" workflow
+# cannot reach — with only the fields an editorial review needs (title,
+# local start/end, venue, genre, artists, status flags, public + source
+# URLs, shortened description) and a separate list of duplicate candidates.
+# Never prints change histories, admin notes, override fields or secrets.
+#
+# Window: from_date 00:00 → the morning after to_date at 06:00 (Copenhagen),
+# plus multi-day events already running. Edge rows are flagged, not dropped.
+# Logic and tests: src/db/auditEventsWindow.ts / auditEventsWindow.test.ts.
+#
+# Safety: workflow_dispatch only. BEGIN READ ONLY (verified with SHOW
+# transaction_read_only before any query; the run aborts otherwise),
+# SELECT-only queries, ROLLBACK. Inputs reach the script only via env, never
+# interpolated into the run: script.
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_date:
+        description: "First day of the window, Copenhagen local (YYYY-MM-DD)"
+        required: true
+      to_date:
+        description: "Last day of the window, inclusive (YYYY-MM-DD); its after-midnight hours up to 06:00 are included"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        env:
+          INPUT_FROM_DATE: ${{ inputs.from_date }}
+          INPUT_TO_DATE: ${{ inputs.to_date }}
+        run: |
+          for value in "$INPUT_FROM_DATE" "$INPUT_TO_DATE"; do
+            if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              printf '::error::Dates must be YYYY-MM-DD, got: %s\n' "$value"
+              exit 1
+            fi
+          done
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run events window audit
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          INPUT_FROM_DATE: ${{ inputs.from_date }}
+          INPUT_TO_DATE: ${{ inputs.to_date }}
+        run: node --import tsx src/db/auditEventsWindowCli.ts --from="$INPUT_FROM_DATE" --to="$INPUT_TO_DATE"
