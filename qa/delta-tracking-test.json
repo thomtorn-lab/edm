@@ -2,10 +2,16 @@
   "schema_version": 1,
   "purpose": "isolated scheduled QA persistence verification",
   "test_id": "electroniccph-qa-persistence-2026-10-12",
-  "phase": "created",
-  "run_count": 0,
+  "phase": "scheduled_write_verified",
+  "run_count": 1,
   "created_date": "2026-10-12",
-  "last_run": null,
-  "history": [],
+  "last_run": "2026-10-12T12:27:59.482Z",
+  "history": [
+    {
+      "run_count": 1,
+      "at_utc": "2026-10-12T12:27:59.482Z",
+      "phase": "scheduled_write_verified"
+    }
+  ],
   "production_data": false
 }
