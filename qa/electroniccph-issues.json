@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "repository": "thomtorn-lab/edm",
+  "branch": "claude/copenhagen-edm-events-site-3lo273",
+  "created_at": "2026-10-12",
+  "updated_at": "2026-10-12",
+  "last_successful_run": null,
+  "bootstrap_note": "Historical examples are not verified as currently open. This is a partial baseline, not a complete QA history. Do not report imported issues as NEW solely because of import.",
+  "issues": [
+    {
+      "id": "teletech-2026-12-18-poolen",
+      "event": "Teletech",
+      "date": "2026-12-18",
+      "venue": "Poolen",
+      "issue_type": "incorrect_official_link_and_status",
+      "priority": "P1",
+      "status": "historical_unverified",
+      "first_seen": "2026-10-11",
+      "last_verified": null,
+      "last_changed": null,
+      "previous_finding": "Previous QA reported a link to the 2025 edition, SOLD OUT status and absent 2026 lineup",
+      "source_url": "https://poolen.dk/concerts/teletech-2/",
+      "history": [
+        {
+          "date": "2026-10-11",
+          "type": "historical_report",
+          "note": "Imported from prior QA summary; current status not independently verified"
+        }
+      ]
+    },
+    {
+      "id": "lido-pimienta-2026-10-29-alice",
+      "event": "Lido Pimienta",
+      "date": "2026-10-29",
+      "venue": "ALICE",
+      "issue_type": "unsupported_genre",
+      "priority": "P2",
+      "status": "historical_unverified",
+      "first_seen": "2026-10-11",
+      "last_verified": null,
+      "last_changed": null,
+      "previous_finding": "Previous QA questioned Dubstep classification",
+      "source_url": "",
+      "history": [
+        {
+          "date": "2026-10-11",
+          "type": "historical_report",
+          "note": "Imported from prior QA summary; current status not independently verified"
+        }
+      ]
+    },
+    {
+      "id": "iboga-30-years-2027-02-13-poolen",
+      "event": "IBOGA 30 Years",
+      "date": "2027-02-13",
+      "venue": "Poolen",
+      "issue_type": "genre_classification",
+      "priority": "P2",
+      "status": "historical_unverified",
+      "first_seen": "2026-10-11",
+      "last_verified": null,
+      "last_changed": null,
+      "previous_finding": "Previous QA questioned Trance + House; examine Psytrance",
+      "source_url": "",
+      "history": [
+        {
+          "date": "2026-10-11",
+          "type": "historical_report",
+          "note": "Imported from prior QA summary; current status not independently verified"
+        }
+      ]
+    },
+    {
+      "id": "intercell-2026-11-13-poolen",
+      "event": "Intercell",
+      "date": "2026-11-13",
+      "venue": "Poolen",
+      "issue_type": "incomplete_lineup",
+      "priority": "P2",
+      "status": "historical_unverified",
+      "first_seen": "2026-10-11",
+      "last_verified": null,
+      "last_changed": null,
+      "previous_finding": "Previous QA reported missing Luke Slater, Milo Makua, Oscar Mulero and Philippa Pacho b2b Rene Wise",
+      "source_url": "https://poolen.dk/concerts/intercell/",
+      "history": [
+        {
+          "date": "2026-10-11",
+          "type": "historical_report",
+          "note": "Imported from prior QA summary; current status not independently verified"
+        }
+      ]
+    },
+    {
+      "id": "gagxdas-xxxvi-2026-10-24-den-anden-side",
+      "event": "GAGxDAS XXXVI",
+      "date": "2026-10-24",
+      "venue": "Den Anden Side",
+      "issue_type": "genre_and_lineup",
+      "priority": "P2",
+      "status": "historical_unverified",
+      "first_seen": "2026-10-11",
+      "last_verified": null,
+      "last_changed": null,
+      "previous_finding": "Previous QA questioned generic Electronic genre and missing PIPPA",
+      "source_url": "https://ra.co/events/2550098",
+      "history": [
+        {
+          "date": "2026-10-11",
+          "type": "historical_report",
+          "note": "Imported from prior QA summary; current status not independently verified"
+        }
+      ]
+    },
+    {
+      "id": "caiva-vixen-steamboi-2026-10-24-hangaren",
+      "event": "CAIVA, Vixen, steamboi",
+      "date": "2026-10-24",
+      "venue": "Hangaren",
+      "issue_type": "genre_and_about",
+      "priority": "P2",
+      "status": "historical_unverified",
+      "first_seen": "2026-10-11",
+      "last_verified": null,
+      "last_changed": null,
+      "previous_finding": "Previous QA suggested checking secondary Trance genre and missing ABOUT",
+      "source_url": "",
+      "history": [
+        {
+          "date": "2026-10-11",
+          "type": "historical_report",
+          "note": "Imported from prior QA summary; current status not independently verified"
+        }
+      ]
+    }
+  ]
+}
