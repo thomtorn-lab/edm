@@ -42,6 +42,7 @@ const PG_BIN = findPgBin();
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0; // initdb refuses to run as root
 const CAN_RUN = PG_BIN !== null && !isRoot;
 const WRITE_REJECTED = "25006"; // read_only_sql_transaction
+const OLD_PATTERN_QUERY = /query\(\s*["'`]\s*SET\s+(LOCAL\s+)?default_transaction_read_only/i;
 
 let dir = "";
 let client: Client;
@@ -141,7 +142,8 @@ describe.runIf(CAN_RUN)("read-only transactions against a real, disposable Postg
     const yaml = readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", workflow), "utf-8");
     const script = yaml.match(/cat > \.\/\.[\w-]+\.mjs <<'EOF'\n([\s\S]*?)\n\s*EOF\n/)?.[1];
     if (!script) throw new Error(`no inline .mjs heredoc in ${workflow}`);
-    expect(script).not.toMatch(/SET\s+(LOCAL\s+)?default_transaction_read_only/);
+    // Any actual query that sets the old, non-protective setting (comments explaining it are fine).
+    expect(script).not.toMatch(OLD_PATTERN_QUERY);
     const lines = script.split("\n");
     const start = lines.findIndex((l) => l.includes('"BEGIN READ ONLY"'));
     if (start === -1) throw new Error(`no BEGIN READ ONLY in ${workflow}`);
@@ -208,7 +210,7 @@ describe.runIf(CAN_RUN)("read-only transactions against a real, disposable Postg
 
   it("inspectSource.ts opens every DB-touching mode through beginReadOnlyTransaction", () => {
     const src = readFileSync(path.join(__dirname, "inspectSource.ts"), "utf-8");
-    expect(src).not.toMatch(/SET\s+(LOCAL\s+)?default_transaction_read_only/);
+    expect(src).not.toMatch(OLD_PATTERN_QUERY);
     const body = src.slice(src.indexOf("async function withReadOnlyTx"), src.indexOf("const result = await fn(client);"));
     expect(body).toContain("await beginReadOnlyTransaction(client);");
     expect(body).not.toMatch(/client\.query\("BEGIN"\)/);
