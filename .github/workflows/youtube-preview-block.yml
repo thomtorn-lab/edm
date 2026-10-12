@@ -80,10 +80,19 @@ jobs:
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
 
       - name: Run YouTube preview manual block/unblock
+        # User inputs reach this script only via step-level env vars expanded
+        # inside double quotes — never pasted into it via ${{ }} — so artist
+        # names like ¥ØU$UK€ ¥UK1MAT$U, A$$AP Rocky or Rock "n" Roll arrive
+        # exactly as typed (the old interpolation expanded $/$$, stripped quotes
+        # and ran `cmd`/$(cmd)). See src/db/youtubePreviewWorkflows.test.ts.
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_ARTIST: ${{ inputs.artist }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
         run: |
           set -u
-          args=(--mode="${{ inputs.mode }}" --artist="${{ inputs.artist }}")
-          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
+          args=(--mode="$INPUT_MODE" --artist="$INPUT_ARTIST")
+          [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
           node --env-file=.env.local --import tsx src/db/youtubePreviewBlock.ts "${args[@]}"
 
       - name: Remove local env file
