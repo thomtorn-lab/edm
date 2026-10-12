@@ -107,15 +107,25 @@ jobs:
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
 
       - name: Run YouTube preview backfill
+        # User inputs reach this script only via step-level env vars expanded
+        # inside double quotes — never pasted into it via ${{ }} — so artist
+        # names like ¥ØU$UK€ ¥UK1MAT$U, A$$AP Rocky or Rock "n" Roll arrive
+        # exactly as typed (the old interpolation expanded $/$$, stripped quotes
+        # and ran `cmd`/$(cmd)). See src/db/youtubePreviewWorkflows.test.ts.
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+          INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
+          INPUT_ARTIST: ${{ inputs.artist }}
         run: |
           set -u
-          args=(--mode="${{ inputs.mode }}")
-          [ -n "${{ inputs.confirm }}" ] && args+=(--confirm="${{ inputs.confirm }}")
-          [ -n "${{ inputs.limit }}" ] && args+=(--limit="${{ inputs.limit }}")
-          [ -n "${{ inputs.batch_size }}" ] && args+=(--batch-size="${{ inputs.batch_size }}")
-          [ -n "${{ inputs.artist }}" ] && args+=(--artist="${{ inputs.artist }}")
+          args=(--mode="$INPUT_MODE")
+          [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
+          [ -n "$INPUT_LIMIT" ] && args+=(--limit="$INPUT_LIMIT")
+          [ -n "$INPUT_BATCH_SIZE" ] && args+=(--batch-size="$INPUT_BATCH_SIZE")
+          [ -n "$INPUT_ARTIST" ] && args+=(--artist="$INPUT_ARTIST")
           node --env-file=.env.local --import tsx src/db/youtubePreviewBackfill.ts "${args[@]}"
 
       - name: Remove local env file
