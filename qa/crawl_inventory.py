@@ -1,50 +1,89 @@
 #!/usr/bin/env python3
-"""Read-only ElectronicCPH crawl inventory. NOT a complete editorial QA."""
+"""Deterministic read-only QA evidence collector; editorial verification remains separate."""
 import json, re, urllib.request, urllib.parse, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from html.parser import HTMLParser
-
-BASE = "https://www.electroniccph.com"
-UA = {"User-Agent": "ElectronicCPH-QA/1.0 (+read-only monitoring)"}
-class Links(HTMLParser):
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
+BASE="https://www.electroniccph.com"
+HEADERS={"User-Agent":"ElectronicCPH-QA/1.0 (read-only)"}
+class PageParser(HTMLParser):
     def __init__(self):
-        super().__init__(); self.links = []
-    def handle_starttag(self, tag, attrs):
-        a = dict(attrs)
-        if tag == "a" and a.get("href"): self.links.append(a["href"])
+        super().__init__(); self.links=[]; self.title=""; self.in_title=False; self.canonical=None; self.metadata={}
+    def handle_starttag(self,tag,attrs):
+        a=dict(attrs)
+        if tag=="a" and a.get("href"): self.links.append(a["href"])
+        if tag=="title": self.in_title=True
+        if tag=="link" and a.get("rel")=="canonical": self.canonical=a.get("href")
+        if tag=="meta" and a.get("property") in ("og:title","og:url","og:type"): self.metadata[a["property"]]=a.get("content")
+    def handle_endtag(self,tag):
+        if tag=="title": self.in_title=False
+    def handle_data(self,data):
+        if self.in_title: self.title+=data
 def fetch(url):
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=25) as r:
-        body = r.read(3000000)
-        return {"status": r.status, "final_url": r.url, "html": body.decode("utf-8", "replace")}
-def sitemap_urls(url, seen=None):
-    seen = seen or set()
+    req=urllib.request.Request(url,headers=HEADERS)
+    with urllib.request.urlopen(req,timeout=25) as response:
+        return {"status":response.status,"final_url":response.url,"html":response.read(3000000).decode("utf-8","replace")}
+def sitemap_urls(url,seen=None):
+    if seen is None: seen=set()
     if url in seen: return []
     seen.add(url)
-    raw = fetch(url)["html"]
-    root = ET.fromstring(raw)
-    locs = [n.text for n in root.iter() if n.tag.endswith("}loc") and n.text]
-    if root.tag.endswith("sitemapindex"):
-        result = []
-        for loc in locs: result.extend(sitemap_urls(loc, seen))
-        return result
+    root=ET.fromstring(fetch(url)["html"])
+    locs=[node.text for node in root.iter() if node.tag.rsplit("}",1)[-1]=="loc" and node.text]
+    if root.tag.rsplit("}",1)[-1]=="sitemapindex":
+        found=[]
+        for loc in locs: found+=sitemap_urls(loc,seen)
+        return found
     return locs
+def normalized_url(url):
+    p=urllib.parse.urlsplit(url)
+    return (p.netloc.lower()+p.path.rstrip("/")).lower()
+def is_event_url(url):
+    return bool(re.search(r"/events?/",urllib.parse.urlsplit(url).path))
+def inspect(url):
+    page=fetch(url); parser=PageParser(); parser.feed(page["html"])
+    links=sorted(set(urllib.parse.urljoin(url,l) for l in parser.links if l.startswith(("http://","https://","/"))))
+    return {"url":url,"status":page["status"],"final_url":page["final_url"],"title":parser.title.strip(),"canonical":parser.canonical,"metadata":parser.metadata,"outbound_links":links}
+def validate_register(obj):
+    if not isinstance(obj,dict) or obj.get("schema_version")!=1 or not isinstance(obj.get("issues"),list): raise ValueError("Invalid QA register schema")
+    ids=[x.get("id") for x in obj["issues"]]
+    if any(not isinstance(i,str) or not i for i in ids) or len(ids)!=len(set(ids)): raise ValueError("Duplicate or missing issue ID")
+    if any(x.get("status") not in ("open","resolved","historical_unverified") for x in obj["issues"]): raise ValueError("Invalid issue status")
+    return True
+def compare_with_register(findings,register):
+    validate_register(register)
+    previous={x["id"]:x for x in register["issues"]}
+    delta=[]
+    for item in findings:
+        old=previous.get(item["id"])
+        if old is None: delta.append({**item,"delta":"candidate_new_unverified"})
+        elif old["status"]=="resolved": delta.append({**item,"delta":"candidate_reappeared_unverified"})
+    return delta
 def main():
-    result = {"started_at": datetime.now(timezone.utc).isoformat(), "scope": "read-only sitemap inventory and detail-link crawl; not full QA", "pages": [], "errors": []}
-    try: urls = sitemap_urls(BASE + "/sitemap.xml")
-    except Exception as exc:
-        result["errors"].append({"url": BASE + "/sitemap.xml", "error": str(exc)}); urls = []
-    event_urls = sorted(set(u for u in urls if re.search(r"/events?/", urllib.parse.urlparse(u).path)))
-    result["sitemap_event_url_count"] = len(event_urls)
-    for url in event_urls:
-        try:
-            p = fetch(url); parser = Links(); parser.feed(p["html"])
-            links = sorted(set(urllib.parse.urljoin(url, x) for x in parser.links if x.startswith(("http", "/"))))
-            result["pages"].append({"url": url, "status": p["status"], "final_url": p["final_url"], "outbound_links": links})
-        except Exception as exc: result["errors"].append({"url": url, "error": str(exc)})
-    result["finished_at"] = datetime.now(timezone.utc).isoformat()
-    result["complete_inventory"] = bool(event_urls) and not result["errors"]
-    with open("qa-inventory.json", "w", encoding="utf-8") as f: json.dump(result, f, ensure_ascii=False, indent=2)
-    print(f"Event detail URLs: {len(event_urls)}; fetched: {len(result['pages'])}; errors: {len(result['errors'])}")
-    if not result["complete_inventory"]: raise SystemExit(1)
-if __name__ == "__main__": main()
+    result={"started_at":datetime.now(timezone.utc).isoformat(),"scope":"sitemap-based technical inventory only; NOT complete editorial QA","pages":[],"errors":[],"findings":[],"manual_verification_required":["homepage inventory reconciliation","artist-by-artist external verification","official source and lineup comparison","genre accuracy","external discovery omissions","ticket and official link end-to-end verification"]}
+    try: urls=sitemap_urls(BASE+"/sitemap.xml")
+    except Exception as exc: result["errors"].append({"url":BASE+"/sitemap.xml","error":str(exc)});urls=[]
+    events=sorted(set(u for u in urls if is_event_url(u)))
+    result["sitemap_event_url_count"]=len(events)
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures={pool.submit(inspect,url):url for url in events}
+        for future in as_completed(futures):
+            url=futures[future]
+            try: result["pages"].append(future.result())
+            except Exception as exc: result["errors"].append({"url":url,"error":str(exc)})
+    result["pages"].sort(key=lambda x:x["url"])
+    by_canonical=defaultdict(list)
+    for p in result["pages"]:
+        if not p["title"]: result["findings"].append({"type":"missing_title","url":p["url"],"verification":"technical"})
+        if p["canonical"] and normalized_url(p["canonical"])!=normalized_url(p["url"]):
+            result["findings"].append({"type":"canonical_mismatch_candidate","url":p["url"],"canonical":p["canonical"],"verification":"manual"})
+        by_canonical[normalized_url(p["canonical"] or p["url"])].append(p["url"])
+    for canonical,matches in by_canonical.items():
+        if len(matches)>1: result["findings"].append({"type":"duplicate_canonical_candidate","urls":matches,"verification":"manual"})
+    result["finished_at"]=datetime.now(timezone.utc).isoformat()
+    result["technical_inventory_complete"]=bool(events) and not result["errors"] and len(result["pages"])==len(events)
+    result["full_qa_complete"]=False
+    with open("qa-inventory.json","w",encoding="utf-8") as out: json.dump(result,out,indent=2,ensure_ascii=False)
+    print("Detail URLs:",len(events),"Fetched:",len(result["pages"]),"Errors:",len(result["errors"]),"Candidates:",len(result["findings"]))
+    if not result["technical_inventory_complete"]: raise SystemExit(1)
+if __name__=="__main__": main()
