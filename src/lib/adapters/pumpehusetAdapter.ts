@@ -301,13 +301,55 @@ export function extractLineupFromBodyLines(lines: string[]): { artists: string[]
   return { artists: names, consumedRange: [startIdx, endIdx] };
 }
 
+/**
+ * A support_bands entry the venue explicitly labels as support, e.g.
+ * `band_name: "Support: Parashoot + Lisa Fosmark"` (real, from the recorded
+ * fetch_concerts fixture). Such an entry lists ONLY the support acts — the
+ * headliner is the event title — unlike unlabelled entries, which on
+ * multi-act nights already list every act including the title's own.
+ */
+const SUPPORT_LABEL = /^support\s*:\s*/i;
+
+/** Title-derived names that are placeholders, not acts ("MPH 360° XP + GUESTS"). */
+const PLACEHOLDER_ACT = /^(?:special\s+)?guests?$|^tba$/i;
+
 /** Support-band names + free-text bios, when present — real per-band evidence from the venue's own JSON, not a title guess. */
-function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): { artists: string[]; description: string | null } {
-  const artists = bands.map((b) => b.band_name.trim()).filter(Boolean);
+function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): {
+  artists: string[];
+  description: string | null;
+  hasSupportLabel: boolean;
+} {
+  let hasSupportLabel = false;
+  const artists = bands.flatMap((b) => {
+    const name = b.band_name.trim();
+    if (!SUPPORT_LABEL.test(name)) return name ? [name] : [];
+    hasSupportLabel = true;
+    // A labelled entry joins several distinct support acts with "+" or ",".
+    return name
+      .replace(SUPPORT_LABEL, "")
+      .split(/\s*\+\s*|\s*,\s*/)
+      .map((n) => n.trim())
+      .filter(Boolean);
+  });
   const bios = bands
     .map((b) => htmlToText(b.band_description ?? "").replace(/\n/g, " ").trim())
     .filter(Boolean);
-  return { artists, description: bios.length > 0 ? bios.join("\n\n") : null };
+  return { artists, description: bios.length > 0 ? bios.join("\n\n") : null, hasSupportLabel };
+}
+
+/**
+ * Headliner(s) from the title first, then the labelled support acts —
+ * previously a "Support: X" entry became the event's ONLY artist and the
+ * headliner was dropped (nimino -> ["Support: Montee"]).
+ */
+function headlinerPlusSupport(title: string, support: string[]): string[] {
+  const seen = new Set<string>();
+  return [...artistsFromTitle(title).filter((n) => !PLACEHOLDER_ACT.test(n)), ...support].filter((n) => {
+    const key = n.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function sameArtists(a: string[], b: string[]): boolean {
@@ -451,8 +493,12 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
       const listingConfirmsElektronisk = !!concert.genre && concert.genre.toLowerCase().includes(PUMPEHUSET_GENRE_FILTER.toLowerCase());
 
       const bands = Array.isArray(concert.support_bands) ? concert.support_bands : [];
-      const { artists: bandArtists, description } = artistsAndDescriptionFromBands(bands);
-      const artists = bandArtists.length > 0 ? bandArtists : artistsFromTitle(title);
+      const { artists: bandArtists, description, hasSupportLabel } = artistsAndDescriptionFromBands(bands);
+      const artists = hasSupportLabel
+        ? headlinerPlusSupport(title, bandArtists)
+        : bandArtists.length > 0
+          ? bandArtists
+          : artistsFromTitle(title);
 
       // Only credited now when the listing's own field already says so —
       // otherwise left null (never guessed) for enrichWithShowTimes to
