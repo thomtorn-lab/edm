@@ -1,5 +1,9 @@
 name: ElectronicCPH QA technical inventory
 on:
+  pull_request:
+    paths:
+      - 'qa/**'
+      - '.github/workflows/electroniccph-qa-inventory.yml'
   workflow_dispatch:
   schedule:
     - cron: '5 4 * * *'
