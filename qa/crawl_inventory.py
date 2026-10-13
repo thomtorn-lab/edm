@@ -10,17 +10,22 @@ BASE="https://www.electroniccph.com"
 HEADERS={"User-Agent":"ElectronicCPH-QA/1.0 (read-only)"}
 class PageParser(HTMLParser):
     def __init__(self):
-        super().__init__(); self.links=[]; self.title=""; self.in_title=False; self.canonical=None; self.metadata={}
+        super().__init__(); self.links=[]; self.title=""; self.in_title=False; self.canonical=None; self.metadata={}; self.anchors=[]; self.active_anchor=None
     def handle_starttag(self,tag,attrs):
         a=dict(attrs)
-        if tag=="a" and a.get("href"): self.links.append(a["href"])
+        if tag=="a" and a.get("href"):
+            self.links.append(a["href"])
+            self.active_anchor={"href":a["href"],"text":""}
         if tag=="title": self.in_title=True
         if tag=="link" and a.get("rel")=="canonical": self.canonical=a.get("href")
         if tag=="meta" and a.get("property") in ("og:title","og:url","og:type"): self.metadata[a["property"]]=a.get("content")
     def handle_endtag(self,tag):
         if tag=="title": self.in_title=False
+        if tag=="a" and self.active_anchor is not None:
+            self.anchors.append(self.active_anchor); self.active_anchor=None
     def handle_data(self,data):
         if self.in_title: self.title+=data
+        if self.active_anchor is not None: self.active_anchor["text"]+=data
 def fetch(url):
     req=urllib.request.Request(url,headers=HEADERS)
     with urllib.request.urlopen(req,timeout=25) as response:
@@ -44,7 +49,7 @@ def is_event_url(url):
 def inspect(url):
     page=fetch(url); parser=PageParser(); parser.feed(page["html"])
     links=sorted(set(urllib.parse.urljoin(url,l) for l in parser.links if l.startswith(("http://","https://","/"))))
-    return {"url":url,"status":page["status"],"final_url":page["final_url"],"title":parser.title.strip(),"canonical":parser.canonical,"metadata":parser.metadata,"outbound_links":links}
+    return {"url":url,"status":page["status"],"final_url":page["final_url"],"title":parser.title.strip(),"canonical":parser.canonical,"metadata":parser.metadata,"outbound_links":links,"action_links":[{"label":a["text"].strip(),"url":urllib.parse.urljoin(url,a["href"])} for a in parser.anchors if re.search(r"ticket|billet|official event",a["text"],re.I)]}
 def validate_register(obj):
     if not isinstance(obj,dict) or obj.get("schema_version")!=1 or not isinstance(obj.get("issues"),list): raise ValueError("Invalid QA register schema")
     ids=[x.get("id") for x in obj["issues"]]
@@ -66,6 +71,16 @@ def main():
     except Exception as exc: result["errors"].append({"url":BASE+"/sitemap.xml","error":str(exc)});urls=[]
     events=sorted(set(u for u in urls if is_event_url(u)))
     result["sitemap_event_url_count"]=len(events)
+    try:
+        homepage=inspect(BASE+"/")
+        home_events=sorted(set(u for u in homepage["outbound_links"] if is_event_url(u) and urllib.parse.urlsplit(u).netloc==urllib.parse.urlsplit(BASE).netloc))
+        result["homepage_event_urls"]=home_events
+        result["homepage_event_url_count"]=len(home_events)
+        missing=sorted(set(normalized_url(u) for u in home_events)-set(normalized_url(u) for u in events))
+        if missing: result["findings"].append({"type":"homepage_events_missing_from_sitemap","urls":missing,"verification":"technical"})
+    except Exception as exc:
+        result["errors"].append({"url":BASE+"/","error":str(exc)})
+        result["homepage_event_url_count"]=None
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures={pool.submit(inspect,url):url for url in events}
         for future in as_completed(futures):
@@ -93,7 +108,7 @@ def main():
         result["register_read_validated"]=False
         result["errors"].append({"url":str(register_path),"error":str(exc)})
     result["finished_at"]=datetime.now(timezone.utc).isoformat()
-    result["technical_inventory_complete"]=bool(events) and not result["errors"] and len(result["pages"])==len(events)
+    result["technical_inventory_complete"]=bool(events) and not result["errors"] and len(result["pages"])==len(events) and result["homepage_event_url_count"] is not None
     result["full_qa_complete"]=False
     with open("qa-inventory.json","w",encoding="utf-8") as out: json.dump(result,out,indent=2,ensure_ascii=False)
     print("Detail URLs:",len(events),"Fetched:",len(result["pages"]),"Errors:",len(result["errors"]),"Candidates:",len(result["findings"]))
