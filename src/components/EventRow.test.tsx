@@ -931,31 +931,30 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
   });
 });
 
-describe("EventRow — one-event SoundCloud UX pilot (2026-10-09), relabeled to AUDIO (UI-refinement round)", () => {
+describe("EventRow — AUDIO indicator (venue-provided SoundCloud links)", () => {
   afterEach(cleanup);
 
   const PILOT_EVENT_ID = "e-bf9d6551";
   const PILOT_ARTISTS = ["TIM ANDRESEN", "REXIE LEX"];
+  const withAudio = (overrides: Parameters<typeof makeEvent>[0] = {}) => ({ ...makeEvent(overrides), hasAudioLinks: true });
 
-  it("shows the AUDIO indicator for the pilot event when its own verified artists are in the lineup", () => {
-    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
+  it("shows the AUDIO indicator when the listing page says the event has links", () => {
+    render(<EventRow event={withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
     expect(screen.getByText("Audio")).toBeTruthy();
     expect(screen.queryByText("Soundcloud")).toBeNull();
     expect(screen.getByLabelText("Go to audio links for Test Event")).toBeTruthy();
   });
 
-  it("shows no AUDIO indicator for any other event, even with the exact same verified artist names in its lineup", () => {
-    render(<EventRow event={makeEvent({ id: "e-some-other-event", artists: PILOT_ARTISTS })} />);
+  it("shows no AUDIO indicator when hasAudioLinks is false or unset", () => {
+    render(<EventRow event={{ ...makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasAudioLinks: false }} />);
     expect(screen.queryByText("Audio")).toBeNull();
-  });
-
-  it("shows no AUDIO indicator for the pilot event id if its lineup no longer contains either verified artist", () => {
-    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: ["SOMEONE ELSE"] })} />);
+    cleanup();
+    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
     expect(screen.queryByText("Audio")).toBeNull();
   });
 
   it("deep-links to the event detail page's #soundcloud anchor, not the plain event URL, and navigates in the same tab", () => {
-    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
+    render(<EventRow event={withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
     const link = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(link.tagName).toBe("A");
     expect(link.getAttribute("href")).toBe("/events/test-event#soundcloud");
@@ -964,20 +963,20 @@ describe("EventRow — one-event SoundCloud UX pilot (2026-10-09), relabeled to 
   });
 
   it("never links directly to soundcloud.com from the overview", () => {
-    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
+    render(<EventRow event={withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
     const link = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(link.getAttribute("href")).not.toContain("soundcloud.com");
   });
 
   it("keeps the music-note glyph", () => {
-    render(<EventRow event={makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
+    render(<EventRow event={withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
     const link = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(link.textContent).toContain("♫");
   });
 
   it("can render alongside the VIDEO indicator as siblings in the same metadata row", () => {
     render(
-      <EventRow event={{ ...makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasArtistPreview: true }} />,
+      <EventRow event={{ ...withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasArtistPreview: true }} />,
     );
     const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     const audioLink = screen.getByRole("link", { name: "Go to audio links for Test Event" });
@@ -985,23 +984,9 @@ describe("EventRow — one-event SoundCloud UX pilot (2026-10-09), relabeled to 
   });
 
   it("matches the VIDEO badge's pill styling exactly (same border/rounded shape/size/spacing, no filled-accent treatment)", () => {
-    render(<EventRow event={{ ...makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasArtistPreview: true }} />);
+    render(<EventRow event={{ ...withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), hasArtistPreview: true }} />);
     const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     const audioLink = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(audioLink.className).toBe(videoLink.className);
-  });
-
-  // Phase 1 expansion (2026-10-13): Culture Box nights where the venue's own
-  // page links the exact lineup name to the verified profile.
-  const DUSKY_NIGHT = { artists: ["DUSKY", "SAMUEL REES"], startDatetime: "2026-11-13T21:00:00.000Z" };
-
-  it("shows the AUDIO indicator on a Culture Box night with a verified lineup artist", () => {
-    render(<EventRow event={makeEvent({ ...DUSKY_NIGHT, canonicalSourceId: "src-culture-box" })} />);
-    expect(screen.getByLabelText("Go to audio links for Test Event").getAttribute("href")).toBe("/events/test-event#soundcloud");
-  });
-
-  it("shows no AUDIO indicator for the same lineup and night from another source", () => {
-    render(<EventRow event={makeEvent({ ...DUSKY_NIGHT, canonicalSourceId: "src-hangaren" })} />);
-    expect(screen.queryByText("Audio")).toBeNull();
   });
 });

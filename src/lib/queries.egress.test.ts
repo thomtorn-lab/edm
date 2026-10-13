@@ -57,8 +57,14 @@ vi.mock("@/db/client", () => ({
   db: drizzle({ client: fakeClient as never, schema }),
 }));
 
-const { getEventBySlugWithVenue, getEventsForVenue, getArtistYoutubePreviewForLineup, getArtistPreviewAvailabilityForLineups } =
-  await import("./queries");
+const {
+  getEventBySlugWithVenue,
+  getEventsForVenue,
+  getArtistYoutubePreviewForLineup,
+  getArtistPreviewAvailabilityForLineups,
+  getSoundcloudLinksForLineup,
+  getSoundcloudAvailabilityForEvents,
+} = await import("./queries");
 
 /** A complete row for `table` with type-appropriate defaults, keyed by DB column name. */
 function row(table: Table, overrides: Record<string, unknown>): Record<string, unknown> {
@@ -183,5 +189,67 @@ describe("YouTube preview cache render-time reads select only the fields they us
 
     await expect(getArtistYoutubePreviewForLineup(["Eric Prydz", "Abstainer"])).resolves.toBeNull();
     await expect(getArtistPreviewAvailabilityForLineups([["Eric Prydz"], ["Abstainer"]])).resolves.toEqual([false, false]);
+  });
+});
+
+describe("SoundCloud artist link reads (2026-10-13) select only what the pages use", () => {
+  const link = (eventId: string, artistName: string, url: string) =>
+    row(schema.eventSoundcloudLinks, { event_id: eventId, source_id: "src-culture-box", artist_name: artistName, url });
+  const soundcloudQueries = () => sent.filter((q) => /from "event_soundcloud_links"/i.test(q.text));
+  const NOT_BLOCKED = /not exists \(select 1 from "soundcloud_link_blocks" where "soundcloud_link_blocks"\."url" = "event_soundcloud_links"\."url"\)/;
+
+  beforeEach(() => {
+    tableRows.event_soundcloud_links = [
+      link("e-1", "GUY J", "https://soundcloud.com/guy-j"),
+      link("e-1", "TIM ANDRESEN", "https://soundcloud.com/tim-andresen"),
+      link("e-2", "ALX", "https://soundcloud.com/alx"),
+    ];
+  });
+
+  it("event detail: one query for that event only, artist_name + url, blocked URLs excluded in SQL", async () => {
+    const result = await getSoundcloudLinksForLineup("e-1", ["TIM ANDRESEN", "SOMEONE", "GUY J"]);
+
+    expect(result).toEqual([
+      { name: "TIM ANDRESEN", url: "https://soundcloud.com/tim-andresen" },
+      { name: "GUY J", url: "https://soundcloud.com/guy-j" },
+    ]);
+    const [query, ...extra] = soundcloudQueries();
+    expect(extra).toHaveLength(0);
+    expect(selectedColumns(query.text)).toEqual(["artist_name", "url"]);
+    expect(query.text).toMatch(/"event_soundcloud_links"\."event_id" = \$1/);
+    expect(query.text).toMatch(NOT_BLOCKED);
+    expect(query.values).toEqual(["e-1"]);
+  });
+
+  it("event detail with no lineup: no query", async () => {
+    await expect(getSoundcloudLinksForLineup("e-1", [])).resolves.toEqual([]);
+    expect(soundcloudQueries()).toHaveLength(0);
+  });
+
+  it("list pages: ONE batched query for every listed event, event_id + artist_name only", async () => {
+    const result = await getSoundcloudAvailabilityForEvents([
+      { id: "e-1", artists: ["GUY J"] },
+      { id: "e-2", artists: ["SHK"] }, // a row exists, but not for a name in this lineup
+      { id: "e-3", artists: [] },
+    ]);
+
+    expect(result).toEqual([true, false, false]);
+    const [query, ...extra] = soundcloudQueries();
+    expect(extra).toHaveLength(0);
+    expect(selectedColumns(query.text)).toEqual(["event_id", "artist_name"]);
+    expect(query.text).toMatch(NOT_BLOCKED);
+    expect(query.values).toEqual(["e-1", "e-2"]); // events without a lineup are not even sent
+  });
+
+  it("list pages with no lineups at all: no query", async () => {
+    await expect(getSoundcloudAvailabilityForEvents([{ id: "e-3", artists: [] }])).resolves.toEqual([false]);
+    expect(soundcloudQueries()).toHaveLength(0);
+  });
+
+  it("a failing read degrades to no links / no indicator, never an error", async () => {
+    fakeClient.query.mockRejectedValueOnce(new Error("relation does not exist"));
+    await expect(getSoundcloudLinksForLineup("e-1", ["GUY J"])).resolves.toEqual([]);
+    fakeClient.query.mockRejectedValueOnce(new Error("relation does not exist"));
+    await expect(getSoundcloudAvailabilityForEvents([{ id: "e-1", artists: ["GUY J"] }])).resolves.toEqual([false]);
   });
 });

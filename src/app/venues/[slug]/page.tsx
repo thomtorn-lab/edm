@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
-import { getEventsForVenue, getVenueById, getVenueBySlug } from "@/lib/queries";
+import { getEventsForVenue, getSoundcloudAvailabilityForEvents, getVenueById, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import { buildVenueSeoDescription, buildVenueSeoTitle } from "@/lib/seoMetadata";
@@ -66,6 +66,7 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
   const now = new Date();
   const rawEvents = (await Promise.all([venue.id, ...groupMemberIds].map((id) => getEventsForVenue(id)))).flat();
   const upcoming = sortByStart(rawEvents.filter((e) => !isPastEvent(e, now)));
+  const audioAvailability = await getSoundcloudAvailabilityForEvents(upcoming);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -105,8 +106,8 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
           <EmptyState title="No upcoming events listed" hint="Check the official website for the latest programme." />
         ) : (
           <ul>
-            {upcoming.map((event) => (
-              <EventRow key={event.id} event={event} />
+            {upcoming.map((event, i) => (
+              <EventRow key={event.id} event={{ ...event, hasAudioLinks: audioAvailability[i] }} />
             ))}
           </ul>
         )}

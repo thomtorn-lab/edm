@@ -1,0 +1,93 @@
+name: SoundCloud Link Manual Block
+
+# Removes a wrong venue-provided SoundCloud link without a code deploy
+# (2026-10-13). Runs src/db/soundcloudLinkBlock.ts: blocks/unblocks ONE
+# normalized profile URL in soundcloud_link_blocks. The sync never reads or
+# writes that table, so a block survives every later sync and hides the
+# profile on every event until unblocked. Never touches `events`,
+# `event_soundcloud_links` or any other table, and never calls SoundCloud.
+# Pages read blocks on every request, so the effect is immediate.
+#
+# "plan" (default) is read-only: prints the block row and every stored link
+# using that profile. block/unblock need the matching confirm token.
+#
+# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) prints the current state; "block"/"unblock" add/remove the block.'
+        required: true
+        type: choice
+        options:
+          - plan
+          - block
+          - unblock
+        default: plan
+      url:
+        description: 'The SoundCloud profile link exactly as shown on the site, e.g. "https://soundcloud.com/handle".'
+        required: true
+      reason:
+        description: "block mode only, optional: short note on why (stored with the block)."
+        required: false
+      confirm:
+        description: "block/unblock modes only: type BLOCK-SOUNDCLOUD-LINK or UNBLOCK-SOUNDCLOUD-LINK (matching the chosen mode) to confirm the write."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soundcloud-link-block
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run SoundCloud link manual block/unblock
+        # Inputs reach the script only via step-level env vars expanded inside
+        # double quotes — never pasted into it via ${{ }}. See
+        # src/db/soundcloudLinkBlockWorkflow.test.ts.
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_URL: ${{ inputs.url }}
+          INPUT_REASON: ${{ inputs.reason }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -u
+          args=(--mode="$INPUT_MODE" --url="$INPUT_URL")
+          [ -n "$INPUT_REASON" ] && args+=(--reason="$INPUT_REASON")
+          [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
+          node --env-file=.env.local --import tsx src/db/soundcloudLinkBlock.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local

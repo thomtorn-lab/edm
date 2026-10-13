@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getPublishedEventsWithVenue } from "@/lib/queries";
+import { getPublishedEventsWithVenue, getSoundcloudAvailabilityForEvents } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { GENRES, mainGenreOf, mainGenrePagePath, matchesMainGenre } from "@/lib/taxonomy";
 import EventRow from "@/components/EventRow";
@@ -39,6 +39,7 @@ export default async function TechnoGenrePage() {
   const now = new Date();
   const events = await getPublishedEventsWithVenue();
   const upcoming = sortByStart(events.filter((e) => !isPastEvent(e, now) && matchesMainGenre(e.subgenres, GENRE)));
+  const audioAvailability = await getSoundcloudAvailabilityForEvents(upcoming);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -61,8 +62,8 @@ export default async function TechnoGenrePage() {
           <EmptyState title="No upcoming techno events listed" hint="New events are added continuously — check back soon." />
         ) : (
           <ul>
-            {upcoming.map((event) => (
-              <EventRow key={event.id} event={event} />
+            {upcoming.map((event, i) => (
+              <EventRow key={event.id} event={{ ...event, hasAudioLinks: audioAvailability[i] }} />
             ))}
           </ul>
         )}

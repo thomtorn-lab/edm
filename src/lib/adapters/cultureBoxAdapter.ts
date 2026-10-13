@@ -3,6 +3,7 @@ import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText, extractAnchorTexts, extractLowestDkkAmount } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
+import { acceptedLinksByCandidate, classifyLineupLinks, type LineupLinkObservation } from "./cultureBoxSoundcloudLinks";
 import type { GenreSlug } from "../taxonomy";
 
 /**
@@ -105,16 +106,32 @@ interface RoomBlock {
   roomName: string;
   showcaseTitle: string | null;
   artists: string[];
+  /** Every lineup anchor's text and href, for the SoundCloud profile links (see cultureBoxSoundcloudLinks.ts). */
+  lineupLinks: { name: string; href: string }[];
 }
 
-function parseRoomBlocks(articleHtml: string): RoomBlock[] {
+/** Same anchors, same text as extractAnchorTexts — plus each anchor's href (anchors without one are left out, which makes the night incomplete). */
+function extractLineupLinks(pHtml: string): { name: string; href: string }[] {
+  const out: { name: string; href: string }[] = [];
+  for (const m of pHtml.matchAll(/<a\b([^>]*)>([^<]*)<\/a>/gi)) {
+    const name = decodeHtmlEntities(m[2]).trim();
+    const href = m[1].match(/href="([^"]*)"/i);
+    if (name && href) out.push({ name, href: decodeHtmlEntities(href[1]) });
+  }
+  return out;
+}
+
+function parseRoomBlocks(articleHtml: string): { blocks: RoomBlock[]; skippedBlocks: number } {
   const blocks: RoomBlock[] = [];
+  let skippedBlocks = 0;
   for (const blockMatch of articleHtml.matchAll(/<div class="post-block__content__block">([\s\S]*?)<\/div>/g)) {
     const blockHtml = blockMatch[1];
     const h3Match = blockHtml.match(/<h3[^>]*>([^<]*)<\/h3>/);
-    if (!h3Match) continue; // malformed room block — skip, never take down the whole article
-    const roomName = decodeHtmlEntities(h3Match[1]).trim();
-    if (!roomName) continue;
+    const roomName = h3Match ? decodeHtmlEntities(h3Match[1]).trim() : "";
+    if (!roomName) {
+      skippedBlocks++; // malformed room block — skip, never take down the whole article
+      continue;
+    }
 
     const pMatch = blockHtml.match(/<p>([\s\S]*?)<\/p>/);
     const pHtml = pMatch ? pMatch[1] : "";
@@ -126,14 +143,39 @@ function parseRoomBlocks(articleHtml: string): RoomBlock[] {
 
     const artists = extractAnchorTexts(pHtml);
 
-    blocks.push({ roomName, showcaseTitle, artists });
+    blocks.push({ roomName, showcaseTitle, artists, lineupLinks: extractLineupLinks(pHtml) });
   }
-  return blocks;
+  return { blocks, skippedBlocks };
+}
+
+/**
+ * Whether one night's lineup links were read completely, so a link missing
+ * from it is reliably gone at the source (SoundcloudLinkReport.absenceDocumented):
+ * no room block was skipped, at least one lineup anchor was read, and every
+ * <a> in the night's lineup area (room blocks up to the footer) became a
+ * parsed name + href. An anchor without href, a name wrapped in extra
+ * markup, a second paragraph or a truncated block all leave anchors
+ * unaccounted for and make the night incomplete. Matches exactly on every
+ * night of both recorded listings (2026-08-17 and 2026-10-13).
+ */
+function isLineupFullyParsed(articleHtml: string, roomBlocks: RoomBlock[], skippedBlocks: number): boolean {
+  if (skippedBlocks > 0) return false;
+  const parsed = roomBlocks.reduce((n, room) => n + room.lineupLinks.length, 0);
+  if (parsed === 0) return false;
+  const start = articleHtml.indexOf("post-block__content__block");
+  const end = articleHtml.indexOf("post-block__footer", start);
+  if (start === -1 || end === -1) return false;
+  const anchorsInLineupArea = articleHtml.slice(start, end).match(/<a\b/gi)?.length ?? 0;
+  return anchorsInLineupArea === parsed;
 }
 
 export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_EVENTS_URL): RawCandidateEvent[] {
   const articles = html.match(/<article class="post-block[^"]*">[\s\S]*?<\/article>/g) ?? [];
   const results: RawCandidateEvent[] = [];
+  // Lineup links of every night on the page, classified together after the
+  // loop: a conflict (one name, two profiles) can span nights.
+  const lineupLinks: LineupLinkObservation[] = [];
+  const lineupComplete: boolean[] = [];
 
   for (const article of articles) {
     try {
@@ -177,7 +219,7 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
         endDatetime = copenhagenWallClockToUtc(endDayKey, doorHours.endHour, doorHours.endMinute).toISOString();
       }
 
-      const roomBlocks = parseRoomBlocks(article);
+      const { blocks: roomBlocks, skippedBlocks } = parseRoomBlocks(article);
       if (roomBlocks.length === 0) continue; // no usable room content — nothing to publish for this night
 
       // ONE canonical event per night (see header comment): title and
@@ -255,13 +297,23 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
         genreHint,
         genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
       });
+      for (const room of roomBlocks) {
+        for (const link of room.lineupLinks) lineupLinks.push({ candidateIndex: results.length - 1, ...link });
+      }
+      lineupComplete[results.length - 1] = isLineupFullyParsed(article, roomBlocks, skippedBlocks);
     } catch {
       // A single malformed record must never take down the whole sync.
       continue;
     }
   }
 
-  return results;
+  // Every parsed night gets a report; only a completely parsed night
+  // documents that a link it no longer carries is gone (see isLineupFullyParsed).
+  const accepted = acceptedLinksByCandidate(classifyLineupLinks(lineupLinks), results.length);
+  return results.map((candidate, i) => ({
+    ...candidate,
+    soundcloudLinkReport: { links: accepted[i], absenceDocumented: lineupComplete[i] === true },
+  }));
 }
 
 /**

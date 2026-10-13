@@ -67,9 +67,12 @@ function makeEvent(id: string, subgenres: GenreSlug[], startDatetime: string, ov
   } as EventWithVenue;
 }
 
-vi.mock("@/lib/queries", () => ({ getPublishedEventsWithVenue: vi.fn() }));
+vi.mock("@/lib/queries", () => ({
+  getPublishedEventsWithVenue: vi.fn(),
+  getSoundcloudAvailabilityForEvents: vi.fn(async (list: unknown[]) => list.map(() => false)),
+}));
 
-const { getPublishedEventsWithVenue } = await import("@/lib/queries");
+const { getPublishedEventsWithVenue, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
 const pageModule = await import("./page");
 const { default: TechnoGenrePage, metadata } = pageModule;
 
@@ -97,6 +100,14 @@ describe("/genres/techno — metadata", () => {
 
 describe("/genres/techno — page", () => {
   const FUTURE = "2099-01-01T20:00:00.000Z";
+
+  it("keeps the AUDIO indicator: one batched lookup for the listed events, pill on the events that have links", async () => {
+    vi.mocked(getSoundcloudAvailabilityForEvents).mockImplementationOnce(async (list) => list.map((e) => e.id === "with-audio"));
+    await renderPage([makeEvent("with-audio", ["techno"], FUTURE), makeEvent("without", ["techno"], FUTURE)]);
+    expect(getSoundcloudAvailabilityForEvents).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText("Audio")).toHaveLength(1);
+    expect(screen.getByLabelText("Go to audio links for Event with-audio")).toBeTruthy();
+  });
 
   it("renders the H1 and a short intro naming the included genres from the taxonomy", async () => {
     await renderPage([]);

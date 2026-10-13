@@ -131,12 +131,12 @@ describe("toHomepageEvent — minimal projection", () => {
     overriddenFields: ["officialEventUrl"],
     subVenue: "Main",
   });
-  const projected = toHomepageEvent(full, true);
+  const projected = toHomepageEvent(full, true, true);
 
   it("carries only the fields the homepage reads", () => {
     expect(Object.keys(projected).sort()).toEqual(
       [
-        "artists", "canonicalSourceId", "dateChanged", "description", "endDatetime", "facebookUrl", "hasArtistPreview", "id",
+        "artists", "canonicalSourceId", "dateChanged", "description", "endDatetime", "facebookUrl", "hasArtistPreview", "hasAudioLinks", "id",
         "officialEventUrl", "otherSourceUrls", "overriddenFields", "postponed", "priceFrom", "primaryGenre", "residentAdvisorUrl",
         "slug", "soldOut", "startDatetime", "subVenue", "subgenres", "ticketUrl", "title", "venue",
       ].sort(),
@@ -149,10 +149,12 @@ describe("toHomepageEvent — minimal projection", () => {
 
   it("copies every carried value unchanged", () => {
     for (const [key, value] of Object.entries(projected)) {
-      if (key === "venue" || key === "hasArtistPreview") continue;
+      if (key === "venue" || key === "hasArtistPreview" || key === "hasAudioLinks") continue;
       expect(value, key).toEqual(full[key as keyof EventWithVenue]);
     }
     expect(projected.hasArtistPreview).toBe(true);
+    expect(projected.hasAudioLinks).toBe(true);
+    expect(toHomepageEvent(full, false).hasAudioLinks).toBe(false);
   });
 
   it("keeps the calendar button's content identical (full description, times, venue, links)", () => {

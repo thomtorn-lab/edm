@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getArtistYoutubePreviewForLineup, getEventBySlugWithVenue, getSourceEventLinksForEvent } from "@/lib/queries";
+import {
+  getArtistYoutubePreviewForLineup,
+  getEventBySlugWithVenue,
+  getSoundcloudLinksForLineup,
+  getSourceEventLinksForEvent,
+} from "@/lib/queries";
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, getSourceProvenance } from "@/lib/links";
@@ -15,7 +20,6 @@ import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
 import ArtistVideoPreview from "@/components/ArtistVideoPreview";
 import SoundcloudLinks from "@/components/SoundcloudLinks";
-import { getSoundcloudPilotArtists } from "@/lib/soundcloudPilot";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -83,8 +87,10 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
-  const artistVideoPreview = await getArtistYoutubePreviewForLineup(event.artists);
-  const soundcloudPilotArtists = getSoundcloudPilotArtists(event);
+  const [artistVideoPreview, soundcloudArtists] = await Promise.all([
+    getArtistYoutubePreviewForLineup(event.artists),
+    getSoundcloudLinksForLineup(event.id, event.artists),
+  ]);
   const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
   const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
@@ -267,7 +273,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         />
       )}
 
-      {soundcloudPilotArtists.length > 0 && <SoundcloudLinks artists={soundcloudPilotArtists} />}
+      {soundcloudArtists.length > 0 && <SoundcloudLinks artists={soundcloudArtists} />}
 
       {event.description && (
         <div className="mt-8">

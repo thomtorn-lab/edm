@@ -70,9 +70,11 @@ vi.mock("@/lib/queries", () => ({
   getEventBySlugWithVenue: vi.fn(),
   getSourceEventLinksForEvent: vi.fn(),
   getArtistYoutubePreviewForLineup: vi.fn(),
+  getSoundcloudLinksForLineup: vi.fn(),
 }));
 
-const { getEventBySlugWithVenue, getSourceEventLinksForEvent, getArtistYoutubePreviewForLineup } = await import("@/lib/queries");
+const { getEventBySlugWithVenue, getSourceEventLinksForEvent, getArtistYoutubePreviewForLineup, getSoundcloudLinksForLineup } =
+  await import("@/lib/queries");
 const { default: EventDetailPage } = await import("./page");
 
 type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
@@ -87,12 +89,18 @@ type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
  *
  * getArtistYoutubePreviewForLineup defaults to null (no cached YouTube
  * Artist Preview match) — none of the tests in this file are about that
- * feature, so it stays off unless a test opts in.
+ * feature, so it stays off unless a test opts in. getSoundcloudLinksForLineup
+ * likewise defaults to no links.
  */
-async function renderPage(event: EventWithVenue, sourceLinks: SourceLinkRow[] = []) {
+async function renderPage(
+  event: EventWithVenue,
+  sourceLinks: SourceLinkRow[] = [],
+  soundcloudLinks: { name: string; url: string }[] = [],
+) {
   vi.mocked(getEventBySlugWithVenue).mockResolvedValue(event);
   vi.mocked(getSourceEventLinksForEvent).mockResolvedValue(sourceLinks);
   vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValue(null);
+  vi.mocked(getSoundcloudLinksForLineup).mockResolvedValue(soundcloudLinks);
   const element = await EventDetailPage({ params: Promise.resolve({ slug: event.slug }) } as never);
   render(element);
 }
@@ -1056,14 +1064,18 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
   });
 });
 
-describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () => {
+describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10-13)", () => {
   afterEach(cleanup);
 
   const PILOT_EVENT_ID = "e-bf9d6551";
   const PILOT_ARTISTS = ["TIM ANDRESEN", "REXIE LEX"];
+  const PILOT_LINKS = [
+    { name: "TIM ANDRESEN", url: "https://soundcloud.com/tim-andresen" },
+    { name: "REXIE LEX", url: "https://soundcloud.com/rexie_lex" },
+  ];
 
   it("renders a #soundcloud section listing only the verified pilot artists, with real external links", async () => {
-    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: [...PILOT_ARTISTS, "SOME OTHER ARTIST"] }));
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: [...PILOT_ARTISTS, "SOME OTHER ARTIST"] }), [], PILOT_LINKS);
 
     const anchor = document.getElementById("soundcloud");
     expect(anchor).not.toBeNull();
@@ -1081,7 +1093,7 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
   });
 
   it("shows only the artist name and the ↗ glyph per link — no repeated 'on SoundCloud' text (UI-refinement round)", async () => {
-    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), [], PILOT_LINKS);
 
     const anchor = document.getElementById("soundcloud")!;
     const links = Array.from(anchor.querySelectorAll("a"));
@@ -1096,7 +1108,7 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
   });
 
   it("replaces the plain-text heading with the official SoundCloud wordmark image, not hand-drawn markup", async () => {
-    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), [], PILOT_LINKS);
 
     const anchor = document.getElementById("soundcloud")!;
     expect(screen.queryByText("SoundCloud")).toBeNull();
@@ -1108,13 +1120,13 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
     expect(anchor.querySelector("svg")).toBeNull();
   });
 
-  it("no #soundcloud section exists for any other event, even with the exact same artist names in its lineup", async () => {
-    await renderPage(makeEvent({ id: "e-some-other-event", artists: PILOT_ARTISTS }));
-    expect(document.getElementById("soundcloud")).toBeNull();
+  it("looks links up for the event's own id and current lineup", async () => {
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), [], PILOT_LINKS);
+    expect(getSoundcloudLinksForLineup).toHaveBeenCalledWith(PILOT_EVENT_ID, PILOT_ARTISTS);
   });
 
-  it("no #soundcloud section exists for the pilot event id if its lineup no longer contains either verified artist", async () => {
-    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: ["SOMEONE ELSE"] }));
+  it("no #soundcloud section when the event has no links", async () => {
+    await renderPage(makeEvent({ id: "e-some-other-event", artists: PILOT_ARTISTS }));
     expect(document.getElementById("soundcloud")).toBeNull();
   });
 
@@ -1125,7 +1137,7 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
       videoTitle: "Tim Andresen DJ Set",
       channelTitle: "Tim Andresen",
     });
-    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }));
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), [], PILOT_LINKS);
     expect(document.getElementById("video")).not.toBeNull();
     expect(document.getElementById("soundcloud")).not.toBeNull();
   });
@@ -1137,7 +1149,7 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
       videoTitle: "Tim Andresen DJ Set",
       channelTitle: "Tim Andresen",
     });
-    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS, description: "Some description." }));
+    await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS, description: "Some description." }), [], PILOT_LINKS);
 
     const videoSection = document.getElementById("video")!;
     const soundcloudSection = document.getElementById("soundcloud")!;
@@ -1146,23 +1158,17 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
     expect(soundcloudSection.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  // Phase 1 expansion (2026-10-13): Culture Box nights where the venue's own
-  // page links the exact lineup name to the verified profile.
-  const GUY_J_NIGHT = { artists: ["GUY J", "TIM ANDRESEN", "EZEQUIEL PERINI"], startDatetime: "2026-11-21T22:00:00.000Z" };
-
-  it("lists the verified artists of a Culture Box night, in lineup order, with the same UI", async () => {
-    await renderPage(makeEvent({ ...GUY_J_NIGHT, canonicalSourceId: "src-culture-box" }));
+  it("renders the links in the order the lookup returns them (lineup order)", async () => {
+    await renderPage(makeEvent({ artists: ["GUY J", "TIM ANDRESEN", "EZEQUIEL PERINI"] }), [], [
+      { name: "GUY J", url: "https://soundcloud.com/guy-j" },
+      { name: "TIM ANDRESEN", url: "https://soundcloud.com/tim-andresen" },
+    ]);
     const anchor = document.getElementById("soundcloud")!;
     expect(Array.from(anchor.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toEqual([
       "https://soundcloud.com/guy-j",
       "https://soundcloud.com/tim-andresen",
     ]);
     expect(anchor.querySelector("iframe")).toBeNull();
-  });
-
-  it("no #soundcloud section for the same lineup and night from another source", async () => {
-    await renderPage(makeEvent({ ...GUY_J_NIGHT, canonicalSourceId: "src-kultunaut" }));
-    expect(document.getElementById("soundcloud")).toBeNull();
   });
 });
 

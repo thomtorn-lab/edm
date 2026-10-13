@@ -1,6 +1,15 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { artistYoutubePreviewCache, discoveryQueue, events, sourceEventLinks, sources, venues } from "@/db/schema";
+import {
+  artistYoutubePreviewCache,
+  discoveryQueue,
+  eventSoundcloudLinks,
+  events,
+  soundcloudLinkBlocks,
+  sourceEventLinks,
+  sources,
+  venues,
+} from "@/db/schema";
 import {
   discoveryRowToRecord,
   eventRowToRecord,
@@ -8,6 +17,7 @@ import {
   venueRowToRecord,
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
+import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 
 export interface EventWithVenue extends EventRecord {
@@ -276,6 +286,64 @@ export async function getArtistPreviewAvailabilityForLineups(lineups: string[][]
   return lineups.map((artists) =>
     artists.some((name) => isAcceptedPreviewRow(byNormalized.get(normalizeArtistName(cleanArtistDisplayName(name))))),
   );
+}
+
+/** Excludes link rows whose profile URL is manually blocked (soundcloud_link_blocks). */
+function soundcloudLinkNotBlocked() {
+  return notExists(
+    db
+      .select({ one: sql`1` })
+      .from(soundcloudLinkBlocks)
+      .where(eq(soundcloudLinkBlocks.url, eventSoundcloudLinks.url)),
+  );
+}
+
+/**
+ * Venue-provided artist SoundCloud links for the event-detail page
+ * (2026-10-13): this event's stored rows, unblocked, limited to its own
+ * current lineup (exact names, lineup order). One narrow query; none at all
+ * for an event without a lineup. Like the YouTube preview read, a failure
+ * degrades to "no links", never a broken page.
+ */
+export async function getSoundcloudLinksForLineup(eventId: string, artists: string[]): Promise<{ name: string; url: string }[]> {
+  if (artists.length === 0) return [];
+  try {
+    const rows = await db
+      .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
+      .from(eventSoundcloudLinks)
+      .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked()));
+    return selectLineupSoundcloudLinks(artists, rows);
+  } catch (err) {
+    console.error(`[soundcloud-links] lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+/**
+ * AUDIO indicator for event lists (homepage, venue and genre pages): ONE
+ * batched query for every listed event, true exactly when that event's
+ * detail page would show at least one link (same rows, same lineup rule as
+ * getSoundcloudLinksForLineup). Reads only event_id and artist_name.
+ */
+export async function getSoundcloudAvailabilityForEvents(list: { id: string; artists: string[] }[]): Promise<boolean[]> {
+  const ids = list.filter((e) => e.artists.length > 0).map((e) => e.id);
+  if (ids.length === 0) return list.map(() => false);
+  let rows: { eventId: string; artistName: string }[];
+  try {
+    rows = await db
+      .select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName })
+      .from(eventSoundcloudLinks)
+      .where(and(inArray(eventSoundcloudLinks.eventId, ids), soundcloudLinkNotBlocked()));
+  } catch (err) {
+    console.error(`[soundcloud-links] batched availability lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    return list.map(() => false);
+  }
+  const namesByEvent = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!namesByEvent.has(r.eventId)) namesByEvent.set(r.eventId, new Set());
+    namesByEvent.get(r.eventId)!.add(r.artistName);
+  }
+  return list.map((e) => e.artists.some((name) => namesByEvent.get(e.id)?.has(name) ?? false));
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {

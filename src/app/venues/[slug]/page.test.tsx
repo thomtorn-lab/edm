@@ -29,9 +29,10 @@ vi.mock("@/lib/queries", () => ({
   getVenueBySlug: vi.fn(),
   getVenueById: vi.fn(),
   getEventsForVenue: vi.fn(),
+  getSoundcloudAvailabilityForEvents: vi.fn(async (list: unknown[]) => list.map(() => false)),
 }));
 
-const { getVenueBySlug, getVenueById, getEventsForVenue } = await import("@/lib/queries");
+const { getVenueBySlug, getVenueById, getEventsForVenue, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
 const { default: VenueDetailPage } = await import("./page");
 
 beforeEach(() => {
@@ -193,5 +194,24 @@ describe("Venue detail page — SEO <title> and meta description (2026-10-06)", 
     expect(metadata.title).toEqual({ absolute: "MODULE Copenhagen - Upcoming Events | Electronic CPH" });
     expect(metadata.description).toBe("Upcoming electronic music events at MODULE, Copenhagen. A club.");
     expect(metadata.alternates).toEqual({ canonical: "/venues/module" });
+  });
+});
+
+describe("Venue detail page — AUDIO indicator kept (venue-provided SoundCloud links, 2026-10-13)", () => {
+  afterEach(cleanup);
+
+  it("one batched lookup for the upcoming events, pill on the events that have links", async () => {
+    vi.mocked(getVenueBySlug).mockResolvedValue(CULTURE_BOX);
+    vi.mocked(getEventsForVenue).mockResolvedValue([
+      makeEvent({ id: "e-with", slug: "with", venue: CULTURE_BOX, title: "Night With Links", artists: ["GUY J"] }),
+      makeEvent({ id: "e-without", slug: "without", venue: CULTURE_BOX, title: "Night Without", artists: ["SOMEONE"] }),
+    ]);
+    vi.mocked(getSoundcloudAvailabilityForEvents).mockImplementationOnce(async (list) => list.map((e) => e.id === "e-with"));
+    const element = await VenueDetailPage({ params: Promise.resolve({ slug: "culture-box" }) } as never);
+    render(element);
+
+    expect(getSoundcloudAvailabilityForEvents).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText("Audio")).toHaveLength(1);
+    expect(screen.getByLabelText("Go to audio links for Night With Links").getAttribute("href")).toBe("/events/with#soundcloud");
   });
 });
