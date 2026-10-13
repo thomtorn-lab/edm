@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import type { HomepageEvent } from "@/lib/homepageEvents";
 import {
   groupByMonth,
@@ -12,11 +13,19 @@ import {
 } from "@/lib/datetime";
 import { formatMonthAbbrTitleCase, formatMonthFull } from "@/lib/format";
 import { eventMatchesQuery } from "@/lib/search";
+import {
+  EXPLORER_DATE_MODES,
+  LIST_RETURN_STORAGE_KEY,
+  parseExplorerFilters,
+  serializeExplorerFilters,
+  type ExplorerMode,
+  type ListReturn,
+} from "@/lib/explorerFilters";
 import { MAIN_GENRES, matchesMainGenre, type MainGenreSlug } from "@/lib/taxonomy";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
 
-type Mode = "all" | "tonight" | "weekend" | "next-weekend";
+type Mode = ExplorerMode;
 
 const MODE_LABEL: Record<Exclude<Mode, "all">, string> = {
   tonight: "Tonight",
@@ -30,7 +39,7 @@ const MODE_EMPTY_TITLE: Record<Exclude<Mode, "all">, string> = {
   "next-weekend": "Nothing lined up next weekend yet",
 };
 
-const DATE_MODES = ["tonight", "weekend", "next-weekend"] as const;
+const DATE_MODES = EXPLORER_DATE_MODES;
 
 /**
  * Whether any part of `el` currently falls within the viewport's vertical
@@ -139,10 +148,28 @@ export default function EventExplorer({
   serverNow: string;
 }) {
   const [now, setNow] = useState<Date>(() => new Date(serverNow));
-  const [mode, setMode] = useState<Mode>("all");
-  const [genre, setGenre] = useState<MainGenreSlug | "all">("all");
-  const [venueId, setVenueId] = useState<string | "all">("all");
-  const [query, setQuery] = useState("");
+  // Initial filters come from the URL (homepage search/navigation work,
+  // 2026-10-13) — see src/lib/explorerFilters.ts. useSearchParams reads the
+  // CURRENT URL, on the server render (this page is dynamic) and on every
+  // client mount alike, so a reload, a shared link, and browser back from an
+  // event page (which remounts this component) all start from the same
+  // view. Read once, as initial state only: from then on the state below is
+  // the source of truth and the URL just mirrors it (see the sync effect).
+  // Null outside the App Router (unit tests) -> plain defaults.
+  const searchParams = useSearchParams();
+  const [initialUrlFilters] = useState(() => parseExplorerFilters(searchParams));
+  const [mode, setMode] = useState<Mode>(initialUrlFilters.mode);
+  const [genre, setGenre] = useState<MainGenreSlug | "all">(initialUrlFilters.genre);
+  // The URL names a venue by slug; it only selects a venue that actually
+  // has an upcoming event in this list (the same set the venue dropdown
+  // offers), otherwise it's ignored like any other invalid value.
+  const [venueId, setVenueId] = useState<string | "all">(() => {
+    if (!initialUrlFilters.venueSlug) return "all";
+    const initialNow = new Date(serverNow);
+    const match = events.find((e) => e.venue.slug === initialUrlFilters.venueSlug && !isPastEvent(e, initialNow));
+    return match ? match.venue.id : "all";
+  });
+  const [query, setQuery] = useState(initialUrlFilters.query);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // Draft copies of genre/venue, edited only while the mobile filters sheet
   // is open (filter-state architecture rework, 2026-09-12): the sheet used
@@ -349,6 +376,49 @@ export default function EventExplorer({
 
   const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
 
+  // The committed filter values as one comparable key — see its use in the
+  // month reconciliation effect below.
+  const filterKey = JSON.stringify([mode, genre, venueId, query]);
+  const lastFilterKeyRef = useRef(filterKey);
+
+  // The current list URL ("/" or "/?when=…&q=…"), mirrored from the
+  // committed filter state — never the mobile drawer's uncommitted drafts.
+  const venueSlug = venueId === "all" ? null : (upcoming.find((e) => e.venue.id === venueId)?.venue.slug ?? null);
+  const listSearch = serializeExplorerFilters({ mode, genre, venueSlug, query });
+  const listUrl = listSearch ? `/?${listSearch}` : "/";
+
+  // Mirrors the committed filters into the address bar (homepage
+  // search/navigation work, 2026-10-13) so back/forward, reload and shared
+  // links restore this view. replaceState, never pushState: changing a
+  // filter or typing in search must not add history entries — browser back
+  // keeps meaning "the page before the homepage". Next.js integrates native
+  // history calls with its router (useSearchParams stays in sync), and
+  // nothing is fetched. Query keys this list doesn't own (utm_* etc.) and
+  // the #month-… hash are carried over unchanged.
+  useEffect(() => {
+    const search = serializeExplorerFilters({ mode, genre, venueSlug, query }, window.location.search);
+    const current = window.location.search.replace(/^\?/, "");
+    if (search === current) return;
+    const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", url);
+  }, [mode, genre, venueSlug, query]);
+
+  // Remembers which event was opened from this list, and from which list
+  // URL, so that event page's "← All events" can return to this exact view
+  // (see BackToEventsLink / explorerFilters.ts). Capture phase on the list
+  // wrapper covers every event link a row renders (title, VIDEO, AUDIO).
+  function rememberListReturn(e: MouseEvent<HTMLElement>) {
+    const anchor = (e.target as HTMLElement).closest?.("a");
+    const href = anchor?.getAttribute("href") ?? "";
+    if (!href.startsWith("/events/")) return;
+    const record: ListReturn = { eventPath: href.split("#")[0], listUrl };
+    try {
+      window.sessionStorage.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify(record));
+    } catch {
+      // Storage unavailable (private mode, blocked): the link just falls back to "/".
+    }
+  }
+
   // Tapping a month nav item must win immediately (see handleMonthNavClick)
   // and stay pinned while the resulting scroll settles — otherwise the
   // IntersectionObserver below, reacting to whatever happens to be in the
@@ -445,6 +515,15 @@ export default function EventExplorer({
     // branch below for why this distinction matters.
     const groupsChangedSinceLastRun = groups !== lastGroupsRef.current;
     lastGroupsRef.current = groups;
+    // Did the visitor actually change a filter/search since the last run?
+    // Narrower than groupsChangedSinceLastRun, which is also true when only
+    // `now` moved — including the browser-clock refresh right after mount.
+    // On a mount that already starts filtered (a reload, a shared link,
+    // browser back from an event page), that refresh must not trigger the
+    // filter-apply scroll below: it would override the browser's own
+    // scroll restoration (homepage search/navigation work, 2026-10-13).
+    const filtersChangedSinceLastRun = filterKey !== lastFilterKeyRef.current;
+    lastFilterKeyRef.current = filterKey;
 
     const previouslyFiltered = wasFilteredRef.current;
     wasFilteredRef.current = hasActiveFilters;
@@ -501,7 +580,7 @@ export default function EventExplorer({
       // month) outranks preserving the exact previous pixel position, and
       // passive scroll-spy is deliberately not relied on to get this right
       // on its own.
-      if (hasActiveFilters && groupsChangedSinceLastRun) {
+      if (hasActiveFilters && groupsChangedSinceLastRun && filtersChangedSinceLastRun) {
         const el = document.getElementById(`month-${activeMonthKey}`);
         isProgrammaticScrollRef.current = true;
         el?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -554,7 +633,7 @@ export default function EventExplorer({
     // origin as its own piece of React state read by a second effect —
     // removes the double-invocation problem structurally instead of
     // instructing the linter to ignore it.
-  }, [groups, activeMonthKey, hasActiveFilters]);
+  }, [groups, activeMonthKey, hasActiveFilters, filterKey]);
 
   useEffect(() => {
     if (groups.length < 2) return;
@@ -978,7 +1057,7 @@ export default function EventExplorer({
         </div>
       )}
 
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6" onClickCapture={rememberListReturn}>
         {groups.length === 0 ? (
           <EmptyState
             title={mode === "all" ? "No events match" : MODE_EMPTY_TITLE[mode as Exclude<Mode, "all">]}
