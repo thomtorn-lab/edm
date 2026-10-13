@@ -1145,6 +1145,25 @@ describe("Event detail page — one-event SoundCloud UX pilot (2026-10-09)", () 
     expect(videoSection.compareDocumentPosition(soundcloudSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(soundcloudSection.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  // Phase 1 expansion (2026-10-13): Culture Box nights where the venue's own
+  // page links the exact lineup name to the verified profile.
+  const GUY_J_NIGHT = { artists: ["GUY J", "TIM ANDRESEN", "EZEQUIEL PERINI"], startDatetime: "2026-11-21T22:00:00.000Z" };
+
+  it("lists the verified artists of a Culture Box night, in lineup order, with the same UI", async () => {
+    await renderPage(makeEvent({ ...GUY_J_NIGHT, canonicalSourceId: "src-culture-box" }));
+    const anchor = document.getElementById("soundcloud")!;
+    expect(Array.from(anchor.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toEqual([
+      "https://soundcloud.com/guy-j",
+      "https://soundcloud.com/tim-andresen",
+    ]);
+    expect(anchor.querySelector("iframe")).toBeNull();
+  });
+
+  it("no #soundcloud section for the same lineup and night from another source", async () => {
+    await renderPage(makeEvent({ ...GUY_J_NIGHT, canonicalSourceId: "src-kultunaut" }));
+    expect(document.getElementById("soundcloud")).toBeNull();
+  });
 });
 
 describe("Event detail page — SEO <title> and meta description (2026-10-06)", () => {

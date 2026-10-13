@@ -28,10 +28,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
-  // One-event SoundCloud UX pilot (2026-10-09) — empty for every event
-  // except the single hand-picked pilot event; see soundcloudPilot.ts's own
-  // doc comment for the full scope/verification discipline.
-  const soundcloudPilotArtists = getSoundcloudPilotArtists(event.id, event.artists);
+  // SoundCloud artist-link pilot — empty for every event outside its
+  // verified (Culture Box night, exact lineup name) entries; see
+  // soundcloudPilot.ts's own doc comment for the scope/verification discipline.
+  const soundcloudPilotArtists = getSoundcloudPilotArtists(event);
   // Single source of truth for this row's own event-detail URL (mobile/video
   // affordance polish, 2026-09-26) — reused by both the title link and the
   // VIDEO badge link below, so there is only ever one place that constructs

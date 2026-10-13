@@ -990,4 +990,18 @@ describe("EventRow — one-event SoundCloud UX pilot (2026-10-09), relabeled to 
     const audioLink = screen.getByRole("link", { name: "Go to audio links for Test Event" });
     expect(audioLink.className).toBe(videoLink.className);
   });
+
+  // Phase 1 expansion (2026-10-13): Culture Box nights where the venue's own
+  // page links the exact lineup name to the verified profile.
+  const DUSKY_NIGHT = { artists: ["DUSKY", "SAMUEL REES"], startDatetime: "2026-11-13T21:00:00.000Z" };
+
+  it("shows the AUDIO indicator on a Culture Box night with a verified lineup artist", () => {
+    render(<EventRow event={makeEvent({ ...DUSKY_NIGHT, canonicalSourceId: "src-culture-box" })} />);
+    expect(screen.getByLabelText("Go to audio links for Test Event").getAttribute("href")).toBe("/events/test-event#soundcloud");
+  });
+
+  it("shows no AUDIO indicator for the same lineup and night from another source", () => {
+    render(<EventRow event={makeEvent({ ...DUSKY_NIGHT, canonicalSourceId: "src-hangaren" })} />);
+    expect(screen.queryByText("Audio")).toBeNull();
+  });
 });
