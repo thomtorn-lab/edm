@@ -176,6 +176,35 @@ describe("parsePumpehusetConcertsJson — real fetch_concerts fixture", () => {
     expect(e!.priceFrom).toBe(0);
   });
 
+  it("keeps the headliner when the venue labels its support acts 'Support:' (MPH 360° XP)", () => {
+    // Real fixture record: support_bands = [{ band_name: "Support: Parashoot + Lisa Fosmark" }].
+    // Previously that label string became the event's ONLY artist and the headliner was dropped.
+    const e = events.find((ev) => ev.officialEventUrl === "https://pumpehuset.dk/koncerter/mph-360-xp-guests/");
+    expect(e!.artists).toEqual(["MPH 360° XP", "Parashoot", "Lisa Fosmark"]);
+  });
+
+  it("puts the title headliner first and strips the 'Support:' label for a single labelled support act (nimino shape)", () => {
+    const json = JSON.stringify([
+      {
+        title: "nimino",
+        image: false,
+        support_bands: [{ band_name: "Support: Montee", band_description: "", image: false, spotify: "" }],
+        custom_support_title: "",
+        hide_support_title: false,
+        date: "15. okt",
+        date_list: "15. okt",
+        year_list: "2026",
+        price: "300 kr.",
+        ticket_link: "",
+        ticket_status: "",
+        link: "https://pumpehuset.dk/koncerter/nimino/",
+        genre: "Elektronisk",
+      },
+    ]);
+    const [e] = parsePumpehusetConcertsJson(json);
+    expect(e.artists).toEqual(["nimino", "Montee"]);
+  });
+
   it("parses a 'fra <n>' (from) price as its numeric floor (MPH 360° XP)", () => {
     const e = events.find((ev) => ev.officialEventUrl === "https://pumpehuset.dk/koncerter/mph-360-xp-guests/");
     expect(e).toBeDefined();
