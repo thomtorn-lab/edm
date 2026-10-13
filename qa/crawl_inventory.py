@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
+from pathlib import Path
 BASE="https://www.electroniccph.com"
 HEADERS={"User-Agent":"ElectronicCPH-QA/1.0 (read-only)"}
 class PageParser(HTMLParser):
@@ -80,6 +81,17 @@ def main():
         by_canonical[normalized_url(p["canonical"] or p["url"])].append(p["url"])
     for canonical,matches in by_canonical.items():
         if len(matches)>1: result["findings"].append({"type":"duplicate_canonical_candidate","urls":matches,"verification":"manual"})
+    register_path=Path("qa/electroniccph-issues.json")
+    try:
+        register=json.loads(register_path.read_text(encoding="utf-8"))
+        validate_register(register)
+        result["register_read_validated"]=True
+        result["register_issue_count"]=len(register["issues"])
+        result["register_modified"]=False
+        result["historical_issue_statuses"]={s:sum(x["status"]==s for x in register["issues"]) for s in ("open","resolved","historical_unverified")}
+    except Exception as exc:
+        result["register_read_validated"]=False
+        result["errors"].append({"url":str(register_path),"error":str(exc)})
     result["finished_at"]=datetime.now(timezone.utc).isoformat()
     result["technical_inventory_complete"]=bool(events) and not result["errors"] and len(result["pages"])==len(events)
     result["full_qa_complete"]=False
