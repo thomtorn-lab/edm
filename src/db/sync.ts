@@ -20,7 +20,7 @@ import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } 
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
 import { isTrustedElectronicSource, getSourceById, getSourceCancellationPolicy } from "@/lib/data/sources";
-import type { SourceAdapter, RawCandidateEvent, ArtistSoundcloudLink } from "@/lib/adapters/types";
+import type { SourceAdapter, RawCandidateEvent, SoundcloudLinkReport } from "@/lib/adapters/types";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
@@ -255,9 +255,9 @@ async function runSourceSyncLocked(
   // per-candidate DB write path (see notifyDiscoveryQueueInsertBatch).
   const newlyQueuedItems: DiscoveryQueueNotificationItem[] = [];
   // Venue-provided artist SoundCloud links, per event this run matched or
-  // created (only adapters that report artistSoundcloudLinks — Culture Box).
+  // created (only adapters that report soundcloudLinkReport — Culture Box).
   // Reconciled once after the loop, see reconcileSourceSoundcloudLinks.
-  const soundcloudObservations = new Map<string, ArtistSoundcloudLink[]>();
+  const soundcloudObservations = new Map<string, SoundcloudLinkReport>();
 
   for (const raw of candidates) {
     try {
@@ -325,7 +325,7 @@ async function runSourceSyncLocked(
       if (match) {
         const existing = existingById.get(match.eventId);
         if (!existing) continue; // stale link/dedup pointer — skip rather than guess
-        if (raw.artistSoundcloudLinks) soundcloudObservations.set(existing.id, raw.artistSoundcloudLinks);
+        if (raw.soundcloudLinkReport) soundcloudObservations.set(existing.id, raw.soundcloudLinkReport);
         const target: SyncTargetEvent = {
           id: existing.id,
           title: existing.title,
@@ -532,7 +532,7 @@ async function runSourceSyncLocked(
           sourceId,
         );
         created++;
-        if (raw.artistSoundcloudLinks) soundcloudObservations.set(eventId, raw.artistSoundcloudLinks);
+        if (raw.soundcloudLinkReport) soundcloudObservations.set(eventId, raw.soundcloudLinkReport);
 
         // A candidate that already had a pending discovery_queue row from an
         // earlier, lower-confidence sync (see src/lib/sync.ts's
@@ -735,7 +735,7 @@ async function runSourceSyncLocked(
     try {
       const plan = await reconcileSourceSoundcloudLinks(sourceId, soundcloudObservations);
       if (plan.suppressedDeletes > 0) {
-        console.error(`[sync] "${sourceId}" saw no SoundCloud links this run; kept ${plan.suppressedDeletes} stored link(s) instead of deleting them`);
+        console.error(`[sync] "${sourceId}" kept ${plan.suppressedDeletes} stored SoundCloud link(s) whose absence wasn't reliably documented this run`);
       }
     } catch (err) {
       console.error(`[sync] "${sourceId}" SoundCloud link update failed`, err instanceof Error ? err.message : err);

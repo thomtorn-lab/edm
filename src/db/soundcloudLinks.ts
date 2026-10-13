@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./client";
 import { eventSoundcloudLinks, soundcloudLinkBlocks } from "./schema";
 import { planSoundcloudLinkChanges, type SoundcloudLinkPlan } from "@/lib/soundcloudLinks";
-import type { ArtistSoundcloudLink } from "@/lib/adapters/types";
+import type { SoundcloudLinkReport } from "@/lib/adapters/types";
 
 /**
  * Postgres side of venue-provided artist SoundCloud links (2026-10-13). The
@@ -14,7 +14,7 @@ import type { ArtistSoundcloudLink } from "@/lib/adapters/types";
  */
 export async function reconcileSourceSoundcloudLinks(
   sourceId: string,
-  observed: Map<string, ArtistSoundcloudLink[]>,
+  observed: Map<string, SoundcloudLinkReport>,
 ): Promise<SoundcloudLinkPlan> {
   const empty: SoundcloudLinkPlan = { upserts: [], deletes: [], suppressedDeletes: 0 };
   if (observed.size === 0) return empty;
@@ -26,8 +26,21 @@ export async function reconcileSourceSoundcloudLinks(
 
   const plan = planSoundcloudLinkChanges(existing, observed);
 
-  // Upsert first, then delete: idempotent on their own, so a failure part-way
-  // leaves rows the next run's plan simply repeats — no transaction needed.
+  // No transaction, deliberately (reviewed 2026-10-13). The writes are one
+  // multi-row upsert (atomic on its own) followed by one delete per event
+  // (each atomic on its own), and every state a failure part-way can leave
+  // is safe and self-healing:
+  //   - upsert fails: nothing changed, no delete is attempted (the throw
+  //     stops here); the next run plans the same writes again.
+  //   - a delete fails after the upsert: new/updated links are live, and
+  //     the not-yet-deleted rows are links the venue itself gave earlier and
+  //     has since removed — never a link it didn't provide. They still only
+  //     show for names in the event's current lineup and can be blocked. The
+  //     next run sees exactly those rows left and plans only their delete.
+  // Upsert runs first so a failure can only delay a removal, never drop a
+  // valid link. A transaction would only shorten that stale window to zero,
+  // at the cost of the first transaction in this codebase over the pooled
+  // connection; see src/db/soundcloudLinks.test.ts for the failure cases.
   if (plan.upserts.length > 0) {
     const now = new Date();
     await db

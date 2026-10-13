@@ -150,13 +150,25 @@ export interface RawCandidateEvent {
   stableSourceUrl?: boolean;
   /**
    * Artist SoundCloud profile links the source's own listing gives for THIS
-   * event, already filtered to acceptable profile links (Culture Box only,
-   * see cultureBoxSoundcloudLinks.ts). `undefined` means the adapter does
-   * not report links at all — the sync never touches stored links for it.
-   * `[]` means the night was parsed and carries no acceptable link, which
-   * the sync treats as documented absence (see src/lib/soundcloudLinks.ts).
+   * event (Culture Box only, see cultureBoxSoundcloudLinks.ts). `undefined`
+   * means the adapter does not report links at all — the sync never touches
+   * stored links for it. See SoundcloudLinkReport for when a missing link
+   * may delete a stored one.
    */
-  artistSoundcloudLinks?: ArtistSoundcloudLink[];
+  soundcloudLinkReport?: SoundcloudLinkReport;
+}
+
+/**
+ * One night's SoundCloud links as parsed from the source. `links` are the
+ * accepted profile links (always safe to add/update). `absenceDocumented` is
+ * true only when this night's lineup was parsed completely — every room
+ * block read, every lineup anchor accounted for, at least one anchor seen —
+ * so a stored link missing from `links` is genuinely gone at the source
+ * rather than lost to a partial parse. Only then may the sync delete it.
+ */
+export interface SoundcloudLinkReport {
+  links: ArtistSoundcloudLink[];
+  absenceDocumented: boolean;
 }
 
 /** One lineup name and the SoundCloud profile URL (https://soundcloud.com/<handle>) the source linked it to. */

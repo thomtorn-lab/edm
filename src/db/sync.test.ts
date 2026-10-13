@@ -2259,27 +2259,27 @@ describe("Venue-provided SoundCloud links (Culture Box, 2026-10-13) — reconcil
 
   it("a matched night's links are handed over once, keyed by that event's id", async () => {
     matchExistingNight();
-    const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artistSoundcloudLinks: LINKS })])));
+    const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: { links: LINKS, absenceDocumented: true } })])));
 
     expect(result.outcome).toBe("ok");
     expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledTimes(1);
-    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([["e-night", LINKS]]));
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([["e-night", { links: LINKS, absenceDocumented: true }]]));
   });
 
   it("a parsed night with no acceptable link is still handed over (documented absence)", async () => {
     matchExistingNight();
-    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artistSoundcloudLinks: [] })])));
-    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([["e-night", []]]));
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: { links: [], absenceDocumented: true } })])));
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([["e-night", { links: [], absenceDocumented: true }]]));
   });
 
   it("a newly created night is handed over under its new event id", async () => {
     vi.mocked(getVenues).mockResolvedValueOnce(cultureBoxVenues);
-    const candidate = night({ officialEventUrl: "https://culture-box.com/event/brand-new-night", title: "Brand New Night", artistSoundcloudLinks: LINKS });
+    const candidate = night({ officialEventUrl: "https://culture-box.com/event/brand-new-night", title: "Brand New Night", soundcloudLinkReport: { links: LINKS, absenceDocumented: true } });
     const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([candidate])));
 
     expect(result.created).toBe(1);
     const createdId = vi.mocked(createEvent).mock.calls[0][0].id;
-    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([[createdId, LINKS]]));
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([[createdId, { links: LINKS, absenceDocumented: true }]]));
   });
 
   it("adapters that don't report links (every other source) never trigger a link read or write", async () => {
@@ -2297,7 +2297,7 @@ describe("Venue-provided SoundCloud links (Culture Box, 2026-10-13) — reconcil
   it("a link write failure is logged and never fails or changes the sync's own outcome", async () => {
     matchExistingNight();
     vi.mocked(reconcileSourceSoundcloudLinks).mockRejectedValueOnce(new Error("connection reset"));
-    const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artistSoundcloudLinks: LINKS })])));
+    const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: { links: LINKS, absenceDocumented: true } })])));
     expect(result.outcome).toBe("ok");
     expect(result.errors).toEqual([]);
   });

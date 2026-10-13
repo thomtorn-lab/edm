@@ -1,4 +1,4 @@
-import type { ArtistSoundcloudLink } from "./adapters/types";
+import type { SoundcloudLinkReport } from "./adapters/types";
 import { dedupeArtistList } from "./normalize";
 
 /**
@@ -16,9 +16,9 @@ export interface StoredSoundcloudLink {
 export interface SoundcloudLinkPlan {
   /** New rows, and rows whose URL changed. */
   upserts: StoredSoundcloudLink[];
-  /** Rows the source documented as gone: the night was parsed this run and no longer links that name. */
+  /** Rows the source documented as gone: the night was parsed completely this run and no longer links that name. */
   deletes: { eventId: string; artistName: string }[];
-  /** Deletes held back because this run observed no acceptable link at all (see planSoundcloudLinkChanges). */
+  /** Missing links kept because their absence wasn't reliably documented (see planSoundcloudLinkChanges). */
   suppressedDeletes: number;
 }
 
@@ -38,19 +38,22 @@ export function storedArtistName(name: string): string | null {
  * parse failure for that night, past nights no longer listed) are never
  * touched.
  *
- * A stored row is deleted only when its night was observed and no longer
- * carries that name's link. If the whole run observed no acceptable link at
- * all, deletes are suppressed: a page-structure change or a broken parse
- * looks exactly like that, and the venue removing every link at once is far
- * less likely — so correct links are kept until a run that does see links
- * confirms they are gone.
+ * Accepted links are always added/updated — they are positive evidence even
+ * from a partly parsed night. A stored link missing from a night is deleted
+ * only when BOTH hold:
+ *   - that event's own report has absenceDocumented (its lineup was parsed
+ *     completely), so a partial parse of one night can never delete that
+ *     night's links just because other nights parsed fine; and
+ *   - the run saw at least one acceptable link somewhere (defense in depth:
+ *     a run with none at all looks like a page-structure change, and the
+ *     venue removing every link at once is far less likely).
+ * Otherwise the stored link is kept and counted in suppressedDeletes.
  */
 export function planSoundcloudLinkChanges(
   existing: StoredSoundcloudLink[],
-  observed: Map<string, ArtistSoundcloudLink[]>,
+  observed: Map<string, SoundcloudLinkReport>,
 ): SoundcloudLinkPlan {
-  const totalObserved = [...observed.values()].reduce((n, links) => n + links.length, 0);
-  const allowDeletes = totalObserved > 0;
+  const runSawLinks = [...observed.values()].some((report) => report.links.length > 0);
 
   const existingByEvent = new Map<string, Map<string, string>>();
   for (const row of existing) {
@@ -59,10 +62,11 @@ export function planSoundcloudLinkChanges(
   }
 
   const plan: SoundcloudLinkPlan = { upserts: [], deletes: [], suppressedDeletes: 0 };
-  for (const [eventId, links] of observed) {
+  for (const [eventId, report] of observed) {
+    const allowDeletes = report.absenceDocumented && runSawLinks;
     const stored = existingByEvent.get(eventId) ?? new Map<string, string>();
     const seen = new Set<string>();
-    for (const link of links) {
+    for (const link of report.links) {
       const artistName = storedArtistName(link.name);
       if (!artistName || seen.has(artistName)) continue;
       seen.add(artistName);
