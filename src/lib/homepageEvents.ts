@@ -43,6 +43,8 @@ export interface EventRowEvent extends EventRowFields {
   venue: EventRowVenue;
   /** Set by the homepage only (VIDEO indicator) — see EventRow. */
   hasArtistPreview?: boolean;
+  /** AUDIO indicator: set by every page that lists events (homepage, venue and genre pages) via getSoundcloudAvailabilityForEvents — see EventRow. */
+  hasAudioLinks?: boolean;
 }
 
 /** An EventRow event plus what EventExplorer's search also reads. */
@@ -51,7 +53,11 @@ export interface HomepageEvent extends EventRowEvent {
 }
 
 /** Copies exactly the HomepageEvent fields — nothing else from the full record reaches the client. */
-export function toHomepageEvent(event: EventRecord & { venue: Venue }, hasArtistPreview: boolean): HomepageEvent {
+export function toHomepageEvent(
+  event: EventRecord & { venue: Venue },
+  hasArtistPreview: boolean,
+  hasAudioLinks = false,
+): HomepageEvent {
   return {
     id: event.id,
     slug: event.slug,
@@ -82,6 +88,7 @@ export function toHomepageEvent(event: EventRecord & { venue: Venue }, hasArtist
       aliases: event.venue.aliases,
     },
     hasArtistPreview,
+    hasAudioLinks,
   };
 }
 

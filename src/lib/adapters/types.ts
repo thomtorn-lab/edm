@@ -148,6 +148,21 @@ export interface RawCandidateEvent {
    * so it changes nothing about duplicate handling for any other source.
    */
   stableSourceUrl?: boolean;
+  /**
+   * Artist SoundCloud profile links the source's own listing gives for THIS
+   * event, already filtered to acceptable profile links (Culture Box only,
+   * see cultureBoxSoundcloudLinks.ts). `undefined` means the adapter does
+   * not report links at all — the sync never touches stored links for it.
+   * `[]` means the night was parsed and carries no acceptable link, which
+   * the sync treats as documented absence (see src/lib/soundcloudLinks.ts).
+   */
+  artistSoundcloudLinks?: ArtistSoundcloudLink[];
+}
+
+/** One lineup name and the SoundCloud profile URL (https://soundcloud.com/<handle>) the source linked it to. */
+export interface ArtistSoundcloudLink {
+  name: string;
+  url: string;
 }
 
 export interface SourceAdapter {

@@ -5,7 +5,6 @@ import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
-import { getSoundcloudPilotArtists } from "@/lib/soundcloudPilot";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 import { SITE_URL } from "@/lib/siteUrl";
@@ -28,10 +27,6 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
-  // SoundCloud artist-link pilot — empty for every event outside its
-  // verified (Culture Box night, exact lineup name) entries; see
-  // soundcloudPilot.ts's own doc comment for the scope/verification discipline.
-  const soundcloudPilotArtists = getSoundcloudPilotArtists(event);
   // Single source of truth for this row's own event-detail URL (mobile/video
   // affordance polish, 2026-09-26) — reused by both the title link and the
   // VIDEO badge link below, so there is only ever one place that constructs
@@ -149,11 +144,13 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 </Link>
               </>
             )}
-            {soundcloudPilotArtists.length > 0 && (
+            {event.hasAudioLinks && (
               <>
                 <span aria-hidden className="text-text-tertiary">·</span>
-                {/* One-event SoundCloud UX pilot (2026-10-09), relabeled to
-                    "AUDIO" per UI-refinement round — same pill
+                {/* hasAudioLinks: venue-provided SoundCloud links, set by the
+                    listing page via getSoundcloudAvailabilityForEvents
+                    (2026-10-13; first shipped as the 2026-10-09 pilot,
+                    relabeled to "AUDIO" per UI-refinement round) — same pill
                     shape/typography/spacing as the VIDEO badge above, so the
                     two read as siblings. Deep-links to the event page's own
                     SoundCloud section (`#soundcloud`, unchanged — only the

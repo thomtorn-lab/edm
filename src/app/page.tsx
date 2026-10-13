@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
-import { getArtistPreviewAvailabilityForLineups, getPublishedEventsWithVenue } from "@/lib/queries";
+import {
+  getArtistPreviewAvailabilityForLineups,
+  getPublishedEventsWithVenue,
+  getSoundcloudAvailabilityForEvents,
+} from "@/lib/queries";
 import { toHomepageEvent, upcomingForHomepage } from "@/lib/homepageEvents";
 import EventExplorer from "@/components/EventExplorer";
 import NewsletterSignupForm from "@/components/NewsletterSignupForm";
@@ -32,8 +36,13 @@ export default async function HomePage() {
   // indicator only ever shows when that event's own detail page would
   // actually render an Artist Preview. No YouTube API call and no matcher
   // execution happen here — this only reads the existing cache table.
-  const previewAvailability = await getArtistPreviewAvailabilityForLineups(events.map((e) => e.artists));
-  const homepageEvents = events.map((event, i) => toHomepageEvent(event, previewAvailability[i]));
+  // AUDIO indicator: the same kind of single batched read, for the
+  // venue-provided SoundCloud links (see getSoundcloudAvailabilityForEvents).
+  const [previewAvailability, audioAvailability] = await Promise.all([
+    getArtistPreviewAvailabilityForLineups(events.map((e) => e.artists)),
+    getSoundcloudAvailabilityForEvents(events),
+  ]);
+  const homepageEvents = events.map((event, i) => toHomepageEvent(event, previewAvailability[i], audioAvailability[i]));
 
   return (
     <div>

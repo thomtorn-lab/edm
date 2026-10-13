@@ -3,6 +3,7 @@ import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText, extractAnchorTexts, extractLowestDkkAmount } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
+import { acceptedLinksByCandidate, classifyLineupLinks, type LineupLinkObservation } from "./cultureBoxSoundcloudLinks";
 import type { GenreSlug } from "../taxonomy";
 
 /**
@@ -105,6 +106,19 @@ interface RoomBlock {
   roomName: string;
   showcaseTitle: string | null;
   artists: string[];
+  /** Every lineup anchor's text and href, for the SoundCloud profile links (see cultureBoxSoundcloudLinks.ts). */
+  lineupLinks: { name: string; href: string }[];
+}
+
+/** Same anchors, same text as extractAnchorTexts — plus each anchor's href. */
+function extractLineupLinks(pHtml: string): { name: string; href: string }[] {
+  const out: { name: string; href: string }[] = [];
+  for (const m of pHtml.matchAll(/<a\b([^>]*)>([^<]*)<\/a>/gi)) {
+    const name = decodeHtmlEntities(m[2]).trim();
+    const href = m[1].match(/href="([^"]*)"/i);
+    if (name && href) out.push({ name, href: decodeHtmlEntities(href[1]) });
+  }
+  return out;
 }
 
 function parseRoomBlocks(articleHtml: string): RoomBlock[] {
@@ -126,7 +140,7 @@ function parseRoomBlocks(articleHtml: string): RoomBlock[] {
 
     const artists = extractAnchorTexts(pHtml);
 
-    blocks.push({ roomName, showcaseTitle, artists });
+    blocks.push({ roomName, showcaseTitle, artists, lineupLinks: extractLineupLinks(pHtml) });
   }
   return blocks;
 }
@@ -134,6 +148,9 @@ function parseRoomBlocks(articleHtml: string): RoomBlock[] {
 export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_EVENTS_URL): RawCandidateEvent[] {
   const articles = html.match(/<article class="post-block[^"]*">[\s\S]*?<\/article>/g) ?? [];
   const results: RawCandidateEvent[] = [];
+  // Lineup links of every night on the page, classified together after the
+  // loop: a conflict (one name, two profiles) can span nights.
+  const lineupLinks: LineupLinkObservation[] = [];
 
   for (const article of articles) {
     try {
@@ -255,13 +272,19 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
         genreHint,
         genreConfidenceHint: genreHint ? genreConfidenceForEvidence("official-description") : null,
       });
+      for (const room of roomBlocks) {
+        for (const link of room.lineupLinks) lineupLinks.push({ candidateIndex: results.length - 1, ...link });
+      }
     } catch {
       // A single malformed record must never take down the whole sync.
       continue;
     }
   }
 
-  return results;
+  // Every parsed night gets the field, [] included: a parsed night without
+  // an acceptable link is documented absence for the sync.
+  const accepted = acceptedLinksByCandidate(classifyLineupLinks(lineupLinks), results.length);
+  return results.map((candidate, i) => ({ ...candidate, artistSoundcloudLinks: accepted[i] }));
 }
 
 /**

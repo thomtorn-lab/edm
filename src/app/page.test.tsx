@@ -9,10 +9,13 @@ import type { Venue } from "@/lib/types";
 vi.mock("@/lib/queries", () => ({
   getPublishedEventsWithVenue: vi.fn(),
   getArtistPreviewAvailabilityForLineups: vi.fn(),
+  getSoundcloudAvailabilityForEvents: vi.fn(),
 }));
 vi.mock("@/components/NewsletterSignupForm", () => ({ default: () => null }));
 
-const { getPublishedEventsWithVenue, getArtistPreviewAvailabilityForLineups } = await import("@/lib/queries");
+const { getPublishedEventsWithVenue, getArtistPreviewAvailabilityForLineups, getSoundcloudAvailabilityForEvents } = await import(
+  "@/lib/queries"
+);
 const { default: HomePage } = await import("./page");
 const { default: EventExplorer } = await import("@/components/EventExplorer");
 
@@ -65,12 +68,17 @@ describe("homepage — server-side upcoming filter and projection", () => {
   it("hands EventExplorer only the not-yet-past events, as projected objects", async () => {
     vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
     vi.mocked(getArtistPreviewAvailabilityForLineups).mockResolvedValue([true, false]);
+    vi.mocked(getSoundcloudAvailabilityForEvents).mockResolvedValue([false, true]);
     const element = await HomePage();
     const explorer = findElement(element, EventExplorer);
     expect(explorer).not.toBeNull();
     const passed = explorer!.props.events;
     expect(passed.map((e) => e.id)).toEqual(["tonight", "next-week"]);
     expect(passed.map((e) => e.hasArtistPreview)).toEqual([true, false]);
+    expect(passed.map((e) => e.hasAudioLinks)).toEqual([false, true]);
+    // One batched AUDIO lookup, for exactly the events shown.
+    expect(getSoundcloudAvailabilityForEvents).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getSoundcloudAvailabilityForEvents).mock.calls[0][0].map((e) => e.id)).toEqual(["tonight", "next-week"]);
     for (const e of passed) {
       expect(e).not.toHaveProperty("adminUnpublishNote");
       expect(e.venue).not.toHaveProperty("venueProfile");
@@ -82,6 +90,7 @@ describe("homepage — server-side upcoming filter and projection", () => {
   it("server-renders every upcoming event's row and link, and none of the past ones", async () => {
     vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
     vi.mocked(getArtistPreviewAvailabilityForLineups).mockResolvedValue([false, false]);
+    vi.mocked(getSoundcloudAvailabilityForEvents).mockResolvedValue([false, false]);
     const html = renderToStaticMarkup(await HomePage());
     expect(html).toContain('href="/events/event-tonight"');
     expect(html).toContain('href="/events/event-next-week"');

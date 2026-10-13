@@ -499,6 +499,47 @@ export const sourceEventLinks = pgTable(
 );
 
 /**
+ * Venue-provided artist SoundCloud profile links (Culture Box, 2026-10-13).
+ * One row per (event, source, exact lineup name): the profile URL that
+ * source's own event listing linked that name to for that night. Written
+ * only by the sync (src/db/soundcloudLinks.ts) from links the adapter
+ * accepted (src/lib/adapters/cultureBoxSoundcloudLinks.ts); never looked up
+ * on SoundCloud and never matched by name across events. A row only renders
+ * while its artistName is still in the event's own current lineup, and never
+ * when its url is in soundcloud_link_blocks.
+ */
+export const eventSoundcloudLinks = pgTable(
+  "event_soundcloud_links",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id),
+    /** Exact lineup display name, as stored in events.artists. */
+    artistName: text("artist_name").notNull(),
+    /** Normalized profile URL: https://soundcloud.com/<handle>. */
+    url: text("url").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.eventId, table.sourceId, table.artistName] })],
+);
+
+/**
+ * Manual blocks for SoundCloud profile links, keyed by normalized profile
+ * URL. Set/cleared only by the soundcloud-link-block workflow
+ * (src/db/soundcloudLinkBlock.ts); the sync never reads or writes this table,
+ * so a block survives every later sync and applies to every event.
+ */
+export const soundcloudLinkBlocks = pgTable("soundcloud_link_blocks", {
+  url: text("url").primaryKey(),
+  reason: text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Newsletter subscribers (weekly digest MVP, 2026-10-05). No account/login —
  * `confirmToken`/`manageToken` are the entire auth model, matching the
  * task's explicit "no account creation" requirement. `genres` stores
