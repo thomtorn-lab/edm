@@ -133,5 +133,9 @@
         }
       ]
     }
-  ]
+  ],
+  "_write_access_test": {
+    "purpose": "temporary read/write verification",
+    "date": "2026-10-13"
+  }
 }
