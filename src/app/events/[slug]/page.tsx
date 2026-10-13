@@ -84,7 +84,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const artistVideoPreview = await getArtistYoutubePreviewForLineup(event.artists);
-  const soundcloudPilotArtists = getSoundcloudPilotArtists(event.id, event.artists);
+  const soundcloudPilotArtists = getSoundcloudPilotArtists(event);
   const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
   const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
 
