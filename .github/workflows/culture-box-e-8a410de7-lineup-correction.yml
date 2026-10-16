@@ -1,0 +1,86 @@
+name: Culture Box e-8a410de7 Lineup Correction (one-off)
+
+# One-time correction of Culture Box Fri 16 Oct 2026 (event e-8a410de7).
+# Runs src/db/cultureBoxOct16LineupCorrection.ts, which writes ONLY the
+# `artists` and `description` of that one event (plus updated_at,
+# last_changed and one event_change_log row, as every admin edit does). The
+# event id, expected current state and new values are constants in that
+# script; no input can change them.
+#
+# "plan" (default) is read-only: prints the current row, every
+# precondition, and the exact before/after. "apply" needs the confirm token,
+# aborts on any deviation from the reviewed state, and writes in one guarded
+# statement. Once applied, any re-run reports "already applied" and writes
+# nothing.
+#
+# No HTTP endpoint and no admin login: the only credential is the
+# DATABASE_URL repository secret, which is never echoed, printed, or logged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) shows the exact change; "apply" writes it.'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: "apply mode only: type CORRECT-CULTURE-BOX-E-8A410DE7 to confirm the write."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: culture-box-e-8a410de7-lineup-correction
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run e-8a410de7 lineup correction
+        # Inputs reach the script only via step-level env vars expanded inside
+        # double quotes — never pasted into it via ${{ }}. See
+        # src/db/cultureBoxOct16LineupCorrectionWorkflow.test.ts.
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -u
+          args=(--mode="$INPUT_MODE")
+          [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
+          node --env-file=.env.local --import tsx src/db/cultureBoxOct16LineupCorrection.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
