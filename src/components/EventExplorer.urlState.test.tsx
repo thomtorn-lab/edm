@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import EventExplorer from "./EventExplorer";
 import type { HomepageEvent } from "@/lib/homepageEvents";
 import type { GenreSlug } from "@/lib/taxonomy";
@@ -209,6 +210,7 @@ describe("EventExplorer — remembering the list for '← All events'", () => {
     expect(JSON.parse(window.sessionStorage.getItem(LIST_RETURN_STORAGE_KEY)!)).toEqual({
       eventPath: `/events/${TONIGHT_HOUSE_CB.slug}`,
       listUrl: "/?genre=house&q=tim",
+      savedAt: Date.now(),
     });
   });
 
@@ -218,9 +220,96 @@ describe("EventExplorer — remembering the list for '← All events'", () => {
     expect(JSON.parse(window.sessionStorage.getItem(LIST_RETURN_STORAGE_KEY)!).listUrl).toBe("/");
   });
 
+  it.each([
+    ["Cmd", { metaKey: true }],
+    ["Ctrl", { ctrlKey: true }],
+    ["Shift", { shiftKey: true }],
+    ["Alt", { altKey: true }],
+    ["middle button", { button: 1 }],
+  ])("records nothing for a %s-click (opens the event elsewhere, not in this tab)", (_label, init) => {
+    renderAt("/?genre=house");
+    fireEvent.click(screen.getByRole("link", { name: /Tonight House Night/ }), init);
+    expect(window.sessionStorage.getItem(LIST_RETURN_STORAGE_KEY)).toBeNull();
+  });
+
+  it("keeps an existing record pointing at the list's current view after a filter change (what browser back would show)", () => {
+    renderAt("/?genre=house");
+    fireEvent.click(screen.getByRole("link", { name: /Tonight House Night/ }));
+    fireEvent.change(document.getElementById("genre-filter")!, { target: { value: "techno" } });
+    const record = JSON.parse(window.sessionStorage.getItem(LIST_RETURN_STORAGE_KEY)!);
+    expect(record.listUrl).toBe("/?genre=techno");
+    expect(record.eventPath).toBe(`/events/${TONIGHT_HOUSE_CB.slug}`);
+  });
+
   it("ignores clicks on links that don't open an event page", () => {
     renderAt("/");
     fireEvent.click(screen.getAllByRole("link", { name: "KB18" })[0]);
     expect(window.sessionStorage.getItem(LIST_RETURN_STORAGE_KEY)).toBeNull();
   });
 });
+
+describe("EventExplorer — URL changes that don't remount the list", () => {
+  /** Simulates a client navigation that changes the URL while the list stays mounted (header "Events" link, back/forward between homepage entries). */
+  function navigateWithoutRemount(rerender: (ui: ReactElement) => void, url: string) {
+    window.history.replaceState(null, "", url);
+    mockSearchParams = new URLSearchParams(window.location.search);
+    act(() => {
+      rerender(<EventExplorer events={EVENTS} serverNow={SERVER_NOW} />);
+    });
+  }
+
+  it("follows a navigation to the plain homepage (header 'Events' link while filtered)", () => {
+    const { rerender } = renderAt("/?genre=house&q=night");
+    expect(titles()).toHaveLength(2);
+    navigateWithoutRemount(rerender, "/");
+    expect((document.getElementById("genre-filter") as HTMLSelectElement).value).toBe("all");
+    expect((screen.getAllByRole("searchbox")[1] as HTMLInputElement).value).toBe("");
+    expect(titles()).toHaveLength(3);
+    expect(window.location.search).toBe("");
+  });
+
+  it("follows back/forward to a different filtered homepage entry", () => {
+    const { rerender } = renderAt("/");
+    navigateWithoutRemount(rerender, "/?when=tonight&venue=culture-box");
+    for (const button of screen.getAllByRole("button", { name: "Tonight" })) {
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+    }
+    expect((document.getElementById("venue-filter") as HTMLSelectElement).value).toBe("v-culture-box");
+    expect(titles()).toEqual([expect.stringContaining("Tonight House Night")]);
+  });
+
+  it("does not reset the list for a lagging echo of its own write (fast typing)", () => {
+    const { rerender } = renderAt("/");
+    const search = screen.getAllByRole("searchbox")[1] as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "ti" } });
+    fireEvent.change(search, { target: { value: "tim" } });
+    expect(window.location.search).toBe("?q=tim");
+    // The router catches up one write late: useSearchParams still says "ti"
+    // while the address bar already says "tim".
+    mockSearchParams = new URLSearchParams("q=ti");
+    act(() => {
+      rerender(<EventExplorer events={EVENTS} serverNow={SERVER_NOW} />);
+    });
+    expect(search.isConnected).toBe(true);
+    expect(search.value).toBe("tim");
+    mockSearchParams = new URLSearchParams("q=tim");
+    act(() => {
+      rerender(<EventExplorer events={EVENTS} serverNow={SERVER_NOW} />);
+    });
+    expect(search.isConnected).toBe(true);
+    expect(search.value).toBe("tim");
+  });
+
+  it("does not remount when the router reports the list's own write", () => {
+    const { rerender } = renderAt("/");
+    const genreSelect = document.getElementById("genre-filter") as HTMLSelectElement;
+    fireEvent.change(genreSelect, { target: { value: "house" } });
+    mockSearchParams = new URLSearchParams(window.location.search);
+    act(() => {
+      rerender(<EventExplorer events={EVENTS} serverNow={SERVER_NOW} />);
+    });
+    expect(genreSelect.isConnected).toBe(true);
+    expect(genreSelect.value).toBe("house");
+  });
+});
+

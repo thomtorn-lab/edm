@@ -76,17 +76,23 @@ export function serializeExplorerFilters(filters: ExplorerUrlFilters, current = 
 
 /**
  * "← All events" return target (see BackToEventsLink): when a visitor opens
- * an event from the homepage list, the list records which event was opened
- * and the list URL it was opened from, in sessionStorage (per tab, gone when
- * the tab closes). The event page only uses that URL when it is the SAME
- * event the visitor opened from the list — a direct visit, a new tab, or a
- * different event reached some other way always gets the plain "/".
+ * an event from the homepage list with a plain click, the list records which
+ * event was opened and the list URL it was opened from, in sessionStorage
+ * (per tab, gone when the tab closes). The event page only uses that URL
+ * when it is the SAME event the visitor opened from the list, and only for
+ * LIST_RETURN_MAX_AGE_MS — a direct visit, a new tab, a different event
+ * reached some other way, or a stale/old-format record always gets "/".
  */
 export const LIST_RETURN_STORAGE_KEY = "ecph:list-return";
+
+/** How long a record stays usable — long enough for a browsing session, short enough that a tab left open overnight doesn't resurrect yesterday's filters. */
+export const LIST_RETURN_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 export interface ListReturn {
   eventPath: string;
   listUrl: string;
+  /** Date.now() when the event was opened from the list. */
+  savedAt: number;
 }
 
 /** Only ever a same-site homepage URL ("/" or "/?…") — anything else stored under the key is ignored. */
@@ -94,13 +100,51 @@ export function isSafeListUrl(url: unknown): url is string {
   return typeof url === "string" && (url === "/" || url.startsWith("/?")) && url.length <= 1000;
 }
 
-export function readListReturn(raw: string | null, eventPath: string): string | null {
+function parseListReturn(raw: string | null): ListReturn | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<ListReturn>;
-    if (parsed.eventPath !== eventPath || !isSafeListUrl(parsed.listUrl)) return null;
-    return parsed.listUrl;
+    if (typeof parsed.eventPath !== "string" || !isSafeListUrl(parsed.listUrl) || typeof parsed.savedAt !== "number") return null;
+    return { eventPath: parsed.eventPath, listUrl: parsed.listUrl, savedAt: parsed.savedAt };
   } catch {
     return null;
+  }
+}
+
+export function readListReturn(raw: string | null, eventPath: string, now = Date.now()): string | null {
+  const record = parseListReturn(raw);
+  if (!record || record.eventPath !== eventPath) return null;
+  const age = now - record.savedAt;
+  if (age < 0 || age > LIST_RETURN_MAX_AGE_MS) return null;
+  return record.listUrl;
+}
+
+// sessionStorage can be unavailable or throw (private mode, blocked
+// storage); every failure just means the link falls back to "/".
+function storage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function writeListReturn(record: ListReturn): void {
+  try {
+    storage()?.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+}
+
+/** Points an existing record at the list's current URL (keeping its event and time); no record, nothing to do. */
+export function updateListReturnUrl(listUrl: string): void {
+  try {
+    const store = storage();
+    const record = parseListReturn(store?.getItem(LIST_RETURN_STORAGE_KEY) ?? null);
+    if (!store || !record || record.listUrl === listUrl) return;
+    store.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify({ ...record, listUrl }));
+  } catch {
+    // ignore
   }
 }

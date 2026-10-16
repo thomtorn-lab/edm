@@ -3,10 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import BackToEventsLink from "./BackToEventsLink";
-import { LIST_RETURN_STORAGE_KEY } from "@/lib/explorerFilters";
+import { LIST_RETURN_MAX_AGE_MS, LIST_RETURN_STORAGE_KEY } from "@/lib/explorerFilters";
 
-const store = (eventPath: string, listUrl: string) =>
-  window.sessionStorage.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify({ eventPath, listUrl }));
+const store = (eventPath: string, listUrl: string, savedAt = Date.now()) =>
+  window.sessionStorage.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify({ eventPath, listUrl, savedAt }));
 
 const href = () => screen.getByRole("link", { name: "← All events" }).getAttribute("href");
 
@@ -30,6 +30,18 @@ describe("BackToEventsLink", () => {
   it("links to the plain homepage for a different event than the one opened from the list", () => {
     store("/events/a", "/?q=tim");
     render(<BackToEventsLink eventPath="/events/b" />);
+    expect(href()).toBe("/");
+  });
+
+  it("links to the plain homepage when the record is stale (tab left open for hours)", () => {
+    store("/events/a", "/?q=tim", Date.now() - LIST_RETURN_MAX_AGE_MS - 1000);
+    render(<BackToEventsLink eventPath="/events/a" />);
+    expect(href()).toBe("/");
+  });
+
+  it("links to the plain homepage for an old-format record without a timestamp", () => {
+    window.sessionStorage.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify({ eventPath: "/events/a", listUrl: "/?q=tim" }));
+    render(<BackToEventsLink eventPath="/events/a" />);
     expect(href()).toBe("/");
   });
 

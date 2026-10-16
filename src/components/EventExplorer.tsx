@@ -15,11 +15,11 @@ import { formatMonthAbbrTitleCase, formatMonthFull } from "@/lib/format";
 import { eventMatchesQuery } from "@/lib/search";
 import {
   EXPLORER_DATE_MODES,
-  LIST_RETURN_STORAGE_KEY,
   parseExplorerFilters,
   serializeExplorerFilters,
+  updateListReturnUrl,
+  writeListReturn,
   type ExplorerMode,
-  type ListReturn,
 } from "@/lib/explorerFilters";
 import { MAIN_GENRES, matchesMainGenre, type MainGenreSlug } from "@/lib/taxonomy";
 import EventRow from "./EventRow";
@@ -113,10 +113,47 @@ function FilterIcon() {
   );
 }
 
-export default function EventExplorer({
-  events,
-  serverNow,
-}: {
+/**
+ * The homepage list (homepage search/navigation work, 2026-10-13). Its
+ * filters are read from the URL once, on mount (see EventExplorerList), and
+ * from then on the list mirrors its own state into the URL. That leaves one
+ * case to cover here: a navigation that changes the URL's filters WITHOUT
+ * remounting the list — Next.js keeps a page's client components mounted
+ * when only the query string changes, e.g. the header's "Events"/logo link
+ * to "/" while a filtered view is open, or browser back/forward between two
+ * such homepage entries. That would leave the address bar and the list
+ * disagreeing, so when the URL's filters change and the change is neither
+ * the list's own replaceState nor already its state, the list is remounted
+ * from the URL — exactly like loading that URL. Remounting (rather than
+ * pushing the new values into the live state) also keeps the filter-apply
+ * month scroll out of what is a page navigation.
+ */
+export default function EventExplorer(props: EventExplorerProps) {
+  const searchParams = useSearchParams();
+  const urlKey = serializeExplorerFilters(parseExplorerFilters(searchParams));
+  const lastUrlKeyRef = useRef(urlKey);
+  // The list's own committed filters, in the same form as urlKey — written
+  // by EventExplorerList after every commit (child effects run before this
+  // component's own).
+  const stateKeyRef = useRef(urlKey);
+  const [instance, setInstance] = useState(0);
+
+  useEffect(() => {
+    if (urlKey === lastUrlKeyRef.current) return;
+    lastUrlKeyRef.current = urlKey;
+    // useSearchParams can trail the address bar while the list is writing
+    // to it (e.g. fast typing in search): a value that no longer matches
+    // the real location is an echo of an older write, never a navigation.
+    const locationKey = serializeExplorerFilters(parseExplorerFilters(new URLSearchParams(window.location.search)));
+    if (urlKey !== locationKey) return;
+    if (urlKey === stateKeyRef.current) return;
+    setInstance((n) => n + 1);
+  }, [urlKey]);
+
+  return <EventExplorerList key={instance} {...props} stateKeyRef={stateKeyRef} />;
+}
+
+interface EventExplorerProps {
   /**
    * Upcoming events only, as the minimal HomepageEvent projection — the
    * server (app/page.tsx) already drops events that are past at
@@ -146,7 +183,13 @@ export default function EventExplorer({
    * render, exactly like /venues/[slug]/page.tsx already does.
    */
   serverNow: string;
-}) {
+}
+
+function EventExplorerList({
+  events,
+  serverNow,
+  stateKeyRef,
+}: EventExplorerProps & { stateKeyRef?: { current: string } }) {
   const [now, setNow] = useState<Date>(() => new Date(serverNow));
   // Initial filters come from the URL (homepage search/navigation work,
   // 2026-10-13) — see src/lib/explorerFilters.ts. useSearchParams reads the
@@ -387,6 +430,12 @@ export default function EventExplorer({
   const listSearch = serializeExplorerFilters({ mode, genre, venueSlug, query });
   const listUrl = listSearch ? `/?${listSearch}` : "/";
 
+  // Reports the committed filters to the EventExplorer wrapper, which
+  // compares them with the URL to tell its own writes from a navigation.
+  useEffect(() => {
+    if (stateKeyRef) stateKeyRef.current = listSearch;
+  });
+
   // Mirrors the committed filters into the address bar (homepage
   // search/navigation work, 2026-10-13) so back/forward, reload and shared
   // links restore this view. replaceState, never pushState: changing a
@@ -403,20 +452,28 @@ export default function EventExplorer({
     window.history.replaceState(null, "", url);
   }, [mode, genre, venueSlug, query]);
 
+  // Keeps an existing "← All events" record pointing at this list's
+  // CURRENT view: after back from an event and a filter change, the list's
+  // own history entry now shows the new filters (replaceState above), so
+  // the event page's link must return there too, never to the older view.
+  useEffect(() => {
+    updateListReturnUrl(listUrl);
+  }, [listUrl]);
+
   // Remembers which event was opened from this list, and from which list
   // URL, so that event page's "← All events" can return to this exact view
   // (see BackToEventsLink / explorerFilters.ts). Capture phase on the list
   // wrapper covers every event link a row renders (title, VIDEO, AUDIO).
+  //
+  // Only a plain primary click — the one that navigates THIS tab. A
+  // Cmd/Ctrl/Shift/Alt or middle click opens the event elsewhere and must
+  // not leave a record behind for this tab to misuse later.
   function rememberListReturn(e: MouseEvent<HTMLElement>) {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const anchor = (e.target as HTMLElement).closest?.("a");
     const href = anchor?.getAttribute("href") ?? "";
     if (!href.startsWith("/events/")) return;
-    const record: ListReturn = { eventPath: href.split("#")[0], listUrl };
-    try {
-      window.sessionStorage.setItem(LIST_RETURN_STORAGE_KEY, JSON.stringify(record));
-    } catch {
-      // Storage unavailable (private mode, blocked): the link just falls back to "/".
-    }
+    writeListReturn({ eventPath: href.split("#")[0], listUrl, savedAt: Date.now() });
   }
 
   // Tapping a month nav item must win immediately (see handleMonthNavClick)

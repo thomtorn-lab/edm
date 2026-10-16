@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EXPLORER_URL_FILTERS,
+  LIST_RETURN_MAX_AGE_MS,
   isSafeListUrl,
   parseExplorerFilters,
   readListReturn,
@@ -76,23 +77,34 @@ describe("serializeExplorerFilters", () => {
 });
 
 describe("list return target ('← All events')", () => {
-  const record = (eventPath: string, listUrl: string) => JSON.stringify({ eventPath, listUrl });
+  const NOW = 1_800_000_000_000;
+  const record = (eventPath: string, listUrl: string, savedAt: number = NOW) => JSON.stringify({ eventPath, listUrl, savedAt });
 
   it("returns the recorded list URL only for the same event", () => {
-    expect(readListReturn(record("/events/a", "/?q=tim"), "/events/a")).toBe("/?q=tim");
-    expect(readListReturn(record("/events/a", "/?q=tim"), "/events/b")).toBeNull();
+    expect(readListReturn(record("/events/a", "/?q=tim"), "/events/a", NOW)).toBe("/?q=tim");
+    expect(readListReturn(record("/events/a", "/?q=tim"), "/events/b", NOW)).toBeNull();
   });
 
   it("returns null when nothing (or garbage) is stored", () => {
-    expect(readListReturn(null, "/events/a")).toBeNull();
-    expect(readListReturn("not json", "/events/a")).toBeNull();
-    expect(readListReturn(JSON.stringify({ eventPath: "/events/a" }), "/events/a")).toBeNull();
+    expect(readListReturn(null, "/events/a", NOW)).toBeNull();
+    expect(readListReturn("not json", "/events/a", NOW)).toBeNull();
+    expect(readListReturn(JSON.stringify({ eventPath: "/events/a" }), "/events/a", NOW)).toBeNull();
+  });
+
+  it("ignores an old-format record without a timestamp", () => {
+    expect(readListReturn(JSON.stringify({ eventPath: "/events/a", listUrl: "/?q=tim" }), "/events/a", NOW)).toBeNull();
+  });
+
+  it("expires a record after LIST_RETURN_MAX_AGE_MS (and rejects one from the future)", () => {
+    expect(readListReturn(record("/events/a", "/?q=tim", NOW - LIST_RETURN_MAX_AGE_MS), "/events/a", NOW)).toBe("/?q=tim");
+    expect(readListReturn(record("/events/a", "/?q=tim", NOW - LIST_RETURN_MAX_AGE_MS - 1), "/events/a", NOW)).toBeNull();
+    expect(readListReturn(record("/events/a", "/?q=tim", NOW + 60_000), "/events/a", NOW)).toBeNull();
   });
 
   it("never returns anything but a same-site homepage URL", () => {
     for (const bad of ["https://evil.example/", "//evil.example/", "/venues/x", "javascript:alert(1)", ""]) {
       expect(isSafeListUrl(bad)).toBe(false);
-      expect(readListReturn(record("/events/a", bad), "/events/a")).toBeNull();
+      expect(readListReturn(record("/events/a", bad), "/events/a", NOW)).toBeNull();
     }
     expect(isSafeListUrl("/")).toBe(true);
     expect(isSafeListUrl("/?when=weekend")).toBe(true);
