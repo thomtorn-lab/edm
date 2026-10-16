@@ -1,0 +1,186 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  buildNameSection,
+  buildRuleReplaySection,
+  CACHE_SQL,
+  DISCOVERY_NAMES_SQL,
+  EVENT_NAMES_SQL,
+  READ_ONLY_TX_STATEMENTS,
+  runYoutubePreviewRiskReport,
+  type CacheRow,
+  type QueryClient,
+} from "./youtubePreviewRiskReport";
+
+function evidenceFor(name: string, videoId: string, title: string, channelTitle: string, channelMatch: "own" | "trusted") {
+  const candidate = { videoId, title, channelId: "c", channelTitle, channelMatch, publishedAt: "2025-01-01T00:00:00Z" };
+  return {
+    rawArtistName: name,
+    cleanedName: name,
+    primaryAttempt: {
+      query: `${name} dj set`,
+      candidatesReturned: 1,
+      structurallyEligible: [candidate],
+      rejected: [],
+      verified: [{ videoId, durationSeconds: 3600, embeddable: true, privacyStatus: "public" }],
+      selected: candidate,
+      rejectedAfterVerification: [],
+    },
+    fallbackAttempt: null,
+  };
+}
+
+function accepted(name: string, videoId: string, title: string, channelTitle: string, channelMatch: "own" | "trusted", manualBlock = false): CacheRow {
+  return {
+    artist_name_normalized: name.toLowerCase(),
+    status: "accepted",
+    video_id: videoId,
+    video_title: title,
+    channel_title: channelTitle,
+    manual_block: manualBlock,
+    evidence: evidenceFor(name, videoId, title, channelTitle, channelMatch),
+  };
+}
+
+const CACHE: CacheRow[] = [
+  accepted("DASHA", "WRFXZHZpvfU", "Dasha Rush Boiler Room x Present Perfect Festival DJ Set", "Boiler Room", "trusted"),
+  accepted("Intercell", "Ozv-gv4Tywc", "Benwal b2b Sam Alfred at Intercell x Glitch Festival 2026 | Full set", "Intercell", "own"),
+  accepted("Cassie Raptor", "ut_06vMLkaI", "Cassie Raptor | Boiler Room: Paris", "Boiler Room", "trusted"),
+  accepted("Benji", "benjib", "Benji B | Boiler Room London", "Boiler Room", "trusted", true),
+  { artist_name_normalized: "pippa", status: "abstain", video_id: null, video_title: null, channel_title: null, manual_block: false, evidence: {} },
+];
+
+describe("buildRuleReplaySection", () => {
+  const section = buildRuleReplaySection(CACHE);
+
+  it("counts every cache row by status and block", () => {
+    expect(section).toMatchObject({ cacheRows: 5, acceptedRows: 4, abstainRows: 1, manuallyBlockedRows: 1 });
+  });
+
+  it("lists every accepted match a proposed rule touches, and leaves the rest out", () => {
+    expect(section.affectedByProposedRules.map((r) => r.artist).sort()).toEqual(["dasha", "intercell"]);
+  });
+
+  it("lists matches today's production rules would no longer accept, keeping the manual block visible", () => {
+    expect(section.failingCurrentRules.map((r) => [r.artist, r.manualBlock])).toEqual([["benji", true]]);
+  });
+
+  it("tallies every accepted row exactly once across outcomes", () => {
+    const total = Object.values(section.outcomeCounts).reduce((a, b) => a + b, 0);
+    expect(total).toBe(section.acceptedRows);
+    expect(section.outcomeCounts.unchanged).toBe(1);
+  });
+});
+
+describe("buildNameSection", () => {
+  const section = buildNameSection(
+    [
+      { name: "Karrusel 2027", events_total: 1, events_visible: 1 },
+      { name: "Byetone DE", events_total: 2, events_visible: 0 },
+      { name: "Above & Beyond", events_total: 1, events_visible: 1 },
+      { name: "Neelix & friends", events_total: 1, events_visible: 1 },
+    ],
+    [
+      { name: "Karrusel 2027", discovery_total: 2, discovery_pending: 1 },
+      { name: "DJs", discovery_total: 1, discovery_pending: 1 },
+    ],
+    [accepted("Neelix & friends", "v", "Neelix & friends live", "Neelix & friends", "own")],
+  );
+
+  it("merges counts for a name seen in both events and discovery", () => {
+    expect(section.notArtist.find((n) => n.name === "Karrusel 2027")).toMatchObject({ eventsTotal: 1, eventsVisible: 1, discoveryTotal: 2, discoveryPending: 1 });
+  });
+
+  it("keeps not-artist and cleanable names apart, and counts ok names without listing them", () => {
+    expect(section.distinctNames).toBe(5);
+    expect(section.verdictCounts).toEqual({ ok: 1, not_artist: 3, cleanable: 1 });
+    expect(section.cleanable.map((n) => n.name)).toEqual(["Byetone DE"]);
+    expect(section.notArtist.map((n) => n.name)).not.toContain("Above & Beyond");
+  });
+
+  it("surfaces a flagged name that holds an accepted match as a potential false positive", () => {
+    expect(section.flaggedWithAcceptedMatch.map((n) => n.name)).toEqual(["Neelix & friends"]);
+  });
+});
+
+class FakeClient implements QueryClient {
+  statements: string[] = [];
+  constructor(private readonly readOnly: string = "on", private readonly failOn: string | null = null) {}
+  async query(sql: string): Promise<{ rows: unknown[] }> {
+    this.statements.push(sql);
+    if (this.failOn && sql === this.failOn) throw new Error("boom");
+    if (sql === READ_ONLY_TX_STATEMENTS.verify) return { rows: [{ transaction_read_only: this.readOnly }] };
+    if (sql === CACHE_SQL) return { rows: CACHE };
+    return { rows: [] };
+  }
+}
+
+describe("runYoutubePreviewRiskReport — read-only discipline", () => {
+  it("runs BEGIN READ ONLY → timeout → verify → SELECTs → ROLLBACK, and nothing else", async () => {
+    const client = new FakeClient();
+    await runYoutubePreviewRiskReport(client, new Date("2026-10-16T00:00:00Z"));
+    expect(client.statements).toEqual([
+      READ_ONLY_TX_STATEMENTS.begin,
+      READ_ONLY_TX_STATEMENTS.timeout,
+      READ_ONLY_TX_STATEMENTS.verify,
+      CACHE_SQL,
+      EVENT_NAMES_SQL,
+      DISCOVERY_NAMES_SQL,
+      READ_ONLY_TX_STATEMENTS.rollback,
+    ]);
+  });
+
+  it("refuses to query anything when the transaction is not read-only, and still rolls back", async () => {
+    const client = new FakeClient("off");
+    await expect(runYoutubePreviewRiskReport(client)).rejects.toThrow(/expected "on"/);
+    expect(client.statements).not.toContain(CACHE_SQL);
+    expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
+  });
+
+  it("rolls back when a query fails", async () => {
+    const client = new FakeClient("on", EVENT_NAMES_SQL);
+    await expect(runYoutubePreviewRiskReport(client)).rejects.toThrow("boom");
+    expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
+  });
+
+  it("every data query is a plain SELECT", () => {
+    for (const sql of [CACHE_SQL, EVENT_NAMES_SQL, DISCOVERY_NAMES_SQL]) {
+      expect(sql.trimStart().startsWith("SELECT ")).toBe(true);
+      expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT)\b/i);
+    }
+  });
+});
+
+describe("youtube-preview-risk-report-readonly.yml", () => {
+  // Comment lines are documentation (they name the key the workflow does NOT
+  // use, and the library files behind the CLI) — only the executable YAML
+  // is checked.
+  const yaml = readFileSync(path.join(process.cwd(), ".github/workflows/youtube-preview-risk-report-readonly.yml"), "utf-8")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+
+  it("only runs on manual dispatch", () => {
+    expect(yaml).toMatch(/^on:\n {2}workflow_dispatch:\n\n/m);
+    expect(yaml).not.toMatch(/^\s*(schedule|push|pull_request):/m);
+  });
+
+  it("never receives the YouTube API key", () => {
+    expect(yaml).not.toMatch(/YOUTUBE_API_KEY/);
+  });
+
+  it("has read-only repository permissions", () => {
+    expect(yaml).toMatch(/^permissions:\n {2}contents: read\n/m);
+  });
+
+  it("runs the read-only report CLI and nothing else from src/db", () => {
+    const scripts = [...yaml.matchAll(/src\/db\/\w+\.ts/g)].map((m) => m[0]);
+    expect(new Set(scripts)).toEqual(new Set(["src/db/youtubePreviewRiskReportCli.ts"]));
+  });
+
+  it("has no ${{ }} expression inside a run: script", () => {
+    const runBlocks = yaml.split(/\n\s*- name: /).map((step) => step.split(/\n\s+run: /)[1] ?? "");
+    for (const block of runBlocks) expect(block.split(/\n\s+(?:uses|with|env|if):/)[0]).not.toContain("${{");
+  });
+});
