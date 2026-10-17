@@ -1,0 +1,72 @@
+name: YouTube Preview Risk Report (Read-Only)
+
+# Read-only review input for the YouTube preview enrichment plan
+# (2026-10-14), run by src/db/youtubePreviewRiskReportCli.ts:
+#
+# 1. Offline replay of PROPOSED Rule A identity checks against the evidence
+#    already stored on every accepted artist_youtube_preview_cache row —
+#    lists every accepted match a proposed rule would touch.
+# 2. Report-only classification of every lineup name (events +
+#    discovery_queue) with the narrow non-artist rules — lists what each
+#    rule would flag and which flagged names hold an accepted match.
+#
+# Nothing is enforced, blocked, replaced or written. Logic and tests:
+# src/lib/enrichment/youtubePreviewRuleReplay.ts,
+# src/lib/enrichment/artistNameClassification.ts,
+# src/db/youtubePreviewRiskReport.ts (+ .test.ts files).
+#
+# Safety: workflow_dispatch only, no inputs. Uses DATABASE_URL only — no
+# YOUTUBE_API_KEY, so it cannot call YouTube. BEGIN READ ONLY (verified with
+# SHOW transaction_read_only before any query; the run aborts otherwise),
+# SELECT-only queries, ROLLBACK. The JSON report is uploaded as a run
+# artifact; nothing else leaves the runner.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube-preview-risk-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run YouTube preview risk report
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node --import tsx src/db/youtubePreviewRiskReportCli.ts --out=youtube-preview-risk-report.json
+
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-preview-risk-report
+          path: youtube-preview-risk-report.json
+          if-no-files-found: ignore
+          retention-days: 30

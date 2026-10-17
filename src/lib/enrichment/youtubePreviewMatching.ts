@@ -81,7 +81,7 @@ export interface YoutubePreviewClient {
 
 export const MATCH_RULE = "A" as const;
 const MAX_SEARCH_RESULTS = 5;
-const MIN_DURATION_SECONDS = 20 * 60;
+export const MIN_DURATION_SECONDS = 20 * 60;
 const ACCEPTED_TTL_DAYS = 90;
 const ABSTAIN_TTL_DAYS = 30;
 export const VERIFY_STALE_DAYS = 30;
@@ -95,7 +95,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * (normalized) match only — no substring/fuzzy containment, so "Not
  * Tomorrowland Fanpage" never qualifies.
  */
-const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air"]);
+export const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air"]);
 
 /**
  * The three generic/common-word collisions the audit actually surfaced
@@ -138,8 +138,8 @@ export function titleContainsExactName(title: string, cleanedName: string): bool
   return true;
 }
 
-const MULTI_BILLING_SEPARATORS = /,|&|(?:\bx\b)|(?:\bvs\.?\b)|(?:\bb2b\b)/gi;
-const TITLE_STOP_MARKERS = /\||@|\bat\b|\blive\b|\bdj set\b|\bfestival\b|\bpresents\b|\bfull set\b/i;
+export const MULTI_BILLING_SEPARATORS = /,|&|(?:\bx\b)|(?:\bvs\.?\b)|(?:\bb2b\b)/gi;
+export const TITLE_STOP_MARKERS = /\||@|\bat\b|\blive\b|\bdj set\b|\bfestival\b|\bpresents\b|\bfull set\b/i;
 
 /**
  * How many distinct names the title bills before the first
@@ -157,9 +157,9 @@ export function countBilledNames(title: string): number {
     .filter(Boolean).length;
 }
 
-type ChannelMatch = "own" | "trusted";
+export type ChannelMatch = "own" | "trusted";
 
-interface StructuralCheck {
+export interface StructuralCheck {
   eligible: boolean;
   channelMatch: ChannelMatch | null;
   reason: string | null;
@@ -202,7 +202,7 @@ interface StructuralCheck {
  * consumed by the cleanedName match itself before this function ever looks
  * at what follows.
  */
-const TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS = new Set([
+export const TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS = new Set([
   "b2b",
   "x",
   "vs",
@@ -243,7 +243,7 @@ function checkTrustedChannelSuffix(title: string, cleanedName: string, channelTi
   };
 }
 
-function checkStructuralEligibility(cleanedName: string, normalized: string, item: YoutubeSearchItem): StructuralCheck {
+export function checkStructuralEligibility(cleanedName: string, normalized: string, item: YoutubeSearchItem): StructuralCheck {
   if (!titleContainsExactName(item.title, cleanedName)) {
     return { eligible: false, channelMatch: null, reason: "title does not contain the exact artist name" };
   }
