@@ -1702,3 +1702,39 @@ describe("runIngestionPipeline — text normalization at the shared choke point"
     expect(candidate.description).toBeNull();
   });
 });
+
+describe("lineup names are not genre evidence (genre QA, 2026-10-17)", () => {
+  const pabDisco = (overrides: Partial<RawCandidateEvent> = {}) =>
+    raw({
+      title: "Black Box: FABIAN KROOSS, PAB DISCO",
+      description: "Setting the tone is MISS ALBA, while Pab Disco takes the Black Box.",
+      artists: ["FABIAN KROOSS", "PAB DISCO", "MISS ALBA"],
+      genreHint: null,
+      genreConfidenceHint: null,
+      ...overrides,
+    });
+
+  it("with a structured lineup, the deterministic fallback never reads PAB DISCO as disco", () => {
+    expect(runIngestionPipeline(pabDisco({ lineupNamesAreStructured: true }), { venues: VENUES, existingEvents: [] }).genre).toBeNull();
+  });
+
+  it("without the structured-lineup flag, classification is exactly as before (title-derived names are never masked)", () => {
+    expect(runIngestionPipeline(pabDisco(), { venues: VENUES, existingEvents: [] }).genre).toBe("disco");
+  });
+
+  it("an independent genre word in the description still resolves, and refinement still reads the text", () => {
+    const r = runIngestionPipeline(
+      pabDisco({ lineupNamesAreStructured: true, description: "Pab Disco opens, then a night of deep house." }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(r.genre).toBe("deep-house");
+  });
+
+  it("an adapter's own genreHint is never changed by the mask", () => {
+    const r = runIngestionPipeline(pabDisco({ lineupNamesAreStructured: true, genreHint: "house", genreConfidenceHint: "high" }), {
+      venues: VENUES,
+      existingEvents: [],
+    });
+    expect(r.genre).toBe("house");
+  });
+});

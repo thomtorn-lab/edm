@@ -91,6 +91,57 @@ function lightlyCleanText(text: string): string {
   return stripFormatTermSpans(stripQuotedSpans(text));
 }
 
+/**
+ * Artist names are not genre evidence (genre QA, 2026-10-17). Culture Box's
+ * lineup includes "PAB DISCO". Both its room attribution ("…while Pab Disco
+ * takes the Black Box…") and the pipeline's title+description fallback read
+ * that name as the disco genre, at high confidence. This removes such names
+ * from a text before genre matching, and nothing else:
+ *   - Only names the caller vouches for as a real lineup (structured lineup
+ *     markup: anchors, JSON-LD performer[], a ticketing API's headliners).
+ *     Never names an adapter guessed from the title.
+ *   - Only names that themselves contain a genre keyword. Every other name
+ *     is ignored, so text without such a name matches exactly as before.
+ *   - Never a name equal to the event title (an adapter that falls back to
+ *     the title as its only "artist"; the title's genre words are real
+ *     event-level evidence), and never a name that is nothing but a genre
+ *     phrase ("Deep House"): there the keyword IS the name, so it can't be
+ *     told apart from a genre statement.
+ *   - Whole-name, case-insensitive matches only. A genre word elsewhere in
+ *     the text, including right next to the name ("Pab Disco plays a disco
+ *     set"), is kept.
+ * The removed span becomes a single space, so neighbouring words never fuse.
+ */
+export function maskLineupNamesWithGenreKeywords(text: string, lineupNames: readonly string[], eventTitle: string | null = null): string {
+  const title = eventTitle?.trim().toLowerCase() ?? null;
+  const names = [...new Set(lineupNames.map((n) => n.trim()).filter((n) => n.length >= 3))]
+    .filter((n) => n.toLowerCase() !== title)
+    .filter((n) => isNameWithGenreKeyword(n))
+    // Longest first, so "PAB DISCO ALLSTARS" is removed before "PAB DISCO".
+    .sort((a, b) => b.length - a.length);
+  let masked = text;
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    masked = masked.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"), " ");
+  }
+  return masked;
+}
+
+/** A name containing a genre keyword plus at least one other letter-bearing word ("PAB DISCO" yes, "Deep House" no). */
+function isNameWithGenreKeyword(name: string): boolean {
+  const cleaned = lightlyCleanText(name);
+  let rest = cleaned;
+  let found = false;
+  for (const [pattern] of KEYWORD_MAP) {
+    const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    if (global.test(rest)) {
+      found = true;
+      rest = rest.replace(new RegExp(pattern.source, global.flags), " ");
+    }
+  }
+  return found && /\p{L}/u.test(rest);
+}
+
 export function deterministicGenreFromText(text: string): GenreSlug | null {
   const cleaned = lightlyCleanText(text);
   for (const [pattern, genre] of KEYWORD_MAP) {
