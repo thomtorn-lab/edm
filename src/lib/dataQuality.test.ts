@@ -16,6 +16,9 @@ function ev(overrides: Partial<DataQualityEvent> = {}): DataQualityEvent {
     endDatetime: null,
     published: true,
     canonicalSourceId: "src-test",
+    artists: [],
+    primaryGenre: "electronic-other",
+    venueId: "v-test",
     ...overrides,
   };
 }
@@ -58,26 +61,62 @@ describe("end times", () => {
     expect(keys(ev({ startDatetime: "2026-10-30T20:00:00Z", endDatetime: "2026-11-01T10:00:00Z" }))).toEqual(["end_far_after_start"]);
   });
 
-  it("warns when an evening event ends before 01:00 (The Final Reptile Rave, 20:00–23:30 local)", () => {
-    const issues = detectEventDataQualityIssues(ev({ startDatetime: "2026-10-16T18:00:00Z", endDatetime: "2026-10-16T21:30:00Z" }), [], NOW);
-    expect(issues.map((i) => i.key)).toEqual(["early_end_for_evening_start"]);
+  // Real 2026-10-16 Production cases (UTC as stored).
+  const REPTILE_RAVE = ev({ title: "The Final Reptile Rave - HELL", primaryGenre: "trance", venueId: "v-vega", startDatetime: "2026-10-17T18:00:00Z", endDatetime: "2026-10-17T21:30:00Z" });
+  const GLOD = ev({ title: "GLØD 4 år - 3XB + Signal + dj", venueId: "v-lygten-station", startDatetime: "2026-10-30T19:00:00Z", endDatetime: "2026-10-30T22:30:00Z" });
+  const ZOUMER = ev({ title: "Zoumer + Ela Lung", artists: ["Zoumer", "Ela Lung"], venueId: "v-klein", startDatetime: "2026-11-13T19:30:00Z", endDatetime: "2026-11-13T21:30:00Z" });
+  const LA_TENE = ev({ title: "La Tène FR/CH", artists: ["La Tène"], venueId: "v-alice", startDatetime: "2026-11-20T19:00:00Z", endDatetime: "2026-11-20T22:00:00Z" });
+  const RASTER = ev({ title: "raster. 30 years anniversary", venueId: "v-alice", startDatetime: "2026-11-28T19:00:00Z", endDatetime: "2026-11-28T22:59:00Z" });
+
+  it("marks a club night that ends before 01:00 as a possible inconsistency, not an error (The Final Reptile Rave, 20:00–23:30)", () => {
+    const issues = detectEventDataQualityIssues(REPTILE_RAVE, [], NOW);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ key: "early_end_for_evening_start", severity: "possible_inconsistency" });
+    expect(issues[0].message).toContain("DJ / rave / club-night wording");
     expect(issues[0].message).toContain("20:00");
     expect(issues[0].message).toContain("23:30");
   });
 
-  it("does not warn for a normal club night ending in the morning, a daytime event, or no end time", () => {
-    expect(keys(ev({ startDatetime: "2026-10-30T22:00:00Z", endDatetime: "2026-10-31T05:00:00Z" }))).toEqual([]);
-    expect(keys(ev({ startDatetime: "2026-10-18T14:30:00Z", endDatetime: "2026-10-18T18:00:00Z" }))).toEqual([]);
-    expect(keys(ev({ endDatetime: null }))).toEqual([]);
+  it("flags GLØD 4 år on the DJ in its title", () => {
+    expect(keys(GLOD)).toEqual(["early_end_for_evening_start"]);
+  });
+
+  it("does not flag ordinary concerts that end in the evening (Zoumer + Ela Lung at KLEIN, La Tène and raster. at ALICE)", () => {
+    expect(keys(ZOUMER)).toEqual([]);
+    expect(keys(LA_TENE)).toEqual([]);
+    expect(keys(RASTER)).toEqual([]);
+  });
+
+  it("never flags on the venue alone: a generic electronic concert at MODULE ending at 23:00 passes", () => {
+    expect(keys(ev({ title: "Live: Some Band", venueId: "v-module", startDatetime: "2026-10-30T19:00:00Z", endDatetime: "2026-10-30T22:00:00Z" }))).toEqual([]);
+  });
+
+  it("needs a club venue or a late start before a dance-floor genre counts", () => {
+    const techno = { title: "Some Artist", primaryGenre: "techno" as const, endDatetime: "2026-10-30T22:30:00Z" };
+    expect(keys(ev({ ...techno, venueId: "v-vega", startDatetime: "2026-10-30T19:00:00Z" }))).toEqual([]);
+    expect(keys(ev({ ...techno, venueId: "v-module", startDatetime: "2026-10-30T19:00:00Z" }))).toEqual(["early_end_for_evening_start"]);
+    expect(keys(ev({ ...techno, venueId: "v-vega", startDatetime: "2026-10-30T21:00:00Z", endDatetime: "2026-10-30T23:30:00Z" }))).toEqual(["early_end_for_evening_start"]);
+  });
+
+  it("does not treat electro, ambient or generic electronic genres as club evidence on their own", () => {
+    for (const primaryGenre of ["electro", "ambient-experimental", "electronic-other"] as const) {
+      expect(keys(ev({ title: "Some Artist", primaryGenre, venueId: "v-module", startDatetime: "2026-10-30T21:00:00Z", endDatetime: "2026-10-30T22:30:00Z" }))).toEqual([]);
+    }
+  });
+
+  it("does not flag a normal club night ending in the morning, a daytime event, or no end time", () => {
+    expect(keys(ev({ title: "Rave", startDatetime: "2026-10-30T22:00:00Z", endDatetime: "2026-10-31T05:00:00Z" }))).toEqual([]);
+    expect(keys(ev({ title: "Rave", startDatetime: "2026-10-18T14:30:00Z", endDatetime: "2026-10-18T18:00:00Z" }))).toEqual([]);
+    expect(keys(ev({ title: "Rave", endDatetime: null }))).toEqual([]);
   });
 
   it("uses Copenhagen local time across the DST change (25 Oct 2026)", () => {
     // 20:00–00:30 CEST on the 24th (summer time): an early end.
-    expect(keys(ev({ startDatetime: "2026-10-24T18:00:00Z", endDatetime: "2026-10-24T22:30:00Z" }))).toEqual(["early_end_for_evening_start"]);
+    expect(keys(ev({ title: "Rave", startDatetime: "2026-10-24T18:00:00Z", endDatetime: "2026-10-24T22:30:00Z" }))).toEqual(["early_end_for_evening_start"]);
     // The clocks go back at 01:00Z on the 25th, so 23:30Z is still 01:30 CEST: not an early end.
-    expect(keys(ev({ startDatetime: "2026-10-24T18:00:00Z", endDatetime: "2026-10-24T23:30:00Z" }))).toEqual([]);
+    expect(keys(ev({ title: "Rave", startDatetime: "2026-10-24T18:00:00Z", endDatetime: "2026-10-24T23:30:00Z" }))).toEqual([]);
     // 21:00 CET start, 04:00 CET end: a normal night.
-    expect(keys(ev({ startDatetime: "2026-10-31T20:00:00Z", endDatetime: "2026-11-01T03:00:00Z" }))).toEqual([]);
+    expect(keys(ev({ title: "Rave", startDatetime: "2026-10-31T20:00:00Z", endDatetime: "2026-11-01T03:00:00Z" }))).toEqual([]);
   });
 });
 
@@ -123,7 +162,7 @@ describe("buildDataQualityReport", () => {
   it("lists upcoming events with issues, errors first, then by start, and leaves past and clean events out", () => {
     const report = buildDataQualityReport(
       [
-        ev({ id: "warn-early", startDatetime: "2026-10-17T18:00:00Z", endDatetime: "2026-10-17T21:30:00Z" }),
+        ev({ id: "warn-early", title: "Rave", startDatetime: "2026-10-17T18:00:00Z", endDatetime: "2026-10-17T21:30:00Z" }),
         ev({ id: "error-later", startDatetime: "2026-11-06T22:00:00Z", endDatetime: "2026-11-01T06:00:00Z" }),
         ev({ id: "clean", startDatetime: "2026-10-30T22:00:00Z", endDatetime: "2026-10-31T05:00:00Z" }),
         ev({ id: "past", startDatetime: "2026-10-10T18:00:00Z", endDatetime: "2026-10-10T21:30:00Z" }),

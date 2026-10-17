@@ -1,6 +1,12 @@
-import type { EventDataQualityReport } from "@/lib/dataQuality";
+import type { DataQualityIssue, EventDataQualityReport } from "@/lib/dataQuality";
 import type { EventWithVenue } from "@/lib/queries";
 import { formatFullDateLabel, formatTimeLabel } from "@/lib/format";
+
+const SEVERITY_PREFIX: Record<DataQualityIssue["severity"], string> = {
+  error: "Error: ",
+  warning: "Check: ",
+  possible_inconsistency: "Possible inconsistency: ",
+};
 
 /**
  * Admin data-quality warnings (see src/lib/dataQuality.ts). Read-only: each
@@ -28,7 +34,7 @@ export default function DataQualityPanel({ reports }: { reports: EventDataQualit
           <ul className="mt-1">
             {issues.map((issue) => (
               <li key={issue.key} className={`text-xs ${issue.severity === "error" ? "font-semibold text-status-warn" : "text-text-secondary"}`}>
-                {issue.severity === "error" ? "Error: " : "Check: "}
+                {SEVERITY_PREFIX[issue.severity]}
                 {issue.message}
               </li>
             ))}
