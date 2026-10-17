@@ -261,6 +261,11 @@ export interface SourceProvenanceEntry {
 }
 
 /**
+ * Not currently rendered anywhere: the event detail page's public
+ * "Source:"/"Sources:" line that used this was removed 2026-10-16 (it only
+ * duplicated the Official event/Tickets CTAs). Kept, with its tests, as a
+ * pure helper; source_event_links itself is unaffected either way.
+ *
  * Discreet, non-CTA public provenance for the event DETAIL PAGE only (public
  * source-link visibility work package, 2026-09-07; revised same day —
  * canonical-source-only was too narrow, see below) — never wired into event

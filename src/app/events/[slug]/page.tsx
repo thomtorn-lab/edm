@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  getArtistYoutubePreviewForLineup,
-  getEventBySlugWithVenue,
-  getSoundcloudLinksForLineup,
-  getSourceEventLinksForEvent,
-} from "@/lib/queries";
+import { getArtistYoutubePreviewForLineup, getEventBySlugWithVenue, getSoundcloudLinksForLineup } from "@/lib/queries";
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
-import { getExternalLinks, getSourceProvenance } from "@/lib/links";
+import { getExternalLinks } from "@/lib/links";
 import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { googleCalendarUrl, outlookCalendarUrl } from "@/lib/ics";
 import { buildEventJsonLd } from "@/lib/jsonld";
@@ -82,8 +77,6 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   // unchanged output.
   const primaryLink = links.find((l) => l.label === "Tickets") ?? links.find((l) => l.label === "Official event") ?? null;
   const secondaryLinks = primaryLink ? links.filter((l) => l !== primaryLink) : links;
-  const sourceLinks = await getSourceEventLinksForEvent(event.id);
-  const sourceProvenance = getSourceProvenance(sourceLinks);
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
@@ -284,38 +277,12 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         </div>
       )}
 
-      {/* Discreet, non-CTA provenance (public source-link visibility work
-          package, 2026-09-07; revised same day to read from ALL of the
-          event's real source_event_links, not only its canonical
-          source — see getSourceProvenance's own doc comment): identifies
-          every qualifying discovery/aggregator source by its clean
-          public brand name — deliberately small/muted text, never a
-          button, so it never competes with Official event/Tickets above.
-          Moved to its own final section, alongside the report-incorrect-info
-          disclaimer below, as of the CTA hierarchy work (2026-09-26) — it's
-          provenance/source metadata, not an outbound action, so it no
-          longer sits inside the primary-CTA block. Compact "Sources: A · B"
-          form when more than one qualifying source exists — never a source
-          browser. */}
-      {sourceProvenance.length > 0 && (
-        <p className="mt-8 text-[11px] text-text-tertiary">
-          {sourceProvenance.length === 1 ? "Source:" : "Sources:"}{" "}
-          {sourceProvenance.map((s, i) => (
-            <span key={s.sourceName}>
-              {i > 0 && " · "}
-              <a
-                href={s.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline decoration-1 underline-offset-2 hover:text-text-secondary"
-              >
-                {s.sourceName}
-              </a>
-            </span>
-          ))}
-        </p>
-      )}
-
+      {/* No public per-event "Source:"/"Sources:" provenance line (removed
+          2026-10-16): it only linked to discovery/aggregator listings that
+          duplicated the Official event/Tickets CTAs above. Provenance stays
+          internal — source_event_links and admin/diagnostics are untouched —
+          and the general sourcing note below remains the public disclosure.
+          The last-resort "Source ↗" CTA (getExternalLinks) is unaffected. */}
       <p className="mt-10 text-xs text-text-tertiary">
         Times shown in Europe/Copenhagen. Details are drawn from official and verified sources — if something here looks
         wrong, <Link href="/contact" className="underline hover:text-text-secondary">let us know</Link>.
