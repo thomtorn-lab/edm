@@ -18,6 +18,7 @@ import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata"
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
+import BackToEventsLink from "@/components/BackToEventsLink";
 import ArtistVideoPreview from "@/components/ArtistVideoPreview";
 import SoundcloudLinks from "@/components/SoundcloudLinks";
 
@@ -109,9 +110,10 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <Link href="/" className="text-xs font-medium uppercase tracking-wide text-text-tertiary hover:text-text-secondary">
-        ← All events
-      </Link>
+      <BackToEventsLink
+        eventPath={`/events/${event.slug}`}
+        className="text-xs font-medium uppercase tracking-wide text-text-tertiary hover:text-text-secondary"
+      />
 
       {statuses.length > 0 && (
         <div className="mt-4 flex gap-2">
