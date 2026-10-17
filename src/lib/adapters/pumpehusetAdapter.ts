@@ -302,54 +302,65 @@ export function extractLineupFromBodyLines(lines: string[]): { artists: string[]
 }
 
 /**
- * A support_bands entry the venue explicitly labels as support, e.g.
- * `band_name: "Support: Parashoot + Lisa Fosmark"` (real, from the recorded
- * fetch_concerts fixture). Such an entry lists ONLY the support acts — the
- * headliner is the event title — unlike unlabelled entries, which on
- * multi-act nights already list every act including the title's own.
+ * Role labels the venue prefixes onto a support_bands entry's band_name —
+ * real, observed in the live fetch_concerts JSON (2026-10-14 fixture):
+ * "Support: Montee ", "Efterfest: NAT " (efterfest = after-party, a free DJ
+ * set downstairs after the concert). The label is a role, never part of the
+ * act's name. A labelled entry may join several acts with "+" or ","
+ * ("Support: Parashoot + Lisa Fosmark", 2026-08-20 fixture).
  */
-const SUPPORT_LABEL = /^support\s*:\s*/i;
+const ROLE_LABEL = /^(support|efterfest|after[\s-]?party)\s*:\s*/i;
+const AFTERPARTY_ROLE = /^(efterfest|after[\s-]?party)$/i;
 
 /** Title-derived names that are placeholders, not acts ("MPH 360° XP + GUESTS"). */
 const PLACEHOLDER_ACT = /^(?:special\s+)?guests?$|^tba$/i;
 
-/** Support-band names + free-text bios, when present — real per-band evidence from the venue's own JSON, not a title guess. */
-function artistsAndDescriptionFromBands(bands: PumpehusetSupportBand[]): {
-  artists: string[];
-  description: string | null;
-  hasSupportLabel: boolean;
-} {
-  let hasSupportLabel = false;
-  const artists = bands.flatMap((b) => {
-    const name = b.band_name.trim();
-    if (!SUPPORT_LABEL.test(name)) return name ? [name] : [];
-    hasSupportLabel = true;
-    // A labelled entry joins several distinct support acts with "+" or ",".
-    return name
-      .replace(SUPPORT_LABEL, "")
-      .split(/\s*\+\s*|\s*,\s*/)
-      .map((n) => n.trim())
-      .filter(Boolean);
-  });
-  const bios = bands
-    .map((b) => htmlToText(b.band_description ?? "").replace(/\n/g, " ").trim())
+type BandRole = "main" | "support" | "afterparty";
+
+function parseBand(band: PumpehusetSupportBand): { role: BandRole; names: string[] } {
+  const name = band.band_name.trim();
+  const label = ROLE_LABEL.exec(name);
+  if (!label) return { role: "main", names: name ? [name] : [] };
+  const names = name
+    .slice(label[0].length)
+    .split(/\s*\+\s*|\s*,\s*/)
+    .map((n) => n.trim())
     .filter(Boolean);
-  return { artists, description: bios.length > 0 ? bios.join("\n\n") : null, hasSupportLabel };
+  return { role: AFTERPARTY_ROLE.test(label[1]) ? "afterparty" : "support", names };
 }
 
 /**
- * Headliner(s) from the title first, then the labelled support acts —
- * previously a "Support: X" entry became the event's ONLY artist and the
- * headliner was dropped (nimino -> ["Support: Montee"]).
+ * Artists + free-text bios from the venue's own support_bands JSON.
+ *
+ * Artists: when any entry carries a role label, the labelled entries are
+ * extra acts and the headliner is the event title, so it goes first
+ * (nimino -> ["nimino", "Montee", "NAT"]). Unlabelled-only lists already
+ * name every act and are kept as-is. Known limitation, unchanged here: a
+ * festival-style title with mixed entries (Morbidfest) is also prepended.
+ *
+ * Description/genre evidence: after-party bios are excluded. An after-party
+ * DJ's bio ("…fremadskuende techno…") describes a different set than the
+ * concert, and previously decided the headline concert's genre.
  */
-function headlinerPlusSupport(title: string, support: string[]): string[] {
+function artistsAndDescriptionFromBands(
+  title: string,
+  bands: PumpehusetSupportBand[],
+): { artists: string[]; description: string | null } {
+  const parsed = bands.map(parseBand);
+  const anyLabelled = parsed.some((p) => p.role !== "main");
+  const headliners = anyLabelled ? artistsFromTitle(title).filter((n) => !PLACEHOLDER_ACT.test(n)) : [];
   const seen = new Set<string>();
-  return [...artistsFromTitle(title).filter((n) => !PLACEHOLDER_ACT.test(n)), ...support].filter((n) => {
+  const artists = [...headliners, ...parsed.flatMap((p) => p.names)].filter((n) => {
     const key = n.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  const bios = bands
+    .filter((_, i) => parsed[i].role !== "afterparty")
+    .map((b) => htmlToText(b.band_description ?? "").replace(/\n/g, " ").trim())
+    .filter(Boolean);
+  return { artists, description: bios.length > 0 ? bios.join("\n\n") : null };
 }
 
 function sameArtists(a: string[], b: string[]): boolean {
@@ -493,12 +504,8 @@ export function parsePumpehusetConcertsJson(jsonText: string): RawCandidateEvent
       const listingConfirmsElektronisk = !!concert.genre && concert.genre.toLowerCase().includes(PUMPEHUSET_GENRE_FILTER.toLowerCase());
 
       const bands = Array.isArray(concert.support_bands) ? concert.support_bands : [];
-      const { artists: bandArtists, description, hasSupportLabel } = artistsAndDescriptionFromBands(bands);
-      const artists = hasSupportLabel
-        ? headlinerPlusSupport(title, bandArtists)
-        : bandArtists.length > 0
-          ? bandArtists
-          : artistsFromTitle(title);
+      const { artists: bandArtists, description } = artistsAndDescriptionFromBands(title, bands);
+      const artists = bandArtists.length > 0 ? bandArtists : artistsFromTitle(title);
 
       // Only credited now when the listing's own field already says so —
       // otherwise left null (never guessed) for enrichWithShowTimes to
