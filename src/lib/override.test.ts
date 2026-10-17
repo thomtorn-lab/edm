@@ -140,6 +140,22 @@ describe("classifyAdminFieldChange (editorial screening, priority 1)", () => {
     expect(classifyAdminFieldChange(["A "], ["A"])).toBe("unchanged");
   });
 
+  it("only the precision the form can't express is ignored", () => {
+    // form value on the minute vs stored value inside that minute -> same
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:42Z"), new Date("2026-10-17T19:00:00Z"))).toBe(true);
+    // a submitted value carrying its own seconds must match exactly
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), new Date("2026-10-17T19:00:30Z"))).toBe(false);
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:30Z"), new Date("2026-10-17T19:00:30Z"))).toBe(true);
+    // the next minute is a real change, even when the stored value is :59
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:59Z"), new Date("2026-10-17T19:01:00Z"))).toBe(false);
+  });
+
+  it("an invalid date never equals anything and is never classified as unchanged or cleared", () => {
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), new Date("not a date"))).toBe(false);
+    expect(adminValuesEqual(new Date("invalid"), new Date("invalid"))).toBe(false);
+    expect(classifyAdminFieldChange(new Date("2026-10-17T19:00:00Z"), new Date("not a date"))).toBe("changed");
+  });
+
   it("timestamps compare at minute precision and across Date/ISO string", () => {
     expect(adminValuesEqual(new Date("2026-10-17T19:00:42Z"), new Date("2026-10-17T19:00:00Z"))).toBe(true);
     expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), "2026-10-17T19:00:00.000Z")).toBe(true);

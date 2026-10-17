@@ -185,14 +185,6 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // Rejects outright rather than "fixing" the value; see isEndAfterStart's
   // own doc comment for why an automatic +1 day would be wrong as often as
   // it's right.
-  if ("startDatetime" in patch || "endDatetime" in patch) {
-    const effectiveStart = "startDatetime" in patch ? patch.startDatetime : existing.startDatetime;
-    const effectiveEnd = "endDatetime" in patch ? patch.endDatetime : existing.endDatetime;
-    if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
-      throw new Error(END_BEFORE_START_ERROR);
-    }
-  }
-
   // Only fields the admin actually changed or deliberately cleared are
   // written and newly protected (editorial screening, priority 1 —
   // 2026-10-17): a form that re-submits a displayed-but-untouched value must
@@ -200,6 +192,17 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // overrides are kept as they are. "published" keeps its old always-applied
   // behavior because its write clears a stale admin-unpublish (below).
   const { effectivePatch, touchedFields, cleared } = partitionAdminPatch(existing, patch, { alwaysTouched: ["published"] });
+
+  // The end/start check runs only when this save really changes start or end,
+  // and on the values that will actually be stored: an unchanged start is
+  // not written, so the stored one is what counts.
+  if ("startDatetime" in effectivePatch || "endDatetime" in effectivePatch) {
+    const effectiveStart = "startDatetime" in effectivePatch ? effectivePatch.startDatetime : existing.startDatetime;
+    const effectiveEnd = "endDatetime" in effectivePatch ? effectivePatch.endDatetime : existing.endDatetime;
+    if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
+      throw new Error(END_BEFORE_START_ERROR);
+    }
+  }
   if (touchedFields.length === 0) return;
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
   const clearsAdminUnpublish = effectivePatch.published === true && existing.adminUnpublishReason != null;
@@ -1076,9 +1079,15 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
 
   // Ended-event write-path integrity (2026-09-20) — same rule and same
   // "only when this patch touches start/end" scoping as applyAdminEventEdit.
-  if ("probableStart" in patch || "probableEnd" in patch) {
-    const effectiveStart = "probableStart" in patch ? patch.probableStart : existing.probableStart;
-    const effectiveEnd = "probableEnd" in patch ? patch.probableEnd : existing.probableEnd;
+  // Same changed/cleared/unchanged split as applyAdminEventEdit: the DQ
+  // editor posts every field, but only the ones the admin actually changed
+  // or cleared become overrides — and publishDiscoveryItem carries exactly
+  // these onto the published event's overriddenFields.
+  const { effectivePatch, touchedFields } = partitionAdminPatch(existing, patch);
+
+  if ("probableStart" in effectivePatch || "probableEnd" in effectivePatch) {
+    const effectiveStart = "probableStart" in effectivePatch ? effectivePatch.probableStart : existing.probableStart;
+    const effectiveEnd = "probableEnd" in effectivePatch ? effectivePatch.probableEnd : existing.probableEnd;
     if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
       throw new Error(END_BEFORE_START_ERROR);
     }
@@ -1091,11 +1100,6 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     return true;
   });
 
-  // Same changed/cleared/unchanged split as applyAdminEventEdit: the DQ
-  // editor posts every field, but only the ones the admin actually changed
-  // or cleared become overrides — and publishDiscoveryItem carries exactly
-  // these onto the published event's overriddenFields.
-  const { effectivePatch, touchedFields } = partitionAdminPatch(existing, patch);
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
 
   await db

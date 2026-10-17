@@ -76,7 +76,9 @@ const {
   applySourceCancellationRestore,
   adminOverrideSourceCancellation,
   adminClearRescheduledStatus,
+  applySourceSyncPatch,
 } = await import("./writes");
+const { buildSyncPatch } = await import("../lib/sync");
 const { END_BEFORE_START_ERROR } = await import("../lib/datetime");
 
 const item = {
@@ -1274,5 +1276,171 @@ describe("admin saves lock only changed or cleared fields (editorial screening, 
       (call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object),
     )?.[0] as Record<string, unknown>;
     expect(inserted.overriddenFields).toEqual(["title"]);
+  });
+});
+
+describe("Discovery Queue publish → later sync: only real review edits stay protected (editorial screening, priority 1 — integration)", () => {
+  // A HvadErPå-style pending row as the sync left it.
+  const pendingRow = {
+    id: "dq-int",
+    status: "pending",
+    probableTitle: "MIAW",
+    description: "On October 17, the cats are heading underground again.",
+    probableVenueName: "Den Anden Side",
+    probableSubVenue: null as string | null,
+    detectedLineup: ["Liad Krispin", "Alegrando"],
+    predictedGenre: "techno",
+    predictedSecondaryGenre: null as string | null,
+    genreConfidence: "medium",
+    overallConfidence: "medium",
+    probableOfficialEventUrl: "https://www.facebook.com/events/1092481703484520" as string | null,
+    probableTicketUrl: "https://billetto.dk/e/miaw-1" as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    probableFree: false,
+    probableStart: new Date("2026-10-17T21:59:00Z"),
+    probableEnd: new Date("2026-10-18T06:00:00Z") as Date | null,
+    missingFields: [] as string[],
+    overriddenFields: [] as string[],
+    sourceId: "src-hvaderpaa",
+    sourceUrl: "https://hvaderpaa.dk/da/event/27047/",
+    suspectedDuplicateOfEventId: null,
+  };
+
+  // DiscoveryQueue.tsx "Save edit": the whole editor, dates via datetime-local.
+  function saveEditPayload(row: typeof pendingRow, overrides: Record<string, unknown> = {}) {
+    return {
+      probableTitle: row.probableTitle,
+      description: row.description,
+      probableVenueName: row.probableVenueName,
+      probableSubVenue: null,
+      detectedLineup: [...row.detectedLineup],
+      predictedGenre: row.predictedGenre,
+      predictedSecondaryGenre: null,
+      probableOfficialEventUrl: row.probableOfficialEventUrl,
+      probableTicketUrl: row.probableTicketUrl,
+      probableResidentAdvisorUrl: null,
+      probableFree: false,
+      probableStart: new Date(row.probableStart),
+      probableEnd: row.probableEnd ? new Date(row.probableEnd) : null,
+      ...overrides,
+    } as Parameters<typeof updateDiscoveryItem>[1];
+  }
+
+  /** Runs save-edit → publish, then returns the stored event row the publish inserted. */
+  async function saveAndPublish(overrides: Record<string, unknown>) {
+    selectResults = [[{ ...pendingRow }]];
+    await updateDiscoveryItem("dq-int", saveEditPayload(pendingRow, overrides));
+    const dqWrite = updateSetMock.mock.calls[0][0] as Record<string, unknown>;
+    const rowAfterEdit = { ...pendingRow, ...dqWrite };
+
+    selectResults = [[rowAfterEdit]];
+    await publishDiscoveryItem("dq-int", "v-den-anden-side");
+    const inserted = insertValuesMock.mock.calls.find(
+      (call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object),
+    )?.[0] as Record<string, unknown>;
+    updateSetMock.mockClear();
+    insertValuesMock.mockClear();
+    return inserted;
+  }
+
+  /** The source's next run reports a corrected start, lineup and links. */
+  async function syncCorrection(storedEvent: Record<string, unknown>) {
+    const raw = {
+      sourceId: "src-hvaderpaa",
+      title: storedEvent.title as string,
+      description: null,
+      startDatetime: "2026-10-17T22:00:00.000Z",
+      endDatetime: null,
+      officialEventUrl: "https://www.facebook.com/events/2222222222",
+      ticketUrl: "https://billetto.dk/e/miaw-2",
+      facebookUrl: null,
+      residentAdvisorUrl: "https://ra.co/events/2546637",
+      imageUrl: null,
+      soldOutHint: null,
+      cancelledHint: null,
+    } as unknown as Parameters<typeof buildSyncPatch>[0];
+    const existing = {
+      ...storedEvent,
+      startDatetime: (storedEvent.startDatetime as Date).toISOString(),
+      endDatetime: storedEvent.endDatetime ? (storedEvent.endDatetime as Date).toISOString() : null,
+      soldOut: false,
+      cancelled: false,
+      postponed: false,
+    } as unknown as Parameters<typeof buildSyncPatch>[2];
+    const { patch } = buildSyncPatch(
+      raw,
+      { resolvedVenueId: "v-den-anden-side", normalizedArtists: ["Liad Krispin", "Alegrando", "Bonni X"], genre: null, genreConfidence: "low" },
+      existing,
+    );
+    selectResults = [[{ ...storedEvent }]];
+    return applySourceSyncPatch(storedEvent.id as string, "src-hvaderpaa", patch);
+  }
+
+  it("published with no field changes: the event gets no overrides, and the next sync updates start, artists and event links", async () => {
+    const event = await saveAndPublish({});
+    expect(event.overriddenFields).toEqual([]);
+
+    const result = await syncCorrection(event);
+
+    expect(result.skipped).toEqual([]);
+    expect(result.applied).toEqual(
+      expect.arrayContaining(["startDatetime", "artists", "officialEventUrl", "ticketUrl", "residentAdvisorUrl"]),
+    );
+    const written = updateSetMock.mock.calls[0][0];
+    expect(written.startDatetime).toEqual(new Date("2026-10-17T22:00:00.000Z"));
+    expect(written.artists).toEqual(["Liad Krispin", "Alegrando", "Bonni X"]);
+    expect(written.ticketUrl).toBe("https://billetto.dk/e/miaw-2");
+  });
+
+  it("deliberately changed and cleared fields stay protected through publish and the next sync; untouched ones still update", async () => {
+    const event = await saveAndPublish({
+      detectedLineup: ["Liad Krispin", "Alegrando", "Britney Speed"], // changed
+      probableTicketUrl: null, // cleared
+    });
+    expect(event.overriddenFields).toEqual(["ticketUrl", "artists"]);
+    expect(event.artists).toEqual(["Liad Krispin", "Alegrando", "Britney Speed"]);
+    expect(event.ticketUrl).toBeNull();
+
+    const result = await syncCorrection(event);
+
+    expect(result.skipped).toEqual(expect.arrayContaining(["artists", "ticketUrl"]));
+    expect(result.applied).toEqual(expect.arrayContaining(["startDatetime", "officialEventUrl", "residentAdvisorUrl"]));
+    const written = updateSetMock.mock.calls[0][0];
+    expect(written).not.toHaveProperty("artists");
+    expect(written).not.toHaveProperty("ticketUrl");
+    expect(written.startDatetime).toEqual(new Date("2026-10-17T22:00:00.000Z"));
+  });
+});
+
+describe("admin saves — end/start check on the values actually stored (editorial screening, priority 1)", () => {
+  it("rejects a new end that falls before the stored start, even when the form re-submits the start rounded to the minute", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-10-17T19:00:42Z"), endDatetime: null }]];
+
+    await expect(
+      applyAdminEventEdit("e-1", {
+        startDatetime: new Date("2026-10-17T19:00:00Z"),
+        endDatetime: new Date("2026-10-17T19:00:30Z"),
+      }),
+    ).rejects.toThrow(END_BEFORE_START_ERROR);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("an untouched re-save of an already malformed row neither throws nor writes (the check only runs on a real start/end change)", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-10-16T20:00:00Z"), endDatetime: new Date("2026-10-16T03:00:00Z") }]];
+
+    await applyAdminEventEdit("e-1", {
+      startDatetime: new Date("2026-10-16T20:00:00Z"),
+      endDatetime: new Date("2026-10-16T03:00:00Z"),
+    });
+
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("a script-supplied start with its own seconds is a real change, not rounded away", async () => {
+    selectResults = [[{ id: "e-1", overriddenFields: [], startDatetime: new Date("2026-10-17T19:00:00Z"), endDatetime: null }]];
+
+    await applyAdminEventEdit("e-1", { startDatetime: new Date("2026-10-17T19:00:30Z") });
+
+    expect(updateSetMock.mock.calls[0][0].overriddenFields).toEqual(["startDatetime"]);
   });
 });

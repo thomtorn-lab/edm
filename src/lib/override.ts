@@ -96,10 +96,12 @@ function normalizeForCompare(value: unknown): unknown {
 }
 
 /**
- * True when two stored/submitted values mean the same thing. Timestamps are
- * compared at minute precision: the admin datetime-local inputs can't express
- * seconds, so a seconds-only difference is a round-trip artefact of the form,
- * never an edit.
+ * True when two stored/submitted values mean the same thing. Timestamps: the
+ * admin datetime-local inputs can't express seconds, so a submitted value
+ * that sits exactly on a minute (:00.000) equals a stored value anywhere in
+ * that same minute — a round-trip artefact of the form, never an edit. Any
+ * submitted value carrying its own seconds/milliseconds (a script, an API
+ * client) must match exactly. An unparseable value never equals anything.
  */
 export function adminValuesEqual(stored: unknown, submitted: unknown): boolean {
   if (isEmptyValue(stored) && isEmptyValue(submitted)) return true;
@@ -108,7 +110,9 @@ export function adminValuesEqual(stored: unknown, submitted: unknown): boolean {
     const a = asDate(stored);
     const b = asDate(submitted);
     if (!a || !b) return false;
-    return Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
+    if (a.getTime() === b.getTime()) return true;
+    const submittedOnMinute = b.getTime() % 60_000 === 0;
+    return submittedOnMinute && Math.floor(a.getTime() / 60_000) === b.getTime() / 60_000;
   }
   return JSON.stringify(normalizeForCompare(stored)) === JSON.stringify(normalizeForCompare(submitted));
 }
