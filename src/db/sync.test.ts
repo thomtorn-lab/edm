@@ -714,6 +714,26 @@ describe("Pylonen DQ identity stability across the bare -> detail-page lifecycle
     expect(insertDiscoveryItem).not.toHaveBeenCalled();
   });
 
+  it("RA link integrity (2026-10-17): a candidate's RA reference reaches the new DQ row as probableResidentAdvisorUrl, never as a ticket link", async () => {
+    mockThreeSelects([], [], []);
+    const RA = "https://ra.co/events/2521204";
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ residentAdvisorUrl: RA, ticketUrl: null })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    const inserted = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(inserted.probableResidentAdvisorUrl).toBe(RA);
+    expect(inserted.probableTicketUrl).toBeNull();
+  });
+
+  it("RA link integrity (2026-10-17): an already-pending row with no RA reference is filled from the next sync", async () => {
+    const RA = "https://ra.co/events/2521204";
+    mockThreeSelects([], [pendingRow({ probableResidentAdvisorUrl: null })], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ residentAdvisorUrl: RA })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-myrk", expect.objectContaining({ probableResidentAdvisorUrl: RA }));
+  });
+
   it("6. an ignored item remains ignored after gaining officialEventUrl — identity stays stable, so ignore persistence's dedupKey lookup still matches", async () => {
     mockThreeSelects(
       [],
