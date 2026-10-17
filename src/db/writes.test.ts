@@ -642,6 +642,17 @@ describe("publishDiscoveryItem — description/Resident Advisor URL/expanded fie
     expect(eventInsertCall()?.residentAdvisorUrl).toBe("https://ra.co/events/1234567");
   });
 
+  it("a deliberately cleared RA link stays cleared at publish, even when the row's own sourceUrl is an RA page", async () => {
+    selectResults = [
+      [{ ...kultunautPending, sourceUrl: "https://ra.co/events/1234567", probableResidentAdvisorUrl: null, overriddenFields: ["probableResidentAdvisorUrl"] }],
+    ];
+
+    await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+    expect(eventInsertCall()?.residentAdvisorUrl).toBeNull();
+    expect(eventInsertCall()?.overriddenFields).toContain("residentAdvisorUrl");
+  });
+
   it("the RA-sourceUrl fallback checks the hostname, never a substring: extra.com / zebra.com are not Resident Advisor", async () => {
     for (const sourceUrl of ["https://extra.com/events/1", "https://zebra.com/ra.co/events/1"]) {
       insertValuesMock.mockClear();

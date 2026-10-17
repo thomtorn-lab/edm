@@ -939,7 +939,13 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // isResidentAdvisorUrl, never a substring) preserves every existing
       // RA-sourced publish's exact prior behavior when the admin never
       // touched this field.
-      residentAdvisorUrl: item.probableResidentAdvisorUrl ?? (isResidentAdvisorUrl(item.sourceUrl) ? item.sourceUrl : null),
+      // A deliberately edited or cleared RA link (probableResidentAdvisorUrl
+      // in overriddenFields) is carried exactly as the admin left it: a
+      // cleared value must not be restored from an RA-page sourceUrl
+      // (RA link integrity, 2026-10-17).
+      residentAdvisorUrl: item.overriddenFields?.includes("probableResidentAdvisorUrl")
+        ? item.probableResidentAdvisorUrl
+        : (item.probableResidentAdvisorUrl ?? (isResidentAdvisorUrl(item.sourceUrl) ? item.sourceUrl : null)),
       imageUrl: null,
       // Explicit FREE flag (never inferred from ticketUrl's absence) — same
       // canonical priceFrom=0 representation as EventManager's own Free
