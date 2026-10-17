@@ -48,10 +48,11 @@ export default async function AdminPage() {
   const venuesById = new Map(venues.map((v) => [v.id, v]));
   const sourcesById = new Map(sources.map((s) => [s.id, s]));
 
+  const dataQualityReports = buildDataQualityReport(allEvents, recentIdentityChanges, now);
+
   const adminQueueGroups = groupAdminQueueRows(pendingItems, sourceLastCompleteSync, now);
   const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
   const adminUnpublishedRows = deriveAdminUnpublishedRows(allEvents, venuesById, sourcesById);
-  const dataQualityReports = buildDataQualityReport(allEvents, recentIdentityChanges, now);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
