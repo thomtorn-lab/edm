@@ -672,6 +672,39 @@ describe("artist names are not genre evidence — PAB DISCO (genre QA, 2026-10-1
     expect(result.decision).toBe("auto_publish");
   });
 
+  it("5 Dec end-to-end, counter-example: when the venue's own text independently says the night is disco, it is still disco (high, auto-published)", async () => {
+    const night = parseCultureBoxEventsHtml(OCT13_LISTING).find((e) => e.officialEventUrl === DEC5_URL)!;
+    // The real detail page, with one independent sentence added to the
+    // night's own description: "disco" now stands on its own, not inside a name.
+    const html = loadDetailFixture("sat-5-december-2026").replace(
+      "Setting the tone is",
+      "Expect a night of classic disco and nu-disco in the Black Box. Setting the tone is",
+    );
+    expect(html).toContain("classic disco and nu-disco");
+    const fetchImpl = async (url: string | URL) => (String(url) === DEC5_URL ? new Response(html, { status: 200 }) : new Response("", { status: 404 }));
+    const [enriched] = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+    const result = runIngestionPipeline(enriched, { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    expect(result.genre).toBe("disco");
+    expect(result.genreConfidence).toBe("high");
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("relevance and publish decision are unchanged by the mask; only the genre differs", async () => {
+    const night = parseCultureBoxEventsHtml(OCT13_LISTING).find((e) => e.officialEventUrl === DEC5_URL)!;
+    const fetchImpl = async () => new Response(loadDetailFixture("sat-5-december-2026"), { status: 200 });
+    const [enriched] = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+    const masked = runIngestionPipeline(enriched, { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    // The same candidate as the old code saw it: no structured-lineup flag, adapter hint "disco"/high.
+    const unmasked = runIngestionPipeline(
+      { ...enriched, lineupNamesAreStructured: false, genreHint: "disco", genreConfidenceHint: "high" },
+      { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
+    );
+    expect(unmasked.genre).toBe("disco");
+    expect(masked.genre).toBeNull();
+    expect(masked.relevance).toBe(unmasked.relevance);
+    expect(masked.decision).toBe(unmasked.decision);
+  });
+
   it("2 Oct end-to-end (recorded fixture): Pab Disco no longer makes the night disco", async () => {
     const url = "https://culture-box.com/event/fri-2-october-2026/";
     const night = parseCultureBoxEventsHtml(FIXTURE_HTML).find((e) => e.officialEventUrl === url)!;
