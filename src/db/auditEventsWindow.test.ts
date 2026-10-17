@@ -43,6 +43,8 @@ function row(overrides: Partial<WindowEventRow> & { id: string; start: string })
     resident_advisor_url: null,
     facebook_url: null,
     other_source_urls: [],
+    primary_genre_overridden: false,
+    subgenres_overridden: false,
     ...rest,
   };
 }
@@ -109,8 +111,14 @@ describe("SQL — completeness and minimal output", () => {
       expect(sql.trim()).toMatch(/^SELECT /);
       expect(sql).not.toMatch(/\b\w+\.\*|SELECT \*/);
       expect(sql).not.toMatch(
-        /admin_unpublish|overridden_fields|manual_override|event_change_log|discovery_queue|source_cancellation_evidence/,
+        /admin_unpublish|manual_override|event_change_log|discovery_queue|source_cancellation_evidence/,
       );
+      // overridden_fields is only ever read through the two genre membership
+      // checks (genre QA, 2026-10-17), never selected as a column.
+      const overrideUses = sql.match(/[^\n]*overridden_fields[^\n]*/g) ?? [];
+      for (const use of overrideUses) {
+        expect(use.trim()).toMatch(/^\('(primaryGenre|subgenres)' = ANY\(e\.overridden_fields\)\) AS (primary_genre|subgenres)_overridden,?$/);
+      }
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
     }
   });
@@ -140,6 +148,18 @@ describe("toScreeningEvent", () => {
     expect(e.sourceUrls).toEqual(["https://venue.dk/e1", "https://ra.co/events/1"]);
     expect(e.status).toEqual(["sold_out"]);
     expect(e.sourceId).toBeNull();
+  });
+
+  it("genre QA (2026-10-17): reports which genre fields an admin set manually, and nothing else about overrides", () => {
+    expect(WINDOW_EVENTS_SQL).toContain("('primaryGenre' = ANY(e.overridden_fields)) AS primary_genre_overridden");
+    expect(WINDOW_EVENTS_SQL).toContain("('subgenres' = ANY(e.overridden_fields)) AS subgenres_overridden");
+    const ev = (o: Partial<WindowEventRow>) => toScreeningEvent(row({ id: "e-g", start: "2026-10-17T22:00:00Z", ...o }), w);
+    expect(ev({}).genreManuallySet).toEqual([]);
+    expect(ev({ primary_genre_overridden: true }).genreManuallySet).toEqual(["primaryGenre"]);
+    expect(ev({ primary_genre_overridden: true, subgenres_overridden: true }).genreManuallySet).toEqual(["primaryGenre", "subgenres"]);
+    // overridden_fields NULL/absent in the DB yields NULL from ANY(): treated as not overridden.
+    expect(ev({ primary_genre_overridden: null, subgenres_overridden: null }).genreManuallySet).toEqual([]);
+    expect(Object.keys(ev({}))).not.toContain("overriddenFields");
   });
 
   it("shortens and whitespace-collapses descriptions", () => {
@@ -292,7 +312,8 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
         sold_out boolean NOT NULL DEFAULT false, date_changed boolean NOT NULL DEFAULT false,
         time_changed boolean NOT NULL DEFAULT false, published boolean NOT NULL DEFAULT true,
         canonical_source_id text, official_event_url text, ticket_url text, resident_advisor_url text,
-        facebook_url text, other_source_urls text[] NOT NULL DEFAULT '{}')`);
+        facebook_url text, other_source_urls text[] NOT NULL DEFAULT '{}',
+        overridden_fields text[] NOT NULL DEFAULT '{}')`);
       await client.query(`INSERT INTO venues VALUES ('v1', 'Venue One')`);
       const ins = (id: string, start: string, opts: { end?: string; published?: boolean; source?: string | null } = {}) =>
         client.query(
@@ -308,6 +329,7 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
       await ins("unpublished", "2026-10-15T20:00:00Z", { published: false }); // out
       await ins("running-festival", "2026-10-10T12:00:00Z", { end: "2026-10-12T20:00:00Z" }); // in (flagged)
       await ins("ended-festival", "2026-10-09T12:00:00Z", { end: "2026-10-11T20:00:00Z" }); // out
+      await client.query(`UPDATE events SET overridden_fields = '{primaryGenre,ticketUrl}' WHERE id = 'no-source'`);
 
       // Wrap the real client: right before the audit's first SELECT, try a
       // write inside the audit's OWN transaction and require Postgres to
@@ -335,6 +357,9 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
       );
       expect(report.completenessCheck).toBe("ok");
       expect(report.countBySource).toContainEqual({ sourceId: null, count: 1 });
+      // Genre QA (2026-10-17): only the genre override is reported, never ticketUrl.
+      expect(report.events.find((e) => e.id === "no-source")?.genreManuallySet).toEqual(["primaryGenre"]);
+      expect(report.events.find((e) => e.id === "at-start")?.genreManuallySet).toEqual([]);
       const titles = await client.query(`SELECT count(*)::int AS n FROM events WHERE title = 'written'`);
       expect(titles.rows[0].n).toBe(0);
     } finally {
