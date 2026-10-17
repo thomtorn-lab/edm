@@ -1200,6 +1200,8 @@ export async function applyDiscoveryClassificationUpdate(
      * comment.
      */
     probableOfficialEventUrl?: string | null;
+    /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): set-only into an empty column; see buildDiscoveryQueueClassificationPatch. */
+    probableResidentAdvisorUrl?: string | null;
   },
 ) {
   if (Object.keys(patch).length === 0) return;

@@ -233,6 +233,19 @@ only —
 not add scraping for them without doing that first. `/about` renders this table for anyone
 non-technical.
 
+### Link source priority on sync (`src/lib/sync.ts`)
+
+When a sync matches an existing event, `officialEventUrl` and `ticketUrl` follow one rule
+(`incomingSourceMayReplace`). The event's canonical source may always update its own value. Any
+other source may replace it only if its `sourceType` strictly outranks the canonical source's
+(`official-promoter` > `official-venue` > `ticketing` > `specialist-aggregator` >
+`general-aggregator` > `social`); ties keep the existing value. An empty `ticketUrl` may be filled
+by any source. A candidate without a ticket link never clears one, because a missed detail page
+must not delete a verified link. Fields an admin has edited (`overriddenFields`) are never touched
+by sync. Resident Advisor links are a ticket destination only when the venue/promoter itself links
+them as its ticket channel (e.g. Culture Box's "Tickets" button); an aggregator's RA link stays a
+reference (`residentAdvisorUrl`), which is never a public CTA (`src/lib/links.ts`).
+
 ### Adding a new source
 
 See `SOURCE_ONBOARDING.md` for the full process (DISCOVER → DIAGNOSE → IMPLEMENT → TEST → VALIDATE
