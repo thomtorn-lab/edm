@@ -5,6 +5,7 @@ import { decodeHtmlEntities, htmlToText, extractAnchorTexts, extractLowestDkkAmo
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 import { acceptedLinksByCandidate, classifyLineupLinks, type LineupLinkObservation } from "./cultureBoxSoundcloudLinks";
 import type { GenreSlug } from "../taxonomy";
+import { isResidentAdvisorUrl } from "../links";
 
 /**
  * Real first-party adapter for Culture Box (src-culture-box in
@@ -289,7 +290,7 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
         endDatetime,
         venueName: CULTURE_BOX_VENUE_NAME,
         officialEventUrl: baseUrl,
-        ticketUrl: null, // no ticket/RA/Billetto link present on this page
+        ticketUrl: null, // not on the listing page; set from the detail page's own Tickets button (enrichCandidatesWithDetailPages)
         facebookUrl,
         residentAdvisorUrl: null,
         imageUrl,
@@ -364,6 +365,30 @@ export function extractResidentAdvisorUrl(detailHtml: string): string | null {
 }
 
 /**
+ * The night's ticket link, but only from the venue's own explicit "Tickets"
+ * button, and only when that button points to a Resident Advisor event page
+ * (RA link integrity, 2026-10-17). Every recorded detail page carries
+ * `<a href="https://ra.co/events/N" class="button …"><span>Tickets</span>…</a>`:
+ * the venue itself names RA as where tickets are sold, so the link is a
+ * verified ticketUrl, not just an RA reference. An RA link anywhere else on
+ * the page (prose, a lineup, a footer) is never promoted; it stays
+ * residentAdvisorUrl only (extractResidentAdvisorUrl above). Returns null
+ * when no such button exists.
+ */
+export function extractTicketsButtonUrl(detailHtml: string): string | null {
+  for (const m of detailHtml.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const href = m[1].match(/\bhref="([^"]+)"/i)?.[1];
+    if (!href) continue;
+    const label = htmlToText(m[2]).replace(/\s+/g, " ").trim();
+    if (!/^tickets$/i.test(label)) continue;
+    const url = decodeHtmlEntities(href).trim();
+    if (!isResidentAdvisorUrl(url)) continue;
+    if (/^\/events\/\d+\/?$/.test(new URL(url).pathname)) return url;
+  }
+  return null;
+}
+
+/**
  * Culture Box's detail pages append two fixed paragraphs to literally
  * every night — a generic "first drink free" note and an "Attitude Code"
  * safety-policy blurb linking culture-box.com/attitude-code (verified
@@ -420,8 +445,9 @@ export function attributeGenreToRoom(paragraphs: string[], roomArtists: string[]
  * Enriches already-parsed listing candidates with each night's detail page:
  * one room-attributed genre fill-in (only when the listing's own showcase
  * title left genre unresolved — this never second-guesses evidence the
- * listing page already credited), a real description, and the Resident
- * Advisor link, all applied to every room sharing that night. Candidates are
+ * listing page already credited), a real description, the Resident
+ * Advisor link, and (only from the venue's own "Tickets" button) the ticket
+ * link, all applied to every room sharing that night. Candidates are
  * grouped by their shared night (the part of officialEventUrl before `#`) so
  * a night's detail page is fetched exactly once regardless of how many rooms
  * it has. A single night's detail-page fetch failing degrades only that
@@ -460,6 +486,7 @@ export async function enrichCandidatesWithDetailPages(
 
     const paragraphs = extractDescriptionParagraphs(detailHtml);
     const residentAdvisorUrl = extractResidentAdvisorUrl(detailHtml);
+    const ticketsButtonUrl = extractTicketsButtonUrl(detailHtml);
     const descriptionParagraphs = paragraphs.filter((p) => !isCultureBoxBoilerplateParagraph(p));
     const description = descriptionParagraphs.length > 0 ? descriptionParagraphs.join("\n\n") : null;
 
@@ -467,6 +494,7 @@ export async function enrichCandidatesWithDetailPages(
       const otherRoomsArtists = nightCandidates.filter((c) => c !== candidate).flatMap((c) => c.artists);
       const next: RawCandidateEvent = { ...candidate };
       if (residentAdvisorUrl) next.residentAdvisorUrl = residentAdvisorUrl;
+      if (ticketsButtonUrl) next.ticketUrl = ticketsButtonUrl;
       // The detail page's real free-text description is genuinely new
       // evidence (the night's own write-up), but it must not erase the
       // room-separated lineup breakdown already built from the listing page
