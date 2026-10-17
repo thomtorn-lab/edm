@@ -33,6 +33,16 @@ export function printReport(report: EventsWindowReport): void {
   console.log(`\n== Genre set manually by an admin (${manualGenre.length}) — editorial decisions, never change automatically ==`);
   for (const e of manualGenre) console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${e.primaryGenre}; ${e.subgenres.join("+")}; manual: ${e.genreManuallySet.join(", ")}]`);
 
+  const doubtful = report.events.filter((e) => e.relevanceRecheck && e.relevanceRecheck.relevance !== "strong");
+  console.log(
+    `\n== Electronic-relevance recheck: weak/none (${doubtful.length}) — CURRENT recomputation, NOT the historical publish decision; nothing changed ==`,
+  );
+  for (const e of doubtful) {
+    const r = e.relevanceRecheck!;
+    console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${r.relevance}${r.trustedElectronicSource ? ", trusted source" : ""}]`);
+    for (const reason of r.reasons) console.log(`      - ${reason}`);
+  }
+
   const edge = report.events.filter((e) => e.edgeFlags.length > 0);
   console.log(`\n== Window-edge events (${edge.length}) — confirm whether they belong in scope ==`);
   for (const e of edge) console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${e.edgeFlags.join(", ")}]`);
