@@ -8,14 +8,12 @@
  * privacy-enhanced embed domain — no cookies set until the viewer actually
  * presses play) and never autoplays.
  *
- * `id="video"` on this section's own wrapper (never the iframe itself,
- * homepage VIDEO deep-link work, 2026-09-26) gives `/events/<slug>#video` a
- * stable target for the homepage's VIDEO badge (see EventRow.tsx) — plain
- * `scroll-mt-4` rather than JS scrolling, matching this codebase's existing
- * anchor convention (DiscoveryQueue.tsx/EventManager.tsx's own `id`+
- * `scroll-mt-4` rows). The event-detail page currently has no sticky
- * header, so no larger offset is needed; scroll-mt-4 is kept only for the
- * same small breathing-room the other anchors in this app already use.
+ * Rendered inside the event page's "Get a taste" section (event-page action
+ * layout, 2026-10-17), which owns the section heading and the `#video`
+ * anchor — so this component has no heading of its own. The artist the
+ * video is for is a discreet caption under the player instead: nothing on
+ * the page says whose video it is otherwise (YouTube's own title only shows
+ * inside the player), and a caption is the conventional, quiet place for it.
  */
 export default function ArtistVideoPreview({
   artistName,
@@ -27,9 +25,8 @@ export default function ArtistVideoPreview({
   videoTitle: string | null;
 }) {
   return (
-    <div id="video" className="mt-6 scroll-mt-4">
-      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">{artistName} — video preview</h2>
-      <div className="mt-2 aspect-video w-full overflow-hidden rounded border border-border-strong bg-black">
+    <figure className="mt-3">
+      <div className="aspect-video w-full overflow-hidden rounded border border-border-strong bg-black">
         <iframe
           className="h-full w-full"
           src={`https://www.youtube-nocookie.com/embed/${videoId}`}
@@ -39,6 +36,7 @@ export default function ArtistVideoPreview({
           allowFullScreen
         />
       </div>
-    </div>
+      <figcaption className="mt-2 text-xs text-text-tertiary">{artistName}</figcaption>
+    </figure>
   );
 }
