@@ -56,10 +56,15 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * a hvaderpaa-specific shortcut): an event's own offers.url is only ever a
  * CANDIDATE, never blindly trusted as "Tickets" merely because hvaderpaa put
  * it there.
- *   - ra.co (Resident Advisor)          -> residentAdvisorUrl, never ticketUrl
- *     (matches hangarenAdapter.ts/pumpehusetAdapter.ts precedent exactly —
- *     this is also a real, independent relevance signal: pipeline.ts's own
- *     hasTrustedElectronicTicketing is `raw.residentAdvisorUrl != null`).
+ *   - ra.co (Resident Advisor)          -> residentAdvisorUrl, never ticketUrl.
+ *     This is NOT the same rule the first-party adapters follow: Hangaren,
+ *     Pylonen, Pumpehuset and Culture Box DO set ticketUrl to an RA link,
+ *     because there the venue itself links RA as its ticket channel on its
+ *     own page. Here the RA link is only HvadErPå's (a third-party
+ *     aggregator's) claim about where tickets are sold, so it stays an RA
+ *     reference and never becomes a public Tickets CTA on its own (see
+ *     src/lib/links.ts). It is still a real relevance signal: pipeline.ts's
+ *     hasTrustedElectronicTicketing is `raw.residentAdvisorUrl != null`.
  *   - billetto.dk                       -> ticketUrl (genuine purchase page).
  *   - songkick.com, bandsintown.com, or  -> neither field populated. Every
  *     any other unrecognized host           in-scope event sampled during the

@@ -642,6 +642,17 @@ describe("publishDiscoveryItem — description/Resident Advisor URL/expanded fie
     expect(eventInsertCall()?.residentAdvisorUrl).toBe("https://ra.co/events/1234567");
   });
 
+  it("the RA-sourceUrl fallback checks the hostname, never a substring: extra.com / zebra.com are not Resident Advisor", async () => {
+    for (const sourceUrl of ["https://extra.com/events/1", "https://zebra.com/ra.co/events/1"]) {
+      insertValuesMock.mockClear();
+      selectResults = [[{ ...kultunautPending, sourceUrl }]];
+
+      await publishDiscoveryItem("dq-kn-1", "v-poolen");
+
+      expect(eventInsertCall()?.residentAdvisorUrl).toBeNull();
+    }
+  });
+
   it("Facebook decision: publishDiscoveryItem never sets a distinct facebookUrl on a new event — officialEventUrl already carries a Facebook-sourced URL", async () => {
     selectResults = [[{ ...kultunautPending, sourceUrl: "https://facebook.com/events/123" }]];
 

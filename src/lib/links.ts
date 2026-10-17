@@ -29,7 +29,13 @@ function hostnameOf(url: string): string | null {
 }
 const RESIDENT_ADVISOR_HOSTNAMES = new Set(["ra.co"]);
 const HVADERPAA_HOSTNAMES = new Set(["hvaderpaa.dk"]);
-function isResidentAdvisorUrl(url: string): boolean {
+/**
+ * Exported (RA link-integrity, 2026-10-17) so every "is this a Resident
+ * Advisor URL?" check shares this exact hostname rule. A substring test like
+ * `url.includes("ra.co")` also matches unrelated hosts (extra.com,
+ * zebra.com, opera.co.uk).
+ */
+export function isResidentAdvisorUrl(url: string): boolean {
   const h = hostnameOf(url);
   return h !== null && RESIDENT_ADVISOR_HOSTNAMES.has(h);
 }

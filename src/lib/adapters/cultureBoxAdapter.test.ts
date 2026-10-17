@@ -6,6 +6,7 @@ import {
   createCultureBoxAdapter,
   extractDescriptionParagraphs,
   extractResidentAdvisorUrl,
+  extractTicketsButtonUrl,
   attributeGenreToRoom,
   enrichCandidatesWithDetailPages,
   CULTURE_BOX_EVENTS_URL,
@@ -537,6 +538,46 @@ describe("extractResidentAdvisorUrl — real fixtures", () => {
   });
 });
 
+describe("extractTicketsButtonUrl — the venue's own Tickets button (RA link integrity, 2026-10-17)", () => {
+  const ALL_DETAIL_FIXTURES = [
+    "fri-21-august-2026", "sat-22-august-2026", "fri-28-august", "sat-29-august-2026",
+    "fri-4-september-2026", "sat-5-september-2026", "fri-11-september-2026", "sat-12-september-2026",
+    "fri-18-september-2026", "sat-19-september-2026", "fri-25-september-2026", "sat-26-september-2026",
+    "fri-2-october-2026", "sat-3-october-2026", "fri-23-october-2026",
+  ];
+
+  it.each(ALL_DETAIL_FIXTURES)("%s: the Tickets button's RA link is the ticket link, identical to the RA reference", (slug) => {
+    const html = loadDetailFixture(slug);
+    const ticketUrl = extractTicketsButtonUrl(html);
+    expect(ticketUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+    expect(ticketUrl).toBe(extractResidentAdvisorUrl(html));
+  });
+
+  it("the real fri-11-september-2026 button resolves to its exact RA event", () => {
+    expect(extractTicketsButtonUrl(loadDetailFixture("fri-11-september-2026"))).toBe("https://ra.co/events/2499772");
+  });
+
+  it("an RA link that is not the Tickets button (prose, lineup, other label) is never a ticket link", () => {
+    const html = `
+      <p>Read more on <a href="https://ra.co/events/1234567">Resident Advisor</a>.</p>
+      <a href="https://ra.co/events/7654321" class="button"><span>Facebook</span></a>
+      <p>https://ra.co/events/1111111</p>`;
+    expect(extractTicketsButtonUrl(html)).toBeNull();
+    expect(extractResidentAdvisorUrl(html)).toBe("https://ra.co/events/1234567"); // still kept as a reference
+  });
+
+  it("a Tickets button to a non-RA host or a non-event RA page is not promoted here", () => {
+    expect(extractTicketsButtonUrl(`<a href="https://billetto.dk/e/x"><span>Tickets</span></a>`)).toBeNull();
+    expect(extractTicketsButtonUrl(`<a href="https://ra.co/clubs/12345"><span>Tickets</span></a>`)).toBeNull();
+    expect(extractTicketsButtonUrl(`<a href="https://extra.co/events/1"><span>Tickets</span></a>`)).toBeNull();
+    expect(extractTicketsButtonUrl(`<a href="https://ra.co.evil.example/events/1"><span>Tickets</span></a>`)).toBeNull();
+  });
+
+  it("returns null when the page has no Tickets button at all", () => {
+    expect(extractTicketsButtonUrl("<html><body>no buttons</body></html>")).toBeNull();
+  });
+});
+
 describe("attributeGenreToRoom — room-attribution guard", () => {
   it("real: fri-28-august credits BOTH rooms cleanly with DIFFERENT genres from the same shared description — each room's own paragraph names only that room's artists", () => {
     const { blackBox, redBox } = REAL_ROOM_ARTISTS["fri-28-august"];
@@ -638,6 +679,9 @@ describe("enrichCandidatesWithDetailPages — orchestration", () => {
     const enriched = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
 
     expect(enriched[0].residentAdvisorUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+    // The venue's own Tickets button points at that same RA event, so it is
+    // also the verified ticket link (RA link integrity, 2026-10-17).
+    expect(enriched[0].ticketUrl).toBe(enriched[0].residentAdvisorUrl);
     expect(enriched[0].description).toBeTruthy();
     expect(enriched[0].description).toContain(roomLineupText); // room breakdown preserved, not overwritten
     expect(enriched[0].description!.indexOf(roomLineupText!)).toBeGreaterThan(0); // real prose comes first
@@ -672,6 +716,7 @@ describe("enrichCandidatesWithDetailPages — orchestration", () => {
     const brokenResult = enriched.find((e) => e.officialEventUrl === broken.officialEventUrl)!;
     expect(brokenResult.genreHint).toBe(broken.genreHint); // exactly the listing-page fallback, untouched
     expect(brokenResult.residentAdvisorUrl).toBeNull();
+    expect(brokenResult.ticketUrl).toBeNull(); // no detail page, no Tickets button, no ticket link
     expect(brokenResult.description).toBe(broken.description); // untouched listing-stage room breakdown
 
     const healthyResult = enriched.find((e) => e.officialEventUrl === healthy.officialEventUrl)!;
@@ -732,6 +777,12 @@ describe("createCultureBoxAdapter — full two-stage integration against all rea
     // Every candidate's RA link is real and well-formed when present.
     for (const c of candidates) {
       if (c.residentAdvisorUrl) expect(c.residentAdvisorUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+    }
+    // Every night with a detail page carries the venue's own Tickets button,
+    // so every candidate now has that RA link as its ticket link.
+    for (const c of candidates) {
+      expect(c.ticketUrl).toMatch(/^https:\/\/ra\.co\/events\/\d+$/);
+      expect(c.ticketUrl).toBe(c.residentAdvisorUrl);
     }
   });
 

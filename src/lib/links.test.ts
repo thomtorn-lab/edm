@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getExternalLinks, getSourceProvenance, hasTicketDestination, isFreeAdmission, showFreeCta } from "./links";
+import { getExternalLinks, getSourceProvenance, hasTicketDestination, isFreeAdmission, isResidentAdvisorUrl, showFreeCta } from "./links";
 import type { EventRecord } from "./types";
 
 function event(overrides: Partial<EventRecord> = {}): EventRecord {
@@ -48,6 +48,68 @@ function event(overrides: Partial<EventRecord> = {}): EventRecord {
     ...overrides,
   };
 }
+
+describe("isResidentAdvisorUrl — hostname, never substring (RA link integrity, 2026-10-17)", () => {
+  it.each(["https://ra.co/events/2499772", "https://www.ra.co/events/1", "https://RA.CO/events/1", "http://ra.co/clubs/205134"])("%s is RA", (url) => {
+    expect(isResidentAdvisorUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "https://extra.com/events/1",
+    "https://zebra.com/ra.co/events/1",
+    "https://opera.co.uk/",
+    "https://www.camera.com/",
+    "https://ra.co.evil.example/events/1",
+    "https://notra.co/events/1",
+    "https://example.com/?next=https://ra.co/events/1",
+    "not a url",
+    "",
+  ])("%s is not RA", (url) => {
+    expect(isResidentAdvisorUrl(url)).toBe(false);
+  });
+});
+
+describe("getExternalLinks — RA as verified ticket provider vs. RA reference (RA link integrity, 2026-10-17)", () => {
+  it("Culture Box shape: official venue page + the venue's own Tickets button to RA -> Official event and Tickets", () => {
+    const links = getExternalLinks(
+      event({
+        canonicalSourceId: "src-culture-box",
+        officialEventUrl: "https://culture-box.com/event/fri-20-november-2026/",
+        ticketUrl: "https://ra.co/events/2542195",
+        residentAdvisorUrl: "https://ra.co/events/2542195",
+      }),
+    );
+    expect(links.map((l) => [l.label, l.href])).toEqual([
+      ["Official event", "https://culture-box.com/event/fri-20-november-2026/"],
+      ["Tickets", "https://ra.co/events/2542195"],
+    ]);
+  });
+
+  it("the same Culture Box event once sold out keeps only Official event", () => {
+    const links = getExternalLinks(
+      event({
+        canonicalSourceId: "src-culture-box",
+        officialEventUrl: "https://culture-box.com/event/fri-20-november-2026/",
+        ticketUrl: "https://ra.co/events/2542195",
+        residentAdvisorUrl: "https://ra.co/events/2542195",
+        soldOut: true,
+      }),
+    );
+    expect(links.map((l) => l.label)).toEqual(["Official event"]);
+  });
+
+  it("HvadErPå shape: aggregator page + an RA reference only (never ticketUrl) -> no Tickets CTA, no RA CTA", () => {
+    const links = getExternalLinks(
+      event({
+        canonicalSourceId: "src-hvaderpaa",
+        officialEventUrl: "https://hvaderpaa.dk/da/event/19246/",
+        residentAdvisorUrl: "https://ra.co/events/2521204",
+      }),
+    );
+    expect(links.some((l) => l.label === "Tickets")).toBe(false);
+    expect(links.some((l) => l.href.includes("ra.co"))).toBe(false);
+  });
+});
 
 describe("getExternalLinks — ticket CTA label", () => {
   it("RA guardrail (product rule, 2026-09-12, final correction): a standalone Resident Advisor link with no verified ticketUrl produces no CTA at all — RA is a third-party source, not verified here to have active ticket sales", () => {

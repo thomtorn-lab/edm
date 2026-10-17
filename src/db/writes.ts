@@ -6,6 +6,7 @@ import { venueRowToRecord } from "./mappers";
 import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { isEndAfterStart, END_BEFORE_START_ERROR } from "../lib/datetime";
 import { assessDuplicate } from "../lib/dedup";
+import { isResidentAdvisorUrl } from "../lib/links";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types";
@@ -934,10 +935,11 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // Admin-entered Resident Advisor URL for an unpublished candidate
       // (unified event create/edit model, 2026-09-08) — same
       // admin-wins-over-source-heuristic pattern as officialEventUrl above;
-      // the sourceUrl-contains-"ra.co" fallback preserves every existing
+      // the sourceUrl-is-an-RA-URL fallback (hostname check via
+      // isResidentAdvisorUrl, never a substring) preserves every existing
       // RA-sourced publish's exact prior behavior when the admin never
       // touched this field.
-      residentAdvisorUrl: item.probableResidentAdvisorUrl ?? (item.sourceUrl.includes("ra.co") ? item.sourceUrl : null),
+      residentAdvisorUrl: item.probableResidentAdvisorUrl ?? (isResidentAdvisorUrl(item.sourceUrl) ? item.sourceUrl : null),
       imageUrl: null,
       // Explicit FREE flag (never inferred from ticketUrl's absence) — same
       // canonical priceFrom=0 representation as EventManager's own Free
