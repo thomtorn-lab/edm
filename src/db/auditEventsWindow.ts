@@ -10,7 +10,13 @@
  * (canonical_source_id IS NULL — see src/app/api/admin/extract/route.ts) are
  * unreachable, and it dumps change histories and Discovery Queue rows. This
  * audit has NO source filter and selects an explicit, minimal column list —
- * never admin notes, override fields or change logs.
+ * never admin notes, override fields or change logs. The one exception
+ * (genre QA, 2026-10-17) is two booleans saying whether an admin has
+ * manually set the genre (primaryGenre/subgenres in overridden_fields).
+ * They are computed in SQL, so the override list itself is never read or
+ * printed. Genre suggestions must not override an editorial decision, and
+ * genre_confidence is not updated when an admin edits the genre, so the
+ * reviewer needs this flag.
  *
  * Window semantics (nightlife-aware, see src/lib/datetime.ts): for
  * from..to inclusive, the window is [from 00:00, (to + 1) 06:00) Copenhagen
@@ -99,7 +105,9 @@ export const WINDOW_EVENTS_SQL = `SELECT e.id, e.slug, e.title, e.artists, e.des
        e.primary_genre, e.subgenres, e.genre_confidence,
        e.cancelled, e.postponed, e.sold_out, e.date_changed, e.time_changed,
        e.canonical_source_id, e.official_event_url, e.ticket_url, e.resident_advisor_url,
-       e.facebook_url, e.other_source_urls
+       e.facebook_url, e.other_source_urls,
+       ('primaryGenre' = ANY(e.overridden_fields)) AS primary_genre_overridden,
+       ('subgenres' = ANY(e.overridden_fields)) AS subgenres_overridden
 FROM events e LEFT JOIN venues v ON v.id = e.venue_id
 WHERE ${WINDOW_PREDICATE_SQL}
 ORDER BY e.start_datetime, e.id`;
@@ -136,6 +144,10 @@ export interface WindowEventRow {
   resident_advisor_url: string | null;
   facebook_url: string | null;
   other_source_urls: string[] | null;
+  /** primaryGenre is in overridden_fields (computed in SQL; the list itself is never selected). */
+  primary_genre_overridden: boolean | null;
+  /** subgenres is in overridden_fields (computed in SQL; the list itself is never selected). */
+  subgenres_overridden: boolean | null;
 }
 
 export type EdgeFlag = "previous_night_early_start" | "after_midnight_last_night" | "started_before_window";
@@ -151,6 +163,12 @@ export interface ScreeningEvent {
   primaryGenre: string;
   subgenres: string[];
   genreConfidence: string;
+  /**
+   * Which genre fields an admin set by hand ([] when none). An editorial
+   * decision: never propose an automatic change to it. genreConfidence is
+   * not updated by admin edits, so read it as stale when this is non-empty.
+   */
+  genreManuallySet: ("primaryGenre" | "subgenres")[];
   artists: string[];
   status: string[];
   sourceId: string | null;
@@ -214,6 +232,10 @@ export function toScreeningEvent(row: WindowEventRow, window: AuditWindow): Scre
     primaryGenre: row.primary_genre,
     subgenres: row.subgenres ?? [],
     genreConfidence: row.genre_confidence,
+    genreManuallySet: [
+      ...(row.primary_genre_overridden === true ? (["primaryGenre"] as const) : []),
+      ...(row.subgenres_overridden === true ? (["subgenres"] as const) : []),
+    ],
     artists: row.artists ?? [],
     status,
     sourceId: row.canonical_source_id,

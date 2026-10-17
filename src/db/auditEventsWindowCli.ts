@@ -29,6 +29,10 @@ export function printReport(report: EventsWindowReport): void {
   console.log(`\n== Events (${report.events.length}) ==`);
   for (const e of report.events) console.log(JSON.stringify(e));
 
+  const manualGenre = report.events.filter((e) => e.genreManuallySet.length > 0);
+  console.log(`\n== Genre set manually by an admin (${manualGenre.length}) — editorial decisions, never change automatically ==`);
+  for (const e of manualGenre) console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${e.primaryGenre}; ${e.subgenres.join("+")}; manual: ${e.genreManuallySet.join(", ")}]`);
+
   const edge = report.events.filter((e) => e.edgeFlags.length > 0);
   console.log(`\n== Window-edge events (${edge.length}) — confirm whether they belong in scope ==`);
   for (const e of edge) console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${e.edgeFlags.join(", ")}]`);
