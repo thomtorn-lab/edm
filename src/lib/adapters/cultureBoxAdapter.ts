@@ -1,7 +1,8 @@
 import { copenhagenWallClockToUtc, addDaysToDateKey, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, extractAnchorTexts, extractLowestDkkAmount } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, extractLowestDkkAmount } from "./htmlExtraction";
+import { extractLineupNames } from "./cultureBoxLineupNames";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 import { acceptedLinksByCandidate, classifyLineupLinks, type LineupLinkObservation } from "./cultureBoxSoundcloudLinks";
 import type { GenreSlug } from "../taxonomy";
@@ -142,7 +143,9 @@ function parseRoomBlocks(articleHtml: string): { blocks: RoomBlock[]; skippedBlo
       ? htmlToText(strongMatch[1]).replace(/\n/g, " ").replace(/[:\s]+$/, "").trim() || null
       : null;
 
-    const artists = extractAnchorTexts(pHtml);
+    // Linked names plus unambiguous unlinked ones (cultureBoxLineupNames.ts).
+    // lineupLinks stays anchors-only: the SoundCloud completeness check counts anchors.
+    const artists = extractLineupNames(pHtml);
 
     blocks.push({ roomName, showcaseTitle, artists, lineupLinks: extractLineupLinks(pHtml) });
   }
