@@ -600,31 +600,39 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     expect(calendarSection?.contains(shareButton)).toBe(false);
   });
 
-  it("2. Share renders alongside the primary CTA row, ahead of Add to calendar/About (content-order revision, 2026-10-09: Add to calendar/VIDEO/SOUNDCLOUD moved ahead of About)", async () => {
+  it("2. order (event-page action layout, 2026-10-17): Genre -> primary CTA -> Add to calendar -> Share -> About", async () => {
     await renderPage(
       makeEvent({ description: "Some description.", officialEventUrl: "https://venue.example.com/event" }),
     );
     const genreDt = screen.getByText("Genre");
     const officialEventCta = screen.getByText(/^Official event/i);
+    const calendarButton = screen.getByRole("button", { name: "Add to calendar" });
     const shareButton = screen.getByRole("button", { name: /^Share /i });
-    const addToCalendarHeading = screen.getByText("Add to calendar");
     const aboutHeading = screen.getByText("About");
 
-    // Current order: Genre -> primary CTA -> Share (same row) -> Add to calendar -> About.
     expect(genreDt.compareDocumentPosition(officialEventCta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(officialEventCta.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(addToCalendarHeading.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(officialEventCta.compareDocumentPosition(calendarButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(calendarButton.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("Share sits in the same container as the primary CTA (Tickets/Official event), not a separate block", async () => {
+  it("the primary CTA sits inside the bordered facts block (under Genre, above its lower rule); Share sits outside it, in the secondary row with Add to calendar", async () => {
     await renderPage(makeEvent({ officialEventUrl: "https://venue.example.com/event" }));
     const officialEvent = screen.getByRole("link", { name: /^Official event/i });
+    const factsBlock = screen.getByText("Genre").closest("dl")!.parentElement!;
+    expect(factsBlock.className).toContain("border-y");
+    expect(factsBlock.contains(officialEvent)).toBe(true);
+    // The action row is a sibling of the <dl>, never inside it (only dt/dd groups belong there).
+    expect(screen.getByText("Genre").closest("dl")!.contains(officialEvent)).toBe(false);
+
     const shareButton = screen.getByRole("button", { name: /^Share /i });
-    // ShareButton wraps its <button> in its own "relative inline-block" div
-    // (for its own copy-confirmation UI), so compare containment rather than
-    // exact parentElement equality.
-    expect(officialEvent.parentElement?.contains(shareButton)).toBe(true);
+    const calendarButton = screen.getByRole("button", { name: "Add to calendar" });
+    expect(factsBlock.contains(shareButton)).toBe(false);
+    expect(officialEvent.parentElement?.contains(shareButton)).toBe(false);
+    // ShareButton and AddToCalendar each wrap their <button> in their own
+    // "relative inline-block" div, so the row is two levels up.
+    const secondaryRow = calendarButton.parentElement!.parentElement!;
+    expect(secondaryRow.contains(shareButton)).toBe(true);
   });
 
   it("Share still renders even when the event has no external links at all (unconditional, unlike Tickets/Official event)", async () => {
@@ -678,15 +686,16 @@ describe("Event detail page — Share button (2026-09-13; relocated below Genre,
     expect((payload as { text?: string }).text).toBeUndefined();
   });
 
-  it("does not alter the existing Official event/Tickets/Add to calendar CTAs", async () => {
+  it("does not alter the existing Official event/Tickets CTAs, and Add to calendar still offers all three calendars", async () => {
     await renderPage(
       makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
     );
     expect(screen.getByText(/Official event/i)).toBeTruthy();
     expect(screen.getByText(/Tickets/i)).toBeTruthy();
-    expect(screen.getByText("Google Calendar")).toBeTruthy();
-    expect(screen.getByText("Outlook")).toBeTruthy();
-    expect(screen.getByText("Apple Calendar / ICS")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add to calendar" }));
+    expect(screen.getByRole("menuitem", { name: /Google Calendar/i })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Outlook/i })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Apple Calendar \/ ICS/i })).toBeTruthy();
   });
 });
 
@@ -695,7 +704,8 @@ describe("Event detail page — Apple Calendar / ICS uses a real HTTP endpoint, 
 
   it("Apple Calendar / ICS points at the real per-event ICS route", async () => {
     await renderPage(makeEvent({ slug: "warehouse-night" }));
-    const icsLink = screen.getByRole("link", { name: /Apple Calendar/i });
+    fireEvent.click(screen.getByRole("button", { name: "Add to calendar" }));
+    const icsLink = screen.getByRole("menuitem", { name: /Apple Calendar/i });
     expect(icsLink.getAttribute("href")).toBe("/events/warehouse-night/calendar.ics");
     expect(icsLink.getAttribute("href")).not.toMatch(/^data:/);
     expect(icsLink.getAttribute("download")).toBeNull();
@@ -703,8 +713,9 @@ describe("Event detail page — Apple Calendar / ICS uses a real HTTP endpoint, 
 
   it("Google Calendar and Outlook links remain unchanged by the ICS fix", async () => {
     await renderPage(makeEvent());
-    const google = screen.getByRole("link", { name: /Google Calendar/i });
-    const outlook = screen.getByRole("link", { name: /Outlook/i });
+    fireEvent.click(screen.getByRole("button", { name: "Add to calendar" }));
+    const google = screen.getByRole("menuitem", { name: /Google Calendar/i });
+    const outlook = screen.getByRole("menuitem", { name: /Outlook/i });
     expect(google.getAttribute("href")).toContain("https://calendar.google.com/calendar/render");
     expect(outlook.getAttribute("href")).toContain("https://outlook.live.com/calendar/0/deeplink/compose");
     expect(google.getAttribute("target")).toBe("_blank");
@@ -832,90 +843,113 @@ describe("Event detail page — primary/secondary CTA hierarchy (event-detail CT
     expect(officialEvent.textContent).toContain("↗");
   });
 
-  it("gives the primary CTA a mobile-first ~40px tap target with 12px text, relaxing to the ~44px desktop treatment at sm:", async () => {
+  it("gives the primary CTA a ~44px tap target with 12px text on every screen (event-page action layout, 2026-10-17)", async () => {
     await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
     const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    expect(tickets.className).toContain("min-h-[2.5rem]");
+    expect(tickets.className).toContain("min-h-11");
     expect(tickets.className).toContain("text-xs");
-    expect(tickets.className).toContain("sm:min-h-[2.75rem]");
   });
 });
 
-describe("Event detail page — mobile action-row polish (2026-09-26: ~40px/12px-text/8px-gap on mobile so Tickets + Official event + Share fit on one row; desktop keeps its existing ~44px treatment)", () => {
+describe("Event detail page — responsive action layout (event-page action layout, 2026-10-17)", () => {
   afterEach(cleanup);
 
-  it("gives the primary CTA ~40px height, 12px text, and 12-14px horizontal padding on mobile", async () => {
-    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
-    const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    expect(tickets.className).toContain("min-h-[2.5rem]"); // 40px
-    expect(tickets.className).toContain("text-xs"); // 12px
-    expect(tickets.className).toContain("px-3.5"); // 14px
+  const BOTH = { officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" };
+
+  it("primary and secondary CTAs: ~44px tall, 12px text, 16px padding, a minimum width, never wrapping their label", async () => {
+    await renderPage(makeEvent(BOTH));
+    for (const name of [/^Tickets/i, /^Official event/i]) {
+      const cta = screen.getByRole("link", { name });
+      for (const cls of ["min-h-11", "text-xs", "px-4", "min-w-[8.5rem]", "whitespace-nowrap"]) {
+        expect(cta.className).toContain(cls);
+      }
+    }
   });
 
-  it("restores the ~44px desktop height for the primary CTA without changing its desktop width/typography", async () => {
-    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
-    const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    expect(tickets.className).toContain("sm:min-h-[2.75rem]");
-    expect(tickets.className).toContain("sm:px-4");
-    expect(tickets.className).toContain("sm:py-2");
+  it("Tickets + Official event split the row on mobile and return to natural width from sm:", async () => {
+    await renderPage(makeEvent(BOTH));
+    for (const name of [/^Tickets/i, /^Official event/i]) {
+      const cta = screen.getByRole("link", { name });
+      expect(cta.className).toContain("flex-1");
+      expect(cta.className).toContain("sm:flex-none");
+    }
   });
 
-  it("gives the secondary CTA the same mobile ~40px / desktop ~44px treatment", async () => {
-    await renderPage(
-      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
-    );
-    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
-    expect(officialEvent.className).toContain("min-h-[2.5rem]");
-    expect(officialEvent.className).toContain("text-xs");
-    expect(officialEvent.className).toContain("sm:min-h-[2.75rem]");
+  it("a lone primary CTA keeps its natural width on mobile too (no flex-1)", async () => {
+    await renderPage(makeEvent({ officialEventUrl: "https://venue.example.com/event" }));
+    const official = screen.getByRole("link", { name: /^Official event/i });
+    expect(official.className).not.toContain("flex-1");
+    expect(official.className).toContain("min-w-[8.5rem]");
   });
 
-  it("uses an 8px gap between actions on mobile, restoring the wider desktop gap at sm:", async () => {
-    await renderPage(makeEvent({ ticketUrl: "https://billetto.dk/e/x" }));
-    const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    const row = tickets.parentElement!;
-    expect(row.className).toContain("gap-2");
-    expect(row.className).toContain("sm:gap-3");
+  it("a Source-only fallback keeps the outline treatment and natural width", async () => {
+    await renderPage(makeEvent({ otherSourceUrls: ["https://kultunaut.dk/x"] }));
+    const source = screen.getByRole("link", { name: /^Source/i });
+    expect(source.className).toContain("border");
+    expect(source.className).not.toContain("bg-accent");
+    expect(source.className).not.toContain("flex-1");
   });
 
-  it("renders Share as an icon-only 40x40px button on mobile, with the text label restored at sm:", async () => {
+  it("left-aligned rows with an 8px gap on mobile, 12px from sm:", async () => {
+    await renderPage(makeEvent(BOTH));
+    const ctaRow = screen.getByRole("link", { name: /^Tickets/i }).parentElement!;
+    const secondaryRow = screen.getByRole("button", { name: "Add to calendar" }).parentElement!.parentElement!;
+    for (const row of [ctaRow, secondaryRow]) {
+      expect(row.className).toContain("gap-2");
+      expect(row.className).toContain("sm:gap-3");
+      expect(row.className).not.toContain("justify-between");
+      expect(row.className).not.toContain("justify-end");
+    }
+  });
+
+  it("renders no CTA row at all when there are no links, but the secondary row (calendar + Share) always renders", async () => {
+    await renderPage(makeEvent({ officialEventUrl: null, ticketUrl: null, otherSourceUrls: [] }));
+    expect(screen.queryByRole("link", { name: /↗/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add to calendar" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Share /i })).toBeTruthy();
+  });
+
+  it("Add to calendar is a labelled ~44px button whose text stays visible on mobile, with a left-anchored desktop menu", async () => {
+    await renderPage(makeEvent());
+    const calendarButton = screen.getByRole("button", { name: "Add to calendar" });
+    expect(calendarButton.className).toContain("min-h-11");
+    const label = Array.from(calendarButton.querySelectorAll("span")).find((s) => s.textContent === "Add to calendar");
+    expect(label).toBeTruthy();
+    expect(label!.className).not.toContain("hidden");
+    fireEvent.click(calendarButton);
+    expect(screen.getByRole("menu", { name: "Add to calendar" }).className).toContain("sm:start-0");
+  });
+
+  it("renders Share as an icon-only 44x44px button on mobile, with the text label restored at sm: (icon and behaviour unchanged)", async () => {
     await renderPage(makeEvent());
     const shareButton = screen.getByRole("button", { name: /^Share /i });
-    expect(shareButton.className).toContain("h-10");
-    expect(shareButton.className).toContain("w-10");
+    expect(shareButton.className).toContain("h-11");
+    expect(shareButton.className).toContain("w-11");
     expect(shareButton.className).toContain("sm:h-auto");
     expect(shareButton.className).toContain("sm:w-auto");
     expect(shareButton.className).toContain("sm:min-h-[2.75rem]");
-    // The visible "Share" text span is hidden on mobile, shown at sm:.
+    expect(shareButton.querySelector("svg")).not.toBeNull();
     const textSpan = Array.from(shareButton.querySelectorAll("span")).find((s) => s.textContent === "Share");
     expect(textSpan?.className).toContain("hidden");
     expect(textSpan?.className).toContain("sm:inline");
   });
 
-  it("keeps Share's accessible label and click behavior unchanged on mobile — icon-only is presentation only", async () => {
+  it("keeps Share's accessible label unchanged — icon-only is presentation only", async () => {
     await renderPage(makeEvent({ title: "Warehouse Night" }));
     expect(screen.getByRole("button", { name: "Share Warehouse Night" })).toBeTruthy();
   });
 
-  it("preserves the logical action order Tickets -> Official event -> Share in the DOM", async () => {
-    await renderPage(
-      makeEvent({ officialEventUrl: "https://venue.example.com/event", ticketUrl: "https://billetto.dk/e/x" }),
-    );
-    const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    const officialEvent = screen.getByRole("link", { name: /^Official event/i });
-    const shareButton = screen.getByRole("button", { name: /^Share /i });
-    expect(tickets.compareDocumentPosition(officialEvent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(officialEvent.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("gives each Add to calendar link the same ~44px min-height", async () => {
-    await renderPage(makeEvent());
-    const google = screen.getByRole("link", { name: /Google Calendar/i });
-    const outlook = screen.getByRole("link", { name: /Outlook/i });
-    const ics = screen.getByRole("link", { name: /Apple Calendar/i });
-    expect(google.className).toContain("min-h-[2.75rem]");
-    expect(outlook.className).toContain("min-h-[2.75rem]");
-    expect(ics.className).toContain("min-h-[2.75rem]");
+  it("keeps the logical action order Tickets -> Official event -> Add to calendar -> Share in the DOM (keyboard order)", async () => {
+    await renderPage(makeEvent(BOTH));
+    const order = [
+      screen.getByRole("link", { name: /^Tickets/i }),
+      screen.getByRole("link", { name: /^Official event/i }),
+      screen.getByRole("button", { name: "Add to calendar" }),
+      screen.getByRole("button", { name: /^Share /i }),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 });
 
@@ -937,7 +971,7 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
     expect(iframe!.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("renders the Artist Preview embed below Add to calendar, which itself sits right below Share (content-order revision, 2026-10-09)", async () => {
+  it("renders the Artist Preview embed after the secondary actions (Add to calendar, Share) and the Get a taste heading", async () => {
     vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -947,10 +981,12 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
     await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
 
     const iframe = document.querySelector("iframe")!;
+    const calendarButton = screen.getByRole("button", { name: "Add to calendar" });
     const shareButton = screen.getByRole("button", { name: /^Share /i });
-    const addToCalendarHeading = screen.getByText("Add to calendar");
-    expect(shareButton.compareDocumentPosition(addToCalendarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(addToCalendarHeading.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const heading = screen.getByRole("heading", { level: 2, name: "Get a taste" });
+    expect(calendarButton.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shareButton.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("Artist Preview never appears before the Tickets/Official event CTA", async () => {
@@ -1049,14 +1085,18 @@ describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10
     expect(anchor.textContent).not.toContain("on SoundCloud");
   });
 
-  it("replaces the plain-text heading with the official SoundCloud wordmark image, not hand-drawn markup", async () => {
+  it("heads the links with an h3 'Listen on' + the official SoundCloud wordmark (accessible name 'Listen on SoundCloud'), not hand-drawn markup", async () => {
     await renderPage(makeEvent({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS }), [], PILOT_LINKS);
 
     const anchor = document.getElementById("soundcloud")!;
+    const heading = screen.getByRole("heading", { level: 3, name: "Listen on SoundCloud" });
+    expect(anchor.contains(heading)).toBe(true);
+    // The brand name is never printed as text next to the wordmark.
     expect(screen.queryByText("SoundCloud")).toBeNull();
-    const logo = anchor.querySelector("img")!;
+    const logo = heading.querySelector("img")!;
     expect(logo).not.toBeNull();
     expect(logo.getAttribute("alt")).toBe("SoundCloud");
+    expect(logo.getAttribute("src")).toBe("/brand/soundcloud-logo-white.png");
     // No inline <svg> hand-authored in the component — the mark is a real
     // image asset, never redrawn/recolored in code.
     expect(anchor.querySelector("svg")).toBeNull();
@@ -1111,6 +1151,80 @@ describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10
       "https://soundcloud.com/tim-andresen",
     ]);
     expect(anchor.querySelector("iframe")).toBeNull();
+  });
+});
+
+describe("Event detail page — Get a taste (event-page action layout, 2026-10-17)", () => {
+  afterEach(cleanup);
+
+  const VIDEO = { artistName: "TIM ANDRESEN", videoId: "abc123XYZ", videoTitle: "Live at Culture Box", channelTitle: "Tim Andresen" };
+  const LINKS = [
+    { name: "TIM ANDRESEN", url: "https://soundcloud.com/tim-andresen" },
+    { name: "REXIE LEX", url: "https://soundcloud.com/rexie_lex" },
+  ];
+  const ARTISTS = ["TIM ANDRESEN", "REXIE LEX"];
+
+  it("is absent when there is neither a video nor SoundCloud links", async () => {
+    await renderPage(makeEvent({ artists: ARTISTS }));
+    expect(screen.queryByRole("heading", { name: "Get a taste" })).toBeNull();
+    expect(document.querySelector("section")).toBeNull();
+  });
+
+  it("video only: one h2 'Get a taste', the embed, and a discreet caption naming the artist — no 'video preview' heading", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
+    await renderPage(makeEvent({ artists: ARTISTS }));
+    const heading = screen.getByRole("heading", { level: 2, name: "Get a taste" });
+    const section = heading.closest("section")!;
+    expect(section.getAttribute("aria-labelledby")).toBe(heading.id);
+    expect(section.querySelector("iframe")).not.toBeNull();
+    expect(section.querySelector("figcaption")?.textContent).toBe("TIM ANDRESEN");
+    expect(screen.queryByText(/video preview/i)).toBeNull();
+    expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+    // The iframe keeps its own accessible title (the video's title).
+    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("Live at Culture Box");
+  });
+
+  it("SoundCloud only: 'Get a taste' then 'Listen on SoundCloud', no #video anchor, links right under the heading", async () => {
+    await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
+    const h2 = screen.getByRole("heading", { level: 2, name: "Get a taste" });
+    const h3 = screen.getByRole("heading", { level: 3, name: "Listen on SoundCloud" });
+    expect(h2.compareDocumentPosition(h3) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.getElementById("video")).toBeNull();
+    expect(document.getElementById("soundcloud")!.className).toContain("mt-3");
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("both: video first as the primary element, SoundCloud after extra vertical air, one shared section", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
+    await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
+    const section = screen.getByRole("heading", { level: 2, name: "Get a taste" }).closest("section")!;
+    const soundcloud = document.getElementById("soundcloud")!;
+    expect(section.contains(soundcloud)).toBe(true);
+    expect(section.querySelector("iframe")!.compareDocumentPosition(soundcloud) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(soundcloud.className).toContain("mt-8");
+    expect(soundcloud.className).toContain("sm:mt-10");
+    expect(screen.getAllByRole("heading", { level: 2, name: "Get a taste" })).toHaveLength(1);
+  });
+
+  it("#video (homepage VIDEO badge) targets the section, so the jump lands with its heading in view; #soundcloud stays on the SoundCloud block", async () => {
+    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
+    await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
+    const video = document.getElementById("video")!;
+    expect(video.tagName).toBe("SECTION");
+    expect(video.className).toContain("scroll-mt-4");
+    expect(video.querySelector("h2")!.textContent).toBe("Get a taste");
+    expect(document.getElementById("soundcloud")!.className).toContain("scroll-mt-4");
+  });
+
+  it("SoundCloud artists are one wrapping row with ~44px tap targets on mobile and 32px from sm:", async () => {
+    await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
+    const list = document.getElementById("soundcloud")!.querySelector("ul")!;
+    expect(list.className).toContain("flex-wrap");
+    expect(list.className).not.toContain("flex-col");
+    for (const link of Array.from(list.querySelectorAll("a"))) {
+      expect(link.className).toContain("min-h-11");
+      expect(link.className).toContain("sm:min-h-8");
+    }
   });
 });
 
