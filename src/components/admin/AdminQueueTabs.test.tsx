@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import AdminQueueTabs from "./AdminQueueTabs";
 import type { AdminQueueGroups, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
+import type { PastStaleSplit, PrioritizedReviewRow, ReviewPriority, ReviewPriorityList } from "@/lib/reviewPriority";
 
 const { getSearchParams, setSearchParams } = vi.hoisted(() => {
   let params = new URLSearchParams();
@@ -200,5 +201,104 @@ describe("AdminQueueTabs — direct handoff from Analyze (unified event create/e
   it("with no ?tab= param at all, defaults to Needs review exactly as before", () => {
     render(<AdminQueueTabs groups={EMPTY_GROUPS} published={PUBLISHED} adminUnpublished={ADMIN_UNPUBLISHED} venues={VENUES} />);
     expect(screen.getByRole("tab", { name: /Needs review/ }).getAttribute("aria-selected")).toBe("true");
+  });
+});
+
+function prioritized(id: string, title: string, overrides: Partial<ReviewPriority> = {}): PrioritizedReviewRow {
+  return {
+    item: makeItem(id, title),
+    priority: {
+      itemId: id,
+      relevanceScore: 4,
+      priority: 4,
+      tier: "likely",
+      relevanceState: "missing_genre_info",
+      startsWithin72h: false,
+      hoursToStart: 200,
+      signals: [
+        { key: "strong_venue", points: 3, label: "MODULE is a primarily electronic venue" },
+        { key: "lineup", points: 1, label: "Lineup listed (2)" },
+        { key: "venue_unresolved", points: 0, label: "No venue given" },
+      ],
+      recommendedAction: "Check the source, then pick a genre and publish — or ignore",
+      ...overrides,
+    },
+  };
+}
+
+describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
+  afterEach(cleanup);
+
+  const LIST: ReviewPriorityList = {
+    likely: [
+      prioritized("dq-tanzen", "TANZEN UND SPRINGEN", { startsWithin72h: true }),
+      ...Array.from({ length: 16 }, (_, i) => prioritized(`dq-l${i}`, `Likely ${i}`)),
+    ],
+    possible: [prioritized("dq-prodigy", "The Prodigy", { tier: "possible" })],
+    urgentCount: 1,
+  };
+
+  function renderWith(list: ReviewPriorityList, split?: PastStaleSplit<DiscoveryQueueItem>) {
+    render(
+      <AdminQueueTabs
+        groups={EMPTY_GROUPS}
+        published={PUBLISHED}
+        adminUnpublished={ADMIN_UNPUBLISHED}
+        venues={VENUES}
+        priorityList={list}
+        pastStaleSplit={split}
+      />,
+    );
+  }
+
+  it("counts likely and possible rows on the tab", () => {
+    renderWith(LIST);
+    expect(screen.getByRole("tab", { name: "Likely relevant 18" })).toBeTruthy();
+  });
+
+  it("shows the 72-hour warning and opens the tab from it", () => {
+    renderWith(LIST);
+    expect(screen.getByRole("alert").textContent).toContain("1 likely relevant event starts within 72 hours");
+    fireEvent.click(screen.getByRole("button", { name: "Review them" }));
+    expect(screen.getByRole("tab", { name: "Likely relevant 18" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("shows no warning when nothing is urgent", () => {
+    renderWith({ ...LIST, urgentCount: 0 });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the top 15 with their reasons and recommended action, and all rows on request", () => {
+    renderWith(LIST);
+    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 18" }));
+    expect(screen.getAllByTestId("priority-explanation")).toHaveLength(15);
+    expect(screen.getByText("TANZEN UND SPRINGEN")).toBeTruthy();
+    expect(screen.queryByText("Likely 15")).toBeNull();
+    expect(screen.getAllByText(/For: MODULE is a primarily electronic venue · Lineup listed \(2\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Recommended: Check the source/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Show all 17" }));
+    expect(screen.getByText("Likely 15")).toBeTruthy();
+    expect(screen.getAllByTestId("priority-explanation")).toHaveLength(17);
+  });
+
+  it("keeps source-category-only rows in a separate section that opens on request", () => {
+    renderWith(LIST);
+    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 18" }));
+    expect(screen.queryByText("The Prodigy")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /possibly relevant — source category only \(1\)/ }));
+    expect(screen.getByText("The Prodigy")).toBeTruthy();
+  });
+
+  it("splits Past / stale into upcoming rows the source dropped and collapsed expired rows", () => {
+    const split: PastStaleSplit<DiscoveryQueueItem> = {
+      upcomingNotInSource: [makeItem("dq-moved", "Fluid Sound Festival, day 1")],
+      expired: [makeItem("dq-old", "Old Party")],
+    };
+    renderWith(LIST, split);
+    fireEvent.click(screen.getByRole("tab", { name: /Past \/ stale/ }));
+    expect(screen.getByText("Fluid Sound Festival, day 1")).toBeTruthy();
+    expect(screen.queryByText("Old Party")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show expired (1)" }));
+    expect(screen.getByText("Old Party")).toBeTruthy();
   });
 });

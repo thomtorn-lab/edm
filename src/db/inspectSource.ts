@@ -24,6 +24,7 @@ import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
+import { buildReviewPriorityList, splitPastStale, REVIEW_PRIORITY_DEFAULT_VISIBLE, type ReviewPriorityInput } from "@/lib/reviewPriority";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -1595,11 +1596,14 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   const detailSource = typeof args["detail-source"] === "string" ? args["detail-source"] : null;
   const detailLimit = typeof args["detail-limit"] === "string" ? Number(args["detail-limit"]) : null;
   const detailOffset = typeof args["detail-offset"] === "string" ? Number(args["detail-offset"]) : 0;
-  let venues: Venue[] = [];
-  if (detailCategory) {
-    const venueRows = await client.query("SELECT * FROM venues");
-    venues = venueRows.rows.map(rowToVenue);
-  }
+  // Venues and source trust are always loaded now: the review-priority
+  // summary below needs them to resolve venues and weigh sources.
+  const venueRows = await client.query("SELECT * FROM venues");
+  const venues: Venue[] = venueRows.rows.map(rowToVenue);
+  const trustRows = await client.query("SELECT id, trust_level FROM sources");
+  const sourceTrust = new Map(trustRows.rows.map((r) => [r.id as string, r.trust_level as Source["trustLevel"]]));
+  const insufficientInputs: ReviewPriorityInput[] = [];
+  const pastStaleRows: { id: string; title: string; sourceId: string | null; probableStart: string | null; probableEnd: string | null }[] = [];
 
   const pending = rows.rows.filter((r) => r.status === "pending");
   const published = rows.rows.filter((r) => r.status === "published");
@@ -1632,6 +1636,24 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
       { lastCompleteSyncAt, now },
     );
     groups[category].push({ id: r.id, title: r.probable_title, sourceId: r.source_id });
+    const probableStart = r.probable_start ? new Date(r.probable_start as string).toISOString() : null;
+    const probableEnd = r.probable_end ? new Date(r.probable_end as string).toISOString() : null;
+    if (category === "insufficient") {
+      insufficientInputs.push({
+        id: r.id as string,
+        probableTitle: r.probable_title as string,
+        probableStart,
+        probableEnd,
+        probableVenueName: (r.probable_venue_name as string | null) ?? null,
+        sourceId: (r.source_id as string | null) ?? null,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
+        description: (r.description as string | null) ?? null,
+      });
+    }
+    if (category === "past_stale") {
+      pastStaleRows.push({ id: r.id as string, title: r.probable_title as string, sourceId: (r.source_id as string | null) ?? null, probableStart, probableEnd });
+    }
 
     if (detailCategory && category === detailCategory) {
       if (detailSource && r.source_id !== detailSource) continue;
@@ -1697,6 +1719,47 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
 
   section(`Unpublished by admin (${adminUnpublished.rows.length}) — exact rows`);
   console.log(JSON.stringify(adminUnpublished.rows, null, 2));
+
+  // Review prioritisation (src/lib/reviewPriority.ts): exactly what the
+  // admin's "Likely relevant" tab and 72-hour warning would show right now,
+  // so the list's size, its noise and the known cases can be checked
+  // against Production without opening the UI.
+  const priorityList = buildReviewPriorityList(insufficientInputs, { venues, sourceTrust, now });
+  const summarize = (rows: typeof priorityList.likely) =>
+    rows.map(({ item, priority }) => ({
+      id: item.id,
+      title: item.probableTitle,
+      sourceId: item.sourceId,
+      venue: item.probableVenueName,
+      start: item.probableStart,
+      score: priority.relevanceScore,
+      priority: priority.priority,
+      state: priority.relevanceState,
+      startsWithin72h: priority.startsWithin72h,
+      signals: priority.signals.map((sig) => `${sig.points >= 0 ? "+" : ""}${sig.points} ${sig.label}`),
+      recommendedAction: priority.recommendedAction,
+    }));
+  section("REVIEW PRIORITY — Likely relevant tab (from Insufficient evidence)");
+  console.log(
+    JSON.stringify(
+      {
+        insufficientRowsScored: insufficientInputs.length,
+        likely: priorityList.likely.length,
+        possibleSourceCategoryOnly: priorityList.possible.length,
+        startsWithin72h: priorityList.urgentCount,
+        defaultVisible: REVIEW_PRIORITY_DEFAULT_VISIBLE,
+      },
+      null,
+      2,
+    ),
+  );
+  section(`REVIEW PRIORITY — likely tier (${priorityList.likely.length}), in display order`);
+  console.log(JSON.stringify(summarize(priorityList.likely), null, 2));
+  section(`REVIEW PRIORITY — possible tier, source category only (${priorityList.possible.length}), in display order`);
+  console.log(JSON.stringify(summarize(priorityList.possible), null, 2));
+  const staleSplit = splitPastStale(pastStaleRows, now);
+  section(`PAST / STALE — upcoming but no longer listed by the source (${staleSplit.upcomingNotInSource.length}); expired ${staleSplit.expired.length}`);
+  console.log(JSON.stringify(staleSplit.upcomingNotInSource, null, 2));
 
   if (detailCategory) {
     // Deterministic order (id) so --detail-limit/--detail-offset pages are
