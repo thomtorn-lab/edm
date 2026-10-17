@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import AdminQueueTabs from "./AdminQueueTabs";
 import type { AdminQueueGroups, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
-import type { PastStaleSplit, PrioritizedReviewRow, ReviewPriority, ReviewPriorityList } from "@/lib/reviewPriority";
+import type { NotInSourceReview, PastStaleSplit, PrioritizedReviewRow, ReviewPriority, ReviewPriorityList } from "@/lib/reviewPriority";
 
 const { getSearchParams, setSearchParams } = vi.hoisted(() => {
   let params = new URLSearchParams();
@@ -229,16 +229,37 @@ function prioritized(id: string, title: string, overrides: Partial<ReviewPriorit
 describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
   afterEach(cleanup);
 
-  const LIST: ReviewPriorityList = {
+  const MANY_LIKELY: ReviewPriorityList = {
     likely: [
       prioritized("dq-tanzen", "TANZEN UND SPRINGEN", { startsWithin72h: true }),
       ...Array.from({ length: 16 }, (_, i) => prioritized(`dq-l${i}`, `Likely ${i}`)),
     ],
     possible: [prioritized("dq-prodigy", "The Prodigy", { tier: "possible" })],
     urgentCount: 1,
+    urgentLikelyCount: 1,
+    urgentPossibleCount: 0,
   };
 
-  function renderWith(list: ReviewPriorityList, split?: PastStaleSplit<DiscoveryQueueItem>) {
+  // The real shape on 2026-10-17: 3 likely, 28 possible.
+  const FEW_LIKELY: ReviewPriorityList = {
+    likely: [
+      prioritized("dq-afro", "Afrobeats Party", { startsWithin72h: true }),
+      prioritized("dq-br1", "Boiler Room"),
+      prioritized("dq-br2", "Boiler Room (Poolen)"),
+    ],
+    possible: Array.from({ length: 28 }, (_, i) =>
+      prioritized(i === 13 ? "dq-prodigy" : `dq-p${i}`, i === 13 ? "The Prodigy" : `Possible ${i}`, {
+        tier: "possible",
+        startsWithin72h: i === 0,
+        signals: [{ key: "source_category", points: 2, label: "KultuNaut lists it under Elektronisk / Club-DJ" }],
+      }),
+    ),
+    urgentCount: 2,
+    urgentLikelyCount: 1,
+    urgentPossibleCount: 1,
+  };
+
+  function renderWith(list: ReviewPriorityList, split?: PastStaleSplit<DiscoveryQueueItem>, notInSource?: NotInSourceReview) {
     render(
       <AdminQueueTabs
         groups={EMPTY_GROUPS}
@@ -247,58 +268,109 @@ describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
         venues={VENUES}
         priorityList={list}
         pastStaleSplit={split}
+        notInSource={notInSource}
       />,
     );
   }
 
+  const tierOf = (el: HTMLElement) => el.getAttribute("data-tier");
+
   it("counts likely and possible rows on the tab", () => {
-    renderWith(LIST);
+    renderWith(MANY_LIKELY);
     expect(screen.getByRole("tab", { name: "Likely relevant 18" })).toBeTruthy();
   });
 
-  it("shows the 72-hour warning and opens the tab from it", () => {
-    renderWith(LIST);
-    expect(screen.getByRole("alert").textContent).toContain("1 likely relevant event starts within 72 hours");
+  it("shows both counts in the banner, and the 72-hour warning split by tier", () => {
+    renderWith(FEW_LIKELY);
+    const banner = screen.getByRole("alert");
+    expect(banner.textContent).toContain("3 likely relevant");
+    expect(banner.textContent).toContain("28 possible (source category only)");
+    expect(banner.textContent).toContain("1 likely relevant and 1 possible events start within 72 hours");
     fireEvent.click(screen.getByRole("button", { name: "Review them" }));
-    expect(screen.getByRole("tab", { name: "Likely relevant 18" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Likely relevant 31" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("shows no warning when nothing is urgent", () => {
-    renderWith({ ...LIST, urgentCount: 0 });
+  it("keeps the banner as a quiet status, not an alert, when nothing is urgent", () => {
+    renderWith({ ...FEW_LIKELY, urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 });
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("3 likely relevant");
   });
 
-  it("shows the top 15 with their reasons and recommended action, and all rows on request", () => {
-    renderWith(LIST);
+  it("shows no banner when there is nothing to review", () => {
+    renderWith({ likely: [], possible: [], urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("with 15+ likely rows, shows the top 15 likely only and no possible rows by default", () => {
+    renderWith(MANY_LIKELY);
     fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 18" }));
-    expect(screen.getAllByTestId("priority-explanation")).toHaveLength(15);
-    expect(screen.getByText("TANZEN UND SPRINGEN")).toBeTruthy();
-    expect(screen.queryByText("Likely 15")).toBeNull();
+    const shown = screen.getAllByTestId("priority-explanation");
+    expect(shown).toHaveLength(15);
+    expect(shown.every((el) => tierOf(el) === "likely")).toBe(true);
+    expect(screen.queryByText("The Prodigy")).toBeNull();
     expect(screen.getAllByText(/For: MODULE is a primarily electronic venue · Lineup listed \(2\)/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Recommended: Check the source/).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Show all 17" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all 17 likely relevant" }));
     expect(screen.getByText("Likely 15")).toBeTruthy();
-    expect(screen.getAllByTestId("priority-explanation")).toHaveLength(17);
-  });
-
-  it("keeps source-category-only rows in a separate section that opens on request", () => {
-    renderWith(LIST);
-    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 18" }));
-    expect(screen.queryByText("The Prodigy")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /possibly relevant — source category only \(1\)/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all 1 possible" }));
     expect(screen.getByText("The Prodigy")).toBeTruthy();
   });
 
-  it("splits Past / stale into upcoming rows the source dropped and collapsed expired rows", () => {
+  it("with fewer than 15 likely rows, fills the view up to 15 with possible rows in their own, differently marked section", () => {
+    renderWith(FEW_LIKELY);
+    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 31" }));
+    const likelySection = screen.getByRole("region", { name: "Likely relevant" });
+    const possibleSection = screen.getByRole("region", { name: "Possible — source category only" });
+    const likelyBoxes = within(likelySection).getAllByTestId("priority-explanation");
+    const possibleBoxes = within(possibleSection).getAllByTestId("priority-explanation");
+    expect(likelyBoxes).toHaveLength(3);
+    expect(possibleBoxes).toHaveLength(12);
+    expect(likelyBoxes.every((el) => tierOf(el) === "likely")).toBe(true);
+    expect(possibleBoxes.every((el) => tierOf(el) === "possible")).toBe(true);
+    expect(within(possibleSection).getAllByText("Possible · source category only")).toHaveLength(12);
+    expect(within(likelySection).queryByText("Possible · source category only")).toBeNull();
+    expect(within(possibleSection).getByText(/12 of 28 shown/)).toBeTruthy();
+    expect(within(possibleSection).getByText(/check the artist first/)).toBeTruthy();
+    // The Prodigy ranks 14th of the possible rows: one click away, never hidden.
+    expect(screen.queryByText("The Prodigy")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 28 possible" }));
+    expect(screen.getByText("The Prodigy")).toBeTruthy();
+    expect(within(possibleSection).getAllByTestId("priority-explanation")).toHaveLength(28);
+  });
+
+  it("ranks the upcoming rows the source dropped, collapses the rest and the expired rows, and never calls them cancelled", () => {
+    const moved = prioritized("dq-twilight", "Twilight Rave");
+    const split: PastStaleSplit<DiscoveryQueueItem> = {
+      upcomingNotInSource: [moved.item, makeItem("dq-yoga", "Klangbad")],
+      expired: [makeItem("dq-old", "Old Party")],
+    };
+    const notInSource: NotInSourceReview = {
+      prioritized: { likely: [moved], possible: [], urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 },
+      others: [makeItem("dq-yoga", "Klangbad")],
+    };
+    renderWith(FEW_LIKELY, split, notInSource);
+    fireEvent.click(screen.getByRole("tab", { name: /Past \/ stale/ }));
+    expect(screen.getByText("Upcoming, no longer listed by the source (2)")).toBeTruthy();
+    expect(screen.getByText(/Nothing here has been marked cancelled or moved/)).toBeTruthy();
+    expect(screen.getByText("Twilight Rave")).toBeTruthy();
+    expect(screen.queryByText("Klangbad")).toBeNull();
+    expect(screen.queryByText("Old Party")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show the rest (1)" }));
+    expect(screen.getByText("Klangbad")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show expired (1)" }));
+    expect(screen.getByText("Old Party")).toBeTruthy();
+  });
+
+  it("still splits Past / stale without a ranking", () => {
     const split: PastStaleSplit<DiscoveryQueueItem> = {
       upcomingNotInSource: [makeItem("dq-moved", "Fluid Sound Festival, day 1")],
       expired: [makeItem("dq-old", "Old Party")],
     };
-    renderWith(LIST, split);
+    renderWith(FEW_LIKELY, split);
     fireEvent.click(screen.getByRole("tab", { name: /Past \/ stale/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all (1)" }));
     expect(screen.getByText("Fluid Sound Festival, day 1")).toBeTruthy();
     expect(screen.queryByText("Old Party")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show expired (1)" }));
-    expect(screen.getByText("Old Party")).toBeTruthy();
   });
 });

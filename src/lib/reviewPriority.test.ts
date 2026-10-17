@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { classifyAdminQueueRow } from "./adminQueue";
-import { buildReviewPriorityList, scoreReviewPriority, splitPastStale, type ReviewPriorityInput } from "./reviewPriority";
+import {
+  buildReviewPriorityList,
+  prioritizeNotInSource,
+  scoreReviewPriority,
+  splitPastStale,
+  splitVisibleReviewRows,
+  type ReviewPriorityInput,
+} from "./reviewPriority";
 import type { Source, Venue } from "./types";
 
 /**
@@ -325,5 +332,62 @@ describe("splitPastStale", () => {
     const split = splitPastStale([upcoming, past, undated], NOW);
     expect(split.upcomingNotInSource.map((r) => r.id)).toEqual(["up"]);
     expect(split.expired.map((r) => r.id)).toEqual(["past", "undated"]);
+  });
+});
+
+describe("buildReviewPriorityList — 72-hour counts per tier", () => {
+  it("counts urgent likely and urgent possible rows separately", () => {
+    const list = buildReviewPriorityList(
+      [
+        dq({ id: "l", probableTitle: "Rave", probableStart: "2026-10-17T22:00:00+02:00" }),
+        dq({ id: "p", sourceId: "src-kultunaut", probableTitle: "Some Act", probableStart: "2026-10-18T20:00:00+02:00" }),
+        dq({ id: "later", probableTitle: "Rave", probableStart: "2026-11-20T22:00:00+01:00" }),
+      ],
+      CTX,
+    );
+    expect(list).toMatchObject({ urgentCount: 2, urgentLikelyCount: 1, urgentPossibleCount: 1 });
+  });
+});
+
+describe("splitVisibleReviewRows", () => {
+  const rows = (n: number, tier: "likely" | "possible") =>
+    Array.from({ length: n }, (_, i) => ({
+      item: dq({ id: `${tier}-${i}` }),
+      priority: scoreReviewPriority(dq({ id: `${tier}-${i}`, probableTitle: tier === "likely" ? "Rave" : "Act", sourceId: "src-kultunaut" }), CTX),
+    }));
+  const list = (likely: number, possible: number) => ({
+    likely: rows(likely, "likely"),
+    possible: rows(possible, "possible"),
+    urgentCount: 0,
+    urgentLikelyCount: 0,
+    urgentPossibleCount: 0,
+  });
+
+  it("fills free slots up to 15 with possible rows when there are fewer likely rows (the 2026-10-17 shape: 3 + 28)", () => {
+    const v = splitVisibleReviewRows(list(3, 28));
+    expect([v.likelyShown.length, v.possibleShown.length, v.likelyHidden.length, v.possibleHidden.length]).toEqual([3, 12, 0, 16]);
+    expect(v.possibleShown[0].item.id).toBe("possible-0");
+  });
+
+  it("shows no possible rows when there are 15 or more likely rows", () => {
+    const v = splitVisibleReviewRows(list(17, 5));
+    expect([v.likelyShown.length, v.possibleShown.length, v.likelyHidden.length, v.possibleHidden.length]).toEqual([15, 0, 2, 5]);
+  });
+
+  it("handles empty and short lists", () => {
+    expect(splitVisibleReviewRows(list(0, 4)).possibleShown).toHaveLength(4);
+    expect(splitVisibleReviewRows(list(0, 0)).likelyShown).toHaveLength(0);
+  });
+});
+
+describe("prioritizeNotInSource", () => {
+  it("ranks dropped upcoming rows that look electronic and keeps the rest by date, without judging why they disappeared", () => {
+    const twilight = dq({ id: "twilight", probableTitle: "Twilight Rave", probableVenueName: "Pumpehuset", sourceId: "src-pumpehuset", probableStart: "2026-10-23T21:00:00+02:00" });
+    const klangbad = dq({ id: "klangbad", probableTitle: "Klangbad med lyden af gong", probableStart: "2026-11-20T18:00:00+01:00" });
+    const sewing = dq({ id: "sewing", probableTitle: "Prøv en hobby: Syworkshop", probableStart: "2026-11-01T18:00:00+01:00" });
+    const review = prioritizeNotInSource([klangbad, twilight, sewing], CTX);
+    expect(review.prioritized.likely.map((r) => r.item.id)).toEqual(["twilight"]);
+    expect(review.prioritized.possible).toHaveLength(0);
+    expect(review.others.map((r) => r.id)).toEqual(["sewing", "klangbad"]);
   });
 });

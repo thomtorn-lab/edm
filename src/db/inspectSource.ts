@@ -24,7 +24,14 @@ import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
-import { buildReviewPriorityList, splitPastStale, REVIEW_PRIORITY_DEFAULT_VISIBLE, type ReviewPriorityInput } from "@/lib/reviewPriority";
+import {
+  buildReviewPriorityList,
+  prioritizeNotInSource,
+  splitPastStale,
+  splitVisibleReviewRows,
+  REVIEW_PRIORITY_DEFAULT_VISIBLE,
+  type ReviewPriorityInput,
+} from "@/lib/reviewPriority";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -1603,7 +1610,7 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   const trustRows = await client.query("SELECT id, trust_level FROM sources");
   const sourceTrust = new Map(trustRows.rows.map((r) => [r.id as string, r.trust_level as Source["trustLevel"]]));
   const insufficientInputs: ReviewPriorityInput[] = [];
-  const pastStaleRows: { id: string; title: string; sourceId: string | null; probableStart: string | null; probableEnd: string | null }[] = [];
+  const pastStaleInputs: ReviewPriorityInput[] = [];
 
   const pending = rows.rows.filter((r) => r.status === "pending");
   const published = rows.rows.filter((r) => r.status === "published");
@@ -1652,7 +1659,17 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
       });
     }
     if (category === "past_stale") {
-      pastStaleRows.push({ id: r.id as string, title: r.probable_title as string, sourceId: (r.source_id as string | null) ?? null, probableStart, probableEnd });
+      pastStaleInputs.push({
+        id: r.id as string,
+        probableTitle: r.probable_title as string,
+        probableStart,
+        probableEnd,
+        probableVenueName: (r.probable_venue_name as string | null) ?? null,
+        sourceId: (r.source_id as string | null) ?? null,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
+        description: (r.description as string | null) ?? null,
+      });
     }
 
     if (detailCategory && category === detailCategory) {
@@ -1725,6 +1742,7 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   // so the list's size, its noise and the known cases can be checked
   // against Production without opening the UI.
   const priorityList = buildReviewPriorityList(insufficientInputs, { venues, sourceTrust, now });
+  const visible = splitVisibleReviewRows(priorityList);
   const summarize = (rows: typeof priorityList.likely) =>
     rows.map(({ item, priority }) => ({
       id: item.id,
@@ -1747,7 +1765,11 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
         likely: priorityList.likely.length,
         possibleSourceCategoryOnly: priorityList.possible.length,
         startsWithin72h: priorityList.urgentCount,
+        startsWithin72hLikely: priorityList.urgentLikelyCount,
+        startsWithin72hPossible: priorityList.urgentPossibleCount,
         defaultVisible: REVIEW_PRIORITY_DEFAULT_VISIBLE,
+        defaultViewLikely: visible.likelyShown.length,
+        defaultViewPossibleFill: visible.possibleShown.length,
       },
       null,
       2,
@@ -1757,9 +1779,17 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   console.log(JSON.stringify(summarize(priorityList.likely), null, 2));
   section(`REVIEW PRIORITY — possible tier, source category only (${priorityList.possible.length}), in display order`);
   console.log(JSON.stringify(summarize(priorityList.possible), null, 2));
-  const staleSplit = splitPastStale(pastStaleRows, now);
-  section(`PAST / STALE — upcoming but no longer listed by the source (${staleSplit.upcomingNotInSource.length}); expired ${staleSplit.expired.length}`);
-  console.log(JSON.stringify(staleSplit.upcomingNotInSource, null, 2));
+  const staleSplit = splitPastStale(pastStaleInputs, now);
+  const notInSource = prioritizeNotInSource(staleSplit.upcomingNotInSource, { venues, sourceTrust, now });
+  section(
+    `PAST / STALE — upcoming but no longer listed by the source (${staleSplit.upcomingNotInSource.length}); expired ${staleSplit.expired.length}`,
+  );
+  section(`PAST / STALE — not in source, ranked likely (${notInSource.prioritized.likely.length})`);
+  console.log(JSON.stringify(summarize(notInSource.prioritized.likely), null, 2));
+  section(`PAST / STALE — not in source, ranked possible (${notInSource.prioritized.possible.length})`);
+  console.log(JSON.stringify(summarize(notInSource.prioritized.possible), null, 2));
+  section(`PAST / STALE — not in source, the rest (${notInSource.others.length}), collapsed in the admin`);
+  console.log(JSON.stringify(notInSource.others.map((r) => ({ id: r.id, title: r.probableTitle, sourceId: r.sourceId, start: r.probableStart })), null, 2));
 
   if (detailCategory) {
     // Deterministic order (id) so --detail-limit/--detail-offset pages are

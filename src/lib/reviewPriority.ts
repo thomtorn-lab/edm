@@ -239,6 +239,8 @@ export interface ReviewPriorityList<T extends ReviewPriorityInput = DiscoveryQue
   possible: PrioritizedReviewRow<T>[];
   /** Likely or possible rows that start within 72 hours: the admin warning count. */
   urgentCount: number;
+  urgentLikelyCount: number;
+  urgentPossibleCount: number;
 }
 
 /**
@@ -248,13 +250,17 @@ export interface ReviewPriorityList<T extends ReviewPriorityInput = DiscoveryQue
  * being dropped. Rows in the "none" tier are left where they are.
  */
 export function buildReviewPriorityList<T extends ReviewPriorityInput>(items: T[], ctx: ReviewPriorityContext): ReviewPriorityList<T> {
-  const list: ReviewPriorityList<T> = { likely: [], possible: [], urgentCount: 0 };
+  const list: ReviewPriorityList<T> = { likely: [], possible: [], urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 };
   for (const item of items) {
     if (item.probableStart && isPastEvent({ startDatetime: item.probableStart, endDatetime: item.probableEnd }, ctx.now)) continue;
     const priority = scoreReviewPriority(item, ctx);
     if (priority.tier === "none") continue;
     list[priority.tier].push({ item, priority });
-    if (priority.startsWithin72h) list.urgentCount++;
+    if (priority.startsWithin72h) {
+      list.urgentCount++;
+      if (priority.tier === "likely") list.urgentLikelyCount++;
+      else list.urgentPossibleCount++;
+    }
   }
   list.likely.sort(comparePriority);
   list.possible.sort(comparePriority);
@@ -267,6 +273,56 @@ function comparePriority<T extends ReviewPriorityInput>(a: PrioritizedReviewRow<
   const bStart = b.item.probableStart ? new Date(b.item.probableStart).getTime() : Number.POSITIVE_INFINITY;
   if (aStart !== bStart) return aStart - bStart;
   return a.item.probableTitle.localeCompare(b.item.probableTitle);
+}
+
+export interface VisibleReviewRows<T extends ReviewPriorityInput = DiscoveryQueueItem> {
+  likelyShown: PrioritizedReviewRow<T>[];
+  likelyHidden: PrioritizedReviewRow<T>[];
+  /** Possible rows shown only to fill the default view up to `limit` when there are fewer likely rows. */
+  possibleShown: PrioritizedReviewRow<T>[];
+  possibleHidden: PrioritizedReviewRow<T>[];
+}
+
+/**
+ * The default view: up to `limit` rows, likely ones first. Free slots are
+ * filled with the highest-ranked possible rows so a short likely list does
+ * not leave the category-only events out of sight; the two stay separate
+ * lists so the UI can show them with different certainty.
+ */
+export function splitVisibleReviewRows<T extends ReviewPriorityInput>(
+  list: ReviewPriorityList<T>,
+  limit: number = REVIEW_PRIORITY_DEFAULT_VISIBLE,
+): VisibleReviewRows<T> {
+  const likelyShown = list.likely.slice(0, limit);
+  const free = Math.max(0, limit - likelyShown.length);
+  return {
+    likelyShown,
+    likelyHidden: list.likely.slice(limit),
+    possibleShown: list.possible.slice(0, free),
+    possibleHidden: list.possible.slice(free),
+  };
+}
+
+export interface NotInSourceReview<T extends ReviewPriorityInput = DiscoveryQueueItem> {
+  /** Likely and possible rows, ranked exactly like the Likely relevant tab. */
+  prioritized: ReviewPriorityList<T>;
+  /** Everything else, by start date: nothing points at electronic music. */
+  others: T[];
+}
+
+/**
+ * Ranks the upcoming rows a source no longer lists with the same signals as
+ * the Likely relevant tab, so the relevant ones stand out from the rest. It
+ * says nothing about why a row disappeared (moved, renamed, cancelled or a
+ * source glitch); that stays for a human to check.
+ */
+export function prioritizeNotInSource<T extends ReviewPriorityInput>(items: T[], ctx: ReviewPriorityContext): NotInSourceReview<T> {
+  const prioritized = buildReviewPriorityList(items, ctx);
+  const ranked = new Set<string>([...prioritized.likely, ...prioritized.possible].map((r) => r.item.id));
+  const others = items
+    .filter((item) => !ranked.has(item.id))
+    .sort((a, b) => (a.probableStart ?? "").localeCompare(b.probableStart ?? "") || a.probableTitle.localeCompare(b.probableTitle));
+  return { prioritized, others };
 }
 
 export interface PastStaleSplit<T> {
