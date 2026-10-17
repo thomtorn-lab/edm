@@ -1,6 +1,6 @@
 import { copenhagenWallClockToUtc, addDaysToDateKey, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
-import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText, extractAnchorTexts, extractLowestDkkAmount } from "./htmlExtraction";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 import { acceptedLinksByCandidate, classifyLineupLinks, type LineupLinkObservation } from "./cultureBoxSoundcloudLinks";
@@ -286,6 +286,7 @@ export function parseCultureBoxEventsHtml(html: string, sourceUrl = CULTURE_BOX_
         title,
         description,
         artists,
+        lineupNamesAreStructured: true, // the venue's own lineup anchors (genre QA, 2026-10-17)
         startDatetime,
         endDatetime,
         venueName: CULTURE_BOX_VENUE_NAME,
@@ -430,8 +431,13 @@ function mentionsArtist(text: string, artistName: string): boolean {
  */
 export function attributeGenreToRoom(paragraphs: string[], roomArtists: string[], otherRoomsArtists: string[]): GenreSlug | null {
   const distinctGenres = new Set<GenreSlug>();
+  // Lineup names are the venue's own anchors, so a genre word inside one
+  // ("…while Pab Disco takes the Black Box…") is never credited as this
+  // room's genre (genre QA, 2026-10-17). The unmasked paragraph is still what
+  // decides which room it talks about.
+  const lineup = [...roomArtists, ...otherRoomsArtists];
   for (const paragraph of paragraphs) {
-    const genre = deterministicGenreFromText(paragraph);
+    const genre = deterministicGenreFromText(maskLineupNamesWithGenreKeywords(paragraph, lineup));
     if (!genre) continue;
     const mentionsThisRoom = roomArtists.some((a) => mentionsArtist(paragraph, a));
     const mentionsOtherRoom = otherRoomsArtists.some((a) => mentionsArtist(paragraph, a));
