@@ -55,6 +55,7 @@ export type ReviewSignalKey =
   | "strong_venue"
   | "supporting_venue"
   | "source_category"
+  | "source_category_not_counted"
   | "lineup"
   | "source_quality"
   | "conflicting_genre"
@@ -110,6 +111,12 @@ export interface ReviewPriorityContext {
   /** Trust level per source id, from the sources table. */
   sourceTrust: ReadonlyMap<string, Source["trustLevel"]>;
   now: Date;
+  /**
+   * False for rows the source no longer lists: its electronic category was a
+   * property of its listing, which no longer confirms it. The category then
+   * adds nothing (it never counts against the row either). Defaults to true.
+   */
+  sourceStillLists?: boolean;
 }
 
 /** A row needs at least this relevance score, and one qualifying signal, to be in the "likely" tier. */
@@ -146,7 +153,9 @@ export function scoreReviewPriority(item: ReviewPriorityInput, ctx: ReviewPriori
   }
 
   const categoryLabel = item.sourceId ? ELECTRONIC_CATEGORY_SOURCES[item.sourceId] : undefined;
-  if (categoryLabel) {
+  if (categoryLabel && ctx.sourceStillLists === false) {
+    signals.push({ key: "source_category_not_counted", points: 0, label: `Source category not counted: the source no longer lists it (${categoryLabel})` });
+  } else if (categoryLabel) {
     signals.push({ key: "source_category", points: 2, label: categoryLabel });
   }
   if (item.detectedLineup.length > 0) {
@@ -317,7 +326,7 @@ export interface NotInSourceReview<T extends ReviewPriorityInput = DiscoveryQueu
  * source glitch); that stays for a human to check.
  */
 export function prioritizeNotInSource<T extends ReviewPriorityInput>(items: T[], ctx: ReviewPriorityContext): NotInSourceReview<T> {
-  const prioritized = buildReviewPriorityList(items, ctx);
+  const prioritized = buildReviewPriorityList(items, { ...ctx, sourceStillLists: false });
   const ranked = new Set<string>([...prioritized.likely, ...prioritized.possible].map((r) => r.item.id));
   const others = items
     .filter((item) => !ranked.has(item.id))

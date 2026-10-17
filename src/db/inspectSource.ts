@@ -24,6 +24,7 @@ import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
+import { normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
 import {
   buildReviewPriorityList,
   prioritizeNotInSource,
@@ -1804,6 +1805,89 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
 }
 
 /**
+ * Read-only look at the Discogs artist genre cache (artist_genre_cache),
+ * added to judge whether cached artist data could help rank Discovery Queue
+ * rows (coverage work, phase 2). Three SELECTs, nothing else:
+ *   1. the cache's overall distribution by lookup status, proposed genre and
+ *      confidence;
+ *   2. the full rows for `--artists="A, B"` (matched on the same
+ *      normalisation the enrichment uses), with a missing name reported as
+ *      "no cache row" — which says nothing about whether the artist is
+ *      electronic;
+ *   3. coverage of every pending Discovery Queue row's lineup: how many of
+ *      its names have a cache row, and what it says.
+ * Evidence JSON is truncated so the log stays readable.
+ */
+async function modeArtistGenreCache(client: Client, args: Record<string, string | boolean>) {
+  const requested = typeof args.artists === "string" ? args.artists.split(",").map((a) => a.trim()).filter(Boolean) : [];
+  const cols =
+    "artist_name_normalized, lookup_status, proposed_genre, genre_confidence, identity_confidence, discogs_artist_id, classification_method, looked_up_at, expires_at, evidence";
+  const shorten = (row: Record<string, unknown>) => ({ ...row, evidence: JSON.stringify(row.evidence).slice(0, 600) });
+
+  section("artist_genre_cache — distribution");
+  const dist = await client.query(
+    `SELECT lookup_status, proposed_genre, genre_confidence, identity_confidence, count(*)::int AS n
+     FROM artist_genre_cache
+     GROUP BY lookup_status, proposed_genre, genre_confidence, identity_confidence
+     ORDER BY n DESC`,
+  );
+  console.log(JSON.stringify(dist.rows, null, 2));
+
+  if (requested.length > 0) {
+    const names = requested.map(normalizeArtistName);
+    const found = await client.query(`SELECT ${cols} FROM artist_genre_cache WHERE artist_name_normalized = ANY($1::text[])`, [names]);
+    const byName = new Map(found.rows.map((r) => [r.artist_name_normalized as string, r]));
+    section(`artist_genre_cache — requested artists (${requested.length})`);
+    console.log(
+      JSON.stringify(
+        requested.map((name, i) => {
+          const row = byName.get(names[i]);
+          return row ? { requested: name, ...shorten(row) } : { requested: name, normalized: names[i], cacheRow: null };
+        }),
+        null,
+        2,
+      ),
+    );
+  }
+
+  const pending = await client.query(
+    `SELECT id, probable_title, source_id, detected_lineup
+     FROM discovery_queue
+     WHERE status = 'pending' AND cardinality(detected_lineup) > 0`,
+  );
+  const lineupNames = Array.from(new Set(pending.rows.flatMap((r) => (r.detected_lineup as string[]).map(normalizeArtistName))));
+  const cached = lineupNames.length
+    ? await client.query(
+        `SELECT artist_name_normalized, lookup_status, proposed_genre, genre_confidence, identity_confidence
+         FROM artist_genre_cache WHERE artist_name_normalized = ANY($1::text[])`,
+        [lineupNames],
+      )
+    : { rows: [] as Record<string, unknown>[] };
+  const cacheByName = new Map(cached.rows.map((r) => [r.artist_name_normalized as string, r]));
+  const bySource: Record<string, { rows: number; names: number; namesWithCacheRow: number; namesWithProposedGenre: number }> = {};
+  const rowsDetail: Record<string, unknown>[] = [];
+  for (const r of pending.rows) {
+    const source = (r.source_id as string | null) ?? "admin";
+    const names = (r.detected_lineup as string[]).map(normalizeArtistName);
+    const entry = (bySource[source] ??= { rows: 0, names: 0, namesWithCacheRow: 0, namesWithProposedGenre: 0 });
+    entry.rows++;
+    for (const n of names) {
+      entry.names++;
+      const c = cacheByName.get(n);
+      if (c) entry.namesWithCacheRow++;
+      if (c?.proposed_genre) entry.namesWithProposedGenre++;
+    }
+    if (source === "src-kultunaut") {
+      rowsDetail.push({ id: r.id, title: r.probable_title, lineup: names.map((n) => ({ name: n, cache: cacheByName.get(n) ?? null })) });
+    }
+  }
+  section(`Pending Discovery Queue lineups — cache coverage (${pending.rows.length} rows with a lineup, ${lineupNames.length} distinct names)`);
+  console.log(JSON.stringify(bySource, null, 2));
+  section(`Pending KultuNaut rows — per-name cache rows (${rowsDetail.length})`);
+  console.log(JSON.stringify(rowsDetail, null, 2));
+}
+
+/**
  * Read-only schema/row-count integrity check (migration verification
  * follow-up, 2026-08-24): confirms a migration's actual effect —
  * before/after — without any per-source scoping. Two independent things:
@@ -2620,6 +2704,7 @@ async function main() {
     "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
     "migration-status": modeMigrationStatus,
+    "artist-genre-cache": modeArtistGenreCache,
   };
 
   if (mode === "reachability") {
@@ -2636,7 +2721,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache.`,
     );
     process.exit(1);
   }

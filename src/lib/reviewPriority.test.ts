@@ -390,4 +390,29 @@ describe("prioritizeNotInSource", () => {
     expect(review.prioritized.possible).toHaveLength(0);
     expect(review.others.map((r) => r.id)).toEqual(["sewing", "klangbad"]);
   });
+
+  it("does not count the source category for rows the source no longer lists — no points, no penalty, no cancellation verdict", () => {
+    // Real 2026-10-17 cases: Pumpehuset no longer lists these under Elektronisk.
+    const roben = dq({ id: "roben", probableTitle: "Roben & Knud", probableVenueName: "Pumpehuset", sourceId: "src-pumpehuset", probableStart: "2026-12-03T20:00:00+01:00" });
+    const marwan = dq({ id: "marwan", probableTitle: "Marwan - 20-års jubilæumskoncert", sourceId: "src-pumpehuset", probableStart: "2027-04-29T20:00:00+02:00" });
+    const review = prioritizeNotInSource([roben, marwan], CTX);
+    expect(review.prioritized.possible).toHaveLength(0);
+    expect(review.others.map((r) => r.id)).toEqual(["roben", "marwan"]);
+
+    const listed = scoreReviewPriority(roben, CTX);
+    const dropped = scoreReviewPriority(roben, { ...CTX, sourceStillLists: false });
+    expect(listed.tier).toBe("possible");
+    expect(dropped.tier).toBe("none");
+    expect(dropped.relevanceScore).toBe(listed.relevanceScore - 2);
+    expect(dropped.signals.some((s) => s.points < 0)).toBe(false);
+    expect(dropped.signals.map((s) => s.key)).toContain("source_category_not_counted");
+    expect(JSON.stringify(dropped)).not.toMatch(/cancel/i);
+  });
+
+  it("keeps a dropped row that has its own evidence (Twilight Rave) in the likely tier without the category points", () => {
+    const twilight = dq({ id: "twilight", probableTitle: "Twilight Rave", sourceId: "src-pumpehuset", probableStart: "2026-10-23T21:00:00+02:00" });
+    const row = prioritizeNotInSource([twilight], CTX).prioritized.likely[0];
+    expect(row.priority.signals.map((s) => s.key)).toEqual(expect.arrayContaining(["dj_or_club_title", "source_category_not_counted"]));
+    expect(row.priority.signals.map((s) => s.key)).not.toContain("source_category");
+  });
 });
