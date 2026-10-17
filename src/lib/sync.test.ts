@@ -9,6 +9,7 @@ import {
   findPendingRowToResolve,
   indexPendingRowsForSource,
   findSyncMatch,
+  incomingSourceMayReplace,
   isDiscoveryRowCurrent,
   isIgnoredCandidate,
   summarizeWriteErrors,
@@ -507,6 +508,139 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     ...overrides,
   };
 }
+
+describe("ticketUrl source priority (RA link integrity, 2026-10-17)", () => {
+  // Source types (src/lib/data/sources.ts): src-hangaren / src-culture-box =
+  // official-venue, src-billetto = ticketing, src-kultunaut / src-hvaderpaa
+  // = general-aggregator. SOURCE_TYPE_PRIORITY ranks official-promoter >
+  // official-venue > ticketing > specialist-aggregator > general-aggregator > social.
+  const VENUE_RA = "https://ra.co/events/2461529";
+
+  it("an aggregator (HvadErPå) never overwrites a ticketUrl verified by an official venue source (Hangaren's own RA link)", () => {
+    const existing = target({ canonicalSourceId: "src-hangaren", ticketUrl: VENUE_RA });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-hvaderpaa", ticketUrl: "https://billetto.dk/e/kander-1" }), resolved, existing);
+    expect(patch.ticketUrl).toBeUndefined();
+  });
+
+  it("a ticketing marketplace (Billetto) does not outrank an official venue's ticketUrl either", () => {
+    const existing = target({ canonicalSourceId: "src-culture-box", ticketUrl: VENUE_RA });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-billetto", ticketUrl: "https://billetto.dk/e/kander-1" }), resolved, existing);
+    expect(patch.ticketUrl).toBeUndefined();
+  });
+
+  it("the canonical source's own new ticket link replaces its old one (venue moved ticket page / old link no longer valid)", () => {
+    const existing = target({ canonicalSourceId: "src-hangaren", ticketUrl: VENUE_RA });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-hangaren", ticketUrl: "https://billetto.dk/e/kander-moved-2" }), resolved, existing);
+    expect(patch.ticketUrl).toBe("https://billetto.dk/e/kander-moved-2");
+  });
+
+  it("an official venue source replaces an aggregator-supplied ticketUrl (higher authority)", () => {
+    const existing = target({ canonicalSourceId: "src-kultunaut", ticketUrl: "https://www.ticketmaster.dk/event/1" });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-hangaren", ticketUrl: VENUE_RA }), resolved, existing);
+    expect(patch.ticketUrl).toBe(VENUE_RA);
+  });
+
+  it("equal authority (two general aggregators) keeps the existing value", () => {
+    const existing = target({ canonicalSourceId: "src-kultunaut", ticketUrl: "https://www.ticketmaster.dk/event/1" });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-hvaderpaa", ticketUrl: "https://billetto.dk/e/other-2" }), resolved, existing);
+    expect(patch.ticketUrl).toBeUndefined();
+  });
+
+  it("any source may fill an empty ticketUrl. Nothing is overwritten.", () => {
+    const existing = target({ canonicalSourceId: "src-hangaren", ticketUrl: null });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-hvaderpaa", ticketUrl: "https://billetto.dk/e/kander-1" }), resolved, existing);
+    expect(patch.ticketUrl).toBe("https://billetto.dk/e/kander-1");
+  });
+
+  it("a candidate with no ticketUrl never clears an existing one, even from the canonical source (absence is not evidence)", () => {
+    const existing = target({ canonicalSourceId: "src-culture-box", ticketUrl: VENUE_RA });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-culture-box", ticketUrl: null }), resolved, existing);
+    expect("ticketUrl" in patch).toBe(false);
+  });
+
+  it("admin-added event (no canonicalSourceId): no authority to weigh, so a source may update it. Same as officialEventUrl.", () => {
+    const existing = target({ canonicalSourceId: null, ticketUrl: "https://example.com/admin-tickets" });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-billetto", ticketUrl: "https://billetto.dk/e/x-1" }), resolved, existing);
+    expect(patch.ticketUrl).toBe("https://billetto.dk/e/x-1");
+  });
+
+  it("a manual ticketUrl override always wins: the same-source update is stripped before it reaches the database", () => {
+    const existing = target({ canonicalSourceId: "src-hangaren", ticketUrl: "https://admin.example/tickets", overriddenFields: ["ticketUrl"] });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-hangaren", ticketUrl: VENUE_RA }), resolved, existing);
+    expect(patch.ticketUrl).toBe(VENUE_RA); // what the source says…
+    expect(stripOverriddenFields(patch, existing.overriddenFields)).not.toHaveProperty("ticketUrl"); // …never applied
+  });
+
+  it("the RA reference itself is unaffected by the ticket rule (still updated as before; never a public CTA)", () => {
+    const existing = target({ canonicalSourceId: "src-hangaren", ticketUrl: VENUE_RA, residentAdvisorUrl: VENUE_RA });
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-hvaderpaa", ticketUrl: null, residentAdvisorUrl: "https://ra.co/events/9999999" }),
+      resolved,
+      existing,
+    );
+    expect(patch.ticketUrl).toBeUndefined();
+    expect(patch.residentAdvisorUrl).toBe("https://ra.co/events/9999999");
+  });
+});
+
+describe("incomingSourceMayReplace", () => {
+  it.each([
+    ["src-hangaren", "src-hangaren", true], // same source
+    ["src-hangaren", "src-kultunaut", true], // official-venue > general-aggregator
+    ["src-billetto", "src-hvaderpaa", true], // ticketing > general-aggregator
+    ["src-hvaderpaa", "src-hangaren", false], // general-aggregator < official-venue
+    ["src-billetto", "src-culture-box", false], // ticketing < official-venue
+    ["src-hvaderpaa", "src-kultunaut", false], // tie keeps existing
+    ["src-culture-box", "src-hangaren", false], // tie between two venues keeps existing
+    ["src-billetto", null, true], // admin-added: nothing to weigh
+    ["src-unknown", "src-hangaren", true], // unregistered incoming: nothing to weigh
+  ] as const)("incoming %s over canonical %s -> %s", (incoming, canonical, expected) => {
+    expect(incomingSourceMayReplace(incoming, canonical)).toBe(expected);
+  });
+});
+
+describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link integrity, 2026-10-17)", () => {
+  const RA = "https://ra.co/events/2521204";
+  const sameGenre = { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" } as const;
+  const settled = { predictedGenre: "psytrance" as const, genreConfidence: "medium" as const, overallConfidence: "medium" as const };
+
+  it("fills an empty probableResidentAdvisorUrl from this run's adapter (e.g. HvadErPå offers.url)", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, residentAdvisorUrl: RA },
+      pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: null }),
+    );
+    expect(patch).toEqual({ probableResidentAdvisorUrl: RA });
+    expect(patch).not.toHaveProperty("probableTicketUrl"); // a reference, never a ticket link
+  });
+
+  it("never replaces a stored value (may be admin-entered), never clears one", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: RA },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: "https://ra.co/events/1" }),
+      ),
+    ).toEqual({});
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: null },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: "https://ra.co/events/1" }),
+      ),
+    ).toEqual({});
+  });
+
+  it("respects an admin override even when the column is empty (admin deliberately cleared it)", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: RA },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: null, overriddenFields: ["probableResidentAdvisorUrl"] }),
+      ),
+    ).toEqual({});
+  });
+
+  it("call sites that pass no stored value (undefined) never fill", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, residentAdvisorUrl: RA }, pendingDiscoveryTarget(settled))).toEqual({});
+  });
+});
 
 describe("buildDiscoveryQueueClassificationPatch", () => {
   // Real production cases (verified against the live Preview database): both

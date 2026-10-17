@@ -66,6 +66,33 @@ function sameArtists(a: string[], b: string[]): boolean {
 }
 
 /**
+ * Whether a sync candidate from `incomingSourceId` may replace a link value
+ * (officialEventUrl, ticketUrl) that the event already has. Used by
+ * buildSyncPatch.
+ *   - Same source as the event's canonical source: always yes. A source
+ *     correcting its own previously supplied value is not a cross-source
+ *     conflict.
+ *   - Different sources with both sourceTypes resolvable: yes only if the
+ *     incoming sourceType strictly outranks the canonical one
+ *     (resolveByCanonicalPriority; a tie keeps the existing value).
+ *   - Either sourceType unresolvable (e.g. an admin-added event with no
+ *     canonicalSourceId): yes. There is no contradicting evidence to weigh,
+ *     and admin-entered values are protected by overriddenFields anyway.
+ */
+export function incomingSourceMayReplace(incomingSourceId: string, existingCanonicalSourceId: string | null): boolean {
+  if (existingCanonicalSourceId != null && existingCanonicalSourceId === incomingSourceId) return true;
+  const incomingSourceType = getSourceById(incomingSourceId)?.sourceType;
+  const existingSourceType = existingCanonicalSourceId ? getSourceById(existingCanonicalSourceId)?.sourceType : undefined;
+  if (!incomingSourceType || !existingSourceType) return true;
+  return (
+    resolveByCanonicalPriority([
+      { sourceType: existingSourceType, value: "existing" as const },
+      { sourceType: incomingSourceType, value: "incoming" as const },
+    ])?.value === "incoming"
+  );
+}
+
+/**
  * Builds the sync-proposed patch for an already-known event — only fields
  * whose value actually differs from what's currently stored, so a routine
  * re-sync that finds nothing new doesn't touch updatedAt/the audit log.
@@ -105,31 +132,36 @@ export function buildSyncPatch(
     // wired in for the first time): a lower-authority source (e.g. a
     // ticketing marketplace) must never silently overwrite an
     // officialEventUrl a higher-authority source (a genuine official venue/
-    // promoter) already established for this event. The SAME source
-    // updating/correcting its own previously-supplied value is always
-    // allowed (not a cross-source conflict at all — e.g. a venue genuinely
-    // changing its own event page URL). Only applies the priority check
-    // when both the incoming and existing sourceType are actually
-    // resolvable — an event with no resolvable existing canonicalSourceId
-    // (e.g. admin-added) or an unrecognized source has no contradicting
-    // evidence to weigh, so the prior permissive "always take the fresh
-    // value" behavior is kept for that case.
-    const sameSource = existing.canonicalSourceId != null && existing.canonicalSourceId === raw.sourceId;
-    let keepIncoming = true;
-    if (!sameSource) {
-      const incomingSourceType = getSourceById(raw.sourceId)?.sourceType;
-      const existingSourceType = existing.canonicalSourceId ? getSourceById(existing.canonicalSourceId)?.sourceType : undefined;
-      if (incomingSourceType && existingSourceType) {
-        keepIncoming =
-          resolveByCanonicalPriority([
-            { sourceType: existingSourceType, value: "existing" as const },
-            { sourceType: incomingSourceType, value: "incoming" as const },
-          ])?.value === "incoming";
-      }
-    }
-    if (keepIncoming) patch.officialEventUrl = raw.officialEventUrl;
+    // promoter) already established for this event. See
+    // incomingSourceMayReplace for the full rule.
+    if (incomingSourceMayReplace(raw.sourceId, existing.canonicalSourceId)) patch.officialEventUrl = raw.officialEventUrl;
   }
-  if (raw.ticketUrl && raw.ticketUrl !== existing.ticketUrl) patch.ticketUrl = raw.ticketUrl;
+  // ticketUrl source priority (RA link integrity, 2026-10-17): same rule as
+  // officialEventUrl above, so a ticket link that an official venue/promoter
+  // source verified (e.g. Culture Box's or Hangaren's own RA Tickets link)
+  // can't be replaced by an aggregator's guess at where tickets are sold.
+  //   - No existing ticketUrl: any source may fill the gap; nothing is
+  //     overwritten.
+  //   - The event's canonical source: always applied. A venue moving to a
+  //     new ticket page, or replacing a link that stopped working, is a
+  //     legitimate same-source update.
+  //   - Another source: applied only if its sourceType strictly outranks the
+  //     canonical source's (SOURCE_TYPE_PRIORITY); ties keep the existing value.
+  //   - A candidate with no ticketUrl never clears an existing one. Many
+  //     adapters can't tell "the venue removed its ticket link" from "this
+  //     run didn't get the detail page" (Culture Box degrades a failed detail
+  //     fetch to listing-only data), so absence is not evidence. A dead link is
+  //     replaced by the same source's new link, hidden once soldOut/cancelled
+  //     is set, or removed by an admin.
+  // Admin overrides still win over all of this downstream
+  // (stripOverriddenFields in applySourceSyncPatch).
+  if (
+    raw.ticketUrl &&
+    raw.ticketUrl !== existing.ticketUrl &&
+    (!existing.ticketUrl || incomingSourceMayReplace(raw.sourceId, existing.canonicalSourceId))
+  ) {
+    patch.ticketUrl = raw.ticketUrl;
+  }
   if (raw.facebookUrl && raw.facebookUrl !== existing.facebookUrl) patch.facebookUrl = raw.facebookUrl;
   if (raw.residentAdvisorUrl && raw.residentAdvisorUrl !== existing.residentAdvisorUrl) {
     patch.residentAdvisorUrl = raw.residentAdvisorUrl;
@@ -364,6 +396,10 @@ export interface DiscoveryQueueTarget {
    *  re-keying the row. See buildDiscoveryQueueClassificationPatch's own
    *  OFFICIAL-EVENT-URL ENRICHMENT self-heal below. */
   probableOfficialEventUrl: string | null;
+  /** Currently stored probable_resident_advisor_url (RA link integrity,
+   *  2026-10-17). Optional so existing call sites keep compiling; omitted
+   *  means "unknown", and the RA fill below then never runs. */
+  probableResidentAdvisorUrl?: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -483,6 +519,13 @@ export interface DiscoveryQueueClassification {
    * value) — see buildDiscoveryQueueClassificationPatch's own doc comment.
    */
   officialEventUrl?: string | null;
+  /**
+   * This run's freshly extracted Resident Advisor URL (RA link integrity,
+   * 2026-10-17), straight from the adapter. Optional; omitted never touches
+   * probableResidentAdvisorUrl. See the RA-REFERENCE FILL in
+   * buildDiscoveryQueueClassificationPatch.
+   */
+  residentAdvisorUrl?: string | null;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -501,6 +544,8 @@ export interface DiscoveryQueueClassificationPatch {
   probableTicketUrl?: string | null;
   /** See DiscoveryQueueClassification.officialEventUrl / DiscoveryQueueTarget.probableOfficialEventUrl's own doc comments for the self-heal semantics this carries. Only ever set (never null) — omitted (undefined) always means "don't touch it". */
   probableOfficialEventUrl?: string | null;
+  /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): only ever set into an empty column, never cleared or replaced. */
+  probableResidentAdvisorUrl?: string | null;
 }
 
 /**
@@ -774,6 +819,22 @@ export function buildDiscoveryQueueClassificationPatch(
     fresh.officialEventUrl !== existing.probableOfficialEventUrl
   ) {
     patch.probableOfficialEventUrl = fresh.officialEventUrl;
+  }
+
+  // RA-REFERENCE FILL (RA link integrity, 2026-10-17). A row queued before
+  // the DQ insert carried residentAdvisorUrl (src/db/sync.ts) has an empty
+  // probableResidentAdvisorUrl even though its source (e.g. HvadErPå's
+  // offers.url) reports one. Fill-only: never replaces a stored value (it may
+  // be admin-entered) and never clears one. Absence on a later run is not
+  // evidence. It stays a reference for the reviewer and is never a ticket
+  // link: publishDiscoveryItem carries it to residentAdvisorUrl, which
+  // src/lib/links.ts never shows as a CTA.
+  if (
+    !existing.overriddenFields.includes("probableResidentAdvisorUrl") &&
+    fresh.residentAdvisorUrl != null &&
+    existing.probableResidentAdvisorUrl === null
+  ) {
+    patch.probableResidentAdvisorUrl = fresh.residentAdvisorUrl;
   }
 
   return patch;
