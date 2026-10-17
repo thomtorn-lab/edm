@@ -508,6 +508,49 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
   };
 }
 
+describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link integrity, 2026-10-17)", () => {
+  const RA = "https://ra.co/events/2521204";
+  const sameGenre = { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" } as const;
+  const settled = { predictedGenre: "psytrance" as const, genreConfidence: "medium" as const, overallConfidence: "medium" as const };
+
+  it("fills an empty probableResidentAdvisorUrl from this run's adapter (e.g. HvadErPå offers.url)", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, residentAdvisorUrl: RA },
+      pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: null }),
+    );
+    expect(patch).toEqual({ probableResidentAdvisorUrl: RA });
+    expect(patch).not.toHaveProperty("probableTicketUrl"); // a reference, never a ticket link
+  });
+
+  it("never replaces a stored value (may be admin-entered), never clears one", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: RA },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: "https://ra.co/events/1" }),
+      ),
+    ).toEqual({});
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: null },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: "https://ra.co/events/1" }),
+      ),
+    ).toEqual({});
+  });
+
+  it("respects an admin override even when the column is empty (admin deliberately cleared it)", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: RA },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: null, overriddenFields: ["probableResidentAdvisorUrl"] }),
+      ),
+    ).toEqual({});
+  });
+
+  it("call sites that pass no stored value (undefined) never fill", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, residentAdvisorUrl: RA }, pendingDiscoveryTarget(settled))).toEqual({});
+  });
+});
+
 describe("buildDiscoveryQueueClassificationPatch", () => {
   // Real production cases (verified against the live Preview database): both
   // rows sat unresolved (predicted_genre: null) across a prior sync because
