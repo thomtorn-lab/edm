@@ -1170,14 +1170,19 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(document.querySelector("section")).toBeNull();
   });
 
-  it("video only: one h2 'Get a taste', the embed, and a discreet caption naming the artist — no 'video preview' heading", async () => {
+  it("video only: one h2 'Get a taste' and the embed — no 'video preview' heading and no artist caption under the player", async () => {
     vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
     await renderPage(makeEvent({ artists: ARTISTS }));
     const heading = screen.getByRole("heading", { level: 2, name: "Get a taste" });
     const section = heading.closest("section")!;
     expect(section.getAttribute("aria-labelledby")).toBe(heading.id);
     expect(section.querySelector("iframe")).not.toBeNull();
-    expect(section.querySelector("figcaption")?.textContent).toBe("TIM ANDRESEN");
+    // No separate artist label under the player (removed 2026-10-18): the
+    // player is the section's last element, with nothing (and no empty
+    // spacer) after it.
+    expect(section.querySelector("figure, figcaption")).toBeNull();
+    expect(section.textContent).not.toContain("TIM ANDRESEN");
+    expect(section.lastElementChild!.querySelector("iframe")).not.toBeNull();
     expect(screen.queryByText(/video preview/i)).toBeNull();
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
     // The iframe keeps its own accessible title (the video's title).
@@ -1203,6 +1208,9 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(section.querySelector("iframe")!.compareDocumentPosition(soundcloud) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(soundcloud.className).toContain("mt-8");
     expect(soundcloud.className).toContain("sm:mt-10");
+    // Artist names stay on the SoundCloud links — only the video caption went.
+    expect(soundcloud.querySelector('a[href="https://soundcloud.com/tim-andresen"]')!.textContent).toContain("TIM ANDRESEN");
+    expect(section.querySelector("figcaption")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2, name: "Get a taste" })).toHaveLength(1);
   });
 
