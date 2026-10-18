@@ -24,6 +24,7 @@ import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
+import { runOverrideScopeAudit } from "./overrideScopeAudit";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -2492,12 +2493,16 @@ async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, stri
   console.log(JSON.stringify(dqByGenre.rows, null, 2));
 }
 
+async function modeOverrideScopeAudit(client: Client) {
+  await runOverrideScopeAudit(client);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (typeof mode !== "string") {
     console.error(
-      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit> is required.",
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit|override-scope-audit> is required.",
     );
     process.exit(1);
   }
@@ -2523,6 +2528,7 @@ async function main() {
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
+    "override-scope-audit": modeOverrideScopeAudit,
     "youtube-preview-backfill-plan": modeYoutubePreviewBackfillPlan,
     "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
@@ -2543,7 +2549,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, override-scope-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
     );
     process.exit(1);
   }
