@@ -3,9 +3,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks, sources, venues } from "./schema";
 import { venueRowToRecord } from "./mappers";
-import { addOverriddenFields, stripOverriddenFields, type EditableEventField } from "../lib/override";
+import { addOverriddenFields, partitionAdminPatch, stripOverriddenFields, type EditableEventField } from "../lib/override";
 import { isEndAfterStart, END_BEFORE_START_ERROR } from "../lib/datetime";
 import { assessDuplicate } from "../lib/dedup";
+import { isResidentAdvisorUrl } from "../lib/links";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types";
@@ -184,17 +185,27 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // Rejects outright rather than "fixing" the value; see isEndAfterStart's
   // own doc comment for why an automatic +1 day would be wrong as often as
   // it's right.
-  if ("startDatetime" in patch || "endDatetime" in patch) {
-    const effectiveStart = "startDatetime" in patch ? patch.startDatetime : existing.startDatetime;
-    const effectiveEnd = "endDatetime" in patch ? patch.endDatetime : existing.endDatetime;
+  // Only fields the admin actually changed or deliberately cleared are
+  // written and newly protected (editorial screening, priority 1 —
+  // 2026-10-17): a form that re-submits a displayed-but-untouched value must
+  // not freeze that field against later source corrections. Existing
+  // overrides are kept as they are. "published" keeps its old always-applied
+  // behavior because its write clears a stale admin-unpublish (below).
+  const { effectivePatch, touchedFields, cleared } = partitionAdminPatch(existing, patch, { alwaysTouched: ["published"] });
+
+  // The end/start check runs only when this save really changes start or end,
+  // and on the values that will actually be stored: an unchanged start is
+  // not written, so the stored one is what counts.
+  if ("startDatetime" in effectivePatch || "endDatetime" in effectivePatch) {
+    const effectiveStart = "startDatetime" in effectivePatch ? effectivePatch.startDatetime : existing.startDatetime;
+    const effectiveEnd = "endDatetime" in effectivePatch ? effectivePatch.endDatetime : existing.endDatetime;
     if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
       throw new Error(END_BEFORE_START_ERROR);
     }
   }
-
-  const touchedFields = Object.keys(patch);
+  if (touchedFields.length === 0) return;
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
-  const clearsAdminUnpublish = patch.published === true && existing.adminUnpublishReason != null;
+  const clearsAdminUnpublish = effectivePatch.published === true && existing.adminUnpublishReason != null;
   // primaryGenre/subgenres lockstep (genre taxonomy audit, 2026-09-14): public
   // consumers (displayGenres, the Genre filter) read subgenres only, never
   // primaryGenre directly. The two fields are independently listed in
@@ -205,12 +216,12 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // db/sync.ts and publishDiscoveryItem already keep the two in lockstep on
   // their own write paths.
   const derivedSubgenres =
-    patch.primaryGenre != null && !("subgenres" in patch) ? { subgenres: [patch.primaryGenre] } : {};
+    effectivePatch.primaryGenre != null && !("subgenres" in patch) ? { subgenres: [effectivePatch.primaryGenre] } : {};
 
   await db
     .update(events)
     .set({
-      ...patch,
+      ...effectivePatch,
       ...derivedSubgenres,
       ...(clearsAdminUnpublish ? { adminUnpublishReason: null, adminUnpublishNote: null, adminUnpublishedAt: null } : {}),
       overriddenFields,
@@ -220,7 +231,7 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
     })
     .where(eq(events.id, eventId));
 
-  await writeChangeLog(eventId, "admin", "update", touchedFields);
+  await writeChangeLog(eventId, "admin", "update", touchedFields, cleared.length > 0 ? `cleared: ${cleared.join(", ")}` : undefined);
 }
 
 export async function setEventPublished(eventId: string, published: boolean) {
@@ -934,10 +945,17 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // Admin-entered Resident Advisor URL for an unpublished candidate
       // (unified event create/edit model, 2026-09-08) — same
       // admin-wins-over-source-heuristic pattern as officialEventUrl above;
-      // the sourceUrl-contains-"ra.co" fallback preserves every existing
+      // the sourceUrl-is-an-RA-URL fallback (hostname check via
+      // isResidentAdvisorUrl, never a substring) preserves every existing
       // RA-sourced publish's exact prior behavior when the admin never
       // touched this field.
-      residentAdvisorUrl: item.probableResidentAdvisorUrl ?? (item.sourceUrl.includes("ra.co") ? item.sourceUrl : null),
+      // A deliberately edited or cleared RA link (probableResidentAdvisorUrl
+      // in overriddenFields) is carried exactly as the admin left it: a
+      // cleared value must not be restored from an RA-page sourceUrl
+      // (RA link integrity, 2026-10-17).
+      residentAdvisorUrl: item.overriddenFields?.includes("probableResidentAdvisorUrl")
+        ? item.probableResidentAdvisorUrl
+        : (item.probableResidentAdvisorUrl ?? (isResidentAdvisorUrl(item.sourceUrl) ? item.sourceUrl : null)),
       imageUrl: null,
       // Explicit FREE flag (never inferred from ticketUrl's absence) — same
       // canonical priceFrom=0 representation as EventManager's own Free
@@ -1067,9 +1085,15 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
 
   // Ended-event write-path integrity (2026-09-20) — same rule and same
   // "only when this patch touches start/end" scoping as applyAdminEventEdit.
-  if ("probableStart" in patch || "probableEnd" in patch) {
-    const effectiveStart = "probableStart" in patch ? patch.probableStart : existing.probableStart;
-    const effectiveEnd = "probableEnd" in patch ? patch.probableEnd : existing.probableEnd;
+  // Same changed/cleared/unchanged split as applyAdminEventEdit: the DQ
+  // editor posts every field, but only the ones the admin actually changed
+  // or cleared become overrides — and publishDiscoveryItem carries exactly
+  // these onto the published event's overriddenFields.
+  const { effectivePatch, touchedFields } = partitionAdminPatch(existing, patch);
+
+  if ("probableStart" in effectivePatch || "probableEnd" in effectivePatch) {
+    const effectiveStart = "probableStart" in effectivePatch ? effectivePatch.probableStart : existing.probableStart;
+    const effectiveEnd = "probableEnd" in effectivePatch ? effectivePatch.probableEnd : existing.probableEnd;
     if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
       throw new Error(END_BEFORE_START_ERROR);
     }
@@ -1082,11 +1106,11 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     return true;
   });
 
-  const overriddenFields = addOverriddenFields(existing.overriddenFields, Object.keys(patch));
+  const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
 
   await db
     .update(discoveryQueue)
-    .set({ ...patch, missingFields, overriddenFields })
+    .set({ ...effectivePatch, missingFields, overriddenFields })
     .where(eq(discoveryQueue.id, id));
 
   // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout;
@@ -1103,7 +1127,7 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
   // description, or venue name never needs a re-check here. Deferred via
   // deferOrRun so this never adds latency to the admin edit request.
   const ENRICHMENT_RELEVANT_EDIT_KEYS = ["detectedLineup", "predictedGenre", "probableStart", "probableEnd", "probableTitle"] as const;
-  const editMayAffectEnrichment = ENRICHMENT_RELEVANT_EDIT_KEYS.some((key) => key in patch);
+  const editMayAffectEnrichment = ENRICHMENT_RELEVANT_EDIT_KEYS.some((key) => key in effectivePatch);
   if (editMayAffectEnrichment) {
     await deferOrRun(() =>
       triggerDiscoveryEnrichment({
@@ -1200,6 +1224,8 @@ export async function applyDiscoveryClassificationUpdate(
      * comment.
      */
     probableOfficialEventUrl?: string | null;
+    /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): set-only into an empty column; see buildDiscoveryQueueClassificationPatch. */
+    probableResidentAdvisorUrl?: string | null;
   },
 ) {
   if (Object.keys(patch).length === 0) return;

@@ -364,6 +364,10 @@ export interface DiscoveryQueueTarget {
    *  re-keying the row. See buildDiscoveryQueueClassificationPatch's own
    *  OFFICIAL-EVENT-URL ENRICHMENT self-heal below. */
   probableOfficialEventUrl: string | null;
+  /** Currently stored probable_resident_advisor_url (RA link integrity,
+   *  2026-10-17). Optional so existing call sites keep compiling; omitted
+   *  means "unknown", and the RA fill below then never runs. */
+  probableResidentAdvisorUrl?: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -483,6 +487,13 @@ export interface DiscoveryQueueClassification {
    * value) — see buildDiscoveryQueueClassificationPatch's own doc comment.
    */
   officialEventUrl?: string | null;
+  /**
+   * This run's freshly extracted Resident Advisor URL (RA link integrity,
+   * 2026-10-17), straight from the adapter. Optional; omitted never touches
+   * probableResidentAdvisorUrl. See the RA-REFERENCE FILL in
+   * buildDiscoveryQueueClassificationPatch.
+   */
+  residentAdvisorUrl?: string | null;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -501,6 +512,8 @@ export interface DiscoveryQueueClassificationPatch {
   probableTicketUrl?: string | null;
   /** See DiscoveryQueueClassification.officialEventUrl / DiscoveryQueueTarget.probableOfficialEventUrl's own doc comments for the self-heal semantics this carries. Only ever set (never null) — omitted (undefined) always means "don't touch it". */
   probableOfficialEventUrl?: string | null;
+  /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): only ever set into an empty column, never cleared or replaced. */
+  probableResidentAdvisorUrl?: string | null;
 }
 
 /**
@@ -774,6 +787,22 @@ export function buildDiscoveryQueueClassificationPatch(
     fresh.officialEventUrl !== existing.probableOfficialEventUrl
   ) {
     patch.probableOfficialEventUrl = fresh.officialEventUrl;
+  }
+
+  // RA-REFERENCE FILL (RA link integrity, 2026-10-17). A row queued before
+  // the DQ insert carried residentAdvisorUrl (src/db/sync.ts) has an empty
+  // probableResidentAdvisorUrl even though its source (e.g. HvadErPå's
+  // offers.url) reports one. Fill-only: never replaces a stored value (it may
+  // be admin-entered) and never clears one. Absence on a later run is not
+  // evidence. It stays a reference for the reviewer and is never a ticket
+  // link: publishDiscoveryItem carries it to residentAdvisorUrl, which
+  // src/lib/links.ts never shows as a CTA.
+  if (
+    !existing.overriddenFields.includes("probableResidentAdvisorUrl") &&
+    fresh.residentAdvisorUrl != null &&
+    existing.probableResidentAdvisorUrl === null
+  ) {
+    patch.probableResidentAdvisorUrl = fresh.residentAdvisorUrl;
   }
 
   return patch;
