@@ -220,6 +220,7 @@ function prioritized(id: string, title: string, overrides: Partial<ReviewPriorit
         { key: "lineup", points: 1, label: "Lineup listed (2)" },
         { key: "venue_unresolved", points: 0, label: "No venue given" },
       ],
+      seriesMatch: null,
       recommendedAction: "Check the source, then pick a genre and publish — or ignore",
       ...overrides,
     },
@@ -288,6 +289,23 @@ describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
   it("counts likely and possible rows on the tab", () => {
     renderWith(MANY_LIKELY);
     expect(screen.getByRole("tab", { name: "Likely relevant 18" })).toBeTruthy();
+  });
+
+  it("shows the series-memory reason on its own line, marked as ranking only", () => {
+    const label =
+      "Series “final descent”: 2 earlier published event(s) — “69/96: The Final Descent” (2026-10-24, Basement); support: same venue, this listing has its own electronic signal";
+    renderWith({
+      likely: [prioritized("dq-fd", "Final Descent: Amina Hocine (SE)", { signals: [{ key: "series_same_venue", points: 2, label }] })],
+      possible: [],
+      urgentCount: 0,
+      urgentLikelyCount: 0,
+      urgentPossibleCount: 0,
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 1" }));
+    const line = screen.getByTestId("series-memory");
+    expect(line.textContent).toContain("Series memory (+2, ranking only — never publishes or sets a genre)");
+    expect(line.textContent).toContain("“69/96: The Final Descent” (2026-10-24, Basement)");
+    expect(screen.getByTestId("priority-explanation").textContent).not.toMatch(/For: Series/);
   });
 
   it("shows both counts in the banner, and the 72-hour warning split by tier", () => {

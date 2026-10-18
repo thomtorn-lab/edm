@@ -168,9 +168,11 @@ const TIER_BADGES: Record<"likely" | "possible", { label: string; className: str
 
 /** Why a row was prioritised and what to do with it — read-only, shown under the row's title. */
 function PriorityExplanation({ priority }: { priority: ReviewPriority }) {
-  const positives = priority.signals.filter((s) => s.points > 0);
-  const negatives = priority.signals.filter((s) => s.points < 0);
-  const notes = priority.signals.filter((s) => s.points === 0);
+  const series = priority.signals.filter((s) => s.key.startsWith("series_"));
+  const others = priority.signals.filter((s) => !s.key.startsWith("series_"));
+  const positives = others.filter((s) => s.points > 0);
+  const negatives = others.filter((s) => s.points < 0);
+  const notes = others.filter((s) => s.points === 0);
   const badge = priority.tier === "none" ? null : TIER_BADGES[priority.tier];
   return (
     <div
@@ -188,6 +190,15 @@ function PriorityExplanation({ priority }: { priority: ReviewPriority }) {
       {positives.length > 0 && <p className="mt-1 text-text-secondary">For: {positives.map((s) => s.label).join(" · ")}</p>}
       {negatives.length > 0 && <p className="mt-1 text-status-warn">Against: {negatives.map((s) => s.label).join(" · ")}</p>}
       {notes.length > 0 && <p className="mt-1 text-text-tertiary">{notes.map((s) => s.label).join(" · ")}</p>}
+      {series.map((s) => (
+        <p
+          key={s.key}
+          className={`mt-1 ${s.points < 0 ? "text-status-warn" : s.points > 0 ? "text-text-secondary" : "text-text-tertiary"}`}
+          data-testid="series-memory"
+        >
+          Series memory ({s.points > 0 ? `+${s.points}` : s.points}, ranking only — never publishes or sets a genre): {s.label}
+        </p>
+      ))}
       <p className="mt-1 font-semibold text-accent-strong">Recommended: {priority.recommendedAction}</p>
     </div>
   );

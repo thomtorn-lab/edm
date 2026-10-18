@@ -4,6 +4,7 @@ import { resolveVenue } from "./normalize";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 import { hasNonElectronicGenreSignal, hasPopOrRnbSignal } from "./relevance";
 import { assessDuplicate, type DuplicateCandidate } from "./dedup";
+import { describeSeriesMatch, findSeriesMatch, seriesStrength, type SeriesIndex, type SeriesMatch } from "./seriesMemory";
 
 /**
  * Review prioritisation for the admin Discovery Queue (coverage work, phase
@@ -60,6 +61,10 @@ export type ReviewSignalKey =
   | "lineup"
   | "source_quality"
   | "conflicting_genre"
+  | "series_same_venue"
+  | "series_other_venue"
+  | "series_not_counted"
+  | "series_irrelevant"
   | "venue_unresolved"
   | "date_missing"
   | "starts_within_72h"
@@ -99,6 +104,8 @@ export interface ReviewPriority {
   startsWithin72h: boolean;
   hoursToStart: number | null;
   signals: ReviewSignal[];
+  /** The series memory match behind any series_* signal, for display. */
+  seriesMatch: SeriesMatch | null;
   recommendedAction: string;
 }
 
@@ -120,6 +127,8 @@ export interface ReviewPriorityContext {
    * adds nothing (it never counts against the row either). Defaults to true.
    */
   sourceStillLists?: boolean;
+  /** Earlier events indexed by series name (see seriesMemory.ts). Absent means no series memory. */
+  seriesIndex?: SeriesIndex;
 }
 
 /** A row needs at least this relevance score, and one qualifying signal, to be in the "likely" tier. */
@@ -128,7 +137,23 @@ export const LIKELY_RELEVANT_MIN_SCORE = 3;
 export const REVIEW_PRIORITY_DEFAULT_VISIBLE = 15;
 
 /** Signals that can carry a row into the "likely" tier; venue support, source category, lineup and trust only add to its score. */
-const QUALIFYING_SIGNALS: ReadonlySet<ReviewSignalKey> = new Set(["genre", "dj_or_club_title", "dj_or_club_description", "strong_venue"]);
+const QUALIFYING_SIGNALS: ReadonlySet<ReviewSignalKey> = new Set([
+  "genre",
+  "dj_or_club_title",
+  "dj_or_club_description",
+  "strong_venue",
+  "series_same_venue",
+]);
+
+/** The row's own electronic evidence; series memory only counts for a row that has some. */
+const OWN_ELECTRONIC_SIGNALS: ReadonlySet<ReviewSignalKey> = new Set([
+  "genre",
+  "dj_or_club_title",
+  "dj_or_club_description",
+  "strong_venue",
+  "supporting_venue",
+  "source_category",
+]);
 
 const HOUR_MS = 3_600_000;
 
@@ -180,6 +205,37 @@ export function scoreReviewPriority(item: ReviewPriorityInput, ctx: ReviewPriori
     signals.push({ key: "conflicting_genre", points: -3, label: "Text also names a non-electronic genre (pop, R&B, rock, metal, …)" });
   }
 
+  // Series memory: a ranking hint only. An earlier publish could itself have
+  // been a mistake, so it is never copied onto a row whose own text
+  // contradicts it, and never counts without the row's own signal.
+  const seriesMatch = ctx.seriesIndex
+    ? findSeriesMatch(
+        {
+          title: item.probableTitle,
+          lineup: item.detectedLineup,
+          venueName: item.probableVenueName,
+          start: item.probableStart,
+          ownElectronicSignal: signals.some((sig) => OWN_ELECTRONIC_SIGNALS.has(sig.key)),
+        },
+        ctx.seriesIndex,
+      )
+    : null;
+  if (seriesMatch) {
+    const strength = seriesStrength(seriesMatch);
+    const why = describeSeriesMatch(seriesMatch, ctx.venues);
+    if (strength === "against") {
+      signals.push({ key: "series_irrelevant", points: -1, label: why });
+    } else if (conflicting && strength !== "unsupported") {
+      signals.push({ key: "series_not_counted", points: 0, label: `${why} — not counted: this listing names a non-electronic genre` });
+    } else if (strength === "strong") {
+      signals.push({ key: "series_same_venue", points: 2, label: why });
+    } else if (strength === "supporting") {
+      signals.push({ key: "series_other_venue", points: 1, label: why });
+    } else if (seriesMatch.published.length > 0) {
+      signals.push({ key: "series_not_counted", points: 0, label: `${why} — not counted without more evidence` });
+    }
+  }
+
   if (item.probableVenueName && !resolved) {
     signals.push({ key: "venue_unresolved", points: 0, label: `Venue "${item.probableVenueName}" is not registered` });
   } else if (!item.probableVenueName) {
@@ -222,6 +278,7 @@ export function scoreReviewPriority(item: ReviewPriorityInput, ctx: ReviewPriori
     startsWithin72h,
     hoursToStart,
     signals,
+    seriesMatch,
     recommendedAction: recommendAction({ tier, relevanceScore, relevanceState, hasDate: !!item.probableStart, venueResolved: !!resolved }),
   };
 }
