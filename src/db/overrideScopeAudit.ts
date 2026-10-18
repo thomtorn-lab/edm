@@ -9,7 +9,9 @@ import { buildOverrideScopeReport, CORE_CONTENT_FIELDS, EVENT_ID_LIST_CAP, type 
  * never titles, descriptions, URLs or other field values.
  *
  * "Upcoming" = published and start_datetime >= now(). "Recently syncing" =
- * a sync change-log row in the last 30 days.
+ * a sync change-log row in the last 30 days. A planned "release_override"
+ * row releases a lock rather than setting one, so it never counts as a
+ * documented admin edit.
  */
 export const OVERRIDE_SCOPE_SQL = `
   SELECT
@@ -30,7 +32,7 @@ export const OVERRIDE_SCOPE_SQL = `
       ORDER BY c.created_at ASC LIMIT 1) AS created_by,
     COALESCE(
       (SELECT array_agg(DISTINCT f) FROM event_change_log c, unnest(c.fields_changed) AS f
-        WHERE c.event_id = e.id AND c.changed_by = 'admin' AND c.change_type <> 'create'),
+        WHERE c.event_id = e.id AND c.changed_by = 'admin' AND c.change_type NOT IN ('create', 'release_override')),
       '{}'
     ) AS admin_logged_fields
   FROM events e

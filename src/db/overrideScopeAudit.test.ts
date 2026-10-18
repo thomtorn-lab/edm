@@ -94,7 +94,8 @@ describe.skipIf(!TEST_DB)("override-scope-audit against a real Postgres (AUDIT_T
         ('l2', 'e-edited', 'src-pumpehuset', 'create', '{title}'),
         ('l3', 'e-edited', 'admin', 'update', '{artists}'),
         ('l4', 'e-edited', 'src-kultunaut', 'sync', '{}'),
-        ('l5', 'e-admin', 'src-kultunaut', 'sync', '{}')`);
+        ('l5', 'e-admin', 'src-kultunaut', 'sync', '{}'),
+        ('l6', 'e-admin', 'admin', 'release_override', '{title}')`);
 
       await beginReadOnlyTransaction(client);
       const lines: string[] = [];
@@ -106,6 +107,8 @@ describe.skipIf(!TEST_DB)("override-scope-audit against a real Postgres (AUDIT_T
       expect(report.withAnyLock.eventIds).toEqual(["e-admin", "e-edited"]);
       expect(report.allCoreContentLocked.eventIds).toEqual(["e-admin"]);
       expect(report.lockCountsByField.find((f) => f.field === "artists")).toMatchObject({ locked: 2, documentedByAdminEdit: 1, noLoggedAdminEdit: 1 });
+      // a release row never documents a lock
+      expect(report.lockCountsByField.find((f) => f.field === "title")).toMatchObject({ locked: 1, documentedByAdminEdit: 0, noLoggedAdminEdit: 1 });
       expect(report.multipleSources).toMatchObject({ count: 1, eventIds: ["e-edited"], withAnyLock: 1 });
       expect(report.lockedEventsByCreator).toEqual([
         { createdBy: "admin", events: 1 },
