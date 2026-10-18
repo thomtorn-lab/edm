@@ -285,3 +285,18 @@ describe("inspect-source.yml — source_id validation step", () => {
     },
   );
 });
+
+describe("inspect-source.yml — ticket-replacement-shadow mode (thomtorn-lab/edm#145)", () => {
+  it("is a manual choice option and runs like the other DB modes", () => {
+    expect(WORKFLOW).toMatch(/^ {10}- ticket-replacement-shadow$/m);
+    const r = runInspect({ mode: "ticket-replacement-shadow", source_id: "src-culture-box" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.nodeFlags).toEqual(["--env-file=.env.local", "--import", "tsx"]);
+    expect(r.args).toEqual(["--mode=ticket-replacement-shadow", "--source=src-culture-box"]);
+  });
+
+  it("the workflow is still workflow_dispatch only (no push, pull_request or schedule trigger)", () => {
+    const on = WORKFLOW.slice(WORKFLOW.indexOf("\non:"), WORKFLOW.indexOf("\n    inputs:"));
+    expect(on.trim()).toBe("on:\n  workflow_dispatch:");
+  });
+});

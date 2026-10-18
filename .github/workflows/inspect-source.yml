@@ -52,6 +52,7 @@ on:
           - link-role-audit
           - db-integrity
           - adapter-dry-run
+          - ticket-replacement-shadow
           - admin-queue-audit
           - ignore-persistence-audit
           - genre-taxonomy-audit

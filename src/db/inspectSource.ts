@@ -23,6 +23,7 @@ import type { Source, Venue } from "@/lib/types";
 import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
+import { runTicketReplacementShadow, TICKET_SHADOW_LIMITATIONS } from "./ticketReplacementShadow";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
 
 /**
@@ -36,7 +37,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan|youtube-preview-backlog-projection> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|ticket-replacement-shadow|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan|youtube-preview-backlog-projection> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--artists="Artist One, Artist Two, ..."]  (youtube-preview-dry-run only — runs the REAL Rule A
@@ -614,6 +615,46 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
     section(`Evidence detail for --title="${args.title}" (${evidenceDetail.length} matches) — full source text + verdict, any decision bucket`);
     console.log(JSON.stringify(evidenceDetail, null, 2));
   }
+}
+
+/**
+ * Ticket-replacement SHADOW report (thomtorn-lab/edm#145, 2026-10-18): what
+ * the proposed "official source may replace an existing ticket link" rule
+ * WOULD do for this source's current candidates, with every decision's
+ * identity checks and reason. Same read-only shape as adapter-dry-run (one
+ * live fetch of the source's own pages, SELECTs inside withReadOnlyTx, no
+ * writes); see src/db/ticketReplacementShadow.ts. Manual runs only; the
+ * active sync rule is untouched. Save the REPORT JSON line to evaluate
+ * labels offline with src/db/ticketShadowEvaluateCli.ts.
+ */
+async function modeTicketReplacementShadow(client: Client, args: Record<string, string | boolean>) {
+  const sourceId = requireSource(args);
+  const createAdapter = DRY_RUN_ADAPTERS[sourceId];
+  if (!createAdapter) {
+    throw new Error(`ticket-replacement-shadow has no registered adapter for "${sourceId}". Known: ${Object.keys(DRY_RUN_ADAPTERS).join(", ")}`);
+  }
+  section(`Ticket-replacement shadow (READ-ONLY, no writes): ${sourceId}`);
+  for (const l of TICKET_SHADOW_LIMITATIONS) console.log(`LIMITATION: ${l}`);
+
+  const venues = (await client.query("SELECT * FROM venues")).rows.map(rowToVenue);
+  const report = await runTicketReplacementShadow(client, { sourceId, venues, createAdapter });
+
+  section("Run");
+  console.log(JSON.stringify(report.meta, null, 2));
+  section("Summary");
+  console.log(JSON.stringify(report.summary, null, 2));
+  for (const outcome of ["would_replace", "withheld"] as const) {
+    const list = report.decisions.filter((d) => d.outcome === outcome);
+    section(`${outcome} (${list.length}) — full identity checks and explanation`);
+    for (const d of list) console.log(JSON.stringify(d, null, 2));
+  }
+  const rest = report.decisions.filter((d) => d.outcome !== "would_replace" && d.outcome !== "withheld");
+  section(`fill / confirm / no_change (${rest.length}) — existing behaviour, reported only`);
+  for (const d of rest) console.log(JSON.stringify({ decisionId: d.decisionId, outcome: d.outcome, eventId: d.eventId, eventTitle: d.eventTitle }));
+  section("Label template — copy entries into qa/ticket-shadow-labels.json and fill verdict/labeled_by/note");
+  console.log(JSON.stringify(report.labelTemplate, null, 2));
+  section("REPORT JSON (single line, for offline evaluation)");
+  console.log(JSON.stringify(report));
 }
 
 /**
@@ -2520,6 +2561,7 @@ async function main() {
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
     "adapter-dry-run": modeAdapterDryRun,
+    "ticket-replacement-shadow": modeTicketReplacementShadow,
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
@@ -2543,7 +2585,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, ticket-replacement-shadow, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
     );
     process.exit(1);
   }
