@@ -9,6 +9,7 @@
  */
 import { Client } from "pg";
 import { buildAuditWindow, runEventsWindowAudit, type EventsWindowReport } from "./auditEventsWindow";
+import { RELEVANCE_RECHECK_LIMITATIONS } from "./auditRelevance";
 
 function readArg(name: string): string {
   const prefix = `--${name}=`;
@@ -37,6 +38,8 @@ export function printReport(report: EventsWindowReport): void {
   console.log(
     `\n== Electronic-relevance recheck: weak/none (${doubtful.length}) — CURRENT recomputation, NOT the historical publish decision; nothing changed ==`,
   );
+  console.log("Known limits of this recheck:");
+  for (const limit of RELEVANCE_RECHECK_LIMITATIONS) console.log(`  * ${limit}`);
   for (const e of doubtful) {
     const r = e.relevanceRecheck!;
     console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${r.relevance}${r.trustedElectronicSource ? ", trusted source" : ""}]`);

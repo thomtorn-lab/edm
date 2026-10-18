@@ -56,6 +56,18 @@ import type { ConfidenceLevel } from "@/lib/types";
 export const RELEVANCE_RECHECK_BASIS =
   "Current recomputation under today's rules (assessRelevance); NOT the historical publish decision. Nothing was changed.";
 
+/**
+ * Known limits of the recheck, printed with every result so a weak/none
+ * verdict is read correctly. Source category tags (e.g. Billetto's or
+ * ALICE's "Elektronisk" category) are evidence at ingestion but are not
+ * stored on events, so they can't count here.
+ */
+export const RELEVANCE_RECHECK_LIMITATIONS: readonly string[] = [
+  "Source category tags (e.g. a Billetto or ALICE 'Elektronisk' category) are not stored on events and are not counted; events that relied on them can show weak/none.",
+  "Only cached Discogs rows are used; artists never looked up add no evidence.",
+  "Relevance only: the publish decision is not recomputed.",
+];
+
 /** The stored event fields the recheck needs (a subset of the audit row). */
 export interface RelevanceRecheckInput {
   title: string;
@@ -72,6 +84,8 @@ export interface RelevanceRecheckInput {
 
 export interface RelevanceRecheck {
   basis: typeof RELEVANCE_RECHECK_BASIS;
+  /** Always RELEVANCE_RECHECK_LIMITATIONS. */
+  limitations: readonly string[];
   relevance: RelevanceLevel;
   /** Human-readable signals behind the verdict, positive first. */
   reasons: string[];
@@ -242,6 +256,7 @@ export async function recheckRelevance(
   const evidence = evidenceFor(relevanceText, result.normalizedArtists, genreForRelevance, hasRa, corroborating);
   return {
     basis: RELEVANCE_RECHECK_BASIS,
+    limitations: RELEVANCE_RECHECK_LIMITATIONS,
     relevance: assessRelevance(evidence),
     reasons: reasonsFor(evidence, trusted, discogsGenre),
     textGenre: result.genre,

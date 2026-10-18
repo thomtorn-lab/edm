@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recheckRelevance, RELEVANCE_RECHECK_BASIS, cacheKeyForArtist, toCacheEntry, ARTIST_CACHE_SQL, type RelevanceRecheckInput } from "./auditRelevance";
+import { recheckRelevance, RELEVANCE_RECHECK_BASIS, RELEVANCE_RECHECK_LIMITATIONS, cacheKeyForArtist, toCacheEntry, ARTIST_CACHE_SQL, type RelevanceRecheckInput } from "./auditRelevance";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { VENUES } from "@/lib/data/venues";
 import type { ArtistCacheEntry } from "@/lib/enrichment/genreEnrichment";
@@ -45,6 +45,12 @@ describe("recheckRelevance — current recomputation, read-only (editorial scree
     const r = await recheckRelevance(row(), NO_CACHE);
     expect(r.basis).toBe(RELEVANCE_RECHECK_BASIS);
     expect(r.basis).toMatch(/NOT the historical publish decision/);
+  });
+
+  it("names the missing source categories as a known limit on every result", async () => {
+    const r = await recheckRelevance(row(), NO_CACHE);
+    expect(r.limitations).toBe(RELEVANCE_RECHECK_LIMITATIONS);
+    expect(r.limitations.join(" ")).toMatch(/category tags .* not stored on events/);
   });
 
   it("explicit techno text: strong, with the reason named", async () => {
