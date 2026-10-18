@@ -3,6 +3,7 @@ import { isPastEvent } from "./datetime";
 import { resolveVenue } from "./normalize";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 import { hasNonElectronicGenreSignal, hasPopOrRnbSignal } from "./relevance";
+import { assessDuplicate, type DuplicateCandidate } from "./dedup";
 
 /**
  * Review prioritisation for the admin Discovery Queue (coverage work, phase
@@ -104,7 +105,9 @@ export interface ReviewPriority {
 export type ReviewPriorityInput = Pick<
   DiscoveryQueueItem,
   "id" | "probableTitle" | "probableStart" | "probableEnd" | "probableVenueName" | "sourceId" | "detectedLineup" | "predictedGenre" | "description"
->;
+> &
+  /** Only used to recognise the same event listed by two sources (see groupReviewList); absent means "unknown". */
+  Partial<Pick<DiscoveryQueueItem, "probableSubVenue" | "probableOfficialEventUrl" | "probableTicketUrl" | "probableResidentAdvisorUrl">>;
 
 export interface ReviewPriorityContext {
   venues: Venue[];
@@ -284,24 +287,103 @@ function comparePriority<T extends ReviewPriorityInput>(a: PrioritizedReviewRow<
   return a.item.probableTitle.localeCompare(b.item.probableTitle);
 }
 
-export interface VisibleReviewRows<T extends ReviewPriorityInput = DiscoveryQueueItem> {
-  likelyShown: PrioritizedReviewRow<T>[];
-  likelyHidden: PrioritizedReviewRow<T>[];
-  /** Possible rows shown only to fill the default view up to `limit` when there are fewer likely rows. */
-  possibleShown: PrioritizedReviewRow<T>[];
-  possibleHidden: PrioritizedReviewRow<T>[];
+/**
+ * One event as shown in the review queue: the best-ranked row first, then
+ * any other source's row for the same event. Grouping is display-only:
+ * every row keeps its own id, actions and Discovery Queue state.
+ */
+export interface ReviewGroup<T extends ReviewPriorityInput = DiscoveryQueueItem> {
+  primary: PrioritizedReviewRow<T>;
+  others: PrioritizedReviewRow<T>[];
+}
+
+export interface GroupedReviewList<T extends ReviewPriorityInput = DiscoveryQueueItem> {
+  likely: ReviewGroup<T>[];
+  possible: ReviewGroup<T>[];
+  /** Events (groups) starting within 72 hours, total and per tier. */
+  urgentCount: number;
+  urgentLikelyCount: number;
+  urgentPossibleCount: number;
+}
+
+/** Two listings of the same event cannot start further apart than this. */
+const SAME_EVENT_MAX_START_GAP_MS = 2 * 3_600_000;
+
+function toDuplicateCandidate(item: ReviewPriorityInput, venues: Venue[]): DuplicateCandidate | null {
+  if (!item.probableStart) return null;
+  const resolved = item.probableVenueName ? resolveVenue(item.probableVenueName, venues) : undefined;
+  return {
+    title: item.probableTitle,
+    artists: item.detectedLineup,
+    venueId: resolved?.venue.id ?? null,
+    subVenue: item.probableSubVenue ?? resolved?.subVenue ?? null,
+    startDatetime: item.probableStart,
+    sourceId: item.sourceId,
+    officialEventUrl: item.probableOfficialEventUrl ?? null,
+    ticketUrl: item.probableTicketUrl ?? null,
+    residentAdvisorUrl: item.probableResidentAdvisorUrl ?? null,
+  };
 }
 
 /**
- * The default view: up to `limit` rows, likely ones first. Free slots are
- * filled with the highest-ranked possible rows so a short likely list does
- * not leave the category-only events out of sight; the two stay separate
- * lists so the UI can show them with different certainty.
+ * True only when two pending rows are, with high certainty, the same event
+ * reported by two different sources: the shared dedup rules (assessDuplicate)
+ * must say "high" — they already require the same night and veto different
+ * rooms — both rows need a start time within two hours of each other and a
+ * resolved venue, and the sources must differ (one source listing two rows
+ * the same night may be two shows, e.g. an early and a late one).
  */
-export function splitVisibleReviewRows<T extends ReviewPriorityInput>(
-  list: ReviewPriorityList<T>,
-  limit: number = REVIEW_PRIORITY_DEFAULT_VISIBLE,
-): VisibleReviewRows<T> {
+export function isSameEventFromAnotherSource(a: ReviewPriorityInput, b: ReviewPriorityInput, venues: Venue[]): boolean {
+  if (!a.sourceId || !b.sourceId || a.sourceId === b.sourceId) return false;
+  const ca = toDuplicateCandidate(a, venues);
+  const cb = toDuplicateCandidate(b, venues);
+  if (!ca || !cb || !ca.venueId || !cb.venueId) return false;
+  if (Math.abs(new Date(ca.startDatetime).getTime() - new Date(cb.startDatetime).getTime()) > SAME_EVENT_MAX_START_GAP_MS) return false;
+  return assessDuplicate(ca, cb).confidence === "high";
+}
+
+/**
+ * Folds rows that are the same event from different sources into one group,
+ * so an event takes one place in the queue however many sources list it.
+ * Groups keep the order of their best-ranked row; a likely row pulls its
+ * possible duplicates into its own group. Nothing is merged in the database.
+ */
+export function groupReviewList<T extends ReviewPriorityInput>(list: ReviewPriorityList<T>, venues: Venue[]): GroupedReviewList<T> {
+  const ranked = [...list.likely, ...list.possible];
+  const groups: ReviewGroup<T>[] = [];
+  for (const row of ranked) {
+    const group = groups.find(
+      (g) =>
+        [g.primary, ...g.others].every((member) => member.item.sourceId !== row.item.sourceId) &&
+        isSameEventFromAnotherSource(g.primary.item, row.item, venues),
+    );
+    if (group) group.others.push(row);
+    else groups.push({ primary: row, others: [] });
+  }
+  const likely = groups.filter((g) => g.primary.priority.tier === "likely");
+  const possible = groups.filter((g) => g.primary.priority.tier === "possible");
+  const urgent = (gs: ReviewGroup<T>[]) => gs.filter((g) => [g.primary, ...g.others].some((r) => r.priority.startsWithin72h)).length;
+  const urgentLikelyCount = urgent(likely);
+  const urgentPossibleCount = urgent(possible);
+  return { likely, possible, urgentCount: urgentLikelyCount + urgentPossibleCount, urgentLikelyCount, urgentPossibleCount };
+}
+
+export interface VisibleReview<X> {
+  likelyShown: X[];
+  likelyHidden: X[];
+  /** Possible entries shown only to fill the default view up to `limit` when there are fewer likely ones. */
+  possibleShown: X[];
+  possibleHidden: X[];
+}
+
+/**
+ * The default view: up to `limit` entries (rows or grouped events), likely
+ * ones first. Free slots are filled with the highest-ranked possible entries
+ * so a short likely list does not leave the category-only events out of
+ * sight; the two stay separate lists so the UI can show them with different
+ * certainty.
+ */
+export function splitVisibleReviewRows<X>(list: { likely: X[]; possible: X[] }, limit: number = REVIEW_PRIORITY_DEFAULT_VISIBLE): VisibleReview<X> {
   const likelyShown = list.likely.slice(0, limit);
   const free = Math.max(0, limit - likelyShown.length);
   return {

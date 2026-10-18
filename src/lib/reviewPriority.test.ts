@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { classifyAdminQueueRow } from "./adminQueue";
 import {
   buildReviewPriorityList,
+  groupReviewList,
+  isSameEventFromAnotherSource,
   prioritizeNotInSource,
   scoreReviewPriority,
   splitPastStale,
@@ -414,5 +416,80 @@ describe("prioritizeNotInSource", () => {
     const row = prioritizeNotInSource([twilight], CTX).prioritized.likely[0];
     expect(row.priority.signals.map((s) => s.key)).toEqual(expect.arrayContaining(["dj_or_club_title", "source_category_not_counted"]));
     expect(row.priority.signals.map((s) => s.key)).not.toContain("source_category");
+  });
+});
+
+describe("groupReviewList / isSameEventFromAnotherSource — display-only grouping of the same event from two sources", () => {
+  const VEGA_ROOMS: Venue = { ...venue("v-vega", "VEGA"), rooms: [{ name: "Store VEGA" }, { name: "Lille VEGA" }] };
+  const GVENUES = [...VENUES.filter((v) => v.id !== "v-vega"), VEGA_ROOMS];
+  const GCTX = { ...CTX, venues: GVENUES };
+
+  // The real 2026-10-17 pair: KultuNaut and Poolen both list Boiler Room at Poolen on 11 December.
+  const BR_KN = dq({ id: "br-kn", probableTitle: "Boiler Room", probableVenueName: "Poolen", sourceId: "src-kultunaut", probableStart: "2026-12-11T21:00:00+01:00", detectedLineup: ["Boiler Room"] });
+  const BR_POOLEN = dq({ id: "br-poolen", probableTitle: "Boiler Room", probableVenueName: "Poolen", sourceId: "src-poolen", probableStart: "2026-12-11T21:00:00+01:00", detectedLineup: ["Boiler Room"] });
+
+  it("groups Boiler Room from KultuNaut and Poolen into one entry, keeping both rows", () => {
+    const grouped = groupReviewList(buildReviewPriorityList([BR_KN, BR_POOLEN], GCTX), GVENUES);
+    expect(grouped.likely).toHaveLength(1);
+    expect([grouped.likely[0].primary.item.id, ...grouped.likely[0].others.map((r) => r.item.id)].sort()).toEqual(["br-kn", "br-poolen"]);
+  });
+
+  it("before grouping the pair takes two of the 15 places, after grouping one", () => {
+    const list = buildReviewPriorityList([BR_KN, BR_POOLEN], GCTX);
+    expect(splitVisibleReviewRows(list).likelyShown).toHaveLength(2);
+    expect(splitVisibleReviewRows(groupReviewList(list, GVENUES)).likelyShown).toHaveLength(1);
+  });
+
+  it("never groups different dates (the same series on two nights)", () => {
+    const nextWeek = { ...BR_POOLEN, id: "br-next", probableStart: "2026-12-18T21:00:00+01:00" };
+    expect(isSameEventFromAnotherSource(BR_KN, nextWeek, GVENUES)).toBe(false);
+  });
+
+  it("never groups different rooms at the same venue on the same night", () => {
+    const store = dq({ id: "store", probableTitle: "Rave Night", probableVenueName: "VEGA", probableSubVenue: "Store VEGA", sourceId: "src-kultunaut", detectedLineup: ["DJ A"] });
+    const lille = dq({ id: "lille", probableTitle: "Rave Night", probableVenueName: "VEGA", probableSubVenue: "Lille VEGA", sourceId: "src-billetto", detectedLineup: ["DJ A"] });
+    expect(isSameEventFromAnotherSource(store, lille, GVENUES)).toBe(false);
+  });
+
+  it("never groups two rows from the same source (it may list an early and a late show)", () => {
+    const early = { ...BR_KN, id: "early", probableStart: "2026-12-11T18:00:00+01:00" };
+    expect(isSameEventFromAnotherSource(BR_KN, { ...BR_KN, id: "copy" }, GVENUES)).toBe(false);
+    expect(groupReviewList(buildReviewPriorityList([BR_KN, early], GCTX), GVENUES).likely).toHaveLength(2);
+  });
+
+  it("never groups shows more than two hours apart, even from different sources", () => {
+    const late = { ...BR_POOLEN, id: "late", probableStart: "2026-12-11T23:30:00+01:00" };
+    expect(isSameEventFromAnotherSource(BR_KN, late, GVENUES)).toBe(false);
+  });
+
+  it("never groups on title and night alone: different venues, an unresolved venue or no lineup on either side", () => {
+    expect(isSameEventFromAnotherSource(BR_KN, { ...BR_POOLEN, probableVenueName: "MODULE" }, GVENUES)).toBe(false);
+    expect(isSameEventFromAnotherSource(BR_KN, { ...BR_POOLEN, probableVenueName: "Nowhere Club" }, GVENUES)).toBe(false);
+    expect(isSameEventFromAnotherSource({ ...BR_KN, detectedLineup: [] }, { ...BR_POOLEN, detectedLineup: [] }, GVENUES)).toBe(false);
+  });
+
+  it("never groups different headliners on the same night at the same venue", () => {
+    const a = dq({ id: "a", probableTitle: "Club Night", probableVenueName: "MODULE", sourceId: "src-hvaderpaa", detectedLineup: ["Horst Haller"] });
+    const b = dq({ id: "b", probableTitle: "Club Night", probableVenueName: "MODULE", sourceId: "src-kultunaut", detectedLineup: ["Someone Else"] });
+    expect(isSameEventFromAnotherSource(a, b, GVENUES)).toBe(false);
+  });
+
+  it("puts a possible duplicate inside its likely twin and counts the event once in the 72-hour warning", () => {
+    const soonKn = { ...BR_KN, id: "soon-kn", probableStart: "2026-10-17T21:00:00+02:00" };
+    const soonPoolen = { ...BR_POOLEN, id: "soon-poolen", probableTitle: "Boiler Room", probableStart: "2026-10-17T21:00:00+02:00" };
+    const grouped = groupReviewList(buildReviewPriorityList([soonKn, soonPoolen], GCTX), GVENUES);
+    expect(grouped.likely).toHaveLength(1);
+    expect(grouped.possible).toHaveLength(0);
+    expect(grouped).toMatchObject({ urgentCount: 1, urgentLikelyCount: 1, urgentPossibleCount: 0 });
+  });
+
+  it("keeps the ranked order and never changes the rows", () => {
+    const solo = dq({ id: "solo", probableTitle: "Rave", probableStart: "2026-10-17T22:00:00+02:00" });
+    const list = buildReviewPriorityList([BR_KN, BR_POOLEN, solo], GCTX);
+    const before = JSON.stringify(list);
+    const grouped = groupReviewList(list, GVENUES);
+    expect(grouped.likely.map((g) => g.primary.item.id)).toEqual([list.likely[0].item.id, ...grouped.likely.slice(1).map((g) => g.primary.item.id)]);
+    expect(grouped.likely[0].primary.item.id).toBe("solo");
+    expect(JSON.stringify(list)).toBe(before);
   });
 });

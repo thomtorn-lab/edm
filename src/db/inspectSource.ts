@@ -27,6 +27,7 @@ import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LA
 import { normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
 import {
   buildReviewPriorityList,
+  groupReviewList,
   prioritizeNotInSource,
   splitPastStale,
   splitVisibleReviewRows,
@@ -1657,6 +1658,9 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
         detectedLineup: (r.detected_lineup as string[]) ?? [],
         predictedGenre: r.predicted_genre as GenreSlug | null,
         description: (r.description as string | null) ?? null,
+        probableSubVenue: (r.probable_sub_venue as string | null) ?? null,
+        probableOfficialEventUrl: (r.probable_official_event_url as string | null) ?? null,
+        probableTicketUrl: (r.probable_ticket_url as string | null) ?? null,
       });
     }
     if (category === "past_stale") {
@@ -1743,7 +1747,8 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   // so the list's size, its noise and the known cases can be checked
   // against Production without opening the UI.
   const priorityList = buildReviewPriorityList(insufficientInputs, { venues, sourceTrust, now });
-  const visible = splitVisibleReviewRows(priorityList);
+  const groupedList = groupReviewList(priorityList, venues);
+  const visible = splitVisibleReviewRows(groupedList);
   const summarize = (rows: typeof priorityList.likely) =>
     rows.map(({ item, priority }) => ({
       id: item.id,
@@ -1769,8 +1774,13 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
         startsWithin72hLikely: priorityList.urgentLikelyCount,
         startsWithin72hPossible: priorityList.urgentPossibleCount,
         defaultVisible: REVIEW_PRIORITY_DEFAULT_VISIBLE,
+        likelyEvents: groupedList.likely.length,
+        possibleEvents: groupedList.possible.length,
         defaultViewLikely: visible.likelyShown.length,
         defaultViewPossibleFill: visible.possibleShown.length,
+        groupedDuplicates: [...groupedList.likely, ...groupedList.possible]
+          .filter((g) => g.others.length > 0)
+          .map((g) => ({ title: g.primary.item.probableTitle, rows: [g.primary, ...g.others].map((r) => `${r.item.id} (${r.item.sourceId})`) })),
       },
       null,
       2,

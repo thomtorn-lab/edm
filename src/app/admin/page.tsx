@@ -3,7 +3,7 @@ import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getSources, getVenues } f
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
 import { buildPublishedQueueRows, deriveAdminUnpublishedRows, groupAdminQueueRows } from "@/lib/adminQueue";
-import { buildReviewPriorityList, prioritizeNotInSource, splitPastStale } from "@/lib/reviewPriority";
+import { buildReviewPriorityList, groupReviewList, prioritizeNotInSource, splitPastStale } from "@/lib/reviewPriority";
 import AddEventFromUrl from "@/components/admin/AddEventFromUrl";
 import AdminQueueTabs from "@/components/admin/AdminQueueTabs";
 import EventManager from "@/components/admin/EventManager";
@@ -50,7 +50,8 @@ export default async function AdminPage() {
   const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
   const adminUnpublishedRows = deriveAdminUnpublishedRows(allEvents, venuesById, sourcesById);
   const priorityContext = { venues, sourceTrust: new Map(sources.map((s) => [s.id, s.trustLevel])), now };
-  const priorityList = buildReviewPriorityList(adminQueueGroups.insufficient, priorityContext);
+  // One entry per event: the same night listed by two sources is grouped for display only.
+  const priorityList = groupReviewList(buildReviewPriorityList(adminQueueGroups.insufficient, priorityContext), venues);
   const pastStaleSplit = splitPastStale(adminQueueGroups.past_stale, now);
   const notInSource = prioritizeNotInSource(pastStaleSplit.upcomingNotInSource, priorityContext);
 

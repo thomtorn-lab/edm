@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import AdminQueueTabs from "./AdminQueueTabs";
 import type { AdminQueueGroups, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
-import type { NotInSourceReview, PastStaleSplit, PrioritizedReviewRow, ReviewPriority, ReviewPriorityList } from "@/lib/reviewPriority";
+import type { GroupedReviewList, NotInSourceReview, PastStaleSplit, PrioritizedReviewRow, ReviewPriority, ReviewPriorityList } from "@/lib/reviewPriority";
 
 const { getSearchParams, setSearchParams } = vi.hoisted(() => {
   let params = new URLSearchParams();
@@ -259,14 +259,24 @@ describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
     urgentPossibleCount: 1,
   };
 
-  function renderWith(list: ReviewPriorityList, split?: PastStaleSplit<DiscoveryQueueItem>, notInSource?: NotInSourceReview) {
+  // Ungrouped fixtures: every row is its own event.
+  const asGroups = (list: ReviewPriorityList | GroupedReviewList): GroupedReviewList =>
+    "primary" in (list.likely[0] ?? list.possible[0] ?? { primary: null })
+      ? (list as GroupedReviewList)
+      : {
+          ...list,
+          likely: (list as ReviewPriorityList).likely.map((primary) => ({ primary, others: [] })),
+          possible: (list as ReviewPriorityList).possible.map((primary) => ({ primary, others: [] })),
+        };
+
+  function renderWith(list: ReviewPriorityList | GroupedReviewList, split?: PastStaleSplit<DiscoveryQueueItem>, notInSource?: NotInSourceReview) {
     render(
       <AdminQueueTabs
         groups={EMPTY_GROUPS}
         published={PUBLISHED}
         adminUnpublished={ADMIN_UNPUBLISHED}
         venues={VENUES}
-        priorityList={list}
+        priorityList={asGroups(list)}
         pastStaleSplit={split}
         notInSource={notInSource}
       />,
@@ -337,6 +347,34 @@ describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show all 28 possible" }));
     expect(screen.getByText("The Prodigy")).toBeTruthy();
     expect(within(possibleSection).getAllByTestId("priority-explanation")).toHaveLength(28);
+  });
+
+  it("shows the same event from two sources as one entry naming both sources, with each listing's own actions one click away", () => {
+    const kultunaut = prioritized("dq-br-kn", "Boiler Room");
+    kultunaut.item.sourceName = "KultuNaut";
+    const poolen = prioritized("dq-br-poolen", "Boiler Room");
+    poolen.item.sourceName = "Poolen";
+    const grouped: GroupedReviewList = {
+      likely: [{ primary: kultunaut, others: [poolen] }, ...Array.from({ length: 14 }, (_, i) => ({ primary: prioritized(`dq-g${i}`, `Night ${i}`), others: [] }))],
+      possible: [{ primary: prioritized("dq-prodigy", "The Prodigy", { tier: "possible" }), others: [] }],
+      urgentCount: 0,
+      urgentLikelyCount: 0,
+      urgentPossibleCount: 0,
+    };
+    renderWith(grouped);
+    // 15 likely events in 16 rows: the group takes one place, so no possible row is needed to fill the view.
+    expect(screen.getByRole("tab", { name: "Likely relevant 16" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 16" }));
+    const likelySection = screen.getByRole("region", { name: "Likely relevant" });
+    expect(within(likelySection).getAllByTestId("priority-explanation")).toHaveLength(15);
+    expect(within(likelySection).getAllByText("Boiler Room")).toHaveLength(1);
+    expect(within(likelySection).getByTestId("group-sources").textContent).toContain("Same event from 2 sources: KultuNaut · Poolen");
+    expect(screen.queryByText("The Prodigy")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show the other listing" }));
+    expect(within(likelySection).getAllByText("Boiler Room")).toHaveLength(2);
+    expect(document.getElementById("dq-dq-br-poolen")).toBeTruthy();
+    expect(document.getElementById("dq-dq-br-kn")).toBeTruthy();
   });
 
   it("ranks the upcoming rows the source dropped, collapses the rest and the expired rows, and never calls them cancelled", () => {

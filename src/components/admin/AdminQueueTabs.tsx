@@ -14,7 +14,8 @@ import {
   type PastStaleSplit,
   type PrioritizedReviewRow,
   type ReviewPriority,
-  type ReviewPriorityList,
+  type GroupedReviewList,
+  type ReviewGroup,
 } from "@/lib/reviewPriority";
 
 type Tab = AdminQueueCategory | "likely_relevant" | "published" | "admin_unpublished";
@@ -33,7 +34,7 @@ interface Props {
   adminUnpublished: AdminUnpublishedRow[];
   venues: Venue[];
   /** Ranked likely/possible-relevant rows from Insufficient evidence (see src/lib/reviewPriority.ts). */
-  priorityList?: ReviewPriorityList;
+  priorityList?: GroupedReviewList;
   /** Display split of the Past / stale tab: expired vs still-upcoming rows the source no longer lists. */
   pastStaleSplit?: PastStaleSplit<DiscoveryQueueItem>;
   /** The upcoming-but-no-longer-listed rows, ranked with the same signals as Likely relevant. */
@@ -50,7 +51,7 @@ interface Props {
  */
 const VALID_TABS: Tab[] = ["needs_review", "likely_relevant", "venue_blocked", "insufficient", "rejected", "past_stale", "published", "admin_unpublished"];
 
-const EMPTY_PRIORITY_LIST: ReviewPriorityList = { likely: [], possible: [], urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 };
+const EMPTY_PRIORITY_LIST: GroupedReviewList = { likely: [], possible: [], urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 };
 
 export default function AdminQueueTabs({
   groups,
@@ -147,7 +148,7 @@ export default function AdminQueueTabs({
   );
 }
 
-function urgentSentence(list: ReviewPriorityList): string {
+function urgentSentence(list: GroupedReviewList): string {
   const parts: string[] = [];
   if (list.urgentLikelyCount > 0) parts.push(`${list.urgentLikelyCount} likely relevant`);
   if (list.urgentPossibleCount > 0) parts.push(`${list.urgentPossibleCount} possible`);
@@ -207,6 +208,57 @@ function PrioritizedQueue({ rows, venues, emptyMessage }: { rows: PrioritizedRev
   );
 }
 
+/** Display name of a row's source, e.g. "KultuNaut" — falls back to the source id. */
+function sourceLabel(row: PrioritizedReviewRow): string {
+  return row.item.sourceName || row.item.sourceId || "admin";
+}
+
+/**
+ * The same event listed by more than one source, shown as one queue entry:
+ * the best-ranked row with all its sources named, and every other source's
+ * row one click away with its own actions. Nothing is merged.
+ */
+function GroupSources({ group, venues }: { group: ReviewGroup; venues: Venue[] }) {
+  const [open, setOpen] = useState(false);
+  const all = [group.primary, ...group.others];
+  return (
+    <div className="mt-2 rounded-md border border-border px-3 py-2 text-xs" data-testid="group-sources">
+      <p className="text-text-secondary">
+        Same event from {all.length} sources: <strong>{all.map(sourceLabel).join(" · ")}</strong>. Each listing keeps its own actions.
+      </p>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="mt-1 font-semibold text-accent-strong underline decoration-dotted underline-offset-2">
+        {open ? "Hide" : "Show"} the other {group.others.length === 1 ? "listing" : `${group.others.length} listings`}
+      </button>
+      {open && (
+        <div className="mt-2 border-l-2 border-border pl-3">
+          <PrioritizedQueue rows={group.others} venues={venues} emptyMessage="" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupedQueue({ groups, venues, emptyMessage }: { groups: ReviewGroup[]; venues: Venue[]; emptyMessage: string }) {
+  const byId = new Map(groups.map((g) => [g.primary.item.id, g]));
+  return (
+    <DiscoveryQueue
+      items={groups.map((g) => g.primary.item)}
+      venues={venues}
+      emptyMessage={emptyMessage}
+      annotate={(item) => {
+        const group = byId.get(item.id);
+        if (!group) return null;
+        return (
+          <>
+            <PriorityExplanation priority={group.primary.priority} />
+            {group.others.length > 0 && <GroupSources group={group} venues={venues} />}
+          </>
+        );
+      }}
+    />
+  );
+}
+
 const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide";
 
 /**
@@ -216,7 +268,7 @@ const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide";
  * The default view shows up to 15 rows, likely ones first; free slots go to
  * the best possible rows, in their own clearly marked section.
  */
-function LikelyRelevantList({ list, venues }: { list: ReviewPriorityList; venues: Venue[] }) {
+function LikelyRelevantList({ list, venues }: { list: GroupedReviewList; venues: Venue[] }) {
   const [showAllLikely, setShowAllLikely] = useState(false);
   const [showAllPossible, setShowAllPossible] = useState(false);
   const visible = splitVisibleReviewRows(list);
@@ -232,7 +284,7 @@ function LikelyRelevantList({ list, venues }: { list: ReviewPriorityList; venues
       <section aria-label="Likely relevant">
         <h3 className={`${SECTION_HEADING} text-accent-strong`}>Likely relevant ({list.likely.length})</h3>
         <p className="mt-1 mb-2 text-xs text-text-tertiary">Backed by a genre, DJ/rave/club wording or a primarily electronic venue.</p>
-        <PrioritizedQueue rows={likelyRows} venues={venues} emptyMessage="No likely relevant rows right now." />
+        <GroupedQueue groups={likelyRows} venues={venues} emptyMessage="No likely relevant rows right now." />
         {visible.likelyHidden.length > 0 && (
           <button type="button" onClick={() => setShowAllLikely((v) => !v)} className="mt-2 text-xs font-semibold text-accent-strong underline decoration-dotted underline-offset-2">
             {showAllLikely ? `Show the top ${REVIEW_PRIORITY_DEFAULT_VISIBLE} only` : `Show all ${list.likely.length} likely relevant`}
@@ -249,7 +301,7 @@ function LikelyRelevantList({ list, venues }: { list: ReviewPriorityList; venues
           these, and that category also contains concerts that are not electronic — check the artist first.
           {visible.possibleShown.length > 0 && !showAllPossible && " Shown here because there are fewer than 15 likely relevant rows."}
         </p>
-        <PrioritizedQueue rows={possibleRows} venues={venues} emptyMessage="No possible rows shown — open the full list below." />
+        <GroupedQueue groups={possibleRows} venues={venues} emptyMessage="No possible rows shown — open the full list below." />
         {list.possible.length > possibleRows.length || showAllPossible ? (
           <button
             type="button"
