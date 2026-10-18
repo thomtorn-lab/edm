@@ -64,6 +64,7 @@ const {
   getArtistPreviewAvailabilityForLineups,
   getSoundcloudLinksForLineup,
   getSoundcloudAvailabilityForEvents,
+  getRecentSyncIdentityChanges,
 } = await import("./queries");
 
 /** A complete row for `table` with type-appropriate defaults, keyed by DB column name. */
@@ -251,5 +252,39 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
     await expect(getSoundcloudLinksForLineup("e-1", ["GUY J"])).resolves.toEqual([]);
     fakeClient.query.mockRejectedValueOnce(new Error("relation does not exist"));
     await expect(getSoundcloudAvailabilityForEvents([{ id: "e-1", artists: ["GUY J"] }])).resolves.toEqual([false]);
+  });
+});
+
+describe("admin data-quality change lookup (getRecentSyncIdentityChanges)", () => {
+  it("reads only recent, sync-made date/venue/URL changes, with five narrow columns", async () => {
+    tableRows.event_change_log = [
+      row(schema.eventChangeLog, {
+        id: "log-1",
+        event_id: "e-7208d716",
+        changed_by: "src-pumpehuset",
+        change_type: "sync",
+        fields_changed: ["officialEventUrl", "startDatetime", "dateChanged"],
+        created_at: "2026-10-14 12:29:49+00",
+      }),
+    ];
+
+    const result = await getRecentSyncIdentityChanges(14);
+
+    const query = sent.find((q) => /from "event_change_log"/i.test(q.text));
+    expect(query).toBeDefined();
+    expect(selectedColumns(query!.text)).toEqual(["event_id", "changed_by", "change_type", "fields_changed", "created_at"]);
+    expect(query!.text).toMatch(/"created_at" >= \$1/);
+    expect(query!.text).toMatch(/"changed_by" <> \$2/);
+    expect(query!.values[1]).toBe("admin");
+    expect(query!.text).toContain("ARRAY['startDatetime', 'venueId', 'officialEventUrl']::text[]");
+    expect(result).toEqual([
+      {
+        eventId: "e-7208d716",
+        changedBy: "src-pumpehuset",
+        changeType: "sync",
+        fieldsChanged: ["officialEventUrl", "startDatetime", "dateChanged"],
+        createdAt: "2026-10-14T12:29:49.000Z",
+      },
+    ]);
   });
 });

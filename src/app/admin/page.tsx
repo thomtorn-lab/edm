@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getSources, getVenues } from "@/lib/queries";
+import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getRecentSyncIdentityChanges, getSources, getVenues } from "@/lib/queries";
+import { buildDataQualityReport } from "@/lib/dataQuality";
+import DataQualityPanel from "@/components/admin/DataQualityPanel";
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
 import { buildPublishedQueueRows, deriveAdminUnpublishedRows, groupAdminQueueRows } from "@/lib/adminQueue";
@@ -32,11 +34,12 @@ const HEALTH_COLOR: Record<string, string> = {
 
 export default async function AdminPage() {
   const now = new Date();
-  const [sources, discoveryQueueRows, venues, allEvents] = await Promise.all([
+  const [sources, discoveryQueueRows, venues, allEvents, recentIdentityChanges] = await Promise.all([
     getSources(),
     getDiscoveryQueueForAdmin(),
     getVenues(),
     getAllEventsAdmin(),
+    getRecentSyncIdentityChanges(),
   ]);
 
   const pendingItems = discoveryQueueRows.filter((item) => item.status === "pending");
@@ -44,6 +47,8 @@ export default async function AdminPage() {
   const sourceLastCompleteSync = new Map(sources.map((s) => [s.id, s.lastCompleteSyncAt]));
   const venuesById = new Map(venues.map((v) => [v.id, v]));
   const sourcesById = new Map(sources.map((s) => [s.id, s]));
+
+  const dataQualityReports = buildDataQualityReport(allEvents, recentIdentityChanges, now);
 
   const adminQueueGroups = groupAdminQueueRows(pendingItems, sourceLastCompleteSync, now);
   const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
@@ -78,6 +83,19 @@ export default async function AdminPage() {
         </p>
         <div className="mt-3">
           <AdminQueueTabs groups={adminQueueGroups} published={publishedRows} adminUnpublished={adminUnpublishedRows} venues={venues} />
+        </div>
+      </section>
+
+      <section id="data-quality" className="mt-12">
+        <h2 className="text-sm font-semibold text-text-primary">
+          Data quality <span className="tabular-nums text-text-tertiary">{dataQualityReports.length}</span>
+        </h2>
+        <p className="mt-1 text-xs text-text-secondary">
+          Upcoming events with an end time that cannot be right or may make them leave the site early, or whose date,
+          venue or official URL a sync keeps changing. Nothing is changed automatically — open the event below to correct it.
+        </p>
+        <div className="mt-3">
+          <DataQualityPanel reports={dataQualityReports} />
         </div>
       </section>
 
