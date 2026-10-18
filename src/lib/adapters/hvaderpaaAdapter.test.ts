@@ -541,3 +541,29 @@ describe("createHvaderpaaAdapter (end-to-end fetchCandidates, mocked fetch)", ()
     expect(adapter.lastFetchWasComplete!()).toBe(false);
   });
 });
+
+describe("performer names are not genre evidence (genre QA, 2026-10-17)", () => {
+  const page = (name: string, description: string, performers: string[]) =>
+    `<script type="application/ld+json">${JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Event",
+      name,
+      startDate: "2026-12-04T23:59:00+01:00",
+      location: { "@type": "Place", name: "MODULE" },
+      description,
+      performer: performers.map((p) => ({ "@type": "Person", name: p })),
+    })}</script>`;
+
+  it("a performer named PAB DISCO never makes the event disco", () => {
+    const c = parseEventJsonLd(page("PAB DISCO X MODULE", "PAB DISCO og Anna på MODULE i København.", ["PAB DISCO", "Anna"]), "https://hvaderpaa.dk/da/event/1/");
+    expect(c!.genreHint).toBeNull();
+    expect(c!.lineupNamesAreStructured).toBe(true);
+  });
+
+  it("the event's own genre words are kept, and the generic 'elektronisk' rule is unchanged", () => {
+    const disco = parseEventJsonLd(page("PAB DISCO X MODULE", "En aften med disco og PAB DISCO.", ["PAB DISCO"]), "https://hvaderpaa.dk/da/event/2/");
+    expect(disco!.genreHint).toBe("disco");
+    const generic = parseEventJsonLd(page("PAB DISCO X MODULE", "Elektronisk klubaften med PAB DISCO.", ["PAB DISCO"]), "https://hvaderpaa.dk/da/event/3/");
+    expect(generic!.genreHint).toBe("electronic-other");
+  });
+});

@@ -638,6 +638,84 @@ describe("attributeGenreToRoom — room-attribution guard", () => {
   });
 });
 
+describe("artist names are not genre evidence — PAB DISCO (genre QA, 2026-10-17)", () => {
+  const OCT13_LISTING = readFileSync(path.join(__dirname, "__fixtures__", "culture-box-events-2026-10-13.html"), "utf-8");
+  const DEC5_URL = "https://culture-box.com/event/sat-5-december-2026/";
+
+  it("attributeGenreToRoom: the real 5 Dec paragraph naming Pab Disco credits no genre", () => {
+    const paragraph =
+      "His signature style has taken him from the intimate booths of Fusion and Garbicz to the global stages of Mayan Warrior and MAXA. Setting the tone is MISS ALBA, while Pab Disco takes the Black Box through to the final track.";
+    expect(attributeGenreToRoom([paragraph], ["FABIAN KROOSS", "PAB DISCO", "MISS ALBA"], ["AMA LIEN", "SONYDIAM"])).toBeNull();
+  });
+
+  it("attributeGenreToRoom: an explicit genre word next to the same name is still credited", () => {
+    const paragraph = "Pab Disco brings two hours of disco classics to the Black Box.";
+    expect(attributeGenreToRoom([paragraph], ["PAB DISCO"], ["AMA LIEN"])).toBe("disco");
+  });
+
+  it("attributeGenreToRoom: unrelated rooms and names behave exactly as before", () => {
+    expect(attributeGenreToRoom(["KALLAX and REXXX M bring raw techno to the Black Box."], ["KALLAX", "REXXX M"], ["SHK"])).toBe("techno");
+  });
+
+  it("5 Dec end-to-end (real listing + detail page): no disco from the room attribution or the pipeline fallback", async () => {
+    const night = parseCultureBoxEventsHtml(OCT13_LISTING).find((e) => e.officialEventUrl === DEC5_URL)!;
+    expect(night.artists).toContain("PAB DISCO");
+    expect(night.lineupNamesAreStructured).toBe(true);
+    const fetchImpl = async (url: string | URL) =>
+      String(url) === DEC5_URL ? new Response(loadDetailFixture("sat-5-december-2026"), { status: 200 }) : new Response("", { status: 404 });
+    const [enriched] = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+    expect(enriched.genreHint).toBeNull();
+    // src/db/sync.ts passes trustedElectronicSource for Culture Box.
+    const result = runIngestionPipeline(enriched, { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    expect(result.genre).toBeNull();
+    // Still auto-published (trusted electronic source), just without an invented genre.
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("5 Dec end-to-end, counter-example: when the venue's own text independently says the night is disco, it is still disco (high, auto-published)", async () => {
+    const night = parseCultureBoxEventsHtml(OCT13_LISTING).find((e) => e.officialEventUrl === DEC5_URL)!;
+    // The real detail page, with one independent sentence added to the
+    // night's own description: "disco" now stands on its own, not inside a name.
+    const html = loadDetailFixture("sat-5-december-2026").replace(
+      "Setting the tone is",
+      "Expect a night of classic disco and nu-disco in the Black Box. Setting the tone is",
+    );
+    expect(html).toContain("classic disco and nu-disco");
+    const fetchImpl = async (url: string | URL) => (String(url) === DEC5_URL ? new Response(html, { status: 200 }) : new Response("", { status: 404 }));
+    const [enriched] = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+    const result = runIngestionPipeline(enriched, { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    expect(result.genre).toBe("disco");
+    expect(result.genreConfidence).toBe("high");
+    expect(result.decision).toBe("auto_publish");
+  });
+
+  it("relevance and publish decision are unchanged by the mask; only the genre differs", async () => {
+    const night = parseCultureBoxEventsHtml(OCT13_LISTING).find((e) => e.officialEventUrl === DEC5_URL)!;
+    const fetchImpl = async () => new Response(loadDetailFixture("sat-5-december-2026"), { status: 200 });
+    const [enriched] = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+    const masked = runIngestionPipeline(enriched, { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+    // The same candidate as the old code saw it: no structured-lineup flag, adapter hint "disco"/high.
+    const unmasked = runIngestionPipeline(
+      { ...enriched, lineupNamesAreStructured: false, genreHint: "disco", genreConfidenceHint: "high" },
+      { venues: VENUES, existingEvents: [], trustedElectronicSource: true },
+    );
+    expect(unmasked.genre).toBe("disco");
+    expect(masked.genre).toBeNull();
+    expect(masked.relevance).toBe(unmasked.relevance);
+    expect(masked.decision).toBe(unmasked.decision);
+  });
+
+  it("2 Oct end-to-end (recorded fixture): Pab Disco no longer makes the night disco", async () => {
+    const url = "https://culture-box.com/event/fri-2-october-2026/";
+    const night = parseCultureBoxEventsHtml(FIXTURE_HTML).find((e) => e.officialEventUrl === url)!;
+    const fetchImpl = async (u: string | URL) =>
+      String(u) === url ? new Response(loadDetailFixture("fri-2-october-2026"), { status: 200 }) : new Response("", { status: 404 });
+    const [enriched] = await enrichCandidatesWithDetailPages([night], fetchImpl as unknown as typeof fetch, 0, 0);
+    expect(enriched.genreHint).toBeNull();
+    expect(runIngestionPipeline(enriched, { venues: VENUES, existingEvents: [] }).genre).not.toBe("disco");
+  });
+});
+
 describe("enrichCandidatesWithDetailPages — orchestration", () => {
   function fetchImplFor(urlToHtml: Record<string, string>) {
     return async (url: string | URL) => {
@@ -768,8 +846,13 @@ describe("createCultureBoxAdapter — full two-stage integration against all rea
     // (either from a showcase title both rooms agree on, or the detail
     // page's own prose crediting the night's now-merged lineup — see
     // "attributeGenreToRoom" above for why consolidation can resolve a case
-    // that used to stay unresolved, e.g. fri-21-august-2026).
-    expect(highConfidence.length).toBe(12);
+    // that used to stay unresolved, e.g. fri-21-august-2026). Was 12 until
+    // genre QA (2026-10-17): fri-2-october-2026 only ever resolved to disco
+    // from the artist name "Pab Disco" ("…Jakob de Wittig and Pab Disco…"),
+    // which is not genre evidence, so it now stays unresolved.
+    expect(highConfidence.length).toBe(11);
+    const oct2 = candidates.find((c) => c.officialEventUrl === "https://culture-box.com/event/fri-2-october-2026/")!;
+    expect(oct2.genreHint).toBeNull();
     for (const c of highConfidence) {
       expect(runIngestionPipeline(c, { venues: VENUES, existingEvents: [] }).decision).toBe("auto_publish");
     }

@@ -19,22 +19,38 @@ function CalendarIcon() {
   );
 }
 
+const ROW_BUTTON_CLASSES =
+  "inline-flex min-h-[2.25rem] items-center gap-1.5 rounded border border-border-strong px-2.5 py-1 text-[11px] font-medium text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary";
+
 /**
  * Compact "Add to calendar" action reused on every listing row and the
  * event detail page. One responsive DOM structure: the options panel is a
  * full-width bottom sheet below `sm`, and a small anchored dropdown at
  * `sm` and up — no separate mobile/desktop components to keep in sync.
+ *
+ * The event detail page (event-page action layout, 2026-10-17) uses it as a
+ * labelled button: `buttonClassName` replaces the row's small-icon styling,
+ * `labelAlwaysVisible` keeps the text on mobile too, and `menuAlign="start"`
+ * anchors the desktop dropdown to the button's left edge so it never opens
+ * past the left of the page's content column. All three default to the
+ * listing rows' existing behaviour.
  */
 export default function AddToCalendar({
   event,
   icsHref,
   label = "Add to calendar",
   compact = false,
+  labelAlwaysVisible = false,
+  buttonClassName = ROW_BUTTON_CLASSES,
+  menuAlign = "end",
 }: {
   event: CalendarEventInput;
   icsHref: string;
   label?: string;
   compact?: boolean;
+  labelAlwaysVisible?: boolean;
+  buttonClassName?: string;
+  menuAlign?: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -72,10 +88,10 @@ export default function AddToCalendar({
         // on mobile before this fix (QA audit, 2026-08-29).
         aria-label={label}
         title={label}
-        className="inline-flex min-h-[2.25rem] items-center gap-1.5 rounded border border-border-strong px-2.5 py-1 text-[11px] font-medium text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary"
+        className={buttonClassName}
       >
         <CalendarIcon />
-        <span className={compact ? "hidden" : "hidden sm:inline"}>{label}</span>
+        <span className={compact ? "hidden" : labelAlwaysVisible ? undefined : "hidden sm:inline"}>{label}</span>
       </button>
 
       {open && (
@@ -88,7 +104,7 @@ export default function AddToCalendar({
           <div
             role="menu"
             aria-label={label}
-            className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl border-t border-border bg-surface-2 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg sm:absolute sm:inset-auto sm:bottom-auto sm:end-0 sm:top-full sm:mt-1 sm:w-52 sm:rounded sm:border sm:p-1.5 sm:pb-1.5 sm:shadow-xl"
+            className={`fixed inset-x-0 bottom-0 z-50 rounded-t-xl border-t border-border bg-surface-2 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg sm:absolute sm:inset-auto sm:bottom-auto ${menuAlign === "start" ? "sm:start-0" : "sm:end-0"} sm:top-full sm:mt-1 sm:w-52 sm:rounded sm:border sm:p-1.5 sm:pb-1.5 sm:shadow-xl`}
           >
             <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary sm:hidden">
               {label}

@@ -551,6 +551,18 @@ describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link 
   });
 });
 
+describe("genre QA (2026-10-17): no automatic change to an already-published genre", () => {
+  it("a re-sync whose genre no longer resolves (artist-name keyword removed) leaves the published genre untouched", () => {
+    // e-3699a789 (Culture Box, 5 Dec) is published as disco from "PAB DISCO".
+    // After the fix the night resolves to no genre; sync only ever patches a
+    // genre it actually resolved, so the editorial correction stays manual.
+    const existing = target({ canonicalSourceId: "src-culture-box", primaryGenre: "disco" });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-culture-box" }), { ...resolved, genre: null }, existing);
+    expect(patch).not.toHaveProperty("primaryGenre");
+    expect(patch).not.toHaveProperty("subgenres");
+  });
+});
+
 describe("buildDiscoveryQueueClassificationPatch", () => {
   // Real production cases (verified against the live Preview database): both
   // rows sat unresolved (predicted_genre: null) across a prior sync because

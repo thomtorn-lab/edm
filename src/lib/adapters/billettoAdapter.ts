@@ -1,5 +1,5 @@
 import { genreConfidenceForEvidence } from "../classification";
-import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -300,7 +300,9 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
   let genreHint: GenreSlug | null = categoryGenre;
   let genreConfidenceHint = categoryGenre ? genreConfidenceForEvidence("official-source-metadata") : null;
   if (!genreHint) {
-    const textGenre = deterministicGenreFromText(`${title} ${description ?? ""}`);
+    // Headliner names (Billetto's structured headliners) are not genre
+    // evidence (genre QA, 2026-10-17); see maskLineupNamesWithGenreKeywords.
+    const textGenre = deterministicGenreFromText(maskLineupNamesWithGenreKeywords(`${title} ${description ?? ""}`, artists, title));
     if (textGenre) {
       genreHint = textGenre;
       // Billetto gave its own categorization for this event but it did NOT
@@ -336,6 +338,7 @@ export function mapBillettoEvent(event: BillettoEvent): RawCandidateEvent | null
     title,
     description,
     artists,
+    lineupNamesAreStructured: true, // Billetto's structured headliners (genre QA, 2026-10-17)
     startDatetime: event.startdate,
     endDatetime: event.enddate ?? null,
     venueName: event.location?.location_name?.trim() || null,

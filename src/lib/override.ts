@@ -60,3 +60,92 @@ export function stripOverriddenFields<T extends Record<string, unknown>>(
   }
   return result;
 }
+
+/**
+ * How one field of an admin save relates to the value already stored
+ * (editorial screening, priority 1 — 2026-10-17). Every admin form posts
+ * its whole editor (AddEventFromUrl, DiscoveryQueue "Save edit"), so the
+ * patch alone can't tell an edited field from one that was only displayed.
+ *   - "changed":   the admin entered a different, non-empty value
+ *   - "cleared":   a stored value was deliberately emptied (null/""/[])
+ *   - "unchanged": the submitted value equals what is already stored
+ * Only "changed" and "cleared" fields are written and newly protected.
+ */
+export type AdminFieldChange = "changed" | "cleared" | "unchanged";
+
+function isEmptyValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function asDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function normalizeForCompare(value: unknown): unknown {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) return value.map((v) => (typeof v === "string" ? v.trim() : v));
+  return value;
+}
+
+/**
+ * True when two stored/submitted values mean the same thing. Timestamps: the
+ * admin datetime-local inputs can't express seconds, so a submitted value
+ * that sits exactly on a minute (:00.000) equals a stored value anywhere in
+ * that same minute — a round-trip artefact of the form, never an edit. Any
+ * submitted value carrying its own seconds/milliseconds (a script, an API
+ * client) must match exactly. An unparseable value never equals anything.
+ */
+export function adminValuesEqual(stored: unknown, submitted: unknown): boolean {
+  if (isEmptyValue(stored) && isEmptyValue(submitted)) return true;
+  if (isEmptyValue(stored) !== isEmptyValue(submitted)) return false;
+  if (stored instanceof Date || submitted instanceof Date) {
+    const a = asDate(stored);
+    const b = asDate(submitted);
+    if (!a || !b) return false;
+    if (a.getTime() === b.getTime()) return true;
+    const submittedOnMinute = b.getTime() % 60_000 === 0;
+    return submittedOnMinute && Math.floor(a.getTime() / 60_000) === b.getTime() / 60_000;
+  }
+  return JSON.stringify(normalizeForCompare(stored)) === JSON.stringify(normalizeForCompare(submitted));
+}
+
+export function classifyAdminFieldChange(stored: unknown, submitted: unknown): AdminFieldChange {
+  if (adminValuesEqual(stored, submitted)) return "unchanged";
+  return isEmptyValue(submitted) ? "cleared" : "changed";
+}
+
+/**
+ * Splits an admin patch against the stored row. `effectivePatch` keeps only
+ * changed/cleared fields (plus any `alwaysTouched` key present in the patch,
+ * for control fields whose write has side effects of its own). Existing
+ * overrides are never removed here — callers merge `touchedFields` into the
+ * stored list with addOverriddenFields.
+ */
+export function partitionAdminPatch<T extends object>(
+  stored: object,
+  patch: T,
+  options: { alwaysTouched?: readonly string[] } = {},
+): { effectivePatch: Partial<T>; touchedFields: string[]; changed: string[]; cleared: string[]; unchanged: string[] } {
+  const alwaysTouched = new Set(options.alwaysTouched ?? []);
+  const effectivePatch: Partial<T> = {};
+  const changed: string[] = [];
+  const cleared: string[] = [];
+  const unchanged: string[] = [];
+  const storedValues = stored as Record<string, unknown>;
+  for (const key of Object.keys(patch) as (keyof T & string)[]) {
+    const kind = classifyAdminFieldChange(storedValues[key], patch[key]);
+    if (kind === "changed") changed.push(key);
+    else if (kind === "cleared") cleared.push(key);
+    else unchanged.push(key);
+    if (kind !== "unchanged" || alwaysTouched.has(key)) effectivePatch[key] = patch[key];
+  }
+  return { effectivePatch, touchedFields: Object.keys(effectivePatch), changed, cleared, unchanged };
+}
