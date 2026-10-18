@@ -10,10 +10,10 @@
  *
  * Rendered inside the event page's "Get a taste" section (event-page action
  * layout, 2026-10-17), which owns the section heading and the `#video`
- * anchor — so this component has no heading of its own. The artist the
- * video is for is a discreet caption under the player instead: nothing on
- * the page says whose video it is otherwise (YouTube's own title only shows
- * inside the player), and a caption is the conventional, quiet place for it.
+ * anchor — so this component has no heading of its own. No artist caption
+ * under the player either (removed 2026-10-18): the YouTube player already
+ * shows the video's own title/channel, and the extra line was visual noise.
+ * `artistName` stays only as the iframe's accessible-title fallback.
  */
 export default function ArtistVideoPreview({
   artistName,
@@ -25,18 +25,15 @@ export default function ArtistVideoPreview({
   videoTitle: string | null;
 }) {
   return (
-    <figure className="mt-3">
-      <div className="aspect-video w-full overflow-hidden rounded border border-border-strong bg-black">
-        <iframe
-          className="h-full w-full"
-          src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-          title={videoTitle ?? `${artistName} video preview`}
-          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerPolicy="strict-origin-when-cross-origin"
-          allowFullScreen
-        />
-      </div>
-      <figcaption className="mt-2 text-xs text-text-tertiary">{artistName}</figcaption>
-    </figure>
+    <div className="mt-3 aspect-video w-full overflow-hidden rounded border border-border-strong bg-black">
+      <iframe
+        className="h-full w-full"
+        src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+        title={videoTitle ?? `${artistName} video preview`}
+        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerPolicy="strict-origin-when-cross-origin"
+        allowFullScreen
+      />
+    </div>
   );
 }
