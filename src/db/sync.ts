@@ -588,6 +588,9 @@ async function runSourceSyncLocked(
             // ENRICHMENT doc comment. This run's own fresh extraction,
             // straight from the adapter, independent of dedupKey.
             officialEventUrl: raw.officialEventUrl,
+            // RA link integrity, 2026-10-17 — see the RA-REFERENCE FILL in
+            // buildDiscoveryQueueClassificationPatch.
+            residentAdvisorUrl: raw.residentAdvisorUrl,
           },
           {
             status: existingPending.status,
@@ -603,6 +606,7 @@ async function runSourceSyncLocked(
             holdReason: existingPending.holdReason as HoldReason,
             probableTicketUrl: existingPending.probableTicketUrl,
             probableOfficialEventUrl: existingPending.probableOfficialEventUrl,
+            probableResidentAdvisorUrl: existingPending.probableResidentAdvisorUrl,
           },
         );
         // lastSeenAt is unconditional — this candidate's own sourceUrl was
@@ -671,6 +675,13 @@ async function runSourceSyncLocked(
         // (admin/manual-event work package, 2026-08-24).
         probableEnd: raw.endDatetime ? new Date(raw.endDatetime) : null,
         probableTicketUrl: raw.ticketUrl,
+        // RA link integrity, 2026-10-17: the adapter's RA reference (e.g.
+        // HvadErPå's offers.url) was dropped here, so a reviewer never saw it
+        // and publishDiscoveryItem had nothing to carry over. It stays a
+        // reference only. publishDiscoveryItem copies it to
+        // residentAdvisorUrl, never ticketUrl, and links.ts never shows a
+        // bare RA reference as a CTA.
+        probableResidentAdvisorUrl: raw.residentAdvisorUrl,
         // Pylonen DQ identity stabilization, 2026-09-13 — for a source with
         // stableSourceUrl set, sourceUrl (== dedupKey, just below) is the
         // row's identity, not a real officialEventUrl for display; this is
