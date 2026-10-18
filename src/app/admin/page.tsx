@@ -5,6 +5,8 @@ import DataQualityPanel from "@/components/admin/DataQualityPanel";
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
 import { buildPublishedQueueRows, deriveAdminUnpublishedRows, groupAdminQueueRows } from "@/lib/adminQueue";
+import { buildReviewPriorityList, groupReviewList, prioritizeNotInSource, splitPastStale } from "@/lib/reviewPriority";
+import { buildSeriesIndex } from "@/lib/seriesMemory";
 import AddEventFromUrl from "@/components/admin/AddEventFromUrl";
 import AdminQueueTabs from "@/components/admin/AdminQueueTabs";
 import EventManager from "@/components/admin/EventManager";
@@ -53,6 +55,13 @@ export default async function AdminPage() {
   const adminQueueGroups = groupAdminQueueRows(pendingItems, sourceLastCompleteSync, now);
   const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
   const adminUnpublishedRows = deriveAdminUnpublishedRows(allEvents, venuesById, sourcesById);
+  // Series memory reads the events already loaded for "All events" — no extra query.
+  const seriesIndex = buildSeriesIndex(allEvents, venues);
+  const priorityContext = { venues, sourceTrust: new Map(sources.map((s) => [s.id, s.trustLevel])), now, seriesIndex };
+  // One entry per event: the same night listed by two sources is grouped for display only.
+  const priorityList = groupReviewList(buildReviewPriorityList(adminQueueGroups.insufficient, priorityContext), venues);
+  const pastStaleSplit = splitPastStale(adminQueueGroups.past_stale, now);
+  const notInSource = prioritizeNotInSource(pastStaleSplit.upcomingNotInSource, priorityContext);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -82,7 +91,15 @@ export default async function AdminPage() {
           (admin Discovery Queue cleanup, 2026-09-06).
         </p>
         <div className="mt-3">
-          <AdminQueueTabs groups={adminQueueGroups} published={publishedRows} adminUnpublished={adminUnpublishedRows} venues={venues} />
+          <AdminQueueTabs
+            groups={adminQueueGroups}
+            published={publishedRows}
+            adminUnpublished={adminUnpublishedRows}
+            venues={venues}
+            priorityList={priorityList}
+            pastStaleSplit={pastStaleSplit}
+            notInSource={notInSource}
+          />
         </div>
       </section>
 
