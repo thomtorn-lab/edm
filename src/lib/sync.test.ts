@@ -17,6 +17,10 @@ import {
 } from "./sync";
 import { stripOverriddenFields } from "./override";
 import type { RawCandidateEvent } from "./adapters/types";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { parseKultunautDetailHtml } from "./adapters/kultunautAdapter";
+import { scoreReviewPriority } from "./reviewPriority";
 
 function raw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
   return {
@@ -548,6 +552,85 @@ describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link 
 
   it("call sites that pass no stored value (undefined) never fill", () => {
     expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, residentAdvisorUrl: RA }, pendingDiscoveryTarget(settled))).toEqual({});
+  });
+});
+
+describe("buildDiscoveryQueueClassificationPatch — DESCRIPTION FILL (2026-10-23)", () => {
+  const fixture = (arrNr: string) =>
+    parseKultunautDetailHtml(readFileSync(path.join(__dirname, "adapters", "__fixtures__", `kultunaut-detail-${arrNr}.html`), "utf-8"), arrNr);
+  const NYX = fixture("20035096").description!;
+  const AMAGER_BIO_BOILERPLATE = fixture("19456289").description!;
+  const sameGenre = { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" } as const;
+  const settled = { holdReason: "no_genre_evidence" as const };
+
+  it("fills an empty description from this run's adapter text, and nothing else", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, description: null }))).toEqual({
+      description: NYX,
+    });
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, description: "  " }))).toEqual({
+      description: NYX,
+    });
+  });
+
+  it("never overwrites an existing description", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, description: "Stored text" })),
+    ).toEqual({});
+  });
+
+  it("never fills a description an admin edited or deliberately cleared", () => {
+    for (const description of [null, "Admin's own text"]) {
+      expect(
+        buildDiscoveryQueueClassificationPatch(
+          { ...sameGenre, description: NYX },
+          pendingDiscoveryTarget({ ...settled, description, overriddenFields: ["description"] }),
+        ),
+      ).toEqual({});
+    }
+  });
+
+  it("never stores the venue's practical boilerplate alone (Gloryhammer at Amager Bio)", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: AMAGER_BIO_BOILERPLATE }, pendingDiscoveryTarget({ ...settled, description: null })),
+    ).toEqual({});
+  });
+
+  it("an empty fresh description, or a call site that passes no stored value, never fills", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: null }, pendingDiscoveryTarget({ ...settled, description: null }))).toEqual({});
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget(settled))).toEqual({});
+  });
+
+  it("never touches genre, confidence or hold reason, and never fills a resolved (non-pending) row", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, description: NYX },
+      pendingDiscoveryTarget({ ...settled, predictedGenre: "techno", genreConfidence: "medium", overriddenFields: ["predictedGenre"], description: null }),
+    );
+    // An admin-chosen genre freezes the classification refresh entirely; the fill rides along with it.
+    expect(patch).toEqual({});
+    expect(
+      buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, status: "ignored", description: null })),
+    ).toEqual({});
+  });
+
+  it("a filled description reaches the review-priority signals that read it", () => {
+    const slayyyter = fixture("19768459").description!;
+    const { description } = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, description: slayyyter },
+      pendingDiscoveryTarget({ ...settled, description: null }),
+    );
+    const row = {
+      id: "dq-x",
+      probableTitle: "Slayyyter - wor$t girl in the world tour",
+      probableStart: "2026-10-22T19:00:00+02:00",
+      probableEnd: null,
+      probableVenueName: "VEGA",
+      sourceId: "src-kultunaut",
+      detectedLineup: [],
+      predictedGenre: null,
+    };
+    const ctx = { venues: [], sourceTrust: new Map(), now: new Date("2026-10-01T12:00:00+02:00") };
+    expect(scoreReviewPriority({ ...row, description: null }, ctx).relevanceState).toBe("missing_genre_info");
+    expect(scoreReviewPriority({ ...row, description: description ?? null }, ctx).relevanceState).toBe("uncertain_relevance");
   });
 });
 

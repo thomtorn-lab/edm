@@ -1226,6 +1226,8 @@ export async function applyDiscoveryClassificationUpdate(
     probableOfficialEventUrl?: string | null;
     /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): set-only into an empty column; see buildDiscoveryQueueClassificationPatch. */
     probableResidentAdvisorUrl?: string | null;
+    /** DESCRIPTION FILL (2026-10-23): set-only into an empty, admin-untouched column; see buildDiscoveryQueueClassificationPatch. */
+    description?: string;
   },
 ) {
   if (Object.keys(patch).length === 0) return;

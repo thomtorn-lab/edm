@@ -6,6 +6,7 @@ import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
 import { resolveByCanonicalPriority, type PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
+import { usableDiscoveryDescription } from "./descriptionQuality";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -368,6 +369,9 @@ export interface DiscoveryQueueTarget {
    *  2026-10-17). Optional so existing call sites keep compiling; omitted
    *  means "unknown", and the RA fill below then never runs. */
   probableResidentAdvisorUrl?: string | null;
+  /** Currently stored description (description fill, 2026-10-23). Optional;
+   *  omitted means "unknown", and the DESCRIPTION FILL below then never runs. */
+  description?: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -494,6 +498,13 @@ export interface DiscoveryQueueClassification {
    * buildDiscoveryQueueClassificationPatch.
    */
   residentAdvisorUrl?: string | null;
+  /**
+   * This run's freshly extracted description (description fill, 2026-10-23),
+   * straight from the adapter after the pipeline's text normalization.
+   * Optional; omitted never touches the stored description. See the
+   * DESCRIPTION FILL in buildDiscoveryQueueClassificationPatch.
+   */
+  description?: string | null;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -514,6 +525,8 @@ export interface DiscoveryQueueClassificationPatch {
   probableOfficialEventUrl?: string | null;
   /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): only ever set into an empty column, never cleared or replaced. */
   probableResidentAdvisorUrl?: string | null;
+  /** DESCRIPTION FILL (2026-10-23): only ever set into an empty column, never cleared or replaced. */
+  description?: string;
 }
 
 /**
@@ -803,6 +816,24 @@ export function buildDiscoveryQueueClassificationPatch(
     existing.probableResidentAdvisorUrl === null
   ) {
     patch.probableResidentAdvisorUrl = fresh.residentAdvisorUrl;
+  }
+
+  // DESCRIPTION FILL (2026-10-23). Rows queued before 2026-10-07 (25cd043)
+  // were inserted without the adapter's description, and nothing ever filled
+  // it in later: on 2026-10-18, 24 of the 26 "possible" KultuNaut rows in the
+  // review queue had none, so neither the reviewer nor the review-priority
+  // signals (DJ/club wording, non-electronic genre) could see their text.
+  // Fill-only, into an empty column: never replaces a stored description,
+  // never fills one an admin edited or deliberately cleared (both put
+  // "description" in overriddenFields), and never stores the venue's
+  // practical boilerplate alone (usableDiscoveryDescription). Genre, status
+  // and hold reason are untouched by this; they already come from this
+  // run's own full relevanceText.
+  if (fresh.description !== undefined && existing.description !== undefined) {
+    const usable = usableDiscoveryDescription(fresh.description);
+    if (usable && !existing.overriddenFields.includes("description") && !existing.description?.trim()) {
+      patch.description = usable;
+    }
   }
 
   return patch;

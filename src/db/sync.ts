@@ -19,6 +19,7 @@ import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
+import { usableDiscoveryDescription } from "@/lib/descriptionQuality";
 import { isTrustedElectronicSource, getSourceById, getSourceCancellationPolicy } from "@/lib/data/sources";
 import type { SourceAdapter, RawCandidateEvent, SoundcloudLinkReport } from "@/lib/adapters/types";
 import {
@@ -591,6 +592,9 @@ async function runSourceSyncLocked(
             // RA link integrity, 2026-10-17 — see the RA-REFERENCE FILL in
             // buildDiscoveryQueueClassificationPatch.
             residentAdvisorUrl: raw.residentAdvisorUrl,
+            // Description fill, 2026-10-23 — see the DESCRIPTION FILL in
+            // buildDiscoveryQueueClassificationPatch.
+            description: raw.description,
           },
           {
             status: existingPending.status,
@@ -607,6 +611,7 @@ async function runSourceSyncLocked(
             probableTicketUrl: existingPending.probableTicketUrl,
             probableOfficialEventUrl: existingPending.probableOfficialEventUrl,
             probableResidentAdvisorUrl: existingPending.probableResidentAdvisorUrl,
+            description: existingPending.description,
           },
         );
         // lastSeenAt is unconditional — this candidate's own sourceUrl was
@@ -667,7 +672,9 @@ async function runSourceSyncLocked(
         // (see DiscoveryQueueClassificationPatch in src/lib/sync.ts, which
         // has no description field), so this can never overwrite an admin's
         // own edit to this field.
-        description: raw.description,
+        // The venue's practical boilerplate alone (tickets, doors, seating)
+        // is not stored as a description — see usableDiscoveryDescription.
+        description: usableDiscoveryDescription(raw.description),
         probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
         // Carried straight from the adapter's own extraction — real data
         // honestly found this run must never be silently dropped just
