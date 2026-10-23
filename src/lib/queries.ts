@@ -295,12 +295,14 @@ export async function getArtistPreviewAvailabilityForLineups(lineups: string[][]
 /**
  * Admin per-event video overrides (2026-10-23, event_youtube_preview_overrides
  * — rules in src/lib/eventYoutubeOverride.ts). Reads only the columns the
- * display rule needs. A failed read (the table not existing yet on a database
- * that hasn't had migration 0023, e.g. a Preview deployment) degrades to "no
- * overrides", i.e. today's automated behavior, exactly like the artist-cache
- * reads above degrade instead of failing the page.
+ * display rule needs. A failed read returns null, NOT an empty map: callers
+ * then show no video at all (fail closed) rather than treating "couldn't read"
+ * as "no override" and letting the automated match replace a video an admin
+ * deliberately chose or hid. The page itself still renders, like the
+ * artist-cache reads above. (Production applies migration 0023 before build,
+ * so a missing table only happens on a database without it, e.g. Preview.)
  */
-async function readEventOverrides(eventIds: string[]): Promise<Map<string, EventOverrideRow>> {
+async function readEventOverrides(eventIds: string[]): Promise<Map<string, EventOverrideRow> | null> {
   if (eventIds.length === 0) return new Map();
   try {
     const rows = await db
@@ -317,8 +319,8 @@ async function readEventOverrides(eventIds: string[]): Promise<Map<string, Event
       .where(inArray(eventYoutubePreviewOverrides.eventId, eventIds));
     return new Map(rows.map((r) => [r.eventId, r]));
   } catch (err) {
-    console.error(`[youtube-preview] event override lookup failed: ${err instanceof Error ? err.message : String(err)}`);
-    return new Map();
+    console.error(`[youtube-preview] event override lookup failed (showing no video): ${err instanceof Error ? err.message : String(err)}`);
+    return null;
   }
 }
 
@@ -326,10 +328,13 @@ async function readEventOverrides(eventIds: string[]): Promise<Map<string, Event
  * The event page's video: the event's own override when it has one (a chosen
  * video, or deliberately none — hidden, or the chosen video is unavailable),
  * otherwise the automated lineup match (getArtistYoutubePreviewForLineup,
- * unchanged). The artist cache is not even read when an override decides.
+ * unchanged). The artist cache is not even read when an override decides, or
+ * when the override read failed (no video then — see readEventOverrides).
  */
 export async function getEventYoutubePreview(event: { id: string; artists: string[] }): Promise<ArtistYoutubePreview | null> {
-  const decision = resolveEventOverride((await readEventOverrides([event.id])).get(event.id));
+  const overrides = await readEventOverrides([event.id]);
+  if (!overrides) return null;
+  const decision = resolveEventOverride(overrides.get(event.id));
   if (decision.kind === "none") return null;
   if (decision.kind === "video") {
     return {
@@ -346,10 +351,12 @@ export async function getEventYoutubePreview(event: { id: string; artists: strin
  * Batched VIDEO-indicator availability per event — the same rule as
  * getEventYoutubePreview: an override decides on its own; only events without
  * one fall through to getArtistPreviewAvailabilityForLineups (unchanged, one
- * query). Two queries total for the whole list, never per event.
+ * query). Two queries total for the whole list, never per event. A failed
+ * override read means no indicator anywhere, matching the event page.
  */
 export async function getPreviewAvailabilityForEvents(list: { id: string; artists: string[] }[]): Promise<boolean[]> {
   const overrides = await readEventOverrides(list.map((e) => e.id));
+  if (!overrides) return list.map(() => false);
   const decisions = list.map((e) => resolveEventOverride(overrides.get(e.id)));
   const autoIndexes = decisions.flatMap((d, i) => (d.kind === "auto" ? [i] : []));
   const auto = await getArtistPreviewAvailabilityForLineups(autoIndexes.map((i) => list[i].artists));

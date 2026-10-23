@@ -104,9 +104,10 @@ describe("getEventYoutubePreview — override precedence for one event", () => {
     await expect(getEventYoutubePreview({ id: "e-a2b5cf47", artists: LINEUP })).resolves.toMatchObject({ artistName: "STEAMBOI" });
   });
 
-  it("a failed override read (table not migrated yet, e.g. a Preview database) degrades to the automated match, never an error", async () => {
+  it("a failed override read shows no video (fail closed) — never the automated match in place of a possible override, and never an error", async () => {
     failTable = "event_youtube_preview_overrides";
-    await expect(getEventYoutubePreview({ id: "e-a2b5cf47", artists: LINEUP })).resolves.toMatchObject({ videoId: "AUTOsteamb1" });
+    await expect(getEventYoutubePreview({ id: "e-a2b5cf47", artists: LINEUP })).resolves.toBeNull();
+    expect(cacheQueries()).toHaveLength(0);
   });
 
   it("never selects anything but the display columns from the override table", async () => {
@@ -156,6 +157,13 @@ describe("getPreviewAvailabilityForEvents — the VIDEO indicator agrees with th
   it("skips the artist cache entirely when every event has an override", async () => {
     await expect(getPreviewAvailabilityForEvents([list[0], list[2]])).resolves.toEqual([true, false]);
     expect(cacheQueries()).toHaveLength(0);
+  });
+
+  it("a failed override read means no indicator for any event (same fail-closed rule as the event page)", async () => {
+    failTable = "event_youtube_preview_overrides";
+    await expect(getPreviewAvailabilityForEvents(list)).resolves.toEqual(list.map(() => false));
+    expect(cacheQueries()).toHaveLength(0);
+    for (const e of list) await expect(getEventYoutubePreview(e)).resolves.toBeNull();
   });
 
   it("an empty list issues no queries", async () => {
