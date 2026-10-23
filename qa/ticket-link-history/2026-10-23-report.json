@@ -1,0 +1,5401 @@
+{
+ "coverage": {
+  "firstLogAt": "2026-08-15T09:21:42.503Z",
+  "lastLogAt": "2026-10-23T12:13:38.216Z",
+  "totalLogRows": 13633,
+  "rowsByType": {
+   "admin_clear_rescheduled_status": 1,
+   "admin_republish": 5,
+   "admin_unpublish": 29,
+   "auto_unpublish": 7,
+   "create": 326,
+   "sync": 12990,
+   "unpublish": 4,
+   "update": 271
+  }
+ },
+ "totals": {
+  "syncTicketWrites": 633,
+  "eventsWithSyncTicketWrites": 42,
+  "adminTicketWrites": 22,
+  "eventsWithAdminTicketWrites": 20,
+  "overrideBlocks": 872,
+  "eventsWithOverrideBlocks": 10,
+  "eventsWithMultipleSyncWriters": 13,
+  "officialOverwrites": 290,
+  "eventsWithOfficialOverwrites": 13,
+  "restoredByOfficial": 287,
+  "eventsWithFlipFlop": 13,
+  "sameSourceRewrites": 1,
+  "eventsWithSameSourceRewrites": 1,
+  "eventsCurrentlyNonOfficialWhileOfficialSyncs": 1
+ },
+ "bySource": [
+  {
+   "source": "src-poolen",
+   "authority": "official",
+   "syncTicketWrites": 246,
+   "events": 11,
+   "syncObservations": 1579,
+   "eventsObserved": 21
+  },
+  {
+   "source": "src-billetto",
+   "authority": "ticketing",
+   "syncTicketWrites": 159,
+   "events": 1,
+   "syncObservations": 1174,
+   "eventsObserved": 14
+  },
+  {
+   "source": "src-kultunaut",
+   "authority": "aggregator",
+   "syncTicketWrites": 146,
+   "events": 14,
+   "syncObservations": 3827,
+   "eventsObserved": 42
+  },
+  {
+   "source": "src-pumpehuset",
+   "authority": "official",
+   "syncTicketWrites": 61,
+   "events": 8,
+   "syncObservations": 1426,
+   "eventsObserved": 40
+  },
+  {
+   "source": "src-culture-box",
+   "authority": "official",
+   "syncTicketWrites": 19,
+   "events": 19,
+   "syncObservations": 903,
+   "eventsObserved": 35
+  },
+  {
+   "source": "src-gravity",
+   "authority": "official",
+   "syncTicketWrites": 1,
+   "events": 1,
+   "syncObservations": 499,
+   "eventsObserved": 4
+  },
+  {
+   "source": "src-hangaren",
+   "authority": "official",
+   "syncTicketWrites": 1,
+   "events": 1,
+   "syncObservations": 497,
+   "eventsObserved": 29
+  },
+  {
+   "source": "src-alice",
+   "authority": "official",
+   "syncTicketWrites": 0,
+   "events": 0,
+   "syncObservations": 449,
+   "eventsObserved": 20
+  },
+  {
+   "source": "src-hvaderpaa",
+   "authority": "aggregator",
+   "syncTicketWrites": 0,
+   "events": 0,
+   "syncObservations": 2273,
+   "eventsObserved": 53
+  },
+  {
+   "source": "src-pylonen",
+   "authority": "official",
+   "syncTicketWrites": 0,
+   "events": 0,
+   "syncObservations": 363,
+   "eventsObserved": 10
+  }
+ ],
+ "bySourcePair": [
+  {
+   "from": "src-kultunaut",
+   "to": "src-poolen",
+   "writes": 84,
+   "events": 7
+  },
+  {
+   "from": "src-poolen",
+   "to": "src-kultunaut",
+   "writes": 77,
+   "events": 7
+  },
+  {
+   "from": "src-kultunaut",
+   "to": "src-pumpehuset",
+   "writes": 58,
+   "events": 5
+  },
+  {
+   "from": "src-pumpehuset",
+   "to": "src-kultunaut",
+   "writes": 55,
+   "events": 5
+  },
+  {
+   "from": "src-billetto",
+   "to": "src-poolen",
+   "writes": 158,
+   "events": 1
+  },
+  {
+   "from": "src-poolen",
+   "to": "src-billetto",
+   "writes": 158,
+   "events": 1
+  }
+ ],
+ "byVenue": [
+  {
+   "venueId": "v-culture-box",
+   "eventsWithSyncTicketWrites": 19,
+   "eventsWithFlipFlop": 0,
+   "syncTicketWrites": 19
+  },
+  {
+   "venueId": "v-poolen",
+   "eventsWithSyncTicketWrites": 11,
+   "eventsWithFlipFlop": 8,
+   "syncTicketWrites": 489
+  },
+  {
+   "venueId": "v-pumpehuset",
+   "eventsWithSyncTicketWrites": 8,
+   "eventsWithFlipFlop": 5,
+   "syncTicketWrites": 121
+  },
+  {
+   "venueId": "v-h15",
+   "eventsWithSyncTicketWrites": 1,
+   "eventsWithFlipFlop": 0,
+   "syncTicketWrites": 1
+  },
+  {
+   "venueId": "v-hangaren",
+   "eventsWithSyncTicketWrites": 1,
+   "eventsWithFlipFlop": 0,
+   "syncTicketWrites": 1
+  },
+  {
+   "venueId": "v-refshale-en-festivalplads",
+   "eventsWithSyncTicketWrites": 1,
+   "eventsWithFlipFlop": 0,
+   "syncTicketWrites": 1
+  },
+  {
+   "venueId": "v-tap1",
+   "eventsWithSyncTicketWrites": 1,
+   "eventsWithFlipFlop": 0,
+   "syncTicketWrites": 1
+  }
+ ],
+ "events": [
+  {
+   "eventId": "e-0018336c",
+   "title": "WHAT HAPPENS",
+   "venueId": "v-culture-box",
+   "night": "2026-11-21",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:42.449Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-021b91ac",
+   "title": "Dizzee Rascal",
+   "venueId": "v-pumpehuset",
+   "night": "2026-10-16",
+   "upcoming": false,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "www.tmnwe.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-11T13:00:40.378Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-pumpehuset",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-0ba71fa6",
+   "title": "ROLL AS ONE",
+   "venueId": "v-culture-box",
+   "night": "2026-10-10",
+   "upcoming": false,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-10-09T09:34:54.299Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-0cdc8509",
+   "title": "Gravity Opera: CAMELPHAT",
+   "venueId": "v-tap1",
+   "night": "2026-10-03",
+   "upcoming": false,
+   "createdBy": "src-gravity",
+   "canonicalSourceId": "src-gravity",
+   "currentTicketHost": "gravitycph.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-08-29T12:24:32.224Z",
+     "by": "src-gravity",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-gravity",
+   "officialObservers": [
+    "src-gravity"
+   ]
+  },
+  {
+   "eventId": "e-0df1aa01",
+   "title": "Elsked",
+   "venueId": "v-pumpehuset",
+   "night": "2027-01-29",
+   "upcoming": true,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "billet.unitedtickets.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:51.879Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:57:40.254Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:02.710Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T01:01:13.873Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T04:55:47.718Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:59:23.949Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T08:26:05.043Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:58:46.894Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:23.655Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:58:07.729Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:22.702Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T01:01:15.295Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:46.997Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:02:40.325Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:50.069Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T13:01:50.575Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:53.821Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:59:07.859Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:21.429Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T01:01:49.448Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:58.868Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T07:01:45.905Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T09:19:48.890Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:27:45.304Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 10,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-117f9595",
+   "title": "Mike Sheridan DK",
+   "venueId": "v-alice",
+   "night": "2026-09-10",
+   "upcoming": false,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-alice",
+   "currentTicketHost": "billet.alicecph.com",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T08:53:15.632Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-alice"
+   ]
+  },
+  {
+   "eventId": "e-139c4dee",
+   "title": "Silva Bumpa",
+   "venueId": "v-pumpehuset",
+   "night": "2026-10-17",
+   "upcoming": false,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "www.tmnwe.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-11T13:00:40.641Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-pumpehuset",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-14bc847e",
+   "title": "Infected Mushroom – 30th Anniversary Tour",
+   "venueId": "v-poolen",
+   "night": "2026-10-03",
+   "upcoming": false,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-08-20T09:59:52.816Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-20T14:21:01.598Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-20T14:22:34.317Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-20T19:50:55.162Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-20T19:58:05.632Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T03:33:40.420Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T03:37:00.827Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T08:09:52.697Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T08:21:14.730Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T14:19:16.499Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T14:20:36.583Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T19:35:17.618Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-21T19:43:27.142Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T03:11:39.345Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T03:23:13.072Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T07:50:18.017Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T07:56:55.384Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T13:47:30.368Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T13:52:27.705Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T19:12:32.913Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-22T19:40:57.902Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T03:33:04.596Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T03:36:32.757Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T07:52:25.270Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T07:58:13.506Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T13:49:07.489Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T13:55:50.658Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T19:11:47.208Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-23T19:40:21.622Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T03:38:33.580Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T03:40:04.094Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T08:32:02.788Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T09:29:22.065Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T14:28:04.879Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T15:07:39.855Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T19:48:41.047Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-24T19:57:15.338Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T03:27:52.074Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T03:30:31.986Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T08:24:14.780Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T08:25:26.056Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T14:31:30.076Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T15:26:02.778Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T19:50:02.060Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-25T19:57:24.944Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-26T03:39:28.321Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-26T03:40:51.908Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-26T08:24:57.372Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-26T09:11:16.657Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-26T14:30:35.052Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-26T16:36:56.454Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-28T01:47:18.327Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-28T02:10:43.431Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-28T21:56:51.216Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T00:47:30.803Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T06:24:15.285Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T06:47:31.969Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T12:24:07.582Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T12:47:45.694Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T18:23:59.114Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-29T18:47:45.102Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T00:23:50.873Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T00:47:41.840Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T06:23:57.181Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T06:47:32.926Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T12:23:47.239Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T12:47:38.032Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T18:23:43.010Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-30T18:47:34.509Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T00:24:09.225Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T00:47:49.588Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T06:23:57.016Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T06:47:50.446Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T12:23:53.732Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T12:34:15.818Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T18:23:58.780Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-08-31T18:40:47.736Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T00:39:46.542Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T00:54:26.243Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T06:35:32.743Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T06:52:46.837Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T12:34:54.065Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T12:53:03.669Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T18:32:12.946Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-01T18:51:58.795Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T00:37:09.967Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T00:52:48.172Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T06:38:11.089Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T06:54:08.734Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T12:35:28.587Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T12:53:12.053Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T18:32:15.703Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-02T18:51:22.463Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T00:39:03.450Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T00:53:47.221Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T06:35:26.016Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T06:53:30.326Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T12:35:39.644Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T12:53:03.539Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T18:32:50.457Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-03T18:52:36.553Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T00:36:01.834Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T00:52:28.113Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T06:34:17.512Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T06:53:48.578Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T12:35:16.442Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T12:53:48.056Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T18:29:39.622Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-04T18:50:17.876Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T00:37:35.466Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T00:52:19.998Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T06:31:40.499Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T06:50:44.812Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T12:31:32.064Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T12:51:49.475Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:28.694Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:51:03.051Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:39.925Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:54:58.784Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:39.786Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:52:06.489Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:36.294Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:48:53.163Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:30.824Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:55:28.702Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:21.969Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:55:41.731Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:23.489Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:54:09.426Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:43.180Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:53:06.642Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:20.684Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:55:37.628Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:49.357Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:54:28.164Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:50.707Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:55:01.131Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T18:34:09.489Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T18:54:20.280Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T00:39:56.393Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T00:54:36.140Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T06:36:19.585Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T06:53:51.452Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T12:36:40.273Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T12:54:43.228Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T18:33:34.311Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-09T18:51:59.198Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T00:35:53.444Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T00:53:15.739Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T06:35:59.438Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T06:54:29.904Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T12:36:35.858Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T12:54:03.343Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T18:31:18.664Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-10T18:53:01.409Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T00:36:19.410Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T00:51:35.822Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T06:35:24.002Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T06:54:10.731Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T12:35:22.402Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T12:53:44.644Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T18:32:27.480Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-11T18:51:26.200Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T00:35:11.041Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T00:52:23.678Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T06:33:04.439Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T06:52:27.482Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T12:32:33.414Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T12:52:30.709Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T20:36:03.508Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-12T20:57:13.295Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T04:53:17.986Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T05:22:02.371Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T11:57:30.600Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T12:17:10.256Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T16:22:53.520Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T16:37:40.363Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T20:53:43.904Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-13T21:08:17.725Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-14T05:01:38.816Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-14T05:26:44.940Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-14T12:54:50.296Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-14T13:21:40.793Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-14T21:52:25.923Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-14T22:03:08.302Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T04:58:44.043Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T05:21:09.007Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T11:49:25.702Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T12:07:18.974Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T17:03:31.740Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T17:16:21.883Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T21:25:00.073Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-15T21:45:12.023Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-16T04:53:55.673Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-16T05:15:48.292Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-16T11:42:01.096Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-16T12:02:27.506Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-17T17:03:34.495Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-17T17:16:10.717Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-17T21:26:07.272Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-17T21:45:28.406Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T04:49:00.005Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T05:12:03.160Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T11:21:34.203Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T11:48:42.785Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T16:28:04.546Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T16:43:28.142Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T20:56:52.965Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-18T21:15:16.140Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T04:41:54.246Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T05:03:27.135Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T11:05:04.938Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T11:31:54.824Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T15:55:06.066Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T16:04:08.265Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T20:44:47.706Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-19T21:00:34.248Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T04:58:07.196Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T05:24:39.447Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T11:29:51.265Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T11:48:36.472Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T16:11:13.309Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T16:29:35.110Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T20:52:15.954Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-20T21:03:39.935Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-21T05:02:07.309Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-21T05:29:14.388Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-21T12:55:13.077Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-21T13:21:20.511Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-21T22:00:32.804Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-21T22:13:14.728Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T05:03:07.345Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T05:22:41.543Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T11:44:26.403Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T12:02:47.868Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T17:00:13.327Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T17:17:01.839Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T21:23:04.468Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-22T21:39:46.824Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T04:49:35.774Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T05:10:27.419Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T11:43:28.949Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T12:08:41.870Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T17:07:00.808Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T17:27:44.112Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T21:32:49.432Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-23T21:46:59.910Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T04:57:09.721Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T05:24:53.902Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T11:52:05.898Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T12:11:58.055Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T17:15:19.766Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T17:32:59.990Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T21:33:53.801Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-24T21:48:38.052Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T05:02:06.170Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T05:23:58.818Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T11:55:24.653Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T12:13:14.924Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T17:15:53.730Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T17:32:30.537Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T21:38:10.286Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-25T21:49:44.066Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T05:04:40.177Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T05:28:22.806Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T11:29:43.931Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T11:46:48.975Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T16:27:57.713Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T16:45:47.012Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T21:14:01.330Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-26T21:34:03.538Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T05:23:02.025Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T05:45:21.297Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T12:08:03.714Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T12:27:22.801Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T17:00:52.943Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T17:17:07.035Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T21:23:49.619Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-27T21:36:57.767Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-28T05:29:24.276Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-28T05:52:13.171Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-28T14:02:28.371Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-28T14:27:58.757Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-28T23:19:24.544Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-28T23:30:13.645Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-29T05:48:11.565Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-29T06:12:02.564Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-29T12:58:43.857Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-29T13:19:24.241Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-29T22:19:33.570Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-29T22:36:30.064Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-30T05:37:36.564Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-30T05:58:30.780Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-30T12:40:44.937Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-30T13:00:11.047Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-30T22:19:52.553Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-30T22:37:16.987Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-01T06:01:30.003Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-01T06:32:44.854Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-01T13:23:53.563Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-01T13:54:26.746Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-01T22:44:05.963Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-01T22:54:38.506Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-02T05:44:36.917Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-02T06:12:06.108Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-02T12:43:07.037Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-02T13:10:20.664Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-02T22:17:43.976Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-02T22:33:30.759Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T05:23:01.788Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T05:44:16.287Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T11:44:05.426Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T12:01:40.300Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T16:26:00.172Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T16:43:01.157Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T21:21:36.131Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-03T21:45:35.690Z",
+     "by": "src-billetto",
+     "authority": "ticketing",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 158,
+   "restoredByOfficial": 157,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-billetto",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-14cf31b5",
+   "title": "Black Box: LAMPÉ, SCHAARUP, ONSBERG · Red Box: RØNHÖFF, LOUIN, CØKIT",
+   "venueId": "v-culture-box",
+   "night": "2026-11-07",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:40.405Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-15dc7ef1",
+   "title": "ABSOLUTE BOUNCE 2000: NSLZ (DE)",
+   "venueId": "v-module",
+   "night": "2026-09-18",
+   "upcoming": false,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-hvaderpaa",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-14T04:43:29.779Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-19d94d3e",
+   "title": "I HATE MODELS",
+   "venueId": "v-tap1",
+   "night": "2026-12-04",
+   "upcoming": true,
+   "createdBy": "src-gravity",
+   "canonicalSourceId": "src-gravity",
+   "currentTicketHost": "gravitycph.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T12:16:48.148Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    },
+    {
+     "at": "2026-09-08T12:17:11.645Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 160,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-gravity"
+   ]
+  },
+  {
+   "eventId": "e-1de23b19",
+   "title": "Olof Dreijer (SE)",
+   "venueId": "v-hotel-cecil",
+   "night": "2026-10-24",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": null,
+   "currentTicketHost": "www.hotelcecil.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-10-20T07:23:40.817Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-20a84647",
+   "title": "Boiler Room",
+   "venueId": "v-poolen",
+   "night": "2026-12-12",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "tickets.poolen.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-23T11:44:47.253Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-267c84fd",
+   "title": "Black Box: ANIMAL TRAINER, MULO, KLARSKOV · Red Box: ADELINA, LEANCA, ANTOINE",
+   "venueId": "v-culture-box",
+   "night": "2026-11-14",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:41.900Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-2a630663",
+   "title": "Ca7riel y Paco Amoroso",
+   "venueId": "v-poolen",
+   "night": "2026-09-25",
+   "upcoming": false,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "www.ticketmaster.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-17T17:03:33.414Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-33b3d36f",
+   "title": "Endurance",
+   "venueId": "v-hangaren",
+   "night": "2026-09-05",
+   "upcoming": false,
+   "createdBy": "src-hangaren",
+   "canonicalSourceId": "src-hangaren",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-08-31T12:03:22.621Z",
+     "by": "src-hangaren",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-hangaren",
+   "officialObservers": [
+    "src-hangaren"
+   ]
+  },
+  {
+   "eventId": "e-34e06e90",
+   "title": "Benny Benassi",
+   "venueId": "v-poolen",
+   "night": "2026-10-10",
+   "upcoming": false,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:56.381Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:29.041Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:39.934Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:40.283Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:05.976Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:40.137Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:53.234Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:50.630Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:22.913Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:36.652Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:26.748Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:31.182Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:25.821Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:22.324Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:50.027Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:23.840Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:53.698Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:43.534Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:56.880Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:21.044Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:24.502Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:49.714Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:47:02.583Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:51.058Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-3517e218",
+   "title": "tonser",
+   "venueId": "v-pumpehuset",
+   "night": "2027-02-20",
+   "upcoming": true,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:52.939Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:57:41.216Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:03.501Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T01:01:14.840Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T04:55:48.518Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:59:25.158Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T08:26:05.993Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:58:47.860Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:24.361Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:58:08.691Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:23.412Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T01:01:16.243Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:47.689Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:02:40.929Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:51.041Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T13:01:51.190Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:54.516Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:59:08.471Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:22.128Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T01:01:50.059Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:59.565Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T07:01:46.522Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T09:19:49.593Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T13:02:28.884Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-pumpehuset",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-3699a789",
+   "title": "Black Box: FABIAN KROOSS, PAB DISCO, MISS ALBA · Red Box: AMA LIEN, SONYDIAM",
+   "venueId": "v-culture-box",
+   "night": "2026-12-05",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:43.274Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-393ad1b4",
+   "title": "WHAT HAPPENS / PERCEPTIONS",
+   "venueId": "v-culture-box",
+   "night": "2026-10-17",
+   "upcoming": false,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:38.752Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-3ac50dae",
+   "title": "BIESMANS, KAWUN, TAMARA, Fluid Sound Collective",
+   "venueId": "v-culture-box",
+   "night": "2026-09-18",
+   "upcoming": false,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-16T04:58:00.898Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-3c899522",
+   "title": "Elements - halloween Night 2026",
+   "venueId": "v-tap1",
+   "night": "2026-10-31",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-kultunaut",
+   "currentTicketHost": "www.ticketmaster.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T12:14:31.572Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-41440270",
+   "title": "IBOGA RECORDS and SOFA BEATS",
+   "venueId": "v-culture-box",
+   "night": "2026-12-11",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:43.548Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-42dd12c6",
+   "title": "Paul Van Dyk",
+   "venueId": "v-poolen",
+   "night": "2027-01-29",
+   "upcoming": true,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:45.201Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:29.736Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:34.852Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:40.999Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:47:59.530Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:40.835Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:48.175Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:51.340Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:17.894Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:37.374Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:20.471Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:31.885Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:19.488Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:22.946Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:43.966Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:24.457Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:46.956Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:44.157Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:50.754Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:21.681Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:18.347Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:50.340Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:55.801Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:51.678Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-4c727907",
+   "title": "Zoumer + Ela Lung",
+   "venueId": "v-klein",
+   "night": "2026-11-13",
+   "upcoming": true,
+   "createdBy": "src-billetto",
+   "canonicalSourceId": "src-billetto",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T12:15:54.315Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 161,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-4da27701",
+   "title": "SUNRAVE SESSIONS /// 4.0",
+   "venueId": "v-h15",
+   "night": "2026-09-13",
+   "upcoming": false,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-billetto",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T09:05:22.315Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 21,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-4f5d7514",
+   "title": "KALEIDOSCOPE præsenterer",
+   "venueId": "v-h15",
+   "night": "2026-09-16",
+   "upcoming": false,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-billetto",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": true,
+   "writes": [],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 16,
+   "lastWriter": null,
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-58a1d9b6",
+   "title": "Kevin de Vries & Massano",
+   "venueId": "v-poolen",
+   "night": "2026-10-02",
+   "upcoming": false,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:55.248Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:28.430Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:39.411Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:39.655Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:05.183Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:39.520Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:52.713Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:50.265Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:22.379Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:36.018Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:25.960Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:30.558Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:25.026Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:21.704Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:49.253Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:23.227Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:52.905Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:42.913Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:56.099Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:20.412Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:23.719Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:49.090Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:47:01.801Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:50.443Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-5c2eac19",
+   "title": "ERIC PRYDZ",
+   "venueId": "v-tap1",
+   "night": "2026-10-23",
+   "upcoming": true,
+   "createdBy": "src-gravity",
+   "canonicalSourceId": "src-gravity",
+   "currentTicketHost": "gravitycph.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T12:03:23.254Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 160,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-gravity"
+   ]
+  },
+  {
+   "eventId": "e-5d7c71b9",
+   "title": "Kind mod Kind",
+   "venueId": "v-poolen",
+   "night": "2026-12-27",
+   "upcoming": true,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:51.445Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:31.048Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:37.394Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:42.353Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:02.361Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:42.156Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:50.703Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:52.685Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:20.490Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:38.731Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:23.307Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:33.225Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:22.349Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:24.288Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:46.654Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:25.792Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:49.719Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:45.493Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:53.475Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:23.049Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:21.083Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:51.695Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:58.522Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:53.190Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-61b3554e",
+   "title": "WHAT HAPPENS - 4 DECADES OF TIM ANDRESEN",
+   "venueId": "v-culture-box",
+   "night": "2026-09-19",
+   "upcoming": false,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-16T04:58:36.956Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-63e3c96a",
+   "title": "Black Box: HE.SHE.THEY. x SYREN · Red Box: DJ 2LATE, ASTA MARI",
+   "venueId": "v-culture-box",
+   "night": "2026-12-12",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:43.822Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-640b15e1",
+   "title": "ARMIN VAN BUUREN",
+   "venueId": "v-tap1",
+   "night": "2026-09-26",
+   "upcoming": false,
+   "createdBy": "src-gravity",
+   "canonicalSourceId": "src-gravity",
+   "currentTicketHost": "gravitycph.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T11:51:55.906Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 78,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-gravity"
+   ]
+  },
+  {
+   "eventId": "e-69c5330f",
+   "title": "Boiler Room",
+   "venueId": "v-poolen",
+   "night": "2026-12-11",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "www.tickster.com",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-10-19T08:57:25.449Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 3,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-6ea5a85d",
+   "title": "Black Box: SARAH WILD, PELZMAN, DJ SPICE · Red Box: DASHA, ANYA, FREDE [NO], JAN BRANDI",
+   "venueId": "v-culture-box",
+   "night": "2026-11-06",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:40.132Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-741df004",
+   "title": "Meute",
+   "venueId": "v-poolen",
+   "night": "2027-05-06",
+   "upcoming": true,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "www.billetlugen.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:53.302Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:31.656Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:38.012Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:42.978Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:03.765Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:42.768Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:51.319Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:53.308Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:21.034Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:39.353Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:24.625Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:33.840Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:23.678Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:24.906Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:47.946Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:26.407Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:51.305Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:46.108Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:54.777Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:23.679Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:22.391Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:52.316Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:59.827Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:53.806Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-745b5973",
+   "title": "Nico Moreno",
+   "venueId": "v-poolen",
+   "night": "2026-10-16",
+   "upcoming": false,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:56.917Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:29.299Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:40.376Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:40.550Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:06.424Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:40.397Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:53.678Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:50.893Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:23.366Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:36.920Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:27.197Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:31.443Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:26.274Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:22.588Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:50.465Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:24.101Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:54.149Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:43.796Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:57.326Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:21.312Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:24.949Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:49.978Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:47:03.030Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:51.321Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-763c66c0",
+   "title": "Morcheeba",
+   "venueId": "v-pumpehuset",
+   "night": "2027-04-26",
+   "upcoming": true,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "www.tmnwe.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-12T16:12:31.986Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-pumpehuset",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-831e7896",
+   "title": "Black Box: AZZECCA, B FROM E, NAT · Red Box: RARES GHERMAN, COSTYX, FYNUTZU",
+   "venueId": "v-culture-box",
+   "night": "2026-10-24",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:39.309Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-834cdca1",
+   "title": "¥ØU$UK€ ¥UK1MAT$U",
+   "venueId": "v-poolen",
+   "night": "2027-03-24",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": null,
+   "currentTicketHost": "www.tmnwe.com",
+   "ticketOverridden": true,
+   "writes": [],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 1,
+   "lastWriter": null,
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-879bccb6",
+   "title": "EleKtro Universal: Mini Festival 9.-10. oktober",
+   "venueId": "v-henrikgaardens",
+   "night": "2026-10-09",
+   "upcoming": false,
+   "createdBy": "src-billetto",
+   "canonicalSourceId": "src-billetto",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T11:58:10.470Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 116,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-8a410de7",
+   "title": "CHICH, KALLAX, REXXX M, THE GATHERING",
+   "venueId": "v-culture-box",
+   "night": "2026-10-16",
+   "upcoming": false,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:38.477Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-9171dc00",
+   "title": "Black Box: XINOBI, BOW MILLER, ANDERS HP · Red Box: RHYTHM VAULT",
+   "venueId": "v-culture-box",
+   "night": "2026-10-23",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:39.028Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-99d7ca2c",
+   "title": "Karrusel 2027",
+   "venueId": "v-refshale-en-festivalplads",
+   "night": "2027-08-26",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-kultunaut",
+   "currentTicketHost": "www.karrusel.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T06:47:00.263Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-17T05:33:30.164Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-a2b5cf47",
+   "title": "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+   "venueId": "v-culture-box",
+   "night": "2026-11-27",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:42.724Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-ab7d278f",
+   "title": "Black Box: MARC WERNER, EL MUNDO, AJA GULRIS · Red Box: AMIRAKU, inesse",
+   "venueId": "v-culture-box",
+   "night": "2026-12-04",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:42.998Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-b9a79a9c",
+   "title": "Trinix",
+   "venueId": "v-pumpehuset",
+   "night": "2026-11-21",
+   "upcoming": true,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "www.billetlugen.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:49.781Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:57:39.539Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:01.128Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T01:01:13.157Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T04:55:46.406Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:59:22.948Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T08:26:03.732Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:58:46.176Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:22.070Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:58:07.010Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:21.103Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T01:01:14.590Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:45.446Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:02:39.969Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:48.475Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T13:01:50.216Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:52.252Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:59:07.504Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:19.855Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T01:01:49.090Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:57.298Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T07:01:45.543Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T09:19:47.569Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T13:02:27.922Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-pumpehuset",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-be86829a",
+   "title": "Elsked",
+   "venueId": "v-pumpehuset",
+   "night": "2027-01-30",
+   "upcoming": true,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "billet.unitedtickets.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:52.316Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:57:40.603Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:03.059Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T01:01:14.223Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T04:55:48.064Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:59:24.297Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T08:26:05.386Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:58:47.244Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:24.006Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:58:08.078Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:23.054Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T01:01:15.639Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:47.339Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:02:40.670Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:50.419Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T13:01:50.925Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:54.166Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:59:08.208Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:21.775Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T01:01:49.796Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:46:59.212Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T07:01:46.258Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T09:19:49.237Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:27:10.526Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 10,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-bf9d6551",
+   "title": "CULTURE BOX NEW YEAR’S EVE",
+   "venueId": "v-culture-box",
+   "night": "2026-12-31",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:44.096Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-c1aef60d",
+   "title": "Tenebris Oculum X MODULE: vp allowed (DE) / Ebony Willis (AUS)",
+   "venueId": "v-module",
+   "night": "2026-09-12",
+   "upcoming": false,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-hvaderpaa",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-14T04:39:32.795Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-c32021ea",
+   "title": "Faustix",
+   "venueId": "v-poolen",
+   "night": "2026-12-19",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": true,
+   "writes": [],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 156,
+   "lastWriter": null,
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-ca70b556",
+   "title": "Kløbb Ka2",
+   "venueId": "v-pumpehuset",
+   "night": "2026-10-03",
+   "upcoming": false,
+   "createdBy": "src-pumpehuset",
+   "canonicalSourceId": "src-pumpehuset",
+   "currentTicketHost": "www.ticketmaster.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:55.771Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:57:38.322Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:05.533Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T01:01:11.947Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T04:55:50.274Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:59:20.799Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T08:26:07.659Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:58:44.951Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:26.310Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:58:05.780Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:25.378Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T01:01:13.385Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:49.595Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:02:39.573Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:53.257Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T13:01:49.817Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:56.445Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:59:07.102Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:24.065Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T01:01:48.690Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:47:02.146Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T07:01:45.143Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T09:19:51.365Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T13:02:27.527Z",
+     "by": "src-pumpehuset",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-pumpehuset",
+   "officialObservers": [
+    "src-pumpehuset"
+   ]
+  },
+  {
+   "eventId": "e-cb859d30",
+   "title": "Black Box: TAXMAN, DWONJI, BOBBY 6 KILLA, HDN, DJ BREAKFAST, MAXI MO, L.A.D.J · Red Box: FIA2THEFLOOR, AMITTET, TINKI, DELFF",
+   "venueId": "v-culture-box",
+   "night": "2026-08-28",
+   "upcoming": false,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": null,
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-08-21T06:48:29.639Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-cd11f273",
+   "title": "Intercell",
+   "venueId": "v-poolen",
+   "night": "2026-11-13",
+   "upcoming": true,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "secure.tickster.com",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-05T13:41:57.966Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:29:30.344Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-05T18:42:41.160Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:40:41.626Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T00:48:07.220Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:32:41.447Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T06:43:54.459Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:32:51.961Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T12:41:24.080Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:29:38.005Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-06T18:41:27.909Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:40:32.505Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T00:48:26.993Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:38:23.567Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T06:47:51.159Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T07:30:25.074Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T12:46:55.216Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:32:44.773Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-07T18:44:58.288Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:40:22.311Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T00:48:25.917Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:35:50.964Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T06:47:03.997Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:36:52.295Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 11,
+   "restoredByOfficial": 11,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-ceaf5497",
+   "title": "Black Box: SIMONE ZINO, MARIA FAGRANES, MIDELE · Red Box: AZADÎ, ALMOST GINGER",
+   "venueId": "v-culture-box",
+   "night": "2026-11-20",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:42.175Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-cf312c20",
+   "title": "CULTURE BOX HALLOWEEN 2026",
+   "venueId": "v-culture-box",
+   "night": "2026-10-31",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:39.857Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-d0a877b9",
+   "title": "Black Box: DUSKY presents SIGNALS TOUR · Red Box: SÓLTMÄNN, RÓS",
+   "venueId": "v-culture-box",
+   "night": "2026-11-13",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:41.109Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  },
+  {
+   "eventId": "e-d8f286fe",
+   "title": "Teletech Copenhagen",
+   "venueId": "v-poolen",
+   "night": "2026-12-18",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-kultunaut",
+   "currentTicketHost": "tickets.poolen.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-08T12:18:14.736Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    },
+    {
+     "at": "2026-10-12T11:58:32.774Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-deef8aa1",
+   "title": "Baile Techno & Ritmica.CPH - Halloween 2026 Edition!",
+   "venueId": "v-h15",
+   "night": "2026-10-30",
+   "upcoming": true,
+   "createdBy": "admin",
+   "canonicalSourceId": "src-kultunaut",
+   "currentTicketHost": "billetto.dk",
+   "ticketOverridden": true,
+   "writes": [
+    {
+     "at": "2026-09-07T18:44:57.849Z",
+     "by": "src-kultunaut",
+     "authority": "aggregator",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-09-08T12:13:14.028Z",
+     "by": "admin",
+     "authority": "admin",
+     "kind": "admin"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "admin",
+   "officialObservers": []
+  },
+  {
+   "eventId": "e-e28c6363",
+   "title": "Sub Focus",
+   "venueId": "v-poolen",
+   "night": "2026-11-21",
+   "upcoming": true,
+   "createdBy": "src-poolen",
+   "canonicalSourceId": "src-poolen",
+   "currentTicketHost": "www.ticketmaster.dk",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-09-17T17:03:37.486Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    },
+    {
+     "at": "2026-10-11T22:02:02.410Z",
+     "by": "src-poolen",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 1,
+   "overrideBlocks": 0,
+   "lastWriter": "src-poolen",
+   "officialObservers": [
+    "src-poolen"
+   ]
+  },
+  {
+   "eventId": "e-e3bd3ab9",
+   "title": "NECKLESS HALLOWEEN EDITION",
+   "venueId": "v-culture-box",
+   "night": "2026-10-30",
+   "upcoming": true,
+   "createdBy": "src-culture-box",
+   "canonicalSourceId": "src-culture-box",
+   "currentTicketHost": "ra.co",
+   "ticketOverridden": false,
+   "writes": [
+    {
+     "at": "2026-10-17T11:05:39.582Z",
+     "by": "src-culture-box",
+     "authority": "official",
+     "kind": "sync"
+    }
+   ],
+   "officialOverwrites": 0,
+   "restoredByOfficial": 0,
+   "sameSourceRewrites": 0,
+   "overrideBlocks": 0,
+   "lastWriter": "src-culture-box",
+   "officialObservers": [
+    "src-culture-box"
+   ]
+  }
+ ],
+ "limitations": [
+  "event_change_log stores only the names of changed fields, never old or new values: which URL was replaced, and whether a change was substantive or only cosmetic (e.g. tracking parameters; the sync compares raw strings), cannot be determined.",
+  "The origin of a ticket link has never been stored: an \"official link\" here means the previous ticketUrl write came from an official source according to the log, not that the stored URL is known to be official.",
+  "A create row lists every field, so whether an event had a ticket link at creation, and from whom, is unknown; writes are only counted from the first sync/admin change.",
+  "History only covers the period the log spans; changes made outside writeChangeLog (direct SQL, data migrations, deleted test events) are not visible.",
+  "Read-only analysis of existing rows; nothing was written and no external service was contacted."
+ ],
+ "run": {
+  "workflow": "inspect-source.yml",
+  "mode": "ticket-link-history",
+  "runId": 39962461160,
+  "jobId": 120443627093,
+  "url": "https://github.com/thomtorn-lab/edm/actions/runs/39962461160",
+  "headSha": "ef31ff31fbbcd9e42d993b78234f485259b3eadb",
+  "extractedFrom": "REPORT JSON line of the job log, verbatim"
+ }
+}
