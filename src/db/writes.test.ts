@@ -1455,3 +1455,64 @@ describe("admin saves — end/start check on the values actually stored (editori
     expect(updateSetMock.mock.calls[0][0].overriddenFields).toEqual(["startDatetime"]);
   });
 });
+
+describe("applySourceSyncPatch — a locked start keeps the stored status (editorial screening, Gap B)", () => {
+  beforeEach(() => {
+    updateSetMock.mockClear();
+    insertValuesMock.mockClear();
+  });
+
+  const stored = { id: "e-locked", overriddenFields: ["startDatetime"], postponed: true, dateChanged: false, timeChanged: false };
+  const proposed = {
+    startDatetime: new Date("2026-11-20T21:00:00.000Z"),
+    dateChanged: true,
+    postponed: false,
+    cancelled: true,
+    title: "Source title",
+  };
+
+  it("writes neither the blocked start nor its derived flags, but keeps independent changes", async () => {
+    selectResults = [[{ ...stored }]];
+
+    const result = await applySourceSyncPatch("e-locked", "src-pumpehuset", proposed);
+
+    const written = updateSetMock.mock.calls[0][0];
+    expect(written).not.toHaveProperty("startDatetime");
+    expect(written).not.toHaveProperty("dateChanged");
+    expect(written).not.toHaveProperty("postponed");
+    expect(written.cancelled).toBe(true);
+    expect(written.title).toBe("Source title");
+    expect(result.applied).toEqual(["cancelled", "title"]);
+    expect(result.heldBack).toEqual(["dateChanged", "postponed"]);
+  });
+
+  it("logs the lock and the held-back flags by field name only", async () => {
+    selectResults = [[{ ...stored }]];
+
+    await applySourceSyncPatch("e-locked", "src-pumpehuset", proposed);
+
+    const log = insertValuesMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(log.fieldsChanged).toEqual(["cancelled", "title"]);
+    expect(log.note).toBe("skipped manually-overridden fields: startDatetime; held back with the blocked start: dateChanged, postponed");
+  });
+
+  it("with only start-derived changes proposed, touches nothing but lastSourceCheck", async () => {
+    selectResults = [[{ ...stored }]];
+
+    await applySourceSyncPatch("e-locked", "src-pumpehuset", { startDatetime: proposed.startDatetime, dateChanged: true, postponed: false });
+
+    expect(Object.keys(updateSetMock.mock.calls[0][0])).toEqual(["lastSourceCheck"]);
+  });
+
+  it("an unlocked start still writes the start and its flags", async () => {
+    selectResults = [[{ ...stored, overriddenFields: [] }]];
+
+    const result = await applySourceSyncPatch("e-locked", "src-pumpehuset", proposed);
+
+    const written = updateSetMock.mock.calls[0][0];
+    expect(written.startDatetime).toEqual(proposed.startDatetime);
+    expect(written.dateChanged).toBe(true);
+    expect(written.postponed).toBe(false);
+    expect(result.heldBack).toEqual([]);
+  });
+});

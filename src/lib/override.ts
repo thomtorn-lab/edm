@@ -62,6 +62,44 @@ export function stripOverriddenFields<T extends Record<string, unknown>>(
 }
 
 /**
+ * Status flags buildSyncPatch derives purely from a start change (editorial
+ * screening, Gap B — 2026-10-23): dateChanged/timeChanged mark the change,
+ * and postponed=false clears a postponement because a new date arrived.
+ * When the start change itself is blocked by a lock, the event keeps its
+ * stored start, so these flags would describe a change that never
+ * happened (a public "Rescheduled" badge on an unchanged date, or a
+ * postponed event shown as confirmed on its stale date). A proposed
+ * postponed=true is not derived from the start and is left alone.
+ */
+function isStartDerivedStatus(field: string, value: unknown): boolean {
+  if (field === "dateChanged" || field === "timeChanged") return true;
+  return field === "postponed" && value === false;
+}
+
+/**
+ * The sync-side enforcement point: strips locked fields like
+ * stripOverriddenFields, and also holds back the start-derived status flags
+ * when a proposed start change is blocked by a startDatetime lock.
+ * Independent status signals (soldOut, cancelled, endDatetime) are kept.
+ */
+export function stripLockedSyncFields<T extends Record<string, unknown>>(
+  proposedPatch: T,
+  overriddenFields: string[],
+): { safePatch: Partial<T>; heldBack: string[] } {
+  const safePatch = stripOverriddenFields(proposedPatch, overriddenFields);
+  const startBlocked = "startDatetime" in proposedPatch && !("startDatetime" in safePatch);
+  if (!startBlocked) return { safePatch, heldBack: [] };
+
+  const heldBack: string[] = [];
+  for (const key of Object.keys(safePatch) as (keyof T & string)[]) {
+    if (!isStartDerivedStatus(key, safePatch[key])) continue;
+    delete safePatch[key];
+    heldBack.push(key);
+  }
+  return { safePatch, heldBack };
+}
+
+/**
  * How one field of an admin save relates to the value already stored
  * (editorial screening, priority 1 — 2026-10-17). Every admin form posts
  * its whole editor (AddEventFromUrl, DiscoveryQueue "Save edit"), so the
