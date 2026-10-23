@@ -82,7 +82,9 @@ export function buildSyncPatch(
 
   if (raw.title.trim() && raw.title !== existing.title) patch.title = raw.title;
   if (raw.description && raw.description !== existing.description) patch.description = raw.description;
-  if (resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {
+  // Names guessed from the title (RawCandidateEvent.artistsGuessedFromTitle)
+  // never rewrite an existing event's artists.
+  if (!raw.artistsGuessedFromTitle && resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {
     patch.artists = resolved.normalizedArtists;
   }
   if (resolved.resolvedVenueId && resolved.resolvedVenueId !== existing.venueId) {

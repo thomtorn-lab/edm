@@ -93,6 +93,14 @@ export interface RawCandidateEvent {
    * false, and classification is unchanged.
    */
   lineupNamesAreStructured?: boolean;
+  /**
+   * True when `artists` is the adapter's guess from the event title alone
+   * (KultuNaut's guessArtistsFromTitle, 2026-10-23). A later sync then never
+   * copies these names onto an event that already exists (buildSyncPatch):
+   * a better title parser must not silently rewrite a published event's
+   * artists. Omitted means false, and sync behaves as before.
+   */
+  artistsGuessedFromTitle?: boolean;
   startDatetime: string | null;
   endDatetime: string | null;
   venueName: string | null;

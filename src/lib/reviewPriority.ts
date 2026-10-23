@@ -59,6 +59,7 @@ export type ReviewSignalKey =
   | "source_category"
   | "source_category_not_counted"
   | "lineup"
+  | "lineup_from_title"
   | "source_quality"
   | "conflicting_genre"
   | "series_same_venue"
@@ -186,7 +187,9 @@ export function scoreReviewPriority(item: ReviewPriorityInput, ctx: ReviewPriori
   } else if (categoryLabel) {
     signals.push({ key: "source_category", points: 2, label: categoryLabel });
   }
-  if (item.detectedLineup.length > 0) {
+  if (item.detectedLineup.length > 0 && lineupOnlyRepeatsTitle(item.probableTitle, item.detectedLineup)) {
+    signals.push({ key: "lineup_from_title", points: 0, label: "Lineup only repeats the title — not counted" });
+  } else if (item.detectedLineup.length > 0) {
     signals.push({ key: "lineup", points: 1, label: `Lineup listed (${item.detectedLineup.length})` });
   }
   const trust = item.sourceId ? ctx.sourceTrust.get(item.sourceId) : undefined;
@@ -281,6 +284,28 @@ export function scoreReviewPriority(item: ReviewPriorityInput, ctx: ReviewPriori
     seriesMatch,
     recommendedAction: recommendAction({ tier, relevanceScore, relevanceState, hasDate: !!item.probableStart, venueResolved: !!resolved }),
   };
+}
+
+function lettersOnly(text: string): string {
+  return text
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/\((?:[a-z]{2,3})(?:\s*[/,]\s*[a-z]{2,3})*\)/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
+ * True when every lineup name already appears in the title, so the lineup
+ * adds nothing a reviewer cannot read in the title itself. KultuNaut, for
+ * one, builds its lineup from the title ("The Prodigy" → ["The Prodigy"]);
+ * counting that as a lineup gave nearly every KultuNaut row the same +1.
+ */
+export function lineupOnlyRepeatsTitle(title: string, lineup: string[]): boolean {
+  const titleLetters = lettersOnly(title);
+  return lineup.length > 0 && lineup.every((name) => {
+    const letters = lettersOnly(name);
+    return letters.length > 0 && titleLetters.includes(letters);
+  });
 }
 
 function recommendAction(input: {

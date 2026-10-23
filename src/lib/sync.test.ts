@@ -551,6 +551,23 @@ describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link 
   });
 });
 
+describe("buildSyncPatch — artists guessed from the title (2026-10-23)", () => {
+  it("never rewrites an existing event's artists from title-guessed names", () => {
+    const existing = target({ title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE) + Europa (DE)"] });
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-kultunaut", title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE)", "Europa (DE)"], artistsGuessedFromTitle: true }),
+      { ...resolved, normalizedArtists: ["Woesum (SE)", "Europa (DE)"] },
+      existing,
+    );
+    expect(patch).not.toHaveProperty("artists");
+  });
+
+  it("still updates artists from a source whose lineup is not guessed from the title", () => {
+    const { patch } = buildSyncPatch(raw({ artists: ["Kander", "Ruby My Dear"] }), { ...resolved, normalizedArtists: ["Kander", "Ruby My Dear"] }, target());
+    expect(patch.artists).toEqual(["Kander", "Ruby My Dear"]);
+  });
+});
+
 describe("genre QA (2026-10-17): no automatic change to an already-published genre", () => {
   it("a re-sync whose genre no longer resolves (artist-name keyword removed) leaves the published genre untouched", () => {
     // e-3699a789 (Culture Box, 5 Dec) is published as disco from "PAB DISCO".
