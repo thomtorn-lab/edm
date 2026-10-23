@@ -21,25 +21,34 @@ name: YouTube Preview Manual Block
 # change tracked outside this workflow — this tool only corrects the
 # resulting cache row(s), one artist at a time, by hand.
 #
-# Secrets used: DATABASE_URL only. Never echoed, printed, or logged.
+# "pin" mode (2026-10-23) replaces an artist's preview with a hand-picked
+# video instead of only hiding it (src/db/youtubePreview.ts::
+# pinArtistYoutubePreview). It and plan-with-video look the video up via
+# one videos.list call, so the run step also gets YOUTUBE_API_KEY.
+#
+# Secrets used: DATABASE_URL, YOUTUBE_API_KEY. Never echoed, printed, or logged.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: '"plan" (read-only, default) prints the current cache row; "block"/"unblock" set/clear manualBlock.'
+        description: '"plan" (read-only, default) prints the current cache row (and the video, if given); "block"/"unblock" set/clear manualBlock; "pin" sets the video below as the preview.'
         required: true
         type: choice
         options:
           - plan
           - block
           - unblock
+          - pin
         default: plan
       artist:
         description: 'Exact artist name as it appears in the event lineup, e.g. "Benji" (not normalized/lowercased — the script normalizes it the same way the matcher does).'
         required: true
+      video:
+        description: 'pin mode (or plan, to preview it): YouTube URL or video id, e.g. "https://youtu.be/Pbb0KmuwYSA".'
+        required: false
       confirm:
-        description: "block/unblock modes only: type BLOCK-YOUTUBE-PREVIEW or UNBLOCK-YOUTUBE-PREVIEW (matching the chosen mode) to confirm the write."
+        description: "write modes only: type BLOCK-YOUTUBE-PREVIEW, UNBLOCK-YOUTUBE-PREVIEW or PIN-YOUTUBE-PREVIEW (matching the chosen mode) to confirm the write."
         required: false
 
 permissions:
@@ -88,10 +97,13 @@ jobs:
         env:
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_ARTIST: ${{ inputs.artist }}
+          INPUT_VIDEO: ${{ inputs.video }}
           INPUT_CONFIRM: ${{ inputs.confirm }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           set -u
           args=(--mode="$INPUT_MODE" --artist="$INPUT_ARTIST")
+          [ -n "$INPUT_VIDEO" ] && args+=(--video="$INPUT_VIDEO")
           [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
           node --env-file=.env.local --import tsx src/db/youtubePreviewBlock.ts "${args[@]}"
 

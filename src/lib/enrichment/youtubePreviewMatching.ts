@@ -56,7 +56,8 @@ export interface ArtistPreviewCacheEntry {
   artistNameNormalized: string;
   provider: "youtube";
   status: PreviewStatus;
-  matchRule: "A" | null;
+  /** "A" = automated Rule A match; "manual" = admin-pinned video (src/db/youtubePreview.ts::pinArtistYoutubePreview). */
+  matchRule: "A" | "manual" | null;
   query: string;
   videoId: string | null;
   videoTitle: string | null;

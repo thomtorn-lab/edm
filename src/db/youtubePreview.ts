@@ -31,7 +31,7 @@ export const drizzleCacheStore: ArtistPreviewCacheStore = {
       artistNameNormalized: row.artistNameNormalized,
       provider: "youtube",
       status: row.status as PreviewStatus,
-      matchRule: row.matchRule as "A" | null,
+      matchRule: row.matchRule as "A" | "manual" | null,
       query: row.query,
       videoId: row.videoId,
       videoTitle: row.videoTitle,
@@ -131,6 +131,50 @@ export async function unblockArtistYoutubePreview(artistNameRaw: string): Promis
   const existing = await drizzleCacheStore.get(normalized);
   if (!existing) return;
   await drizzleCacheStore.set({ ...existing, manualBlock: false });
+}
+
+/** Far enough out that the automated matcher never re-searches over a pin. */
+const PINNED_EXPIRES_AT = new Date("2100-01-01T00:00:00.000Z");
+
+/**
+ * Admin pin override (2026-10-23) — replaces an artist's preview with a
+ * hand-picked video, for when the automated match is wrong (e.g. "LMN"
+ * matched Lifetime Movie Network's channel) or missing. Writes an accepted
+ * row with matchRule "manual", clears manualBlock, and keeps the previous
+ * match in `evidence` so the pin is auditable. The expiry is pushed out to
+ * PINNED_EXPIRES_AT, so getOrMatchArtistYoutubePreview never re-searches
+ * over it; its periodic re-verification still runs, so a pinned video that
+ * later goes private/unembeddable degrades to "no preview" like any other.
+ * Undo with blockArtistYoutubePreview (hide) or a new pin.
+ */
+export async function pinArtistYoutubePreview(
+  artistNameRaw: string,
+  video: { videoId: string; title: string; channelId: string; channelTitle: string },
+  now: Date = new Date(),
+): Promise<void> {
+  const normalized = normalizeArtistName(cleanArtistDisplayName(artistNameRaw));
+  const existing = await drizzleCacheStore.get(normalized);
+  await drizzleCacheStore.set({
+    artistNameNormalized: normalized,
+    provider: "youtube",
+    status: "accepted",
+    matchRule: "manual",
+    query: "",
+    videoId: video.videoId,
+    videoTitle: video.title,
+    channelId: video.channelId,
+    channelTitle: video.channelTitle,
+    evidence: {
+      manualPin: { pinnedAt: now.toISOString(), rawArtistName: artistNameRaw },
+      previous: existing
+        ? { status: existing.status, matchRule: existing.matchRule, videoId: existing.videoId, videoTitle: existing.videoTitle, channelTitle: existing.channelTitle, manualBlock: existing.manualBlock }
+        : null,
+    },
+    manualBlock: false,
+    matchedAt: now,
+    lastVerifiedAt: now,
+    expiresAt: PINNED_EXPIRES_AT,
+  });
 }
 
 export type { ArtistPreviewCacheEntry };
