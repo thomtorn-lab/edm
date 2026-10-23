@@ -78,8 +78,9 @@ export function getGenre(slug: GenreSlug): GenreDef {
 
 /**
  * Approved public genre GROUPING taxonomy (Electronic CPH data-quality work
- * package, Workstream B): a fixed set of 12 broad categories, used for the
- * genre FILTER (EventExplorer.tsx) and for filter-inheritance — a specific
+ * package, Workstream B): a fixed set of 12 broad categories, used for
+ * newsletter genre preferences and for filter-inheritance (the homepage
+ * filter itself lists GENRES — see matchesGenreFilter) — a specific
  * subgenre like "melodic-techno" is discoverable both under its own exact
  * label (search — see search.ts) and under its broader group ("Techno" in
  * the filter dropdown), via mainGenreOf/GENRE_TO_MAIN below.
@@ -210,6 +211,24 @@ export function mainGenreOf(slug: GenreSlug): MainGenreSlug {
  */
 export function matchesMainGenre(subgenres: readonly GenreSlug[], genre: MainGenreSlug): boolean {
   return subgenres.some((slug) => mainGenreOf(slug) === genre);
+}
+
+/**
+ * The homepage genre FILTER (EventExplorer.tsx) offers exactly the genres
+ * the admin can pick (GENRES), so the two lists can never disagree. A genre
+ * that is itself a filter group ("Techno", "House", "Trance", …) also matches
+ * the subgenres grouped under it via GENRE_TO_MAIN — "Techno" still finds
+ * Melodic Techno, Minimal Techno and Industrial — while a precise subgenre
+ * ("Deep House", "Hardstyle") matches only events tagged with it.
+ */
+export function matchesGenreFilter(subgenres: readonly GenreSlug[], genre: GenreSlug): boolean {
+  const main = mainGenreOf(genre);
+  if (genre === main) return matchesMainGenre(subgenres, main);
+  return subgenres.includes(genre);
+}
+
+export function isGenreSlug(value: unknown): value is GenreSlug {
+  return typeof value === "string" && GENRE_BY_SLUG.has(value as GenreSlug);
 }
 
 /**

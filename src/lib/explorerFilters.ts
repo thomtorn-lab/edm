@@ -1,4 +1,4 @@
-import { MAIN_GENRES, type MainGenreSlug } from "./taxonomy";
+import { isGenreSlug, type GenreSlug } from "./taxonomy";
 
 /**
  * URL-backed homepage filter state (homepage search/navigation work,
@@ -21,7 +21,7 @@ export const EXPLORER_DATE_MODES = ["tonight", "weekend", "next-weekend"] as con
 /** Filter state as the URL carries it. `venueSlug` is resolved to a venue id by EventExplorer against the venues it actually lists. */
 export interface ExplorerUrlFilters {
   mode: ExplorerMode;
-  genre: MainGenreSlug | "all";
+  genre: GenreSlug | "all";
   venueSlug: string | null;
   query: string;
 }
@@ -49,7 +49,7 @@ export function parseExplorerFilters(params: ParamsLike | null | undefined): Exp
     : "all";
 
   const rawGenre = params.get(KEYS.genre);
-  const genre = MAIN_GENRES.some((g) => g.slug === rawGenre) ? (rawGenre as MainGenreSlug) : "all";
+  const genre = isGenreSlug(rawGenre) ? rawGenre : "all";
 
   const rawVenue = params.get(KEYS.venue)?.trim() ?? "";
   const venueSlug = /^[a-z0-9-]{1,100}$/.test(rawVenue) ? rawVenue : null;

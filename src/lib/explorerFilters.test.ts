@@ -40,6 +40,11 @@ describe("parseExplorerFilters", () => {
     });
   });
 
+  it("accepts every admin genre, including precise subgenres", () => {
+    expect(parse("genre=deep-house").genre).toBe("deep-house");
+    expect(parse("genre=industrial").genre).toBe("industrial");
+  });
+
   it("caps an absurdly long search query", () => {
     expect(parse(`q=${"a".repeat(5000)}`).query).toHaveLength(200);
   });

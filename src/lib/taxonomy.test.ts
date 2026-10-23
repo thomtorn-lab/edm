@@ -7,7 +7,9 @@ import {
   getGenre,
   mainGenreOf,
   mainGenrePagePath,
+  matchesGenreFilter,
   matchesMainGenre,
+  isGenreSlug,
   type GenreSlug,
   type MainGenreSlug,
 } from "./taxonomy";
@@ -149,5 +151,27 @@ describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
     for (const slug of ["melodic-techno", "minimal-techno", "industrial", "hard-techno", "house"] as GenreSlug[]) {
       expect(genreLabelPagePath(slug), slug).toBeNull();
     }
+  });
+});
+
+describe("homepage genre filter matches the admin genre list", () => {
+  it("a group genre also matches its subgenres; a precise subgenre matches only itself", () => {
+    const technoMatches = GENRES.map((g) => g.slug).filter((slug) => matchesGenreFilter([slug], "techno"));
+    expect(technoMatches.sort()).toEqual(["industrial", "melodic-techno", "minimal-techno", "techno"]);
+    expect(matchesGenreFilter(["deep-house"], "house")).toBe(true);
+    expect(matchesGenreFilter(["house"], "deep-house")).toBe(false);
+    expect(matchesGenreFilter(["deep-house"], "deep-house")).toBe(true);
+    expect(matchesGenreFilter(["hardcore"], "hardstyle")).toBe(false);
+    expect(matchesGenreFilter(["house", "disco"] as GenreSlug[], "disco")).toBe(true);
+  });
+
+  it("every admin genre finds at least the events tagged with it", () => {
+    for (const g of GENRES) expect(matchesGenreFilter([g.slug], g.slug), g.slug).toBe(true);
+  });
+
+  it("isGenreSlug accepts admin genres only", () => {
+    expect(isGenreSlug("deep-house")).toBe(true);
+    expect(isGenreSlug("garage-bass")).toBe(false);
+    expect(isGenreSlug(null)).toBe(false);
   });
 });

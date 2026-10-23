@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server";
 import EventExplorer from "./EventExplorer";
 import type { EventWithVenue } from "@/lib/queries";
-import type { GenreSlug } from "@/lib/taxonomy";
+import { GENRES, type GenreSlug } from "@/lib/taxonomy";
 
 /**
  * Regression coverage for the mobile month-nav active-highlight bug: tapping
@@ -760,6 +760,22 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
   // EventRow renders both genres as one joined string ("House · Disco") in a
   // single text node, not two separately-queryable texts — see
   // EventRow.tsx's `genres.map((g) => g.shortLabel).join(" · ")`.
+  it("the genre filter offers exactly the admin genre list, in the same order", () => {
+    render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
+    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const values = Array.from(genreSelect.options).map((o) => o.value);
+    expect(values).toEqual(["all", ...GENRES.map((g) => g.slug)]);
+  });
+
+  it("a precise subgenre filter (Deep House) shows only events tagged with it", () => {
+    const HOUSE_EVENT = { ...makeEvent("2026-08-15T20:00:00.000Z"), primaryGenre: "house" as GenreSlug, subgenres: ["house"] as GenreSlug[] };
+    render(<EventExplorer events={[...ALL_EVENTS, HOUSE_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    selectGenre("deep-house");
+    expect(cardText("Deep House")).toBeTruthy();
+    expect(queryCardText("House")).toBeNull();
+  });
+
   it("a two-genre event (House · Disco) is discoverable under the House filter", () => {
     render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();

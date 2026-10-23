@@ -21,7 +21,7 @@ import {
   writeListReturn,
   type ExplorerMode,
 } from "@/lib/explorerFilters";
-import { MAIN_GENRES, matchesMainGenre, type MainGenreSlug } from "@/lib/taxonomy";
+import { GENRES, matchesGenreFilter, type GenreSlug } from "@/lib/taxonomy";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
 
@@ -65,7 +65,7 @@ function applyFilters(
   upcoming: HomepageEvent[],
   now: Date,
   mode: Mode,
-  genre: MainGenreSlug | "all",
+  genre: GenreSlug | "all",
   venueId: string | "all",
   query: string
 ): HomepageEvent[] {
@@ -73,7 +73,7 @@ function applyFilters(
     if (mode === "tonight" && !isTonight(e, now)) return false;
     if (mode === "weekend" && !isThisWeekend(e, now)) return false;
     if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
-    if (genre !== "all" && !matchesMainGenre(e.subgenres, genre)) return false;
+    if (genre !== "all" && !matchesGenreFilter(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
     return true;
@@ -202,7 +202,7 @@ function EventExplorerList({
   const searchParams = useSearchParams();
   const [initialUrlFilters] = useState(() => parseExplorerFilters(searchParams));
   const [mode, setMode] = useState<Mode>(initialUrlFilters.mode);
-  const [genre, setGenre] = useState<MainGenreSlug | "all">(initialUrlFilters.genre);
+  const [genre, setGenre] = useState<GenreSlug | "all">(initialUrlFilters.genre);
   // The URL names a venue by slug; it only selects a venue that actually
   // has an upcoming event in this list (the same set the venue dropdown
   // offers), otherwise it's ignored like any other invalid value.
@@ -224,7 +224,7 @@ function EventExplorerList({
   // "Show N events" is tapped; closing/cancelling any other way just
   // discards them, since the next open re-seeds from the (untouched) real
   // values anyway.
-  const [draftGenre, setDraftGenre] = useState<MainGenreSlug | "all">("all");
+  const [draftGenre, setDraftGenre] = useState<GenreSlug | "all">("all");
   const [draftVenueId, setDraftVenueId] = useState<string | "all">("all");
   const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
   const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
@@ -848,11 +848,11 @@ function EventExplorerList({
     <select
       id={id}
       value={genre}
-      onChange={(e) => setGenre(e.target.value as MainGenreSlug | "all")}
+      onChange={(e) => setGenre(e.target.value as GenreSlug | "all")}
       className={selectClasses(genre !== "all")}
     >
       <option value="all">All genres</option>
-      {MAIN_GENRES.map((g) => (
+      {GENRES.map((g) => (
         <option key={g.slug} value={g.slug}>{g.label}</option>
       ))}
     </select>
@@ -1060,11 +1060,11 @@ function EventExplorerList({
                   <select
                     id="genre-filter-mobile"
                     value={draftGenre}
-                    onChange={(e) => setDraftGenre(e.target.value as MainGenreSlug | "all")}
+                    onChange={(e) => setDraftGenre(e.target.value as GenreSlug | "all")}
                     className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
                   >
                     <option value="all">All genres</option>
-                    {MAIN_GENRES.map((g) => (
+                    {GENRES.map((g) => (
                       <option key={g.slug} value={g.slug}>{g.label}</option>
                     ))}
                   </select>
