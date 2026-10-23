@@ -38,6 +38,7 @@ import {
   type ReviewPriorityInput,
 } from "@/lib/reviewPriority";
 import { hasNonElectronicGenreSignal, hasPopOrRnbSignal } from "@/lib/relevance";
+import { runDqLegacyLockAudit } from "./dqLegacyLockAudit";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -2937,12 +2938,16 @@ async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, stri
   console.log(JSON.stringify(dqByGenre.rows, null, 2));
 }
 
+async function modeDqLegacyLockAudit(client: Client) {
+  await runDqLegacyLockAudit(client);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
   if (typeof mode !== "string") {
     console.error(
-      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit> is required.",
+      "::error::--mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|db-integrity|admin-queue-audit|ignore-persistence-audit|genre-taxonomy-audit|dq-legacy-lock-audit> is required.",
     );
     process.exit(1);
   }
@@ -2968,6 +2973,7 @@ async function main() {
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
+    "dq-legacy-lock-audit": modeDqLegacyLockAudit,
     "youtube-preview-backfill-plan": modeYoutubePreviewBackfillPlan,
     "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
@@ -2990,7 +2996,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, dq-legacy-lock-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
     );
     process.exit(1);
   }
