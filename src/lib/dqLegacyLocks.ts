@@ -12,6 +12,13 @@
  * so this cannot tell a deliberate correction from a field that was merely
  * re-saved. It counts the pattern and the metadata that exists; it never
  * guesses which locks are real.
+ *
+ * Production result (run 39959048856, 2026-10-23): of 945 pending rows, 1
+ * had the full pattern (src-hvaderpaa, start in the past, not publishable)
+ * and 2 a partial one (10 and 11 event fields; 1 publishable). All three
+ * predate #151. Gap A was closed as a development task: no publish-time
+ * warning was built, and these rows keep their locks — any lock left on
+ * the one publishable row is reviewed by hand when it is published.
  */
 
 /** DQ override keys that publishDiscoveryItem maps onto event fields, grouped as the publish mapping groups them. */
