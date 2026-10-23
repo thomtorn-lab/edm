@@ -10,6 +10,10 @@ name: Audit Published Events Window (Read-Only)
 # Exception: per event, whether its genre was set manually by an admin
 # (genreManuallySet: primaryGenre/subgenres), computed in SQL. The override
 # list itself is never read or printed.
+# Also prints an electronic-relevance recheck per event (assessRelevance on
+# the full stored text, stored RA link and cached Discogs rows; never the
+# stored genre). It is a CURRENT recomputation, not the historical publish
+# decision, and changes nothing. See src/db/auditRelevance.ts.
 #
 # Window: from_date 00:00 → the morning after to_date at 06:00 (Copenhagen),
 # plus multi-day events already running. Edge rows are flagged, not dropped.
