@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDetailUrl,
   guessArtistsFromTitle,
+  legacyArtistsFromTitle,
   KULTUNAUT_SOURCE_ID,
   parseKultunautDate,
   parseKultunautDetailHtml,
@@ -154,6 +155,26 @@ describe("guessArtistsFromTitle", () => {
 
   it("never treats a 'musikforedrag' (music lecture) title as an artist lineup — real evidence: 'Depeche Modes Violator - musikforedrag'", () => {
     expect(guessArtistsFromTitle("Depeche Modes Violator - musikforedrag")).toEqual([]);
+  });
+
+  describe("Discogs lookups stay as before (2026-10-23)", () => {
+    it.each([
+      ["Woesum (SE) + Europa (DE)"],
+      ["Joshua idehen (uk) - udsolgt"],
+      ["¥ØU$UKeuro ¥UK1MAT$U (Yousuke Yukimatsu) - Copenhagen"],
+      ["Halloween party - haunted warehouse"],
+      ["The Prodigy"],
+      ["Final Descent: Nyx (UK)"],
+    ])("the names sent to Discogs for %s are exactly the pre-cleanup ones", (title) => {
+      expect(legacyArtistsFromTitle(title)).toEqual(/:/.test(title) ? [] : [title]);
+    });
+
+    it("a parsed detail page carries the pre-cleanup names for enrichment and marks its artists as title guesses", () => {
+      const candidate = parseKultunautDetailHtml(detailHtml("19456289"), "19456289");
+      expect(candidate.artists).toEqual(["Gloryhammer (UK)"]);
+      expect(candidate.enrichmentArtists).toEqual(legacyArtistsFromTitle(candidate.title));
+      expect(candidate.artistsGuessedFromTitle).toBe(true);
+    });
   });
 
   describe("artist-title cleanup (2026-10-23) — real titles from the 2026-10-18 review queue", () => {

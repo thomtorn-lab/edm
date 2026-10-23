@@ -132,6 +132,15 @@ export interface ReviewPriorityContext {
   seriesIndex?: SeriesIndex;
 }
 
+/**
+ * Sources whose lineup is the source's own performer data, not a guess from
+ * the title: the adapters that set RawCandidateEvent.lineupNamesAreStructured
+ * (HvadErPå's JSON-LD performers, Culture Box's lineup anchors, Billetto's
+ * headliners). Their lineup counts even when it repeats the title, because
+ * the source itself names the performer.
+ */
+const STRUCTURED_LINEUP_SOURCES: ReadonlySet<string> = new Set(["src-hvaderpaa", "src-culture-box", "src-billetto"]);
+
 /** A row needs at least this relevance score, and one qualifying signal, to be in the "likely" tier. */
 export const LIKELY_RELEVANT_MIN_SCORE = 3;
 /** How many prioritised rows the admin sees before choosing "show all". */
@@ -187,7 +196,7 @@ export function scoreReviewPriority(item: ReviewPriorityInput, ctx: ReviewPriori
   } else if (categoryLabel) {
     signals.push({ key: "source_category", points: 2, label: categoryLabel });
   }
-  if (item.detectedLineup.length > 0 && lineupOnlyRepeatsTitle(item.probableTitle, item.detectedLineup)) {
+  if (item.detectedLineup.length > 0 && !(item.sourceId && STRUCTURED_LINEUP_SOURCES.has(item.sourceId)) && lineupOnlyRepeatsTitle(item.probableTitle, item.detectedLineup)) {
     signals.push({ key: "lineup_from_title", points: 0, label: "Lineup only repeats the title — not counted" });
   } else if (item.detectedLineup.length > 0) {
     signals.push({ key: "lineup", points: 1, label: `Lineup listed (${item.detectedLineup.length})` });

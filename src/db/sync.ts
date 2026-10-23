@@ -295,7 +295,9 @@ async function runSourceSyncLocked(
         result.holdReason !== "negative_relevance" &&
         (result.genre === null || (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak"));
       if (needsEnrichment) {
-        const enrichment = await enrichEventGenre(raw.artists);
+        // enrichmentArtists: KultuNaut's pre-cleanup names, so a better
+        // title parser never adds Discogs lookups (2026-10-23).
+        const enrichment = await enrichEventGenre(raw.enrichmentArtists ?? raw.artists);
         if (enrichment.genre && enrichment.genreConfidence) {
           result = applyEnrichedGenre(
             result,

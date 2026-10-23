@@ -517,4 +517,11 @@ describe("lineup point — only for a lineup that says more than the title (2026
     const real = scoreReviewPriority(dq({ probableTitle: "Night Shift", detectedLineup: ["Skarn", "KIOSK"], sourceId: "src-kultunaut" }), CTX);
     expect(real.signals.find((s) => s.key === "lineup")?.points).toBe(1);
   });
+
+  it("a structured lineup from the source counts even when it repeats the title; a title guess does not", () => {
+    const structured = scoreReviewPriority(dq({ probableTitle: "Horst Haller", detectedLineup: ["Horst Haller"], sourceId: "src-hvaderpaa" }), CTX);
+    expect(structured.signals.find((s) => s.key === "lineup")?.points).toBe(1);
+    const guessed = scoreReviewPriority(dq({ probableTitle: "Horst Haller", detectedLineup: ["Horst Haller"], sourceId: "src-kultunaut" }), CTX);
+    expect(guessed.signals.some((s) => s.key === "lineup")).toBe(false);
+  });
 });

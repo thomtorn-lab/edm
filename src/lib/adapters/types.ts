@@ -101,6 +101,14 @@ export interface RawCandidateEvent {
    * artists. Omitted means false, and sync behaves as before.
    */
   artistsGuessedFromTitle?: boolean;
+  /**
+   * Names to send to Discogs genre enrichment instead of `artists`
+   * (2026-10-23). KultuNaut sets it to what its title parser produced
+   * before the 2026-10-23 cleanup, so the cleaner `artists` never cause
+   * Discogs lookups that would not have happened before. Omitted means
+   * `artists` is used, as before.
+   */
+  enrichmentArtists?: string[];
   startDatetime: string | null;
   endDatetime: string | null;
   venueName: string | null;

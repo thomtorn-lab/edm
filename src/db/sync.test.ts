@@ -152,6 +152,13 @@ vi.mock("@/lib/discoveryNotification", () => ({
   notifyDiscoveryQueueInsertBatch: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Discogs enrichment never reaches the network in tests: "found nothing",
+// exactly what a failed or not-found lookup returns. Lets the KultuNaut test
+// below see which names a sync asks about.
+vi.mock("./enrichment", () => ({
+  enrichEventGenre: vi.fn().mockResolvedValue({ genre: null, genreConfidence: null, perArtist: [] }),
+}));
+
 vi.mock("./soundcloudLinks", () => ({
   reconcileSourceSoundcloudLinks: vi.fn().mockResolvedValue({ upserts: [], deletes: [], suppressedDeletes: 0 }),
 }));
@@ -170,6 +177,7 @@ const {
 } = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 const { reconcileSourceSoundcloudLinks } = await import("./soundcloudLinks");
+const { enrichEventGenre } = await import("./enrichment");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
   return { sourceId: "src-culture-box", fetchCandidates };
@@ -2320,5 +2328,36 @@ describe("Venue-provided SoundCloud links (Culture Box, 2026-10-13) — reconcil
     const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: { links: LINKS, absenceDocumented: true } })])));
     expect(result.outcome).toBe("ok");
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe("KultuNaut artist cleanup never adds Discogs lookups (2026-10-23)", () => {
+  it("sends Discogs the pre-cleanup names, not the cleaner lineup", async () => {
+    const woesum: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-kultunaut",
+      sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+      officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+      title: "Woesum (SE) + Europa (DE)",
+      venueName: "Rust",
+      artists: ["Woesum (SE)", "Europa (DE)"],
+      artistsGuessedFromTitle: true,
+      enrichmentArtists: ["Woesum (SE) + Europa (DE)"],
+    };
+    await runSourceSync("src-kultunaut", "KultuNaut", { sourceId: "src-kultunaut", fetchCandidates: () => Promise.resolve([woesum]) });
+    expect(enrichEventGenre).toHaveBeenCalledWith(["Woesum (SE) + Europa (DE)"]);
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ detectedLineup: ["Woesum (SE)", "Europa (DE)"] }));
+  });
+
+  it("a source without enrichmentArtists still sends its own artists, as before", async () => {
+    const unclear: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      artists: ["Some Artist"],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+    };
+    await runSourceSync("src-billetto", "Billetto", fakeAdapter(() => Promise.resolve([unclear])));
+    expect(enrichEventGenre).toHaveBeenCalledWith(["Some Artist"]);
   });
 });

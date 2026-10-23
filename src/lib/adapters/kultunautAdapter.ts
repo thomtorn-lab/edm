@@ -214,6 +214,15 @@ export function parseKultunautDate(text: string): { date: DateKey; hour: number;
  * defeating that check for the one case it exists to catch. A non-artist
  * title must never reach that masking step at all.
  */
+/**
+ * The title parser as it was before the 2026-10-23 cleanup: the whole title
+ * unless it reads as an event name. Kept only to name the Discogs lookups
+ * (RawCandidateEvent.enrichmentArtists), so the cleanup adds none.
+ */
+export function legacyArtistsFromTitle(title: string): string[] {
+  return /[:|]|\bpres\.|\bpresents\b|\bfestival\b|\bweekender\b|\btour\b|club\s*night|mini\s*festival|\bmusikforedrag\b/i.test(title) ? [] : [title];
+}
+
 export function guessArtistsFromTitle(title: string): string[] {
   if (/[:|]|\/\/|\bpres\.|\bpresents\b|\bfestival\b|\bweekender\b|\btour\b|club\s*night|mini\s*festival|\bmusikforedrag\b/i.test(title)) {
     return [];
@@ -353,6 +362,7 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
     relevanceText: fullDescriptionText || null,
     artists: guessArtistsFromTitle(title),
     artistsGuessedFromTitle: true,
+    enrichmentArtists: legacyArtistsFromTitle(title),
     startDatetime,
     endDatetime: null, // never stated on this site — never invented
     venueName,
