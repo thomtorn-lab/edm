@@ -1,0 +1,366 @@
+{
+  "meta": {
+    "sourceId": "src-culture-box",
+    "generatedAt": "2026-10-23T13:10:36.229Z",
+    "readOnly": true,
+    "candidatesFetched": 18,
+    "lastFetchWasComplete": true,
+    "candidatesWithoutSyncMatch": 0,
+    "candidatesMatchedToPastEvents": 0,
+    "residentAdvisorRequestsRefused": 0,
+    "limitations": [
+      "Shadow only: nothing was written, and the active sync rule for ticket links is unchanged.",
+      "The stored link's origin is not recorded (no ticket_url_source_id column yet), so it is treated as unknown: only an official source with venue authority can ever be a would_replace.",
+      "Only candidates a real sync would match to an existing event (linked, or high-confidence duplicate) are assessed; unmatched candidates cannot replace anything.",
+      "Past events are skipped.",
+      "One live fetch of the source's own pages; no Resident Advisor request is made (refused if attempted) and no Discogs lookup is made.",
+      "Outcomes are proposals for manual QA labeling, not ground truth. Zero false positives in a small labeled sample is not sufficient evidence for activation."
+    ]
+  },
+  "summary": {
+    "total": 18,
+    "byOutcome": {
+      "no_change": 0,
+      "fill": 0,
+      "confirm": 18,
+      "would_replace": 0,
+      "withheld": 0
+    },
+    "byWithheldReason": {}
+  },
+  "decisions": [
+    {
+      "decisionId": "src-culture-box:e-0018336c:901355f9",
+      "sourceId": "src-culture-box",
+      "eventId": "e-0018336c",
+      "eventTitle": "WHAT HAPPENS",
+      "candidateTitle": "WHAT HAPPENS",
+      "venueId": "v-culture-box",
+      "night": "2026-11-21",
+      "storedTicketUrl": "https://ra.co/events/2469252",
+      "incomingTicketUrl": "https://ra.co/events/2469252",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-0018336c",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-0a60f888:127abe6a",
+      "sourceId": "src-culture-box",
+      "eventId": "e-0a60f888",
+      "eventTitle": "Black Box: DENIS HORVAT, RADECKT, MOUSAN CORR · Red Box: ULDΛLL, JOA PICARO",
+      "candidateTitle": "Black Box: DENIS HORVAT, RADECKT, MOUSAN CORR · Red Box: ULDΛLL, JOA PICARO",
+      "venueId": "v-culture-box",
+      "night": "2026-11-28",
+      "storedTicketUrl": "https://ra.co/events/2565521",
+      "incomingTicketUrl": "https://ra.co/events/2565521",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-0a60f888",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-14cf31b5:7c4936df",
+      "sourceId": "src-culture-box",
+      "eventId": "e-14cf31b5",
+      "eventTitle": "Black Box: LAMPÉ, SCHAARUP, ONSBERG · Red Box: RØNHÖFF, LOUIN, CØKIT",
+      "candidateTitle": "Black Box: LAMPÉ, SCHAARUP, ONSBERG · Red Box: RØNHÖFF, LOUIN, CØKIT",
+      "venueId": "v-culture-box",
+      "night": "2026-11-07",
+      "storedTicketUrl": "https://ra.co/events/2534269",
+      "incomingTicketUrl": "https://ra.co/events/2534269",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-14cf31b5",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-267c84fd:30a1b9eb",
+      "sourceId": "src-culture-box",
+      "eventId": "e-267c84fd",
+      "eventTitle": "Black Box: ANIMAL TRAINER, MULO, KLARSKOV · Red Box: ADELINA, LEANCA, ANTOINE",
+      "candidateTitle": "Black Box: ANIMAL TRAINER, MULO, KLARSKOV · Red Box: ADELINA, LEANCA, ANTOINE",
+      "venueId": "v-culture-box",
+      "night": "2026-11-14",
+      "storedTicketUrl": "https://ra.co/events/2551092",
+      "incomingTicketUrl": "https://ra.co/events/2551092",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-267c84fd",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-3699a789:512766c0",
+      "sourceId": "src-culture-box",
+      "eventId": "e-3699a789",
+      "eventTitle": "Black Box: FABIAN KROOSS, PAB DISCO, MISS ALBA · Red Box: AMA LIEN, SONYDIAM",
+      "candidateTitle": "Black Box: FABIAN KROOSS, PAB DISCO, MISS ALBA · Red Box: AMA LIEN, SONYDIAM",
+      "venueId": "v-culture-box",
+      "night": "2026-12-05",
+      "storedTicketUrl": "https://ra.co/events/2554498",
+      "incomingTicketUrl": "https://ra.co/events/2554498",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-3699a789",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-41440270:869f5369",
+      "sourceId": "src-culture-box",
+      "eventId": "e-41440270",
+      "eventTitle": "IBOGA RECORDS and SOFA BEATS",
+      "candidateTitle": "Black Box: TICON, EMOK, ZORA, UMLOUD · Red Box: TIM ANDRESEN, ALEXANDER DESCROIX",
+      "venueId": "v-culture-box",
+      "night": "2026-12-11",
+      "storedTicketUrl": "https://ra.co/events/2556840",
+      "incomingTicketUrl": "https://ra.co/events/2556840",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-41440270",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-63e3c96a:33cee2db",
+      "sourceId": "src-culture-box",
+      "eventId": "e-63e3c96a",
+      "eventTitle": "Black Box: HE.SHE.THEY. x SYREN · Red Box: DJ 2LATE, ASTA MARI",
+      "candidateTitle": "Black Box: HE.SHE.THEY. x SYREN · Red Box: DJ 2LATE, ASTA MARI",
+      "venueId": "v-culture-box",
+      "night": "2026-12-12",
+      "storedTicketUrl": "https://ra.co/events/2544456",
+      "incomingTicketUrl": "https://ra.co/events/2544456",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-63e3c96a",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-6ea5a85d:9fbfcda6",
+      "sourceId": "src-culture-box",
+      "eventId": "e-6ea5a85d",
+      "eventTitle": "Black Box: SARAH WILD, PELZMAN, DJ SPICE · Red Box: DASHA, ANYA, FREDE [NO], JAN BRANDI",
+      "candidateTitle": "Black Box: SARAH WILD, PELZMAN, DJ SPICE · Red Box: DASHA, ANYA, FREDE [NO], JAN BRANDI",
+      "venueId": "v-culture-box",
+      "night": "2026-11-06",
+      "storedTicketUrl": "https://ra.co/events/2530879",
+      "incomingTicketUrl": "https://ra.co/events/2530879",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-6ea5a85d",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-831e7896:04a2d96c",
+      "sourceId": "src-culture-box",
+      "eventId": "e-831e7896",
+      "eventTitle": "Black Box: AZZECCA, B FROM E, NAT · Red Box: RARES GHERMAN, COSTYX, FYNUTZU",
+      "candidateTitle": "Black Box: AZZECCA, B FROM E, NAT · Red Box: RARES GHERMAN, COSTYX, FYNUTZU",
+      "venueId": "v-culture-box",
+      "night": "2026-10-24",
+      "storedTicketUrl": "https://ra.co/events/2515595",
+      "incomingTicketUrl": "https://ra.co/events/2515595",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-831e7896",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-9171dc00:34ccc2d6",
+      "sourceId": "src-culture-box",
+      "eventId": "e-9171dc00",
+      "eventTitle": "Black Box: XINOBI, BOW MILLER, ANDERS HP · Red Box: RHYTHM VAULT",
+      "candidateTitle": "Black Box: XINOBI, BOW MILLER, ANDERS HP · Red Box: RHYTHM VAULT",
+      "venueId": "v-culture-box",
+      "night": "2026-10-23",
+      "storedTicketUrl": "https://ra.co/events/2499693",
+      "incomingTicketUrl": "https://ra.co/events/2499693",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-9171dc00",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-a2b5cf47:1f43f17c",
+      "sourceId": "src-culture-box",
+      "eventId": "e-a2b5cf47",
+      "eventTitle": "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+      "candidateTitle": "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+      "venueId": "v-culture-box",
+      "night": "2026-11-27",
+      "storedTicketUrl": "https://ra.co/events/2560099",
+      "incomingTicketUrl": "https://ra.co/events/2560099",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-a2b5cf47",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-ab7d278f:9ccccee3",
+      "sourceId": "src-culture-box",
+      "eventId": "e-ab7d278f",
+      "eventTitle": "Black Box: MARC WERNER, EL MUNDO, AJA GULRIS · Red Box: AMIRAKU, inesse",
+      "candidateTitle": "Black Box: MARC WERNER, EL MUNDO, AJA GULRIS · Red Box: AMIRAKU, inesse",
+      "venueId": "v-culture-box",
+      "night": "2026-12-04",
+      "storedTicketUrl": "https://ra.co/events/2562411",
+      "incomingTicketUrl": "https://ra.co/events/2562411",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-ab7d278f",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-bf9d6551:4064e17b",
+      "sourceId": "src-culture-box",
+      "eventId": "e-bf9d6551",
+      "eventTitle": "CULTURE BOX NEW YEAR’S EVE",
+      "candidateTitle": "CULTURE BOX NEW YEAR’S EVE",
+      "venueId": "v-culture-box",
+      "night": "2026-12-31",
+      "storedTicketUrl": "https://ra.co/events/2547156",
+      "incomingTicketUrl": "https://ra.co/events/2547156",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-bf9d6551",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-ceaf5497:71f952a3",
+      "sourceId": "src-culture-box",
+      "eventId": "e-ceaf5497",
+      "eventTitle": "Black Box: SIMONE ZINO, MARIA FAGRANES, MIDELE · Red Box: AZADÎ, ALMOST GINGER",
+      "candidateTitle": "Black Box: SIMONE ZINO, MARIA FAGRANES, MIDELE · Red Box: AZADÎ, ALMOST GINGER",
+      "venueId": "v-culture-box",
+      "night": "2026-11-20",
+      "storedTicketUrl": "https://ra.co/events/2542195",
+      "incomingTicketUrl": "https://ra.co/events/2542195",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-ceaf5497",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-cf312c20:0c193015",
+      "sourceId": "src-culture-box",
+      "eventId": "e-cf312c20",
+      "eventTitle": "CULTURE BOX HALLOWEEN 2026",
+      "candidateTitle": "CULTURE BOX HALLOWEEN 2026",
+      "venueId": "v-culture-box",
+      "night": "2026-10-31",
+      "storedTicketUrl": "https://ra.co/events/2509338",
+      "incomingTicketUrl": "https://ra.co/events/2509338",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-cf312c20",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-d0a877b9:d2e52475",
+      "sourceId": "src-culture-box",
+      "eventId": "e-d0a877b9",
+      "eventTitle": "Black Box: DUSKY presents SIGNALS TOUR · Red Box: SÓLTMÄNN, RÓS",
+      "candidateTitle": "Black Box: DUSKY presents SIGNALS TOUR · Red Box: SÓLTMÄNN, RÓS",
+      "venueId": "v-culture-box",
+      "night": "2026-11-13",
+      "storedTicketUrl": "https://ra.co/events/2469221",
+      "incomingTicketUrl": "https://ra.co/events/2469221",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-d0a877b9",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-e3bd3ab9:dcb57afa",
+      "sourceId": "src-culture-box",
+      "eventId": "e-e3bd3ab9",
+      "eventTitle": "NECKLESS HALLOWEEN EDITION",
+      "candidateTitle": "NECKLESS: HALLOWEEN EDITION",
+      "venueId": "v-culture-box",
+      "night": "2026-10-30",
+      "storedTicketUrl": "https://ra.co/events/2527202",
+      "incomingTicketUrl": "https://ra.co/events/2527202",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-e3bd3ab9",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    },
+    {
+      "decisionId": "src-culture-box:e-e870d611:fb018ed3",
+      "sourceId": "src-culture-box",
+      "eventId": "e-e870d611",
+      "eventTitle": "Black Box: AMITTET, ASTA MARI, DEB FOAM, JACOBXFREY, SANA",
+      "candidateTitle": "Black Box: AMITTET, ASTA MARI, DEB FOAM, JACOBXFREY, SANA",
+      "venueId": "v-culture-box",
+      "night": "2026-12-18",
+      "storedTicketUrl": "https://ra.co/events/2567543",
+      "incomingTicketUrl": "https://ra.co/events/2567543",
+      "outcome": "confirm",
+      "withheldReason": null,
+      "identity": null,
+      "explanation": [
+        "sync match: linked -> e-e870d611",
+        "same ticket link as stored (normalized); nothing to replace"
+      ]
+    }
+  ],
+  "labelTemplate": [],
+  "run": {
+    "workflow": "inspect-source.yml",
+    "runId": 39958996095,
+    "jobId": 120431918630,
+    "url": "https://github.com/thomtorn-lab/edm/actions/runs/39958996095",
+    "headSha": "8f8598b00a57da8d1134a29e13f97de3b0b26a97",
+    "transcribedFrom": "the job log's REPORT JSON line"
+  }
+}
