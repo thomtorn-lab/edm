@@ -46,6 +46,7 @@ import {
 } from "@/lib/datetime";
 import { assessDuplicate, normalizeUrl, type DuplicateConfidence } from "@/lib/dedup";
 import { SITE_URL } from "@/lib/siteUrl";
+import { ARTIST_CACHE_SQL, cacheKeyForArtist, recheckRelevance, toCacheEntry, type ArtistCacheRow, type RelevanceRecheck } from "./auditRelevance";
 
 /** Longest window one run may cover — keeps the log readable and the query cheap. */
 export const MAX_WINDOW_DAYS = 31;
@@ -169,6 +170,15 @@ export interface ScreeningEvent {
    * not updated by admin edits, so read it as stale when this is non-empty.
    */
   genreManuallySet: ("primaryGenre" | "subgenres")[];
+  /**
+   * Electronic-relevance recheck (editorial screening, 2026-10-17): a
+   * CURRENT recomputation with assessRelevance from the full stored text,
+   * the stored RA link and cached Discogs data, never using the stored genre
+   * as evidence. It is not the historical publish decision and changes
+   * nothing. See src/db/auditRelevance.ts. Absent when the audit is built
+   * without it (toScreeningEvent alone).
+   */
+  relevanceRecheck?: RelevanceRecheck;
   artists: string[];
   status: string[];
   sourceId: string | null;
@@ -334,7 +344,8 @@ export const READ_ONLY_TX_STATEMENTS = {
  * Runs the audit inside a read-only transaction that is ALWAYS rolled back.
  * The only statements ever sent are BEGIN READ ONLY, a statement timeout, a
  * SHOW that proves the transaction is read-only (aborting otherwise), the
- * two SELECTs above, and ROLLBACK.
+ * two SELECTs above, the read-only artist_genre_cache SELECT for the
+ * relevance recheck (src/db/auditRelevance.ts), and ROLLBACK.
  */
 export async function runEventsWindowAudit(client: QueryClient, window: AuditWindow): Promise<EventsWindowReport> {
   await client.query(READ_ONLY_TX_STATEMENTS.begin);
@@ -347,6 +358,12 @@ export async function runEventsWindowAudit(client: QueryClient, window: AuditWin
     }
     const params = [window.startUtc, window.endUtc];
     const rows = (await client.query(WINDOW_EVENTS_SQL, params)).rows as WindowEventRow[];
+    // Read-only Discogs cache rows for every lineup name in the window (one
+    // SELECT, same read-only transaction) — the relevance recheck's only
+    // lineup evidence. Nothing is looked up or written.
+    const artistKeys = [...new Set(rows.flatMap((r) => (r.artists ?? []).map(cacheKeyForArtist)).filter(Boolean))];
+    const cacheRows = artistKeys.length > 0 ? ((await client.query(ARTIST_CACHE_SQL, [artistKeys])).rows as ArtistCacheRow[]) : [];
+    const artistCache = new Map(cacheRows.map((c) => [c.artist_name_normalized, toCacheEntry(c)]));
     const counts = (await client.query(WINDOW_COUNT_SQL, params)).rows as { source_id: string | null; n: number }[];
     const countBySource = counts.map((c) => ({ sourceId: c.source_id, count: Number(c.n) }));
     const counted = countBySource.reduce((sum, c) => sum + c.count, 0);
@@ -360,7 +377,9 @@ export async function runEventsWindowAudit(client: QueryClient, window: AuditWin
       totalPublishedInWindow: rows.length,
       countBySource,
       completenessCheck: counted === rows.length ? "ok" : "mismatch",
-      events: rows.map((r) => toScreeningEvent(r, window)),
+      events: await Promise.all(
+        rows.map(async (r) => ({ ...toScreeningEvent(r, window), relevanceRecheck: await recheckRelevance(r, artistCache) })),
+      ),
       duplicateCandidates: findDuplicateCandidates(rows),
     };
   } catch (err) {
