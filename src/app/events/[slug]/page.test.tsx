@@ -69,11 +69,11 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 vi.mock("@/lib/queries", () => ({
   getEventBySlugWithVenue: vi.fn(),
   getSourceEventLinksForEvent: vi.fn(),
-  getArtistYoutubePreviewForLineup: vi.fn(),
+  getEventYoutubePreview: vi.fn(),
   getSoundcloudLinksForLineup: vi.fn(),
 }));
 
-const { getEventBySlugWithVenue, getSourceEventLinksForEvent, getArtistYoutubePreviewForLineup, getSoundcloudLinksForLineup } =
+const { getEventBySlugWithVenue, getSourceEventLinksForEvent, getEventYoutubePreview, getSoundcloudLinksForLineup } =
   await import("@/lib/queries");
 const { default: EventDetailPage } = await import("./page");
 
@@ -85,8 +85,8 @@ type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
  * 2026-10-16); tests still supply them to prove discovery rows never leak
  * into the page. Defaults to none.
  *
- * getArtistYoutubePreviewForLineup defaults to null (no cached YouTube
- * Artist Preview match) — none of the tests in this file are about that
+ * getEventYoutubePreview defaults to null (no video: no override and no
+ * cached YouTube Artist Preview match) — none of the tests in this file are about that
  * feature, so it stays off unless a test opts in. getSoundcloudLinksForLineup
  * likewise defaults to no links.
  */
@@ -97,7 +97,7 @@ async function renderPage(
 ) {
   vi.mocked(getEventBySlugWithVenue).mockResolvedValue(event);
   vi.mocked(getSourceEventLinksForEvent).mockResolvedValue(sourceLinks);
-  vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValue(null);
+  vi.mocked(getEventYoutubePreview).mockResolvedValue(null);
   vi.mocked(getSoundcloudLinksForLineup).mockResolvedValue(soundcloudLinks);
   const element = await EventDetailPage({ params: Promise.resolve({ slug: event.slug }) } as never);
   render(element);
@@ -759,7 +759,7 @@ describe("Event detail page — YouTube Artist Preview embed (automated Rule A V
   afterEach(cleanup);
 
   it("renders the embed when a cached accepted match exists", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
       videoTitle: "Eric Prydz DJ Set",
@@ -957,7 +957,7 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
   afterEach(cleanup);
 
   it("renders the Artist Preview embed above the About heading (previously rendered below it)", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
       videoTitle: "Eric Prydz DJ Set",
@@ -972,7 +972,7 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
   });
 
   it("renders the Artist Preview embed after the secondary actions (Add to calendar, Share) and the Get a taste heading", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
       videoTitle: "Eric Prydz DJ Set",
@@ -990,7 +990,7 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
   });
 
   it("Artist Preview never appears before the Tickets/Official event CTA", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
       videoTitle: "Eric Prydz DJ Set",
@@ -1008,7 +1008,7 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
   afterEach(cleanup);
 
   it("the Artist Preview section has id=\"video\" on its own container, not on the iframe", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
       videoTitle: "Eric Prydz DJ Set",
@@ -1028,7 +1028,7 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
   });
 
   it("keeps youtube-nocookie.com and no autoplay parameter on the embed src", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
       videoTitle: "Eric Prydz DJ Set",
@@ -1113,7 +1113,7 @@ describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10
   });
 
   it("can render alongside the Artist Preview video section", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Tim Andresen",
       videoId: "abc123XYZ",
       videoTitle: "Tim Andresen DJ Set",
@@ -1125,7 +1125,7 @@ describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10
   });
 
   it("renders in the order VIDEO -> SOUNDCLOUD -> About (content-order revision, 2026-10-09)", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce({
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Tim Andresen",
       videoId: "abc123XYZ",
       videoTitle: "Tim Andresen DJ Set",
@@ -1164,6 +1164,12 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
   ];
   const ARTISTS = ["TIM ANDRESEN", "REXIE LEX"];
 
+  it("asks for the video by this event (its id and lineup), so a per-event override applies to this event only", async () => {
+    const event = makeEvent({ artists: ARTISTS });
+    await renderPage(event);
+    expect(getEventYoutubePreview).toHaveBeenCalledWith(expect.objectContaining({ id: event.id, artists: ARTISTS }));
+  });
+
   it("is absent when there is neither a video nor SoundCloud links", async () => {
     await renderPage(makeEvent({ artists: ARTISTS }));
     expect(screen.queryByRole("heading", { name: "Get a taste" })).toBeNull();
@@ -1171,7 +1177,7 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
   });
 
   it("video only: one h2 'Get a taste' and the embed — no 'video preview' heading and no artist caption under the player", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce(VIDEO);
     await renderPage(makeEvent({ artists: ARTISTS }));
     const heading = screen.getByRole("heading", { level: 2, name: "Get a taste" });
     const section = heading.closest("section")!;
@@ -1200,7 +1206,7 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
   });
 
   it("both: video first as the primary element, SoundCloud after extra vertical air, one shared section", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce(VIDEO);
     await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
     const section = screen.getByRole("heading", { level: 2, name: "Get a taste" }).closest("section")!;
     const soundcloud = document.getElementById("soundcloud")!;
@@ -1215,7 +1221,7 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
   });
 
   it("#video (homepage VIDEO badge) targets the section, so the jump lands with its heading in view; #soundcloud stays on the SoundCloud block", async () => {
-    vi.mocked(getArtistYoutubePreviewForLineup).mockResolvedValueOnce(VIDEO);
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce(VIDEO);
     await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
     const video = document.getElementById("video")!;
     expect(video.tagName).toBe("SECTION");

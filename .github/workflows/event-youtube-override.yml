@@ -1,0 +1,128 @@
+name: Event YouTube Video Override
+
+# Admin per-event YouTube video (2026-10-23). Runs src/db/eventYoutubeOverride.ts:
+# choose, replace, hide or clear the video shown on ONE event, without
+# touching the per-artist cache the automated matcher uses. Writes only
+# event_youtube_preview_overrides — except migrate-artist-pin, the one-off
+# move of an old artist-level pin onto an event (see the script's header).
+#
+# Weekly availability check (verify mode): re-checks every chosen video with
+# videos.list (1 quota unit per 50 videos; never search.list, so it cannot
+# eat into the search quota that live enrichment and the paused backfill
+# depend on — the reason the backfill's own schedule was paused). A video
+# that has gone private/deleted/unembeddable is hidden on its event, with no
+# artist video shown instead, and shows again once it verifies again.
+#
+# The schedule is OFF until the repository variable
+# EVENT_VIDEO_VERIFY_ENABLED is set to "true" (Settings > Secrets and
+# variables > Actions > Variables). Until then a scheduled trigger skips the
+# job entirely — nothing is checked or written. Manual verify / verify-plan
+# runs work regardless.
+#
+# Secrets used: DATABASE_URL, YOUTUBE_API_KEY. Never echoed, printed, or logged.
+
+on:
+  schedule:
+    # Mondays 05:17 UTC — off the hour, away from the source syncs.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) shows what the event shows now; set/hide/clear change one event; verify-plan/verify check every chosen video; migrate-artist-pin(-plan) moves an old artist-level pin onto one event.'
+        required: true
+        type: choice
+        options:
+          - plan
+          - set
+          - hide
+          - clear
+          - verify-plan
+          - verify
+          - migrate-artist-pin-plan
+          - migrate-artist-pin
+        default: plan
+      event:
+        description: "Event id (e-xxxxxxxx), slug, or the event page URL. Not used by verify modes."
+        required: false
+      video:
+        description: 'set / migrate modes (or plan, to look one up): YouTube URL or video id, e.g. "https://youtu.be/Pbb0KmuwYSA".'
+        required: false
+      artist:
+        description: "set: optional lineup name the video is for (recorded only). migrate modes: the artist whose pin is moved."
+        required: false
+      assert_blocked:
+        description: 'migrate-artist-pin only, optional: comma-separated artist names that must still be blocked, else nothing is written (e.g. "LMN").'
+        required: false
+      confirm:
+        description: "Write modes only: SET-EVENT-YOUTUBE-VIDEO, HIDE-EVENT-YOUTUBE-VIDEO, CLEAR-EVENT-YOUTUBE-VIDEO, VERIFY-EVENT-YOUTUBE-VIDEOS or MIGRATE-ARTIST-PIN (matching the mode)."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: event-youtube-override
+  cancel-in-progress: false
+
+jobs:
+  run:
+    # A scheduled run only proceeds once the weekly check has been switched on.
+    if: github.event_name != 'schedule' || vars.EVENT_VIDEO_VERIFY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run event YouTube video override
+        # Inputs reach the script only via step-level env vars expanded inside
+        # double quotes — never pasted into it via ${{ }}. See
+        # src/db/eventYoutubeOverrideWorkflow.test.ts.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_EVENT: ${{ inputs.event }}
+          INPUT_VIDEO: ${{ inputs.video }}
+          INPUT_ARTIST: ${{ inputs.artist }}
+          INPUT_ASSERT_BLOCKED: ${{ inputs.assert_blocked }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          set -u
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            args=(--mode=verify --confirm=VERIFY-EVENT-YOUTUBE-VIDEOS)
+          else
+            args=(--mode="$INPUT_MODE")
+            [ -n "$INPUT_EVENT" ] && args+=(--event="$INPUT_EVENT")
+            [ -n "$INPUT_VIDEO" ] && args+=(--video="$INPUT_VIDEO")
+            [ -n "$INPUT_ARTIST" ] && args+=(--artist="$INPUT_ARTIST")
+            [ -n "$INPUT_ASSERT_BLOCKED" ] && args+=(--assert-blocked="$INPUT_ASSERT_BLOCKED")
+            [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
+          fi
+          node --env-file=.env.local --import tsx src/db/eventYoutubeOverride.ts "${args[@]}"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local

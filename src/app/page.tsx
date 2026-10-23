@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import {
-  getArtistPreviewAvailabilityForLineups,
+  getPreviewAvailabilityForEvents,
   getPublishedEventsWithVenue,
   getSoundcloudAvailabilityForEvents,
 } from "@/lib/queries";
@@ -29,17 +29,17 @@ export default async function HomePage() {
   // (performance work, 2026-10-10): past events and fields nothing on the
   // page reads used to make up most of this page's HTML/RSC payload.
   const events = upcomingForHomepage(await getPublishedEventsWithVenue(), now);
-  // Homepage VIDEO indicator (2026-09-26): ONE batched query for every
-  // event's lineup combined (never per-event — see
-  // getArtistPreviewAvailabilityForLineups's own doc comment), reusing the
-  // exact same acceptance predicate the event-detail page relies on, so the
+  // Homepage VIDEO indicator (2026-09-26): batched reads for every event
+  // combined (never per-event — see getPreviewAvailabilityForEvents), using
+  // the exact same rule as the event-detail page (getEventYoutubePreview:
+  // per-event admin override first, then the automated artist match), so the
   // indicator only ever shows when that event's own detail page would
-  // actually render an Artist Preview. No YouTube API call and no matcher
+  // actually render a video. No YouTube API call and no matcher
   // execution happen here — this only reads the existing cache table.
   // AUDIO indicator: the same kind of single batched read, for the
   // venue-provided SoundCloud links (see getSoundcloudAvailabilityForEvents).
   const [previewAvailability, audioAvailability] = await Promise.all([
-    getArtistPreviewAvailabilityForLineups(events.map((e) => e.artists)),
+    getPreviewAvailabilityForEvents(events),
     getSoundcloudAvailabilityForEvents(events),
   ]);
   const homepageEvents = events.map((event, i) => toHomepageEvent(event, previewAvailability[i], audioAvailability[i]));
