@@ -7,6 +7,7 @@ import {
   prioritizeNotInSource,
   scoreReviewPriority,
   splitPastStale,
+  splitPossibleForDisplay,
   splitVisibleReviewRows,
   type ReviewPriorityInput,
 } from "./reviewPriority";
@@ -491,5 +492,41 @@ describe("groupReviewList / isSameEventFromAnotherSource — display-only groupi
     expect(grouped.likely.map((g) => g.primary.item.id)).toEqual([list.likely[0].item.id, ...grouped.likely.slice(1).map((g) => g.primary.item.id)]);
     expect(grouped.likely[0].primary.item.id).toBe("solo");
     expect(JSON.stringify(list)).toBe(before);
+  });
+});
+
+describe("splitPossibleForDisplay — each possible event once, urgent ones in full", () => {
+  const at = (id: string, hours: number | null, urgent = false) => ({
+    primary: {
+      item: dq({ id, probableTitle: id, probableStart: hours === null ? null : new Date(CTX.now.getTime() + hours * 3_600_000).toISOString() }),
+      priority: { ...scoreReviewPriority(dq({ id }), CTX), hoursToStart: hours, startsWithin72h: urgent },
+    },
+    others: [],
+  });
+
+  it("puts urgent events in full and the rest into time buckets by start date, leaving empty buckets out", () => {
+    const groups = [at("a", 30, true), at("b", 100), at("c", 400), at("d", 2000), at("e", 150), at("f", null)];
+    const display = splitPossibleForDisplay(groups);
+    expect(display.urgent.map((g) => g.primary.item.id)).toEqual(["a"]);
+    expect(display.buckets.map((b) => [b.label, b.groups.map((g) => g.primary.item.id)])).toEqual([
+      ["Next 7 days", ["b", "e"]],
+      ["8–30 days", ["c"]],
+      ["Later", ["d"]],
+      ["No date", ["f"]],
+    ]);
+    const all = [...display.urgent, ...display.buckets.flatMap((b) => b.groups)].map((g) => g.primary.item.id);
+    expect(all.sort()).toEqual(["a", "b", "c", "d", "e", "f"]);
+    expect(splitPossibleForDisplay([at("x", 500)]).buckets.map((b) => b.key)).toEqual(["next_30_days"]);
+  });
+
+  it("orders a bucket by start date even when the ranking put a later event first", () => {
+    const display = splitPossibleForDisplay([at("later-but-ranked-first", 600), at("earlier", 300)]);
+    expect(display.buckets[0].groups.map((g) => g.primary.item.id)).toEqual(["earlier", "later-but-ranked-first"]);
+  });
+
+  it("an event is urgent when any of its sources' listings starts within 72 hours", () => {
+    const group = at("g", 200);
+    const urgentTwin = at("g2", 60, true).primary;
+    expect(splitPossibleForDisplay([{ ...group, others: [urgentTwin] }]).urgent).toHaveLength(1);
   });
 });

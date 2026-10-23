@@ -6,10 +6,9 @@ import DiscoveryQueue from "./DiscoveryQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
 import type { AdminQueueCategory, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
 import { ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
-import { formatFullDateLabel } from "@/lib/format";
+import { formatFullDateLabel, formatRowDateLabel } from "@/lib/format";
 import {
-  REVIEW_PRIORITY_DEFAULT_VISIBLE,
-  splitVisibleReviewRows,
+  splitPossibleForDisplay,
   type NotInSourceReview,
   type PastStaleSplit,
   type PrioritizedReviewRow,
@@ -273,18 +272,52 @@ function GroupedQueue({ groups, venues, emptyMessage }: { groups: ReviewGroup[];
 const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide";
 
 /**
+ * One possible event as a single compact line: date, title, venue and how
+ * many sources list it. Clicking it opens the full entry (explanation,
+ * other sources and the usual actions) in its place, so it is never shown
+ * twice.
+ */
+function CompactPossibleRow({ group, venues }: { group: ReviewGroup; venues: Venue[] }) {
+  const [open, setOpen] = useState(false);
+  const { item } = group.primary;
+  const sources = group.others.length + 1;
+  return (
+    <li className="border-b border-border last:border-b-0" data-testid="compact-possible-row">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={item.probableTitle}
+        className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 py-2 text-left text-xs hover:bg-surface-2 sm:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,12rem)_auto] sm:items-baseline"
+      >
+        <span className="order-1 text-text-tertiary">{item.probableStart ? formatRowDateLabel(item.probableStart) : "No date"}</span>
+        <span className="order-2 text-[10px] font-semibold uppercase tracking-wide text-status-warn sm:order-4">{open ? "Close" : "Open"}</span>
+        <span className="order-3 col-span-2 truncate font-semibold text-text-primary sm:order-2 sm:col-span-1">{item.probableTitle}</span>
+        <span className="order-4 col-span-2 truncate text-text-secondary sm:order-3 sm:col-span-1">
+          {item.probableVenueName ?? "No venue"}
+          {sources > 1 && ` · ${sources} sources`}
+        </span>
+      </button>
+      {open && (
+        <div className="pb-3">
+          <GroupedQueue groups={[group]} venues={venues} emptyMessage="" />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
  * Insufficient-evidence rows ranked by how likely they are to be electronic
  * and how soon they start. They stay in Insufficient evidence too: this is a
  * prioritised view of the same rows, using the same publish/ignore actions.
- * The default view shows up to 15 rows, likely ones first; free slots go to
- * the best possible rows, in their own clearly marked section.
+ * Every event appears exactly once: likely ones in full, possible ones
+ * starting within 72 hours in full (the banner's own urgency rule), and the
+ * other possible ones as compact rows by start date that open in place — so
+ * none of them needs "show all" to be found.
  */
 function LikelyRelevantList({ list, venues }: { list: GroupedReviewList; venues: Venue[] }) {
-  const [showAllLikely, setShowAllLikely] = useState(false);
-  const [showAllPossible, setShowAllPossible] = useState(false);
-  const visible = splitVisibleReviewRows(list);
-  const likelyRows = showAllLikely ? list.likely : visible.likelyShown;
-  const possibleRows = showAllPossible ? list.possible : visible.possibleShown;
+  const possible = splitPossibleForDisplay(list.possible);
   return (
     <div>
       <p className="mb-3 text-xs text-text-secondary">
@@ -295,33 +328,35 @@ function LikelyRelevantList({ list, venues }: { list: GroupedReviewList; venues:
       <section aria-label="Likely relevant">
         <h3 className={`${SECTION_HEADING} text-accent-strong`}>Likely relevant ({list.likely.length})</h3>
         <p className="mt-1 mb-2 text-xs text-text-tertiary">Backed by a genre, DJ/rave/club wording or a primarily electronic venue.</p>
-        <GroupedQueue groups={likelyRows} venues={venues} emptyMessage="No likely relevant rows right now." />
-        {visible.likelyHidden.length > 0 && (
-          <button type="button" onClick={() => setShowAllLikely((v) => !v)} className="mt-2 text-xs font-semibold text-accent-strong underline decoration-dotted underline-offset-2">
-            {showAllLikely ? `Show the top ${REVIEW_PRIORITY_DEFAULT_VISIBLE} only` : `Show all ${list.likely.length} likely relevant`}
-          </button>
-        )}
+        <GroupedQueue groups={list.likely} venues={venues} emptyMessage="No likely relevant rows right now." />
       </section>
 
       <section aria-label="Possible — source category only" className="mt-6 rounded-md border border-dashed border-status-warn px-3 py-3">
-        <h3 className={`${SECTION_HEADING} text-status-warn`}>
-          Possible — source category only ({possibleRows.length} of {list.possible.length} shown)
-        </h3>
+        <h3 className={`${SECTION_HEADING} text-status-warn`}>Possible — source category only ({list.possible.length})</h3>
         <p className="mt-1 mb-2 text-xs text-text-tertiary">
           Lower certainty. Only the source&rsquo;s own electronic category (e.g. KultuNaut&rsquo;s Elektronisk / Club-DJ listing) speaks for
-          these, and that category also contains concerts that are not electronic — check the artist first.
-          {visible.possibleShown.length > 0 && !showAllPossible && " Shown here because there are fewer than 15 likely relevant rows."}
+          these, and that category also contains concerts that are not electronic — check the artist first. Open a row for the
+          reasons and the usual actions.
         </p>
-        <GroupedQueue groups={possibleRows} venues={venues} emptyMessage="No possible rows shown — open the full list below." />
-        {list.possible.length > possibleRows.length || showAllPossible ? (
-          <button
-            type="button"
-            onClick={() => setShowAllPossible((v) => !v)}
-            className="mt-2 text-xs font-semibold text-status-warn underline decoration-dotted underline-offset-2"
-          >
-            {showAllPossible ? "Show fewer possible rows" : `Show all ${list.possible.length} possible`}
-          </button>
-        ) : null}
+        {list.possible.length === 0 && <p className="text-xs text-text-tertiary">No possible rows right now.</p>}
+        {possible.urgent.length > 0 && (
+          <div aria-label="Possible — starts within 72 hours" role="group">
+            <h4 className={`${SECTION_HEADING} mt-2 text-status-warn`}>Starts within 72 hours ({possible.urgent.length})</h4>
+            <GroupedQueue groups={possible.urgent} venues={venues} emptyMessage="" />
+          </div>
+        )}
+        {possible.buckets.map((bucket) => (
+          <div key={bucket.key} role="group" aria-label={`Possible — ${bucket.label}`} className="mt-3">
+            <h4 className={`${SECTION_HEADING} text-text-secondary`}>
+              {bucket.label} ({bucket.groups.length})
+            </h4>
+            <ul className="mt-1">
+              {bucket.groups.map((group) => (
+                <CompactPossibleRow key={group.primary.item.id} group={group} venues={venues} />
+              ))}
+            </ul>
+          </div>
+        ))}
       </section>
     </div>
   );
