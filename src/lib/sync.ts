@@ -54,6 +54,13 @@ export interface ResolvedCandidate {
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
+  /**
+   * True when `genre` came from Discogs enrichment of artist names the
+   * adapter guessed from the title (RawCandidateEvent.artistsGuessedFromTitle,
+   * 2026-10-23). Such a genre is never written onto an existing event.
+   * Omitted means false.
+   */
+  genreFromTitleGuessedArtists?: boolean;
 }
 
 export interface SyncPatchResult {
@@ -138,7 +145,7 @@ export function buildSyncPatch(
     patch.residentAdvisorUrl = raw.residentAdvisorUrl;
   }
   if (raw.imageUrl && raw.imageUrl !== existing.imageUrl) patch.imageUrl = raw.imageUrl;
-  if (resolved.genre && resolved.genre !== existing.primaryGenre) {
+  if (resolved.genre && !resolved.genreFromTitleGuessedArtists && resolved.genre !== existing.primaryGenre) {
     patch.primaryGenre = resolved.genre;
     patch.subgenres = [resolved.genre];
   }

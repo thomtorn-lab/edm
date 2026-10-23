@@ -2331,30 +2331,62 @@ describe("Venue-provided SoundCloud links (Culture Box, 2026-10-13) — reconcil
   });
 });
 
-describe("KultuNaut artist cleanup never adds Discogs lookups (2026-10-23)", () => {
-  it("sends Discogs the pre-cleanup names, not the cleaner lineup", async () => {
-    const woesum: RawCandidateEvent = {
-      ...rawCandidate,
-      sourceId: "src-kultunaut",
-      sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
-      officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
-      title: "Woesum (SE) + Europa (DE)",
-      venueName: "Rust",
-      artists: ["Woesum (SE)", "Europa (DE)"],
-      artistsGuessedFromTitle: true,
-      enrichmentArtists: ["Woesum (SE) + Europa (DE)"],
-    };
-    await runSourceSync("src-kultunaut", "KultuNaut", { sourceId: "src-kultunaut", fetchCandidates: () => Promise.resolve([woesum]) });
-    expect(enrichEventGenre).toHaveBeenCalledWith(["Woesum (SE) + Europa (DE)"]);
+describe("KultuNaut title-guessed artists and Discogs (2026-10-23)", () => {
+  const kultunaut = (overrides: Partial<RawCandidateEvent>): RawCandidateEvent => ({
+    ...rawCandidate,
+    sourceId: "src-kultunaut",
+    sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+    officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+    venueName: "Rust",
+    artistsGuessedFromTitle: true,
+    ...overrides,
+  });
+  const run = (candidate: RawCandidateEvent) =>
+    runSourceSync("src-kultunaut", "KultuNaut", { sourceId: "src-kultunaut", fetchCandidates: () => Promise.resolve([candidate]) });
+
+  it("sends Discogs only the names the parser identified, never the whole title", async () => {
+    await run(kultunaut({ title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE)", "Europa (DE)"] }));
+    expect(enrichEventGenre).toHaveBeenCalledWith(["Woesum (SE)", "Europa (DE)"]);
+    expect(enrichEventGenre).not.toHaveBeenCalledWith(["Woesum (SE) + Europa (DE)"]);
     expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ detectedLineup: ["Woesum (SE)", "Europa (DE)"] }));
   });
 
-  it("a source without enrichmentArtists still sends its own artists, as before", async () => {
+  it("a generic title with no identified artist sends Discogs no names", async () => {
+    await run(kultunaut({ title: "Halloween party - haunted warehouse", artists: [] }));
+    expect(enrichEventGenre).toHaveBeenCalledTimes(1);
+    expect(enrichEventGenre).toHaveBeenCalledWith([]);
+  });
+
+  it("a confirmed electronic Discogs identity still gives a new Discovery Queue row its genre", async () => {
+    vi.mocked(enrichEventGenre).mockResolvedValueOnce({ genre: "house", genreConfidence: "medium", perArtist: [] });
+    await run(kultunaut({ title: "Notion", artists: ["Notion"] }));
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ predictedGenre: "house" }));
+  });
+
+  it("never changes an existing event's genre or artists through title-guessed names", async () => {
+    vi.mocked(enrichEventGenre).mockResolvedValueOnce({ genre: "house", genreConfidence: "medium", perArtist: [] });
+    const url = "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1";
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({ id: "e-notion", title: "Notion (old title)", artists: ["Notion (UK)"], primaryGenre: "techno", officialEventUrl: url, canonicalSourceId: "src-kultunaut" }),
+    ]);
+    mockMatchedByUrl("e-notion", url);
+    await run(kultunaut({ title: "Notion", artists: ["Notion"] }));
+    // The sync did patch the event (its title changed), just not genre or artists.
+    expect(applySourceSyncPatch).toHaveBeenCalledWith("e-notion", "src-kultunaut", expect.objectContaining({ title: "Notion" }));
+    for (const [, , patch] of vi.mocked(applySourceSyncPatch).mock.calls) {
+      expect(patch).not.toHaveProperty("primaryGenre");
+      expect(patch).not.toHaveProperty("subgenres");
+      expect(patch).not.toHaveProperty("artists");
+    }
+  });
+
+  it("a source with a structured lineup still sends its own artists, as before", async () => {
     const unclear: RawCandidateEvent = {
       ...rawCandidate,
       sourceId: "src-billetto",
       title: "Melting Monday",
       artists: ["Some Artist"],
+      lineupNamesAreStructured: true,
       officialEventUrl: "https://billetto.dk/e/melting-monday-1",
     };
     await runSourceSync("src-billetto", "Billetto", fakeAdapter(() => Promise.resolve([unclear])));
