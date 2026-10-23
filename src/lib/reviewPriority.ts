@@ -451,6 +451,54 @@ export function splitVisibleReviewRows<X>(list: { likely: X[]; possible: X[] }, 
   };
 }
 
+export type PossibleBucketKey = "next_7_days" | "next_30_days" | "later" | "no_date";
+
+export interface PossibleBucket<T extends ReviewPriorityInput = DiscoveryQueueItem> {
+  key: PossibleBucketKey;
+  label: string;
+  groups: ReviewGroup<T>[];
+}
+
+export interface PossibleDisplay<T extends ReviewPriorityInput = DiscoveryQueueItem> {
+  /** Starting within 72 hours: the same rule the banner's warning uses, so shown in full. */
+  urgent: ReviewGroup<T>[];
+  /** Everything else, by start, as compact rows. Empty buckets are left out. */
+  buckets: PossibleBucket<T>[];
+}
+
+const POSSIBLE_BUCKETS: { key: PossibleBucketKey; label: string; maxHours: number }[] = [
+  { key: "next_7_days", label: "Next 7 days", maxHours: 24 * 7 },
+  { key: "next_30_days", label: "8–30 days", maxHours: 24 * 30 },
+  { key: "later", label: "Later", maxHours: Number.POSITIVE_INFINITY },
+];
+
+/**
+ * Lays the possible events out for the Likely relevant tab: every event
+ * exactly once, either in full (starts within 72 hours, in ranked order) or
+ * as a compact row in a time bucket, by start date.
+ */
+export function splitPossibleForDisplay<T extends ReviewPriorityInput>(groups: ReviewGroup<T>[]): PossibleDisplay<T> {
+  const urgent: ReviewGroup<T>[] = [];
+  const buckets: PossibleBucket<T>[] = [
+    ...POSSIBLE_BUCKETS.map((b) => ({ key: b.key, label: b.label, groups: [] as ReviewGroup<T>[] })),
+    { key: "no_date", label: "No date", groups: [] },
+  ];
+  for (const group of groups) {
+    if ([group.primary, ...group.others].some((r) => r.priority.startsWithin72h)) {
+      urgent.push(group);
+      continue;
+    }
+    const hours = group.primary.priority.hoursToStart;
+    const index = hours === null ? POSSIBLE_BUCKETS.length : POSSIBLE_BUCKETS.findIndex((b) => hours <= b.maxHours);
+    buckets[index].groups.push(group);
+  }
+  // Within a time bucket the reviewer scans by date; the ranked order only
+  // breaks ties (Array.prototype.sort is stable).
+  const start = (g: ReviewGroup<T>) => (g.primary.item.probableStart ? new Date(g.primary.item.probableStart).getTime() : Number.POSITIVE_INFINITY);
+  for (const bucket of buckets) bucket.groups.sort((a, b) => start(a) - start(b));
+  return { urgent, buckets: buckets.filter((b) => b.groups.length > 0) };
+}
+
 export interface NotInSourceReview<T extends ReviewPriorityInput = DiscoveryQueueItem> {
   /** Likely and possible rows, ranked exactly like the Likely relevant tab. */
   prioritized: ReviewPriorityList<T>;
