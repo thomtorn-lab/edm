@@ -4,6 +4,7 @@ import {
   buildReviewPriorityList,
   groupReviewList,
   isSameEventFromAnotherSource,
+  lineupOnlyRepeatsTitle,
   prioritizeNotInSource,
   scoreReviewPriority,
   splitPastStale,
@@ -169,7 +170,9 @@ describe("scoreReviewPriority — known cases from the 2026-10-16 Production que
   it("puts The Prodigy in the possible tier: only KultuNaut's category speaks for it, and its venue is not registered", () => {
     const p = scoreReviewPriority(THE_PRODIGY, CTX);
     expect(p.tier).toBe("possible");
-    expect(p.signals.map((s) => s.key)).toEqual(expect.arrayContaining(["source_category", "lineup", "venue_unresolved"]));
+    // Its "lineup" is the title itself, so it adds no point (2026-10-23).
+    expect(p.signals.map((s) => s.key)).toEqual(expect.arrayContaining(["source_category", "lineup_from_title", "venue_unresolved"]));
+    expect(p.signals.find((s) => s.key === "lineup_from_title")?.points).toBe(0);
     expect(p.recommendedAction).toMatch(/only the listing category/);
   });
 
@@ -492,6 +495,35 @@ describe("groupReviewList / isSameEventFromAnotherSource — display-only groupi
     expect(grouped.likely.map((g) => g.primary.item.id)).toEqual([list.likely[0].item.id, ...grouped.likely.slice(1).map((g) => g.primary.item.id)]);
     expect(grouped.likely[0].primary.item.id).toBe("solo");
     expect(JSON.stringify(list)).toBe(before);
+  });
+});
+
+describe("lineup point — only for a lineup that says more than the title (2026-10-23)", () => {
+  it("recognises a lineup that only repeats the title, with or without country codes and notes", () => {
+    expect(lineupOnlyRepeatsTitle("The Prodigy", ["The Prodigy"])).toBe(true);
+    expect(lineupOnlyRepeatsTitle("Woesum (SE) + Europa (DE)", ["Woesum (SE)", "Europa (DE)"])).toBe(true);
+    expect(lineupOnlyRepeatsTitle("Joshua idehen (uk) - udsolgt", ["Joshua idehen (uk)"])).toBe(true);
+    expect(lineupOnlyRepeatsTitle("¥ØU$UKeuro ¥UK1MAT$U (Yousuke Yukimatsu) - Copenhagen", ["Yousuke Yukimatsu"])).toBe(true);
+  });
+
+  it("counts a lineup that names someone the title does not", () => {
+    expect(lineupOnlyRepeatsTitle("TANZEN UND SPRINGEN // Horst Haller (DE)", ["Horst Haller", "Skarn", "KIOSK"])).toBe(false);
+    expect(lineupOnlyRepeatsTitle("Boiler Room", [])).toBe(false);
+  });
+
+  it("gives no point for a title copy and says why; a real lineup keeps its point", () => {
+    const copy = scoreReviewPriority(THE_PRODIGY, CTX);
+    expect(copy.signals.find((s) => s.key === "lineup_from_title")).toMatchObject({ points: 0, label: "Lineup only repeats the title — not counted" });
+    expect(copy.signals.some((s) => s.key === "lineup")).toBe(false);
+    const real = scoreReviewPriority(dq({ probableTitle: "Night Shift", detectedLineup: ["Skarn", "KIOSK"], sourceId: "src-kultunaut" }), CTX);
+    expect(real.signals.find((s) => s.key === "lineup")?.points).toBe(1);
+  });
+
+  it("a structured lineup from the source counts even when it repeats the title; a title guess does not", () => {
+    const structured = scoreReviewPriority(dq({ probableTitle: "Horst Haller", detectedLineup: ["Horst Haller"], sourceId: "src-hvaderpaa" }), CTX);
+    expect(structured.signals.find((s) => s.key === "lineup")?.points).toBe(1);
+    const guessed = scoreReviewPriority(dq({ probableTitle: "Horst Haller", detectedLineup: ["Horst Haller"], sourceId: "src-kultunaut" }), CTX);
+    expect(guessed.signals.some((s) => s.key === "lineup")).toBe(false);
   });
 });
 

@@ -645,6 +645,38 @@ describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link 
   });
 });
 
+describe("buildSyncPatch — artists guessed from the title (2026-10-23)", () => {
+  it("never rewrites an existing event's artists from title-guessed names", () => {
+    const existing = target({ title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE) + Europa (DE)"] });
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-kultunaut", title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE)", "Europa (DE)"], artistsGuessedFromTitle: true }),
+      { ...resolved, normalizedArtists: ["Woesum (SE)", "Europa (DE)"] },
+      existing,
+    );
+    expect(patch).not.toHaveProperty("artists");
+  });
+
+  it("never writes a genre that came from Discogs via title-guessed names onto an existing event", () => {
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-kultunaut", artistsGuessedFromTitle: true }),
+      { ...resolved, genre: "house", genreFromTitleGuessedArtists: true },
+      target({ primaryGenre: "techno" }),
+    );
+    expect(patch).not.toHaveProperty("primaryGenre");
+    expect(patch).not.toHaveProperty("subgenres");
+  });
+
+  it("still updates the genre from other evidence, e.g. the event's own text", () => {
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-kultunaut", artistsGuessedFromTitle: true }), { ...resolved, genre: "house" }, target({ primaryGenre: "techno" }));
+    expect(patch.primaryGenre).toBe("house");
+  });
+
+  it("still updates artists from a source whose lineup is not guessed from the title", () => {
+    const { patch } = buildSyncPatch(raw({ artists: ["Kander", "Ruby My Dear"] }), { ...resolved, normalizedArtists: ["Kander", "Ruby My Dear"] }, target());
+    expect(patch.artists).toEqual(["Kander", "Ruby My Dear"]);
+  });
+});
+
 describe("buildDiscoveryQueueClassificationPatch — DESCRIPTION FILL (2026-10-23)", () => {
   const fixture = (arrNr: string) =>
     parseKultunautDetailHtml(readFileSync(path.join(__dirname, "adapters", "__fixtures__", `kultunaut-detail-${arrNr}.html`), "utf-8"), arrNr);

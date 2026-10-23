@@ -295,9 +295,15 @@ async function runSourceSyncLocked(
         result.decision !== "auto_publish" &&
         result.holdReason !== "negative_relevance" &&
         (result.genre === null || (result.genre === GENERIC_ELECTRONIC_GENRE && result.relevance === "weak"));
+      // Set when this run's genre came from Discogs via artist names guessed
+      // from the title (RawCandidateEvent.artistsGuessedFromTitle): it may
+      // suggest a genre for a Discovery Queue row, never change an existing
+      // event's genre (buildSyncPatch).
+      let genreFromTitleGuessedArtists = false;
       if (needsEnrichment) {
         const enrichment = await enrichEventGenre(raw.artists);
         if (enrichment.genre && enrichment.genreConfidence) {
+          genreFromTitleGuessedArtists = raw.artistsGuessedFromTitle === true;
           result = applyEnrichedGenre(
             result,
             enrichment.genre,
@@ -356,6 +362,7 @@ async function runSourceSyncLocked(
             normalizedArtists: result.normalizedArtists,
             genre: result.genre,
             genreConfidence: result.genreConfidence,
+            genreFromTitleGuessedArtists,
           },
           target,
         );

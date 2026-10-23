@@ -93,6 +93,16 @@ export interface RawCandidateEvent {
    * false, and classification is unchanged.
    */
   lineupNamesAreStructured?: boolean;
+  /**
+   * True when `artists` is the adapter's guess from the event title alone
+   * (KultuNaut's guessArtistsFromTitle, 2026-10-23). A later sync then never
+   * copies these names, nor a Discogs genre found through them, onto an
+   * event that already exists (buildSyncPatch), published or not. The names
+   * still go to Discogs enrichment, so a Discovery Queue row can get a
+   * genre from a confirmed electronic identity. Omitted means false, and
+   * sync behaves as before.
+   */
+  artistsGuessedFromTitle?: boolean;
   startDatetime: string | null;
   endDatetime: string | null;
   venueName: string | null;

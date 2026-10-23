@@ -155,6 +155,60 @@ describe("guessArtistsFromTitle", () => {
   it("never treats a 'musikforedrag' (music lecture) title as an artist lineup — real evidence: 'Depeche Modes Violator - musikforedrag'", () => {
     expect(guessArtistsFromTitle("Depeche Modes Violator - musikforedrag")).toEqual([]);
   });
+
+  it("a parsed detail page marks its artists as guessed from the title", () => {
+    const candidate = parseKultunautDetailHtml(detailHtml("19456289"), "19456289");
+    expect(candidate.artists).toEqual(["Gloryhammer (UK)"]);
+    expect(candidate.artistsGuessedFromTitle).toBe(true);
+  });
+
+  describe("artist-title cleanup (2026-10-23) — real titles from the 2026-10-18 review queue", () => {
+    it("splits two acts each marked by its own country code", () => {
+      expect(guessArtistsFromTitle("Woesum (SE) + Europa (DE)")).toEqual(["Woesum (SE)", "Europa (DE)"]);
+      expect(guessArtistsFromTitle("Ben Klock (DE) x Marcel Dettmann (DE)")).toEqual(["Ben Klock (DE)", "Marcel Dettmann (DE)"]);
+    });
+
+    it("drops a trailing status or city note, never the act's own name", () => {
+      expect(guessArtistsFromTitle("Joshua idehen (uk) - udsolgt")).toEqual(["Joshua idehen (uk)"]);
+      expect(guessArtistsFromTitle("Notion - Sold Out")).toEqual(["Notion"]);
+    });
+
+    it("uses the plain name in brackets after a stylised one", () => {
+      expect(guessArtistsFromTitle("¥ØU$UKeuro ¥UK1MAT$U (Yousuke Yukimatsu) - Copenhagen")).toEqual(["Yousuke Yukimatsu"]);
+    });
+
+    it.each([
+      "Halloween party - haunted warehouse",
+      "Hive halloween weekend",
+      "Club Awards 2027",
+      "O days 2027",
+      "Back to 2000s",
+      "WonderWorld Christmas edition",
+      "Mix cph closing Party",
+      "Electro Shock Therapy @ Basement",
+      "Jasho Club // Poolen Outside",
+      "Art&Musicc X Spoilr",
+      "Antinova x H15",
+      "Some Act - Some Place",
+    ])("never treats a generic or ambiguous event title as an artist: %s", (title) => {
+      expect(guessArtistsFromTitle(title)).toEqual([]);
+    });
+
+    it.each([
+      ["The Prodigy"],
+      ["Notion"],
+      ["Gloryhammer (UK)"],
+      ["Clawfinger"],
+      ["Infernal (DK)"],
+      ["Jean-Michel Jarre"],
+      ["Blood + Honey"],
+      ["&ME and Adam Port (Keinemusik)"],
+      ["Mannings children & the open aux"],
+      ["Xinobi"],
+    ])("keeps a plain act name exactly as before, hyphens, '+', '&' and brackets included: %s", (title) => {
+      expect(guessArtistsFromTitle(title)).toEqual([title]);
+    });
+  });
 });
 
 describe("Venue resolution (Section 7 of the discovery-only implementation task) — generalized resolver only, no KultuNaut-specific mappings", () => {

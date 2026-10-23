@@ -54,6 +54,13 @@ export interface ResolvedCandidate {
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
+  /**
+   * True when `genre` came from Discogs enrichment of artist names the
+   * adapter guessed from the title (RawCandidateEvent.artistsGuessedFromTitle,
+   * 2026-10-23). Such a genre is never written onto an existing event.
+   * Omitted means false.
+   */
+  genreFromTitleGuessedArtists?: boolean;
 }
 
 export interface SyncPatchResult {
@@ -83,7 +90,9 @@ export function buildSyncPatch(
 
   if (raw.title.trim() && raw.title !== existing.title) patch.title = raw.title;
   if (raw.description && raw.description !== existing.description) patch.description = raw.description;
-  if (resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {
+  // Names guessed from the title (RawCandidateEvent.artistsGuessedFromTitle)
+  // never rewrite an existing event's artists.
+  if (!raw.artistsGuessedFromTitle && resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {
     patch.artists = resolved.normalizedArtists;
   }
   if (resolved.resolvedVenueId && resolved.resolvedVenueId !== existing.venueId) {
@@ -136,7 +145,7 @@ export function buildSyncPatch(
     patch.residentAdvisorUrl = raw.residentAdvisorUrl;
   }
   if (raw.imageUrl && raw.imageUrl !== existing.imageUrl) patch.imageUrl = raw.imageUrl;
-  if (resolved.genre && resolved.genre !== existing.primaryGenre) {
+  if (resolved.genre && !resolved.genreFromTitleGuessedArtists && resolved.genre !== existing.primaryGenre) {
     patch.primaryGenre = resolved.genre;
     patch.subgenres = [resolved.genre];
   }
