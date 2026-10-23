@@ -285,3 +285,18 @@ describe("inspect-source.yml — source_id validation step", () => {
     },
   );
 });
+
+describe("inspect-source.yml — ticket-link-history mode (thomtorn-lab/edm#145 background)", () => {
+  it("is a manual choice option and runs like the other DB modes, with no extra flags", () => {
+    expect(WORKFLOW).toMatch(/^ {10}- ticket-link-history$/m);
+    const r = runInspect({ mode: "ticket-link-history" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.nodeFlags).toEqual(["--env-file=.env.local", "--import", "tsx"]);
+    expect(r.args).toEqual(["--mode=ticket-link-history"]);
+  });
+
+  it("the workflow is still workflow_dispatch only (no push, pull_request or schedule trigger)", () => {
+    const on = WORKFLOW.slice(WORKFLOW.indexOf("\non:"), WORKFLOW.indexOf("\n    inputs:"));
+    expect(on.trim()).toBe("on:\n  workflow_dispatch:");
+  });
+});
