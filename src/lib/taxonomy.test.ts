@@ -6,7 +6,7 @@ import {
   genreLabelPagePath,
   getGenre,
   mainGenreOf,
-  mainGenrePagePath,
+  genrePagePath,
   genreFilterLabel,
   isGenreFilterValue,
   matchesGenreFilter,
@@ -144,8 +144,15 @@ describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
   });
 
   it("only Techno has a landing page so far", () => {
-    expect(mainGenrePagePath("techno")).toBe("/genres/techno");
-    for (const g of MAIN_GENRES.filter((m) => m.slug !== "techno")) expect(mainGenrePagePath(g.slug), g.slug).toBeNull();
+    expect(genrePagePath("techno")).toBe("/genres/techno");
+    for (const g of GENRES.filter((m) => m.slug !== "techno")) expect(genrePagePath(g.slug), g.slug).toBeNull();
+  });
+
+  it("a genre badge only ever links to the page for that exact genre (same meaning as the homepage filter)", () => {
+    for (const g of GENRES) {
+      const href = genreLabelPagePath(g.slug);
+      if (href !== null) expect(href, g.slug).toBe(genrePagePath(g.slug));
+    }
   });
 
   it("genreLabelPagePath links only the plain Techno label, never a subgenre label", () => {

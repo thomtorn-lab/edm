@@ -79,9 +79,9 @@ export function getGenre(slug: GenreSlug): GenreDef {
 /**
  * Approved public genre GROUPING taxonomy (Electronic CPH data-quality work
  * package, Workstream B): a fixed set of 12 broad categories, used for
- * newsletter genre preferences, the /genres/techno landing page and the two
- * legacy homepage filter links (the homepage filter itself lists GENRES with
- * exact matching — see matchesGenreFilter) — a specific
+ * newsletter genre preferences and the two legacy homepage filter links
+ * (the homepage filter and genre pages use GENRES with exact matching — see
+ * matchesGenreFilter) — a specific
  * subgenre like "melodic-techno" is discoverable both under its own exact
  * label (search — see search.ts) and under its broader group ("Techno" in
  * the filter dropdown), via mainGenreOf/GENRE_TO_MAIN below.
@@ -205,18 +205,19 @@ export function mainGenreOf(slug: GenreSlug): MainGenreSlug {
 }
 
 /**
- * Whether an event belongs under a broad filter group — the one rule both
- * the homepage genre filter (EventExplorer.tsx) and the /genres/techno
- * landing page use, so the two can never disagree about which events count
- * as e.g. "Techno".
+ * Whether an event belongs under a broad group. Only the two legacy
+ * homepage links ("garage-bass", "hardstyle-hardcore" — see
+ * matchesGenreFilter) still filter by group; every genre option and genre
+ * page matches exactly.
  */
 export function matchesMainGenre(subgenres: readonly GenreSlug[], genre: MainGenreSlug): boolean {
   return subgenres.some((slug) => mainGenreOf(slug) === genre);
 }
 
 /**
- * The homepage genre FILTER (EventExplorer.tsx) offers exactly the genres
- * the admin can pick (GENRES), in the same order, and each option is an
+ * The site-wide genre rule. The homepage genre FILTER (EventExplorer.tsx)
+ * offers exactly the genres the admin can pick (GENRES), in the same order,
+ * and genre pages (/genres/techno) use the same predicate; each genre is an
  * EXACT match: "Techno" finds only events tagged Techno, never Melodic
  * Techno or Industrial — an event tagged with two genres shows under both.
  *
@@ -249,26 +250,28 @@ export function matchesGenreFilter(subgenres: readonly GenreSlug[], genre: Genre
 }
 
 /**
- * Filter groups that have their own crawlable landing page (SEO pilot,
- * 2026-10-09: Techno only). Every other group stays filter-only until it
- * gets a page of its own.
+ * Genres that have their own crawlable landing page (SEO pilot,
+ * 2026-10-09: Techno only). Keyed by the precise genre, not a broad group:
+ * a genre page lists exactly the events the homepage filter shows for that
+ * genre (matchesGenreFilter) — "Techno" means Techno everywhere on the site,
+ * never Techno plus its subgenres.
  */
-const MAIN_GENRE_PAGE_PATHS: Partial<Record<MainGenreSlug, string>> = {
+const GENRE_PAGE_PATHS: Partial<Record<GenreSlug, string>> = {
   techno: "/genres/techno",
 };
 
-export function mainGenrePagePath(genre: MainGenreSlug): string | null {
-  return MAIN_GENRE_PAGE_PATHS[genre] ?? null;
+export function genrePagePath(slug: GenreSlug): string | null {
+  return GENRE_PAGE_PATHS[slug] ?? null;
 }
 
 /**
- * The landing page a display genre label links to: only a label that IS
- * the group itself (the plain "Techno" badge) links — a precise subgenre
- * badge such as "Melodic Techno" or "Industrial" stays plain text, since
- * the page is about Techno as a whole, not that subgenre.
+ * The landing page a display genre badge links to: the page for that exact
+ * genre, if it has one — the "Techno" badge links to /genres/techno, while
+ * "Melodic Techno" or "Industrial" stay plain text until they get a page of
+ * their own.
  */
 export function genreLabelPagePath(slug: GenreSlug): string | null {
-  return slug === mainGenreOf(slug) ? mainGenrePagePath(mainGenreOf(slug)) : null;
+  return genrePagePath(slug);
 }
 
 /**
