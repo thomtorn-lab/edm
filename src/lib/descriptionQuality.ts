@@ -8,10 +8,10 @@ import { deterministicGenreFromText, hasExplicitDjOrRaveSignal } from "./adapter
  * that as the row's description tells a reviewer nothing, and would show up
  * publicly if the row were published as is.
  *
- * Deliberately conservative: a text counts as practical-only when EVERY
- * sentence matches the practical vocabulary below and nothing in it names a
- * genre or DJ/rave context. A single sentence about the music keeps the
- * whole text.
+ * Deliberately conservative: a text counts as practical-only when no
+ * sentence says anything about the event beyond the practical vocabulary
+ * below (see isInformativeSentence). A single sentence about the music keeps
+ * the whole text; a stray genre word inside a practical sentence does not.
  */
 
 /** Word boundaries that also treat æ, ø, å and é as letters (JS's \b does not). */
@@ -67,15 +67,42 @@ const PRACTICAL_RE = new RegExp(
 /** Sentence boundaries; a dot after a digit ("1. time", "kl. 20") is not one. */
 const SENTENCE_SPLIT_RE = /(?<=[^\d\s][.!?])\s+|\n+/;
 
+/** Filler words that never describe the music, Danish and English. */
+const FILLER_WORDS: ReadonlySet<string> = new Set(
+  (
+    "og i på til fra med for af at er det den der de som en et har hvis vil så være kan skal man du vi os jer hele " +
+    "and the a an of to in on at for with is are be will can you we our your all"
+  ).split(" "),
+);
+
+/** Music wording that, outside the practical words, makes a practical sentence informative. */
+function namesTheMusic(text: string): boolean {
+  return !!deterministicGenreFromText(text) || hasExplicitDjOrRaveSignal(text) || /elektron|electronic|synth|\bmusi[ck]|\bbeats?\b|\bvokal|\bvocals?\b/i.test(text);
+}
+
+/**
+ * A sentence tells the reviewer something about the event when it has no
+ * practical wording at all, or when — after the practical words and filler
+ * are set aside — at least three words remain and they name the music
+ * ("Live experimental electronics door: free / donation"). A lone genre word
+ * inside a practical sentence ("Gratis entré til techno i gården") is not
+ * enough on its own.
+ */
+function isInformativeSentence(sentence: string): boolean {
+  if (!PRACTICAL_RE.test(sentence)) return true;
+  const remaining = (sentence.match(/[\p{L}\d][\p{L}\d'’-]*/gu) ?? []).filter(
+    (word) => !PRACTICAL_RE.test(word) && !FILLER_WORDS.has(word.toLowerCase()),
+  );
+  return remaining.length >= 3 && namesTheMusic(remaining.join(" "));
+}
+
 export function isPracticalInfoOnly(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return true;
-  if (deterministicGenreFromText(trimmed) || hasExplicitDjOrRaveSignal(trimmed) || /\belektron|\belectronic/i.test(trimmed)) return false;
-  const sentences = trimmed
+  const sentences = text
+    .trim()
     .split(SENTENCE_SPLIT_RE)
     .map((s) => s.trim())
     .filter((s) => /[\p{L}]/u.test(s));
-  return sentences.length > 0 && sentences.every((s) => PRACTICAL_RE.test(s));
+  return !sentences.some(isInformativeSentence);
 }
 
 /** The description worth storing on a Discovery Queue row: null when empty or practical-only. */

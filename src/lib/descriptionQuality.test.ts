@@ -44,9 +44,22 @@ describe("isPracticalInfoOnly — edge cases", () => {
     expect(usableDiscoveryDescription(text)).toBe(text);
   });
 
-  it("a genre or DJ word anywhere keeps the text, even inside a practical sentence", () => {
-    expect(isPracticalInfoOnly("Gratis entré til techno i gården.")).toBe(false);
+  it("keeps short descriptions that are about the music", () => {
+    for (const text of ["Live techno.", "DJ-sæt hele natten.", "Svensk duo med drømmende synths og vokal.", "Live experimental electronics door : free / donation."]) {
+      expect(usableDiscoveryDescription(text), text).toBe(text);
+    }
     expect(isPracticalInfoOnly("Billetter i døren. DJ-sæt hele natten.")).toBe(false);
+  });
+
+  it("a stray genre or DJ word inside practical text does not make it informative", () => {
+    for (const text of [
+      "Gratis entré til techno i gården.",
+      "Billetter via Ticketmaster. Garderobe ved technoscenen.",
+      "Dørene åbner kl. 20. DJ-billetter sælges i døren.",
+      "Hvis der er udsolgt i forsalg, vil der være udsolgt i døren. Entré: 200 kr inkl. house-garderobe.",
+    ]) {
+      expect(isPracticalInfoOnly(text), text).toBe(true);
+    }
   });
 
   it("does not split '1. time' or 'kl. 20' into separate sentences", () => {
