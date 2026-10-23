@@ -330,41 +330,57 @@ describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("with 15+ likely rows, shows the top 15 likely only and no possible rows by default", () => {
+  it("shows every likely event in full, however many there are, and every possible event at least as a compact row", () => {
     renderWith(MANY_LIKELY);
     fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 18" }));
-    const shown = screen.getAllByTestId("priority-explanation");
-    expect(shown).toHaveLength(15);
-    expect(shown.every((el) => tierOf(el) === "likely")).toBe(true);
-    expect(screen.queryByText("The Prodigy")).toBeNull();
+    const likelySection = screen.getByRole("region", { name: "Likely relevant" });
+    const likelyBoxes = within(likelySection).getAllByTestId("priority-explanation");
+    expect(likelyBoxes).toHaveLength(17);
+    expect(likelyBoxes.every((el) => tierOf(el) === "likely")).toBe(true);
     expect(screen.getAllByText(/For: MODULE is a primarily electronic venue · Lineup listed \(2\)/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Recommended: Check the source/).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Show all 17 likely relevant" }));
-    expect(screen.getByText("Likely 15")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Show all 1 possible" }));
-    expect(screen.getByText("The Prodigy")).toBeTruthy();
+    // The Prodigy is in plain sight as a compact row, no "show all" needed.
+    const possibleSection = screen.getByRole("region", { name: "Possible — source category only" });
+    expect(within(possibleSection).getByText("The Prodigy")).toBeTruthy();
+    expect(within(possibleSection).queryByTestId("priority-explanation")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
   });
 
-  it("with fewer than 15 likely rows, fills the view up to 15 with possible rows in their own, differently marked section", () => {
+  it("shows urgent possible events in full and the rest as compact rows by start, each exactly once", () => {
     renderWith(FEW_LIKELY);
     fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 31" }));
     const likelySection = screen.getByRole("region", { name: "Likely relevant" });
-    const possibleSection = screen.getByRole("region", { name: "Possible — source category only" });
-    const likelyBoxes = within(likelySection).getAllByTestId("priority-explanation");
-    const possibleBoxes = within(possibleSection).getAllByTestId("priority-explanation");
-    expect(likelyBoxes).toHaveLength(3);
-    expect(possibleBoxes).toHaveLength(12);
-    expect(likelyBoxes.every((el) => tierOf(el) === "likely")).toBe(true);
-    expect(possibleBoxes.every((el) => tierOf(el) === "possible")).toBe(true);
-    expect(within(possibleSection).getAllByText("Possible · source category only")).toHaveLength(12);
+    expect(within(likelySection).getAllByTestId("priority-explanation")).toHaveLength(3);
     expect(within(likelySection).queryByText("Possible · source category only")).toBeNull();
-    expect(within(possibleSection).getByText(/12 of 28 shown/)).toBeTruthy();
+
+    const possibleSection = screen.getByRole("region", { name: "Possible — source category only" });
     expect(within(possibleSection).getByText(/check the artist first/)).toBeTruthy();
-    // The Prodigy ranks 14th of the possible rows: one click away, never hidden.
-    expect(screen.queryByText("The Prodigy")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show all 28 possible" }));
-    expect(screen.getByText("The Prodigy")).toBeTruthy();
-    expect(within(possibleSection).getAllByTestId("priority-explanation")).toHaveLength(28);
+    const urgent = within(possibleSection).getByRole("group", { name: "Possible — starts within 72 hours" });
+    expect(within(urgent).getAllByTestId("priority-explanation")).toHaveLength(1);
+    expect(within(urgent).getByText("Possible · source category only")).toBeTruthy();
+    const rows = within(possibleSection).getAllByTestId("compact-possible-row");
+    expect(rows).toHaveLength(27);
+    // 28 possible events, each in exactly one place.
+    for (let i = 0; i < 28; i++) {
+      const title = i === 13 ? "The Prodigy" : `Possible ${i}`;
+      expect(within(possibleSection).getAllByText(title), title).toHaveLength(1);
+    }
+  });
+
+  it("opens a compact row in place with the full reasons and the usual actions, and closes it again", () => {
+    renderWith(FEW_LIKELY);
+    fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 31" }));
+    const prodigyRow = screen.getAllByTestId("compact-possible-row").find((row) => row.textContent?.includes("The Prodigy"))!;
+    const toggle = within(prodigyRow).getByRole("button", { name: /The Prodigy/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const explanation = within(prodigyRow).getByTestId("priority-explanation");
+    expect(tierOf(explanation)).toBe("possible");
+    expect(within(prodigyRow).getByText(/Recommended:/)).toBeTruthy();
+    expect(prodigyRow.querySelector("#dq-dq-prodigy")).toBeTruthy();
+    expect(screen.getAllByTestId("compact-possible-row")).toHaveLength(27);
+    fireEvent.click(toggle);
+    expect(within(prodigyRow).queryByTestId("priority-explanation")).toBeNull();
   });
 
   it("shows the same event from two sources as one entry naming both sources, with each listing's own actions one click away", () => {
@@ -380,14 +396,13 @@ describe("AdminQueueTabs — Likely relevant (review prioritisation)", () => {
       urgentPossibleCount: 0,
     };
     renderWith(grouped);
-    // 15 likely events in 16 rows: the group takes one place, so no possible row is needed to fill the view.
+    // 15 likely events in 16 rows: the group takes one place.
     expect(screen.getByRole("tab", { name: "Likely relevant 16" })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Likely relevant 16" }));
     const likelySection = screen.getByRole("region", { name: "Likely relevant" });
     expect(within(likelySection).getAllByTestId("priority-explanation")).toHaveLength(15);
     expect(within(likelySection).getAllByText("Boiler Room")).toHaveLength(1);
     expect(within(likelySection).getByTestId("group-sources").textContent).toContain("Same event from 2 sources: KultuNaut · Poolen");
-    expect(screen.queryByText("The Prodigy")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Show the other listing" }));
     expect(within(likelySection).getAllByText("Boiler Room")).toHaveLength(2);
