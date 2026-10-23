@@ -191,7 +191,8 @@ export function buildSyncPatch(
   // a bare time change deliberately stays internal-only, see StatusBadge).
   // Admin-set postponed status stays protected as usual (this patch, like
   // every field here, still goes through stripOverriddenFields downstream —
-  // see db/writes.ts).
+  // see db/writes.ts). When the start itself is locked, this flag and
+  // dateChanged/timeChanged are held back with it (stripLockedSyncFields).
   if ((dateChanged || timeChanged) && existing.postponed) {
     patch.postponed = false;
   }
