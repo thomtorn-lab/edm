@@ -190,6 +190,30 @@ describe("ticket-replacement shadow — date, time, venue, room, lineup checked 
   });
 });
 
+describe("ticket-replacement shadow — rooms from URL fragments and room scope", () => {
+  const night = "https://culture-box.com/event/sat-7-november-2026/";
+
+  it("a #red-box listing against a #black-box event is a room_conflict", () => {
+    const e = event({ subVenue: null, officialEventUrl: `${night}#black-box` });
+    const d = decide(candidate({ subVenue: null, officialEventUrl: `${night}#red-box` }), e, [], e.id);
+    expect(d.withheldReason).toBe("room_conflict");
+  });
+
+  it("a fragment room and the same named sub-venue agree", () => {
+    const e = event({ subVenue: "Black Box", officialEventUrl: null });
+    const d = decide(candidate({ subVenue: null, officialEventUrl: `${night}#black-box` }), e);
+    expect(d.identity?.checks.room).toBe("pass");
+    expect(d.outcome).toBe("would_replace");
+  });
+
+  it("a whole-night listing against a single-room event is withheld: room_scope_mismatch", () => {
+    const e = event({ subVenue: null, officialEventUrl: `${night}#black-box` });
+    const d = decide(candidate({ subVenue: null, officialEventUrl: night }), e);
+    expect(d.withheldReason).toBe("room_scope_mismatch");
+    expect(d.identity?.checks.roomScope).toBe("fail");
+  });
+});
+
 describe("ticket-replacement shadow — shared ticket pages and competing matches", () => {
   it("incoming ticket link already used by another event (festival pass): shared_ticket_page", () => {
     const other = event({ id: "e-other", startDatetime: "2026-11-08T22:00:00.000Z", ticketUrl: "https://tickets.example/ben-ufo" });
@@ -239,6 +263,18 @@ describe("ticket-replacement shadow — source rules and existing behaviour", ()
     const d = decide(candidate(), event({ overriddenFields: ["ticketUrl"] }));
     expect(d.withheldReason).toBe("override");
     expect(d.identity).toBeNull();
+  });
+
+  it("admin-cleared link (empty + override) is withheld, never reported as fill", () => {
+    const d = decide(candidate(), event({ ticketUrl: null, overriddenFields: ["ticketUrl"] }));
+    expect(d.outcome).toBe("withheld");
+    expect(d.withheldReason).toBe("override");
+    expect(d.explanation.join(" ")).toMatch(/cleared by an admin/);
+  });
+
+  it("admin-set link equal to the candidate's is still reported as override", () => {
+    const d = decide(candidate({ ticketUrl: "https://ra.co/events/111" }), event({ overriddenFields: ["ticketUrl"] }));
+    expect(d.withheldReason).toBe("override");
   });
 
   it("empty stored link: fill (existing rule, reported only)", () => {

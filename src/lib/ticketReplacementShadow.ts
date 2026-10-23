@@ -68,6 +68,7 @@ export interface IdentityChecks {
   time: CheckResult;
   venue: CheckResult;
   room: CheckResult;
+  roomScope: CheckResult;
   lineup: CheckResult;
   title: CheckResult;
   anchor: CheckResult;
@@ -101,6 +102,7 @@ export type WithheldReason =
   | "stored_ticket_shared"
   | "multiple_shows_same_evening"
   | "room_conflict"
+  | "room_scope_mismatch"
   | "venue_mismatch"
   | "lineup_conflict"
   | "ambiguous_match"
@@ -157,9 +159,27 @@ function contentChecks(candidate: { title: string; artists: string[] }, event: {
   return { overlap, similarity, lineup, title };
 }
 
+/**
+ * The room a listing names: its sub-venue, or else the #fragment of its
+ * official event URL, which is how a room-partitioned source such as Culture
+ * Box tells rooms apart (.../event/<night>/#red-box), the same signal dedup's
+ * roomIdentityConflict uses. Null means the listing covers the whole night or
+ * the room is unknown.
+ */
+function roomOf(x: { subVenue: string | null; officialEventUrl: string | null }): string | null {
+  const raw = x.subVenue ?? (x.officialEventUrl?.includes("#") ? x.officialEventUrl.split("#")[1] : null);
+  const room = raw?.toLowerCase().replace(/[-_]+/g, " ").trim();
+  return room ? room : null;
+}
+
 function roomCheck(a: string | null, b: string | null): CheckResult {
-  if (a && b) return a.trim().toLowerCase() === b.trim().toLowerCase() ? "pass" : "fail";
+  if (a && b) return a === b ? "pass" : "fail";
   return "unknown";
+}
+
+/** Fails when exactly one side names a room: a single-room event and a whole-night (or room-less) listing are not the same unit. */
+function roomScopeCheck(a: string | null, b: string | null): CheckResult {
+  return (a === null) === (b === null) ? "pass" : "fail";
 }
 
 function timeCheck(a: string | null, b: string): CheckResult {
@@ -213,7 +233,7 @@ export function assessTicketReplacementIdentity(
   const ownScore = (lineup === "pass" ? 2 : 0) + (title === "pass" ? 1 : 0);
   const competingEventIds = ctx.allEvents
     .filter((other) => other.id !== event.id && other.venueId === event.venueId && nightOf(other.startDatetime) === nightOf(event.startDatetime))
-    .filter((other) => roomCheck(candidate.subVenue, other.subVenue) !== "fail" && timeCheck(candidate.startDatetime, other.startDatetime) !== "fail")
+    .filter((other) => roomCheck(roomOf(candidate), roomOf(other)) !== "fail" && timeCheck(candidate.startDatetime, other.startDatetime) !== "fail")
     .filter((other) => {
       const c = contentChecks(candidate, other);
       const score = (c.lineup === "pass" ? 2 : 0) + (c.title === "pass" ? 1 : 0);
@@ -226,7 +246,8 @@ export function assessTicketReplacementIdentity(
     date: candidate.startDatetime === null ? "unknown" : sameNight ? "pass" : "fail",
     time: timeCheck(candidate.startDatetime, event.startDatetime),
     venue: candidate.venueId === null ? "unknown" : sameVenue ? "pass" : "fail",
-    room: roomCheck(candidate.subVenue, event.subVenue),
+    room: roomCheck(roomOf(candidate), roomOf(event)),
+    roomScope: roomScopeCheck(roomOf(candidate), roomOf(event)),
     lineup,
     title,
     anchor: anchors.length > 0 ? "pass" : "unknown",
@@ -234,7 +255,7 @@ export function assessTicketReplacementIdentity(
   };
 
   const noHardFail =
-    checks.time !== "fail" && checks.room !== "fail" && checks.lineup !== "fail" && checks.unique === "pass";
+    checks.time !== "fail" && checks.room !== "fail" && checks.roomScope !== "fail" && checks.lineup !== "fail" && checks.unique === "pass";
   const content = checks.lineup === "pass" || checks.title === "pass";
   const identity = checks.anchor === "pass" || (checks.lineup === "pass" && checks.title === "pass");
   const level: IdentityLevel =
@@ -285,6 +306,14 @@ export function decideTicketReplacementShadow(candidate: ShadowCandidate, event:
     explanation.push("candidate has no ticket link; a missing link never clears a stored one");
     return done("no_change", null, null);
   }
+  if (event.overriddenFields.includes("ticketUrl")) {
+    explanation.push(
+      event.ticketUrl
+        ? "ticketUrl was set by an admin (overriddenFields); never replaced"
+        : "ticketUrl was cleared by an admin (overriddenFields); never filled or replaced",
+    );
+    return done("withheld", "override", null);
+  }
   if (norm(candidate.ticketUrl) === norm(event.ticketUrl)) {
     explanation.push("same ticket link as stored (normalized); nothing to replace");
     return done("confirm", null, null);
@@ -295,10 +324,6 @@ export function decideTicketReplacementShadow(candidate: ShadowCandidate, event:
   }
   explanation.push(`stored ticket link differs from the candidate's: ${event.ticketUrl} -> ${candidate.ticketUrl}`);
 
-  if (event.overriddenFields.includes("ticketUrl")) {
-    explanation.push("ticketUrl was set or cleared by an admin (overriddenFields); never replaced");
-    return done("withheld", "override", null);
-  }
   const sourceType = getSourceById(candidate.sourceId)?.sourceType;
   if (sourceType !== "official-venue" && sourceType !== "official-promoter") {
     explanation.push(`source type ${sourceType ?? "unknown"} is not official; with unknown origin only an official source may replace`);
@@ -350,6 +375,12 @@ export function decideTicketReplacementShadow(candidate: ShadowCandidate, event:
   if (c.room === "fail") {
     explanation.push("different known rooms at the same venue");
     return done("withheld", "room_conflict", identity);
+  }
+  if (c.roomScope === "fail") {
+    explanation.push(
+      `only one side names a room (candidate: ${roomOf(candidate) ?? "none"}, event: ${roomOf(event) ?? "none"}): a single-room event and a whole-night listing are not the same unit`,
+    );
+    return done("withheld", "room_scope_mismatch", identity);
   }
   if (c.lineup === "fail") {
     explanation.push("both lineups are known and share no artist");
