@@ -15,7 +15,7 @@ import {
   type DiscoveryQueueTarget,
   type SyncTargetEvent,
 } from "./sync";
-import { stripOverriddenFields } from "./override";
+import { stripLockedSyncFields, stripOverriddenFields } from "./override";
 import type { RawCandidateEvent } from "./adapters/types";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -464,6 +464,96 @@ describe("buildSyncPatch", () => {
         expect(applied).not.toHaveProperty("title"); // the admin's manual title correction is still protected
         expect(applied.dateChanged).toBe(true); // dateChanged is unaffected by an override on a different field
       });
+    });
+  });
+
+  describe("locked start holds back its derived status flags (editorial screening, Gap B — 2026-10-23)", () => {
+    const otherDate = raw({ startDatetime: "2026-09-22T18:00:00.000Z" });
+    const laterDoors = raw({ startDatetime: "2026-08-15T20:00:00.000Z" }); // same night, +2h
+
+    function syncWith(source: RawCandidateEvent, existing: SyncTargetEvent) {
+      const { patch } = buildSyncPatch(source, resolved, existing);
+      return { patch, ...stripLockedSyncFields(patch, existing.overriddenFields) };
+    }
+
+    it("locked start, different date: neither the start nor dateChanged is written", () => {
+      const { patch, safePatch, heldBack } = syncWith(otherDate, target({ overriddenFields: ["startDatetime"] }));
+      expect(patch.dateChanged).toBe(true); // proposed...
+      expect(safePatch).not.toHaveProperty("startDatetime");
+      expect(safePatch).not.toHaveProperty("dateChanged"); // ...but no Rescheduled badge on an unchanged date
+      expect(heldBack).toEqual(["dateChanged"]);
+    });
+
+    it("locked start, same-night time change: timeChanged is held back too", () => {
+      const { safePatch, heldBack } = syncWith(laterDoors, target({ overriddenFields: ["startDatetime"] }));
+      expect(safePatch).not.toHaveProperty("timeChanged");
+      expect(heldBack).toEqual(["timeChanged"]);
+    });
+
+    it("locked start on a postponed event: postponed stays true, since the new date was never applied", () => {
+      const { patch, safePatch, heldBack } = syncWith(otherDate, target({ postponed: true, overriddenFields: ["startDatetime"] }));
+      expect(patch.postponed).toBe(false);
+      expect(safePatch).not.toHaveProperty("postponed");
+      expect(heldBack).toEqual(["dateChanged", "postponed"]);
+    });
+
+    it("unlocked start: start and its derived flags are all written, as before", () => {
+      const { safePatch, heldBack } = syncWith(otherDate, target({ postponed: true }));
+      expect(safePatch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
+      expect(safePatch.dateChanged).toBe(true);
+      expect(safePatch.postponed).toBe(false);
+      expect(heldBack).toEqual([]);
+    });
+
+    it("unlocked start, same-night time change: timeChanged and postponed=false are written, as before", () => {
+      const { safePatch, heldBack } = syncWith(laterDoors, target({ postponed: true }));
+      expect(safePatch.timeChanged).toBe(true);
+      expect(safePatch.postponed).toBe(false);
+      expect(heldBack).toEqual([]);
+    });
+
+    it("locked start does not hide independent signals: a cancellation, sold-out and end-time change still apply", () => {
+      const source = raw({ startDatetime: "2026-09-22T18:00:00.000Z", endDatetime: "2026-09-23T04:00:00.000Z", cancelledHint: true, soldOutHint: true });
+      const { safePatch, heldBack } = syncWith(source, target({ postponed: true, overriddenFields: ["startDatetime"] }));
+      expect(safePatch.cancelled).toBe(true);
+      expect(safePatch.soldOut).toBe(true);
+      expect(safePatch.endDatetime).toEqual(new Date("2026-09-23T04:00:00.000Z"));
+      expect(heldBack).toEqual(["dateChanged", "postponed"]);
+    });
+
+    it("locked start does not hide a reversed cancellation or tickets back on sale", () => {
+      const source = raw({ startDatetime: "2026-09-22T18:00:00.000Z", cancelledHint: false, soldOutHint: false });
+      const { safePatch } = syncWith(source, target({ cancelled: true, soldOut: true, overriddenFields: ["startDatetime"] }));
+      expect(safePatch.cancelled).toBe(false);
+      expect(safePatch.soldOut).toBe(false);
+    });
+
+    it("locked start with no start change proposed: nothing is held back and other fields apply", () => {
+      const { safePatch, heldBack } = syncWith(raw({ title: "Kander (Live)" }), target({ postponed: true, overriddenFields: ["startDatetime"] }));
+      expect(safePatch).toEqual({ title: "Kander (Live)" });
+      expect(heldBack).toEqual([]);
+    });
+
+    it("locked start and locked postponed together: the lock list explains both, nothing is reported as held back twice", () => {
+      const { safePatch, heldBack } = syncWith(otherDate, target({ postponed: true, overriddenFields: ["startDatetime", "postponed"] }));
+      expect(safePatch).not.toHaveProperty("postponed");
+      expect(safePatch).not.toHaveProperty("dateChanged");
+      expect(heldBack).toEqual(["dateChanged"]);
+    });
+
+    it("a locked field other than the start leaves the derived flags alone", () => {
+      const { safePatch, heldBack } = syncWith(otherDate, target({ overriddenFields: ["title", "endDatetime"] }));
+      expect(safePatch.dateChanged).toBe(true);
+      expect(heldBack).toEqual([]);
+    });
+
+    it("a proposed postponed=true is not start-derived and is never held back", () => {
+      const { safePatch, heldBack } = stripLockedSyncFields(
+        { startDatetime: new Date("2026-09-22T18:00:00.000Z"), postponed: true },
+        ["startDatetime"],
+      );
+      expect(safePatch).toEqual({ postponed: true });
+      expect(heldBack).toEqual([]);
     });
   });
 

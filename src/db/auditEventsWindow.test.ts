@@ -314,6 +314,10 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
         canonical_source_id text, official_event_url text, ticket_url text, resident_advisor_url text,
         facebook_url text, other_source_urls text[] NOT NULL DEFAULT '{}',
         overridden_fields text[] NOT NULL DEFAULT '{}')`);
+      await client.query(`CREATE TABLE artist_genre_cache (
+        artist_name_normalized text PRIMARY KEY, lookup_status text NOT NULL, proposed_genre text, genre_confidence text,
+        identity_confidence text, discogs_artist_id integer, evidence jsonb NOT NULL DEFAULT '[]', classification_method text NOT NULL,
+        looked_up_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL)`);
       await client.query(`INSERT INTO venues VALUES ('v1', 'Venue One')`);
       const ins = (id: string, start: string, opts: { end?: string; published?: boolean; source?: string | null } = {}) =>
         client.query(
@@ -330,6 +334,11 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
       await ins("running-festival", "2026-10-10T12:00:00Z", { end: "2026-10-12T20:00:00Z" }); // in (flagged)
       await ins("ended-festival", "2026-10-09T12:00:00Z", { end: "2026-10-11T20:00:00Z" }); // out
       await client.query(`UPDATE events SET overridden_fields = '{primaryGenre,ticketUrl}' WHERE id = 'no-source'`);
+      await client.query(`UPDATE events SET artists = '{Ben Klock}' WHERE id = 'no-source'`);
+      await client.query(
+        `INSERT INTO artist_genre_cache (artist_name_normalized, lookup_status, proposed_genre, genre_confidence, classification_method, expires_at)
+         VALUES ('ben klock', 'found', 'techno', 'medium', 'discogs-artist-releases@v1', '2026-01-01T00:00:00Z')`,
+      );
 
       // Wrap the real client: right before the audit's first SELECT, try a
       // write inside the audit's OWN transaction and require Postgres to
@@ -357,6 +366,10 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
       );
       expect(report.completenessCheck).toBe("ok");
       expect(report.countBySource).toContainEqual({ sourceId: null, count: 1 });
+      // Relevance recheck (2026-10-17): present for every event, labelled as a current recomputation.
+      for (const e of report.events) expect(e.relevanceRecheck?.basis).toMatch(/NOT the historical publish decision/);
+      // The cached (expired) Discogs row is read through the real cache query.
+      expect(report.events.find((e) => e.id === "no-source")?.relevanceRecheck?.discogsGenre).toBe("techno");
       // Genre QA (2026-10-17): only the genre override is reported, never ticketUrl.
       expect(report.events.find((e) => e.id === "no-source")?.genreManuallySet).toEqual(["primaryGenre"]);
       expect(report.events.find((e) => e.id === "at-start")?.genreManuallySet).toEqual([]);

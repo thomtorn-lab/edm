@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks, sources, venues } from "./schema";
 import { venueRowToRecord } from "./mappers";
-import { addOverriddenFields, partitionAdminPatch, stripOverriddenFields, type EditableEventField } from "../lib/override";
+import { addOverriddenFields, partitionAdminPatch, stripLockedSyncFields, type EditableEventField } from "../lib/override";
 import { isEndAfterStart, END_BEFORE_START_ERROR } from "../lib/datetime";
 import { assessDuplicate } from "../lib/dedup";
 import { isResidentAdvisorUrl } from "../lib/links";
@@ -558,7 +558,9 @@ export async function clearManualOverride(eventId: string, fieldsToUnprotect: st
 /**
  * Applies an automated sync's proposed patch, but only to fields the admin
  * hasn't manually corrected — the enforcement point for manual-override
- * protection during real ingestion (task 5/6).
+ * protection during real ingestion (task 5/6). A start change blocked by a
+ * lock also holds back the status flags derived from it (see
+ * stripLockedSyncFields), so the stored status is kept as it was.
  */
 export async function applySourceSyncPatch(
   eventId: string,
@@ -568,8 +570,9 @@ export async function applySourceSyncPatch(
   const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!existing) throw new Error(`Event ${eventId} not found`);
 
-  const safePatch = stripOverriddenFields(proposedPatch, existing.overriddenFields);
+  const { safePatch, heldBack } = stripLockedSyncFields(proposedPatch, existing.overriddenFields);
   const skippedFields = Object.keys(proposedPatch).filter((k) => !(k in safePatch));
+  const lockedFields = skippedFields.filter((k) => !heldBack.includes(k));
 
   if (Object.keys(safePatch).length > 0) {
     await db
@@ -585,10 +588,13 @@ export async function applySourceSyncPatch(
     sourceId,
     "sync",
     Object.keys(safePatch),
-    skippedFields.length > 0 ? `skipped manually-overridden fields: ${skippedFields.join(", ")}` : undefined,
+    skippedFields.length > 0
+      ? `skipped manually-overridden fields: ${lockedFields.join(", ")}` +
+          (heldBack.length > 0 ? `; held back with the blocked start: ${heldBack.join(", ")}` : "")
+      : undefined,
   );
 
-  return { applied: Object.keys(safePatch), skipped: skippedFields };
+  return { applied: Object.keys(safePatch), skipped: skippedFields, heldBack };
 }
 
 interface NewEventInput {
