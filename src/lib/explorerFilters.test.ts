@@ -37,7 +37,29 @@ describe("parseExplorerFilters", () => {
       genre: "all",
       venueSlug: null,
       query: "x",
+      unknownGenre: "polka",
     });
+  });
+
+  it("reports an unknown genre instead of silently dropping it, and never writes it back to the URL", () => {
+    const filters = parse("genre=Polka&when=weekend");
+    expect(filters.genre).toBe("all");
+    expect(filters.unknownGenre).toBe("Polka");
+    expect(serializeExplorerFilters(filters)).toBe("when=weekend");
+    expect(parse("genre=all").unknownGenre).toBeUndefined();
+    expect(parse("").unknownGenre).toBeUndefined();
+  });
+
+  it("keeps the two legacy group links working, and round-trips them", () => {
+    expect(parse("genre=garage-bass").genre).toBe("garage-bass");
+    expect(parse("genre=hardstyle-hardcore").genre).toBe("hardstyle-hardcore");
+    expect(parse("genre=garage-bass").unknownGenre).toBeUndefined();
+    expect(serializeExplorerFilters(parse("genre=hardstyle-hardcore"))).toBe("genre=hardstyle-hardcore");
+  });
+
+  it("accepts every admin genre, including precise subgenres", () => {
+    expect(parse("genre=deep-house").genre).toBe("deep-house");
+    expect(parse("genre=industrial").genre).toBe("industrial");
   });
 
   it("caps an absurdly long search query", () => {
