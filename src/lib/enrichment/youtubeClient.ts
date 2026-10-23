@@ -251,3 +251,38 @@ export async function getVideoDetails(videoIds: string[]): Promise<YoutubeVideoD
     privacyStatus: item.status?.privacyStatus ?? "unknown",
   }));
 }
+
+export interface YoutubeVideoSnippet {
+  videoId: string;
+  title: string;
+  channelId: string;
+  channelTitle: string;
+  embeddable: boolean;
+  privacyStatus: string;
+}
+
+/**
+ * videos.list for ONE video with its snippet — used only by the admin pin
+ * override (src/db/youtubePreviewBlock.ts --mode=pin) to record the pinned
+ * video's real title/channel and refuse a private/non-embeddable one.
+ * 1 quota unit. Returns null when YouTube doesn't know the id.
+ */
+export async function getVideoSnippet(videoId: string): Promise<YoutubeVideoSnippet | null> {
+  const data = (await youtubeGet("/videos", { part: "snippet,status", id: videoId })) as {
+    items?: {
+      id?: string;
+      snippet?: { title?: string; channelId?: string; channelTitle?: string };
+      status?: { embeddable?: boolean; privacyStatus?: string };
+    }[];
+  };
+  const item = data.items?.[0];
+  if (!item) return null;
+  return {
+    videoId: item.id ?? videoId,
+    title: item.snippet?.title ?? "",
+    channelId: item.snippet?.channelId ?? "",
+    channelTitle: item.snippet?.channelTitle ?? "",
+    embeddable: item.status?.embeddable ?? false,
+    privacyStatus: item.status?.privacyStatus ?? "unknown",
+  };
+}

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { drizzleCacheStore, blockArtistYoutubePreview, unblockArtistYoutubePreview } from "./youtubePreview";
+import { drizzleCacheStore, blockArtistYoutubePreview, unblockArtistYoutubePreview, pinArtistYoutubePreview } from "./youtubePreview";
 import { normalizeArtistName, cleanArtistDisplayName } from "@/lib/enrichment/youtubePreviewMatching";
+import { getVideoSnippet, type YoutubeVideoSnippet } from "@/lib/enrichment/youtubeClient";
 
 /**
  * Minimal, confirm-gated admin CLI wiring up the existing manualBlock
@@ -42,9 +43,48 @@ import { normalizeArtistName, cleanArtistDisplayName } from "@/lib/enrichment/yo
  * --confirm token (this codebase's established one-time-script safety
  * convention — see src/db/tonserCleanup.ts) and print the row both before
  * and after the write, so the effect is visible in the same log.
+ *
+ * --mode=pin (2026-10-23) replaces the artist's preview with a hand-picked
+ * video (src/db/youtubePreview.ts::pinArtistYoutubePreview) — for when
+ * blocking a wrong match should leave a right one in its place:
+ *   node --env-file=.env.local --import tsx src/db/youtubePreviewBlock.ts --mode=pin --artist="Exact Artist Name" --video="https://youtu.be/<id>" --confirm=PIN-YOUTUBE-PREVIEW
+ * It looks the video up first (one videos.list call, needs YOUTUBE_API_KEY)
+ * and refuses an unknown, private or non-embeddable one. --mode=plan with
+ * --video prints that same lookup without writing anything, so the video's
+ * title/channel can be checked before pinning.
  */
 
-const CONFIRM_TOKENS = { block: "BLOCK-YOUTUBE-PREVIEW", unblock: "UNBLOCK-YOUTUBE-PREVIEW" } as const;
+const CONFIRM_TOKENS = { block: "BLOCK-YOUTUBE-PREVIEW", unblock: "UNBLOCK-YOUTUBE-PREVIEW", pin: "PIN-YOUTUBE-PREVIEW" } as const;
+
+/** Video id from a bare id or a youtu.be / youtube.com watch, embed, shorts or live URL; null if none. */
+export function parseYoutubeVideoId(input: string): string | null {
+  const raw = input.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^(www|m|music)\./, "");
+  let id: string | null = null;
+  if (host === "youtu.be") id = url.pathname.split("/")[1] ?? null;
+  else if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const [, first, second] = url.pathname.split("/");
+    id = first === "watch" ? url.searchParams.get("v") : ["embed", "shorts", "live", "v"].includes(first) ? (second ?? null) : null;
+  }
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+}
+
+async function lookUpVideo(videoArg: string): Promise<YoutubeVideoSnippet> {
+  const videoId = parseYoutubeVideoId(videoArg);
+  if (!videoId) throw new Error(`--video="${videoArg}" is not a YouTube video URL or id.`);
+  const video = await getVideoSnippet(videoId);
+  if (!video) throw new Error(`YouTube has no video with id ${videoId}.`);
+  console.log(`Video ${videoId}:`);
+  console.log(JSON.stringify(video, null, 2));
+  return video;
+}
 
 export function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -81,6 +121,20 @@ export async function run(args: Record<string, string>): Promise<void> {
 
   if (mode === "plan") {
     await printRow("Current cache row", artist);
+    if (typeof args.video === "string" && args.video) await lookUpVideo(args.video);
+    return;
+  }
+
+  if (mode === "pin") {
+    if (args.confirm !== CONFIRM_TOKENS.pin) throw new Error(`--mode=pin requires --confirm=${CONFIRM_TOKENS.pin}`);
+    if (typeof args.video !== "string" || !args.video) throw new Error('--mode=pin requires --video="<YouTube URL or id>".');
+    const video = await lookUpVideo(args.video);
+    if (video.privacyStatus !== "public" || !video.embeddable) {
+      throw new Error(`Video ${video.videoId} is not public and embeddable (privacyStatus=${video.privacyStatus}, embeddable=${video.embeddable}) — not pinned.`);
+    }
+    await printRow("Before", artist);
+    await pinArtistYoutubePreview(artist, video);
+    await printRow("After", artist);
     return;
   }
 
@@ -96,7 +150,7 @@ export async function run(args: Record<string, string>): Promise<void> {
     return;
   }
 
-  throw new Error("--mode=<plan|block|unblock> is required.");
+  throw new Error("--mode=<plan|block|unblock|pin> is required.");
 }
 
 async function main() {

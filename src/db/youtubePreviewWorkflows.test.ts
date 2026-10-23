@@ -175,6 +175,10 @@ describe("YouTube preview workflows — structure unchanged, no ${{ }} in any sh
   it("the backfill step still receives YOUTUBE_API_KEY", () => {
     expect(backfillRun.env.YOUTUBE_API_KEY).toBe("${{ secrets.YOUTUBE_API_KEY }}");
   });
+
+  it("the block/pin step receives YOUTUBE_API_KEY (pin and plan-with-video look the video up)", () => {
+    expect(blockRun.env.YOUTUBE_API_KEY).toBe("${{ secrets.YOUTUBE_API_KEY }}");
+  });
 });
 
 describe("youtube-preview-block.yml — artist names reach the script exactly", () => {
@@ -194,6 +198,13 @@ describe("youtube-preview-block.yml — artist names reach the script exactly", 
       `--artist=${name}`,
       "--confirm=BLOCK-YOUTUBE-PREVIEW",
     ]);
+  });
+
+  it("pin mode passes --video before --confirm, exactly as typed", () => {
+    const video = "https://youtu.be/Pbb0KmuwYSA?si=DGtesIfBBSpPnOoQ&x=$(touch pwned-video)";
+    const r = runStep(blockRun, { mode: "pin", artist: "Kardinal Bertram", video, confirm: "PIN-YOUTUBE-PREVIEW" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.argv?.slice(-4)).toEqual(["--mode=pin", "--artist=Kardinal Bertram", `--video=${video}`, "--confirm=PIN-YOUTUBE-PREVIEW"]);
   });
 
   it("unblock mode passes its own token through unchanged", () => {
