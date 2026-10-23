@@ -23,6 +23,7 @@ import type { Source, Venue } from "@/lib/types";
 import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
+import { runTicketLinkHistory } from "./ticketLinkHistory";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
 import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
 import { buildSeriesIndex, type SeriesHistoryEvent } from "@/lib/seriesMemory";
@@ -50,7 +51,7 @@ import { hasNonElectronicGenreSignal, hasPopOrRnbSignal } from "@/lib/relevance"
  *
  * Usage:
  *   node --env-file=.env.local --import tsx src/db/inspectSource.ts \
- *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan|youtube-preview-backlog-projection> \
+ *     --mode=<inventory|discovery-queue|source-links|health|lock-status|dedup-simulate|reachability|snapshot|venues|venue-events|discovery-queue-venues|venue-blocks|event-integrity|text-leakage-audit|cancellation-audit|link-role-audit|db-integrity|adapter-dry-run|ticket-link-history|admin-queue-audit|youtube-preview-dry-run|youtube-preview-backfill-plan|youtube-preview-backlog-projection> \
  *     [--source=<sourceId>] [--limit=20] [--endpoint=<url>] [--with-credentials]
  *     [--title=... --artists="A, B" --venue=... --start=<ISO> --url=<officialEventUrl>]  (dedup-simulate only)
  *     [--artists="Artist One, Artist Two, ..."]  (youtube-preview-dry-run only — runs the REAL Rule A
@@ -628,6 +629,34 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
     section(`Evidence detail for --title="${args.title}" (${evidenceDetail.length} matches) — full source text + verdict, any decision bucket`);
     console.log(JSON.stringify(evidenceDetail, null, 2));
   }
+}
+
+/**
+ * Historical ticket-link changes (thomtorn-lab/edm#145 background,
+ * 2026-10-23): who changed events.ticket_url, in what order, from
+ * event_change_log. SELECT-only inside withReadOnlyTx; no network. The log
+ * holds field names only, never values; see src/lib/ticketLinkHistory.ts for
+ * exactly what can and cannot be concluded.
+ */
+async function modeTicketLinkHistory(client: Client) {
+  section("Ticket-link change history (READ-ONLY, event_change_log)");
+  const report = await runTicketLinkHistory(client);
+  for (const l of report.limitations) console.log(`LIMITATION: ${l}`);
+  section("Log coverage");
+  console.log(JSON.stringify(report.coverage, null, 2));
+  section("Totals (distinct events alongside raw write counts)");
+  console.log(JSON.stringify(report.totals, null, 2));
+  section("By source (ticketUrl sync writes vs. all sync observations)");
+  for (const s of report.bySource) console.log(JSON.stringify(s));
+  section("By source pair (a write by `to` directly after a write by `from`)");
+  for (const p of report.bySourcePair) console.log(JSON.stringify(p));
+  section("By venue");
+  for (const v of report.byVenue) console.log(JSON.stringify(v));
+  const flagged = report.events.filter((e) => e.officialOverwrites > 0 || e.sameSourceRewrites > 0 || new Set(e.writes.map((w) => w.by)).size > 1);
+  section(`Events with an official overwrite, several writers or same-source rewrites (${flagged.length})`);
+  for (const e of flagged) console.log(JSON.stringify(e));
+  section("REPORT JSON (single line, for offline review)");
+  console.log(JSON.stringify(report));
 }
 
 /**
@@ -2965,6 +2994,7 @@ async function main() {
     "link-role-audit": modeLinkRoleAudit,
     "db-integrity": modeDbIntegrity,
     "adapter-dry-run": modeAdapterDryRun,
+    "ticket-link-history": modeTicketLinkHistory,
     "admin-queue-audit": modeAdminQueueAudit,
     "ignore-persistence-audit": modeIgnorePersistenceAudit,
     "genre-taxonomy-audit": modeGenreTaxonomyAudit,
@@ -2990,7 +3020,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, ticket-link-history, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
     );
     process.exit(1);
   }
