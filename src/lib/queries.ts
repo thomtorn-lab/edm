@@ -1,8 +1,9 @@
-import { and, desc, eq, inArray, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne, notExists, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   artistYoutubePreviewCache,
   discoveryQueue,
+  eventChangeLog,
   eventSoundcloudLinks,
   events,
   soundcloudLinkBlocks,
@@ -19,6 +20,7 @@ import {
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
+import type { EventChangeEntry } from "./dataQuality";
 
 export interface EventWithVenue extends EventRecord {
   venue: Venue;
@@ -358,6 +360,32 @@ export async function getEventsForVenue(venueId: string): Promise<EventWithVenue
 export async function getEventByIdAdmin(id: string): Promise<EventRecord | undefined> {
   const [row] = await db.select().from(events).where(eq(events.id, id)).limit(1);
   return row ? eventRowToRecord(row) : undefined;
+}
+
+/**
+ * Sync-driven changes to an event's date, venue or official URL in the last
+ * `days` days — the only event_change_log rows the admin data-quality
+ * warnings read (see src/lib/dataQuality.ts). Read-only; narrow columns.
+ */
+export async function getRecentSyncIdentityChanges(days = 14): Promise<EventChangeEntry[]> {
+  const since = new Date(Date.now() - days * 24 * 3_600_000);
+  const rows = await db
+    .select({
+      eventId: eventChangeLog.eventId,
+      changedBy: eventChangeLog.changedBy,
+      changeType: eventChangeLog.changeType,
+      fieldsChanged: eventChangeLog.fieldsChanged,
+      createdAt: eventChangeLog.createdAt,
+    })
+    .from(eventChangeLog)
+    .where(
+      and(
+        gte(eventChangeLog.createdAt, since),
+        ne(eventChangeLog.changedBy, "admin"),
+        sql`${eventChangeLog.fieldsChanged} && ARRAY['startDatetime', 'venueId', 'officialEventUrl']::text[]`,
+      ),
+    );
+  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
 }
 
 export async function getAllEventsAdmin(): Promise<EventWithVenue[]> {

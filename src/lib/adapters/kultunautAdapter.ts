@@ -215,11 +215,44 @@ export function parseKultunautDate(text: string): { date: DateKey; hour: number;
  * title must never reach that masking step at all.
  */
 export function guessArtistsFromTitle(title: string): string[] {
-  if (/[:|]|\bpres\.|\bpresents\b|\bfestival\b|\bweekender\b|\btour\b|club\s*night|mini\s*festival|\bmusikforedrag\b/i.test(title)) {
+  if (/[:|]|\/\/|\bpres\.|\bpresents\b|\bfestival\b|\bweekender\b|\btour\b|club\s*night|mini\s*festival|\bmusikforedrag\b/i.test(title)) {
     return [];
   }
-  return [title];
+  // Artist-title cleanup (2026-10-23). Real titles from the 2026-10-18
+  // queue were stored whole as one "artist" ("Joshua idehen (uk) -
+  // udsolgt", "Woesum (SE) + Europa (DE)", "Halloween party - haunted
+  // warehouse"), so the Discogs cache was asked about strings no artist is
+  // called and the real names were never looked up. Only the cases below
+  // are taken apart; anything else ambiguous returns no lineup rather than
+  // a guess.
+  let name = title.replace(TITLE_STATUS_OR_CITY_SUFFIX_RE, "").trim();
+  if (EVENT_NAME_WORD_RE.test(name) || /\s@\s/.test(name) || /(?:^|\s)(?:19|20)\d{2}s?(?:\s|$)/.test(name)) return [];
+  // Spaced " - " left after the suffix: which side is the artist cannot be told.
+  if (/\s[-–—]\s/.test(name)) return [];
+  // "A (SE) + B (DE)" / "A (UK) x B (DE)": split only when every part is
+  // marked as an act by its own country code. Otherwise "+" may be part of
+  // one name and stays whole, as before; " x " is usually a brand
+  // crossover ("Art&Musicc X Spoilr", "Antinova x H15") and gives no lineup.
+  const joined = name.split(/\s+(?:\+|x|×)\s+/i);
+  if (joined.length > 1 && joined.every((part) => COUNTRY_CODE_SUFFIX_RE.test(part))) return joined.map((part) => part.trim());
+  if (/\s(?:x|×)\s/i.test(name)) return [];
+  // A stylised name followed by the act's plain name in brackets:
+  // "¥ØU$UKeuro ¥UK1MAT$U (Yousuke Yukimatsu)" → the bracketed name.
+  const stylised = name.match(/^(.*[¥$€£@#*].*?)\s*\(([\p{L}][\p{L}'’. -]*\s[\p{L}][\p{L}'’. -]*)\)$/u);
+  if (stylised) name = stylised[2].trim();
+  return [name];
 }
+
+/** " - udsolgt", " - Copenhagen" and similar trailing notes that are not part of an act's name. */
+const TITLE_STATUS_OR_CITY_SUFFIX_RE =
+  /\s+[-–—]\s+(?:udsolgt|sold\s*out|få\s+billetter(?:\s+tilbage)?|aflyst|cancelled|canceled|flyttet|moved|ny\s+dato|new\s+date|ekstra\s*koncert|extra\s+show|copenhagen|københavn|kbh|cph|denmark|danmark)\s*!*$/i;
+
+/** Words that make a title an event name rather than an act's own name. */
+const EVENT_NAME_WORD_RE =
+  /\b(?:party|parties|halloween|christmas|xmas|jul(?:efrokost)?|nytår|new\s+year'?s?|awards?|edition|weekend|warehouse|showcase|takeover|anniversary|jubilæum|birthday|bday|launch|release\s+party|opening|closing|afterparty|open\s+air)\b/i;
+
+/** A trailing two- or three-letter country code in brackets, e.g. "(SE)", "(uk)", "(DK/SE)". */
+const COUNTRY_CODE_SUFFIX_RE = /\((?:[a-z]{2,3})(?:\s*[/,]\s*[a-z]{2,3})*\)\s*$/i;
 
 /**
  * Parses one event's detail page into a full RawCandidateEvent. Throws on
@@ -319,6 +352,7 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
     // just the truncated display copy.
     relevanceText: fullDescriptionText || null,
     artists: guessArtistsFromTitle(title),
+    artistsGuessedFromTitle: true,
     startDatetime,
     endDatetime: null, // never stated on this site — never invented
     venueName,

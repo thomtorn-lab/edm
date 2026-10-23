@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { addOverriddenFields, isEditableEventField, stripOverriddenFields } from "./override";
+import {
+  addOverriddenFields,
+  adminValuesEqual,
+  classifyAdminFieldChange,
+  isEditableEventField,
+  partitionAdminPatch,
+  stripOverriddenFields,
+} from "./override";
 
 describe("addOverriddenFields", () => {
   it("adds a newly-edited field to an empty override list", () => {
@@ -111,5 +118,73 @@ describe("isEditableEventField", () => {
   it("accepts officialEventUrl and ticketUrl (event-level link editing, 2026-09-07)", () => {
     expect(isEditableEventField("officialEventUrl")).toBe(true);
     expect(isEditableEventField("ticketUrl")).toBe(true);
+  });
+});
+
+
+describe("classifyAdminFieldChange (editorial screening, priority 1)", () => {
+  it("changed / cleared / unchanged", () => {
+    expect(classifyAdminFieldChange("A", "B")).toBe("changed");
+    expect(classifyAdminFieldChange(null, "B")).toBe("changed");
+    expect(classifyAdminFieldChange("A", null)).toBe("cleared");
+    expect(classifyAdminFieldChange("A", "")).toBe("cleared");
+    expect(classifyAdminFieldChange(["A"], [])).toBe("cleared");
+    expect(classifyAdminFieldChange(null, "")).toBe("unchanged");
+    expect(classifyAdminFieldChange(undefined, null)).toBe("unchanged");
+    expect(classifyAdminFieldChange(["A", "B"], ["A", "B"])).toBe("unchanged");
+  });
+
+  it("artist order and spelling are real edits; surrounding whitespace is not", () => {
+    expect(classifyAdminFieldChange(["A", "B"], ["B", "A"])).toBe("changed");
+    expect(classifyAdminFieldChange(["Alice Ai"], ["Alice AI"])).toBe("changed");
+    expect(classifyAdminFieldChange(["A "], ["A"])).toBe("unchanged");
+  });
+
+  it("only the precision the form can't express is ignored", () => {
+    // form value on the minute vs stored value inside that minute -> same
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:42Z"), new Date("2026-10-17T19:00:00Z"))).toBe(true);
+    // a submitted value carrying its own seconds must match exactly
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), new Date("2026-10-17T19:00:30Z"))).toBe(false);
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:30Z"), new Date("2026-10-17T19:00:30Z"))).toBe(true);
+    // the next minute is a real change, even when the stored value is :59
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:59Z"), new Date("2026-10-17T19:01:00Z"))).toBe(false);
+  });
+
+  it("an invalid date never equals anything and is never classified as unchanged or cleared", () => {
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), new Date("not a date"))).toBe(false);
+    expect(adminValuesEqual(new Date("invalid"), new Date("invalid"))).toBe(false);
+    expect(classifyAdminFieldChange(new Date("2026-10-17T19:00:00Z"), new Date("not a date"))).toBe("changed");
+  });
+
+  it("timestamps compare at minute precision and across Date/ISO string", () => {
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:42Z"), new Date("2026-10-17T19:00:00Z"))).toBe(true);
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), "2026-10-17T19:00:00.000Z")).toBe(true);
+    expect(adminValuesEqual(new Date("2026-10-17T19:00:00Z"), new Date("2026-10-17T20:00:00Z"))).toBe(false);
+  });
+
+  it("booleans and numbers are compared exactly", () => {
+    expect(classifyAdminFieldChange(false, false)).toBe("unchanged");
+    expect(classifyAdminFieldChange(false, true)).toBe("changed");
+    expect(classifyAdminFieldChange(0, 0)).toBe("unchanged");
+  });
+});
+
+describe("partitionAdminPatch", () => {
+  it("keeps only changed and cleared keys, plus alwaysTouched keys that are present", () => {
+    const stored = { title: "T", ticketUrl: "https://t.example/1", published: true, endDatetime: null };
+    const result = partitionAdminPatch(stored, { title: "T", ticketUrl: null, published: true, endDatetime: null }, { alwaysTouched: ["published"] });
+    expect(result.effectivePatch).toEqual({ ticketUrl: null, published: true });
+    expect(result.changed).toEqual([]);
+    expect(result.cleared).toEqual(["ticketUrl"]);
+    expect(result.unchanged).toEqual(["title", "published", "endDatetime"]);
+    expect(result.touchedFields).toEqual(["ticketUrl", "published"]);
+  });
+
+  it("never mutates its inputs", () => {
+    const stored = { title: "T" };
+    const patch = { title: "U" };
+    partitionAdminPatch(stored, patch);
+    expect(stored).toEqual({ title: "T" });
+    expect(patch).toEqual({ title: "U" });
   });
 });

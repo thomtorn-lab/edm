@@ -1,5 +1,5 @@
 import { genreConfidenceForEvidence } from "../classification";
-import { deterministicGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, hasRichGenreEvidence, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
 import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
@@ -56,10 +56,15 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  * a hvaderpaa-specific shortcut): an event's own offers.url is only ever a
  * CANDIDATE, never blindly trusted as "Tickets" merely because hvaderpaa put
  * it there.
- *   - ra.co (Resident Advisor)          -> residentAdvisorUrl, never ticketUrl
- *     (matches hangarenAdapter.ts/pumpehusetAdapter.ts precedent exactly —
- *     this is also a real, independent relevance signal: pipeline.ts's own
- *     hasTrustedElectronicTicketing is `raw.residentAdvisorUrl != null`).
+ *   - ra.co (Resident Advisor)          -> residentAdvisorUrl, never ticketUrl.
+ *     This is NOT the same rule the first-party adapters follow: Hangaren,
+ *     Pylonen, Pumpehuset and Culture Box DO set ticketUrl to an RA link,
+ *     because there the venue itself links RA as its ticket channel on its
+ *     own page. Here the RA link is only HvadErPå's (a third-party
+ *     aggregator's) claim about where tickets are sold, so it stays an RA
+ *     reference and never becomes a public Tickets CTA on its own (see
+ *     src/lib/links.ts). It is still a real relevance signal: pipeline.ts's
+ *     hasTrustedElectronicTicketing is `raw.residentAdvisorUrl != null`.
  *   - billetto.dk                       -> ticketUrl (genuine purchase page).
  *   - songkick.com, bandsintown.com, or  -> neither field populated. Every
  *     any other unrecognized host           in-scope event sampled during the
@@ -347,10 +352,15 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
   // title again regardless, but genreHint resolution here follows the same
   // "look at everything the adapter itself saw" rule other adapters use).
   const evidenceText = `${title} ${fullDescriptionText}`.trim();
-  const specificGenre = evidenceText ? deterministicGenreFromText(evidenceText) : null;
+  // Performer names (JSON-LD performer[]) are not genre evidence: a name like
+  // "PAB DISCO" must never become the disco genre (genre QA, 2026-10-17).
+  // Only the specific-genre match reads the masked text; the generic
+  // "elektronisk"/"electronic" checks below are unchanged.
+  const genreEvidenceText = maskLineupNamesWithGenreKeywords(evidenceText, artists, title);
+  const specificGenre = genreEvidenceText.trim() ? deterministicGenreFromText(genreEvidenceText) : null;
   const genericElectronic = !specificGenre && (DANISH_GENERIC_ELECTRONIC_RE.test(evidenceText) || ENGLISH_GENERIC_ELECTRONIC_RE.test(evidenceText));
   const eventLevelGenreHint: GenreSlug | null = specificGenre ?? (genericElectronic ? "electronic-other" : null);
-  const hasRichEvidence = evidenceText ? hasRichGenreEvidence(evidenceText) : false;
+  const hasRichEvidence = genreEvidenceText.trim() ? hasRichGenreEvidence(genreEvidenceText) : false;
 
   // Venue-level supporting evidence fallback — see this module's own doc
   // comment ("VENUE-LEVEL SUPPORTING EVIDENCE"). Consulted ONLY when the
@@ -390,6 +400,7 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
     description: truncatedDescription,
     relevanceText: fullDescriptionText || null,
     artists,
+    lineupNamesAreStructured: true, // JSON-LD performer[] (genre QA, 2026-10-17)
     startDatetime,
     endDatetime,
     venueName,

@@ -83,6 +83,26 @@ export interface RawCandidateEvent {
    */
   structuredGenreField?: string | null;
   artists: string[];
+  /**
+   * True only when `artists` comes from structured lineup data the source
+   * itself marks up as performers (Culture Box anchors, HvadErPå JSON-LD
+   * performer[], Billetto headliners), never names guessed from the title
+   * (genre QA, 2026-10-17). Only then does the pipeline remove lineup
+   * names containing a genre keyword ("PAB DISCO") from the text it matches
+   * genres against. See maskLineupNamesWithGenreKeywords. Omitted means
+   * false, and classification is unchanged.
+   */
+  lineupNamesAreStructured?: boolean;
+  /**
+   * True when `artists` is the adapter's guess from the event title alone
+   * (KultuNaut's guessArtistsFromTitle, 2026-10-23). A later sync then never
+   * copies these names, nor a Discogs genre found through them, onto an
+   * event that already exists (buildSyncPatch), published or not. The names
+   * still go to Discogs enrichment, so a Discovery Queue row can get a
+   * genre from a confirmed electronic identity. Omitted means false, and
+   * sync behaves as before.
+   */
+  artistsGuessedFromTitle?: boolean;
   startDatetime: string | null;
   endDatetime: string | null;
   venueName: string | null;

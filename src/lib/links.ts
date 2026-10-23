@@ -29,7 +29,13 @@ function hostnameOf(url: string): string | null {
 }
 const RESIDENT_ADVISOR_HOSTNAMES = new Set(["ra.co"]);
 const HVADERPAA_HOSTNAMES = new Set(["hvaderpaa.dk"]);
-function isResidentAdvisorUrl(url: string): boolean {
+/**
+ * Exported (RA link-integrity, 2026-10-17) so every "is this a Resident
+ * Advisor URL?" check shares this exact hostname rule. A substring test like
+ * `url.includes("ra.co")` also matches unrelated hosts (extra.com,
+ * zebra.com, opera.co.uk).
+ */
+export function isResidentAdvisorUrl(url: string): boolean {
   const h = hostnameOf(url);
   return h !== null && RESIDENT_ADVISOR_HOSTNAMES.has(h);
 }
@@ -261,6 +267,11 @@ export interface SourceProvenanceEntry {
 }
 
 /**
+ * Not currently rendered anywhere: the event detail page's public
+ * "Source:"/"Sources:" line that used this was removed 2026-10-16 (it only
+ * duplicated the Official event/Tickets CTAs). Kept, with its tests, as a
+ * pure helper; source_event_links itself is unaffected either way.
+ *
  * Discreet, non-CTA public provenance for the event DETAIL PAGE only (public
  * source-link visibility work package, 2026-09-07; revised same day —
  * canonical-source-only was too narrow, see below) — never wired into event

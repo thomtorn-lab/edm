@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import type { HomepageEvent } from "@/lib/homepageEvents";
 import {
   groupByMonth,
@@ -12,11 +13,19 @@ import {
 } from "@/lib/datetime";
 import { formatMonthAbbrTitleCase, formatMonthFull } from "@/lib/format";
 import { eventMatchesQuery } from "@/lib/search";
-import { MAIN_GENRES, matchesMainGenre, type MainGenreSlug } from "@/lib/taxonomy";
+import {
+  EXPLORER_DATE_MODES,
+  parseExplorerFilters,
+  serializeExplorerFilters,
+  updateListReturnUrl,
+  writeListReturn,
+  type ExplorerMode,
+} from "@/lib/explorerFilters";
+import { GENRES, genreFilterLabel, isLegacyGenreFilter, matchesGenreFilter, type GenreFilterValue } from "@/lib/taxonomy";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
 
-type Mode = "all" | "tonight" | "weekend" | "next-weekend";
+type Mode = ExplorerMode;
 
 const MODE_LABEL: Record<Exclude<Mode, "all">, string> = {
   tonight: "Tonight",
@@ -30,7 +39,7 @@ const MODE_EMPTY_TITLE: Record<Exclude<Mode, "all">, string> = {
   "next-weekend": "Nothing lined up next weekend yet",
 };
 
-const DATE_MODES = ["tonight", "weekend", "next-weekend"] as const;
+const DATE_MODES = EXPLORER_DATE_MODES;
 
 /**
  * Whether any part of `el` currently falls within the viewport's vertical
@@ -56,7 +65,7 @@ function applyFilters(
   upcoming: HomepageEvent[],
   now: Date,
   mode: Mode,
-  genre: MainGenreSlug | "all",
+  genre: GenreFilterValue | "all",
   venueId: string | "all",
   query: string
 ): HomepageEvent[] {
@@ -64,7 +73,7 @@ function applyFilters(
     if (mode === "tonight" && !isTonight(e, now)) return false;
     if (mode === "weekend" && !isThisWeekend(e, now)) return false;
     if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
-    if (genre !== "all" && !matchesMainGenre(e.subgenres, genre)) return false;
+    if (genre !== "all" && !matchesGenreFilter(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
     return true;
@@ -104,10 +113,47 @@ function FilterIcon() {
   );
 }
 
-export default function EventExplorer({
-  events,
-  serverNow,
-}: {
+/**
+ * The homepage list (homepage search/navigation work, 2026-10-13). Its
+ * filters are read from the URL once, on mount (see EventExplorerList), and
+ * from then on the list mirrors its own state into the URL. That leaves one
+ * case to cover here: a navigation that changes the URL's filters WITHOUT
+ * remounting the list — Next.js keeps a page's client components mounted
+ * when only the query string changes, e.g. the header's "Events"/logo link
+ * to "/" while a filtered view is open, or browser back/forward between two
+ * such homepage entries. That would leave the address bar and the list
+ * disagreeing, so when the URL's filters change and the change is neither
+ * the list's own replaceState nor already its state, the list is remounted
+ * from the URL — exactly like loading that URL. Remounting (rather than
+ * pushing the new values into the live state) also keeps the filter-apply
+ * month scroll out of what is a page navigation.
+ */
+export default function EventExplorer(props: EventExplorerProps) {
+  const searchParams = useSearchParams();
+  const urlKey = serializeExplorerFilters(parseExplorerFilters(searchParams));
+  const lastUrlKeyRef = useRef(urlKey);
+  // The list's own committed filters, in the same form as urlKey — written
+  // by EventExplorerList after every commit (child effects run before this
+  // component's own).
+  const stateKeyRef = useRef(urlKey);
+  const [instance, setInstance] = useState(0);
+
+  useEffect(() => {
+    if (urlKey === lastUrlKeyRef.current) return;
+    lastUrlKeyRef.current = urlKey;
+    // useSearchParams can trail the address bar while the list is writing
+    // to it (e.g. fast typing in search): a value that no longer matches
+    // the real location is an echo of an older write, never a navigation.
+    const locationKey = serializeExplorerFilters(parseExplorerFilters(new URLSearchParams(window.location.search)));
+    if (urlKey !== locationKey) return;
+    if (urlKey === stateKeyRef.current) return;
+    setInstance((n) => n + 1);
+  }, [urlKey]);
+
+  return <EventExplorerList key={instance} {...props} stateKeyRef={stateKeyRef} />;
+}
+
+interface EventExplorerProps {
   /**
    * Upcoming events only, as the minimal HomepageEvent projection — the
    * server (app/page.tsx) already drops events that are past at
@@ -137,12 +183,39 @@ export default function EventExplorer({
    * render, exactly like /venues/[slug]/page.tsx already does.
    */
   serverNow: string;
-}) {
+}
+
+function EventExplorerList({
+  events,
+  serverNow,
+  stateKeyRef,
+}: EventExplorerProps & { stateKeyRef?: { current: string } }) {
   const [now, setNow] = useState<Date>(() => new Date(serverNow));
-  const [mode, setMode] = useState<Mode>("all");
-  const [genre, setGenre] = useState<MainGenreSlug | "all">("all");
-  const [venueId, setVenueId] = useState<string | "all">("all");
-  const [query, setQuery] = useState("");
+  // Initial filters come from the URL (homepage search/navigation work,
+  // 2026-10-13) — see src/lib/explorerFilters.ts. useSearchParams reads the
+  // CURRENT URL, on the server render (this page is dynamic) and on every
+  // client mount alike, so a reload, a shared link, and browser back from an
+  // event page (which remounts this component) all start from the same
+  // view. Read once, as initial state only: from then on the state below is
+  // the source of truth and the URL just mirrors it (see the sync effect).
+  // Null outside the App Router (unit tests) -> plain defaults.
+  const searchParams = useSearchParams();
+  const [initialUrlFilters] = useState(() => parseExplorerFilters(searchParams));
+  const [mode, setMode] = useState<Mode>(initialUrlFilters.mode);
+  const [genre, setGenre] = useState<GenreFilterValue | "all">(initialUrlFilters.genre);
+  // The URL names a venue by slug; it only selects a venue that actually
+  // has an upcoming event in this list (the same set the venue dropdown
+  // offers), otherwise it's ignored like any other invalid value.
+  const [venueId, setVenueId] = useState<string | "all">(() => {
+    if (!initialUrlFilters.venueSlug) return "all";
+    const initialNow = new Date(serverNow);
+    const match = events.find((e) => e.venue.slug === initialUrlFilters.venueSlug && !isPastEvent(e, initialNow));
+    return match ? match.venue.id : "all";
+  });
+  const [query, setQuery] = useState(initialUrlFilters.query);
+  // An unrecognised ?genre= value: shown as a notice until the visitor picks
+  // a genre or dismisses it, so "all events" is never a silent fallback.
+  const [unknownGenre, setUnknownGenre] = useState(initialUrlFilters.unknownGenre ?? null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // Draft copies of genre/venue, edited only while the mobile filters sheet
   // is open (filter-state architecture rework, 2026-09-12): the sheet used
@@ -154,7 +227,7 @@ export default function EventExplorer({
   // "Show N events" is tapped; closing/cancelling any other way just
   // discards them, since the next open re-seeds from the (untouched) real
   // values anyway.
-  const [draftGenre, setDraftGenre] = useState<MainGenreSlug | "all">("all");
+  const [draftGenre, setDraftGenre] = useState<GenreFilterValue | "all">("all");
   const [draftVenueId, setDraftVenueId] = useState<string | "all">("all");
   const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
   const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
@@ -349,6 +422,63 @@ export default function EventExplorer({
 
   const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
 
+  // The committed filter values as one comparable key — see its use in the
+  // month reconciliation effect below.
+  const filterKey = JSON.stringify([mode, genre, venueId, query]);
+  const lastFilterKeyRef = useRef(filterKey);
+
+  // The current list URL ("/" or "/?when=…&q=…"), mirrored from the
+  // committed filter state — never the mobile drawer's uncommitted drafts.
+  const venueSlug = venueId === "all" ? null : (upcoming.find((e) => e.venue.id === venueId)?.venue.slug ?? null);
+  const listSearch = serializeExplorerFilters({ mode, genre, venueSlug, query });
+  const listUrl = listSearch ? `/?${listSearch}` : "/";
+
+  // Reports the committed filters to the EventExplorer wrapper, which
+  // compares them with the URL to tell its own writes from a navigation.
+  useEffect(() => {
+    if (stateKeyRef) stateKeyRef.current = listSearch;
+  });
+
+  // Mirrors the committed filters into the address bar (homepage
+  // search/navigation work, 2026-10-13) so back/forward, reload and shared
+  // links restore this view. replaceState, never pushState: changing a
+  // filter or typing in search must not add history entries — browser back
+  // keeps meaning "the page before the homepage". Next.js integrates native
+  // history calls with its router (useSearchParams stays in sync), and
+  // nothing is fetched. Query keys this list doesn't own (utm_* etc.) and
+  // the #month-… hash are carried over unchanged.
+  useEffect(() => {
+    const search = serializeExplorerFilters({ mode, genre, venueSlug, query }, window.location.search);
+    const current = window.location.search.replace(/^\?/, "");
+    if (search === current) return;
+    const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", url);
+  }, [mode, genre, venueSlug, query]);
+
+  // Keeps an existing "← All events" record pointing at this list's
+  // CURRENT view: after back from an event and a filter change, the list's
+  // own history entry now shows the new filters (replaceState above), so
+  // the event page's link must return there too, never to the older view.
+  useEffect(() => {
+    updateListReturnUrl(listUrl);
+  }, [listUrl]);
+
+  // Remembers which event was opened from this list, and from which list
+  // URL, so that event page's "← All events" can return to this exact view
+  // (see BackToEventsLink / explorerFilters.ts). Capture phase on the list
+  // wrapper covers every event link a row renders (title, VIDEO, AUDIO).
+  //
+  // Only a plain primary click — the one that navigates THIS tab. A
+  // Cmd/Ctrl/Shift/Alt or middle click opens the event elsewhere and must
+  // not leave a record behind for this tab to misuse later.
+  function rememberListReturn(e: MouseEvent<HTMLElement>) {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const anchor = (e.target as HTMLElement).closest?.("a");
+    const href = anchor?.getAttribute("href") ?? "";
+    if (!href.startsWith("/events/")) return;
+    writeListReturn({ eventPath: href.split("#")[0], listUrl, savedAt: Date.now() });
+  }
+
   // Tapping a month nav item must win immediately (see handleMonthNavClick)
   // and stay pinned while the resulting scroll settles — otherwise the
   // IntersectionObserver below, reacting to whatever happens to be in the
@@ -445,6 +575,15 @@ export default function EventExplorer({
     // branch below for why this distinction matters.
     const groupsChangedSinceLastRun = groups !== lastGroupsRef.current;
     lastGroupsRef.current = groups;
+    // Did the visitor actually change a filter/search since the last run?
+    // Narrower than groupsChangedSinceLastRun, which is also true when only
+    // `now` moved — including the browser-clock refresh right after mount.
+    // On a mount that already starts filtered (a reload, a shared link,
+    // browser back from an event page), that refresh must not trigger the
+    // filter-apply scroll below: it would override the browser's own
+    // scroll restoration (homepage search/navigation work, 2026-10-13).
+    const filtersChangedSinceLastRun = filterKey !== lastFilterKeyRef.current;
+    lastFilterKeyRef.current = filterKey;
 
     const previouslyFiltered = wasFilteredRef.current;
     wasFilteredRef.current = hasActiveFilters;
@@ -501,7 +640,7 @@ export default function EventExplorer({
       // month) outranks preserving the exact previous pixel position, and
       // passive scroll-spy is deliberately not relied on to get this right
       // on its own.
-      if (hasActiveFilters && groupsChangedSinceLastRun) {
+      if (hasActiveFilters && groupsChangedSinceLastRun && filtersChangedSinceLastRun) {
         const el = document.getElementById(`month-${activeMonthKey}`);
         isProgrammaticScrollRef.current = true;
         el?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -554,7 +693,7 @@ export default function EventExplorer({
     // origin as its own piece of React state read by a second effect —
     // removes the double-invocation problem structurally instead of
     // instructing the linter to ignore it.
-  }, [groups, activeMonthKey, hasActiveFilters]);
+  }, [groups, activeMonthKey, hasActiveFilters, filterKey]);
 
   useEffect(() => {
     if (groups.length < 2) return;
@@ -679,6 +818,7 @@ export default function EventExplorer({
   function clearFilters() {
     setMode("all");
     setGenre("all");
+    setUnknownGenre(null);
     setVenueId("all");
     setQuery("");
   }
@@ -703,22 +843,40 @@ export default function EventExplorer({
   // ever happens once the sheet is already closing, never while it's still
   // open and covering/scroll-locking the page underneath.
   function applyMobileFilters() {
-    setGenre(draftGenre);
+    if (draftGenre !== genre) changeGenre(draftGenre);
     setVenueId(draftVenueId);
     setMobileFiltersOpen(false);
+  }
+
+  // Options are exactly the admin's genre list. A legacy group from an old
+  // link ("garage-bass", "hardstyle-hardcore") gets a hidden option only
+  // while it is the selected value, so the select shows what is applied
+  // without offering the group as a choice.
+  const genreOptions = (selected: GenreFilterValue | "all") => (
+    <>
+      <option value="all">All genres</option>
+      {isLegacyGenreFilter(selected) && (
+        <option value={selected} hidden>{genreFilterLabel(selected)}</option>
+      )}
+      {GENRES.map((g) => (
+        <option key={g.slug} value={g.slug}>{g.label}</option>
+      ))}
+    </>
+  );
+
+  function changeGenre(value: GenreFilterValue | "all") {
+    setGenre(value);
+    setUnknownGenre(null);
   }
 
   const genreSelect = (id: string) => (
     <select
       id={id}
       value={genre}
-      onChange={(e) => setGenre(e.target.value as MainGenreSlug | "all")}
+      onChange={(e) => changeGenre(e.target.value as GenreFilterValue | "all")}
       className={selectClasses(genre !== "all")}
     >
-      <option value="all">All genres</option>
-      {MAIN_GENRES.map((g) => (
-        <option key={g.slug} value={g.slug}>{g.label}</option>
-      ))}
+      {genreOptions(genre)}
     </select>
   );
 
@@ -882,6 +1040,25 @@ export default function EventExplorer({
         )}
       </div>
 
+      {unknownGenre && (
+        <div
+          role="status"
+          className="mx-auto mt-3 flex max-w-6xl items-start justify-between gap-3 px-4 text-xs text-text-secondary sm:px-6"
+        >
+          <p>
+            The genre &ldquo;{unknownGenre}&rdquo; from this link isn&rsquo;t recognised, so all genres are shown.
+            Pick a genre from the Genre filter to narrow the list.
+          </p>
+          <button
+            type="button"
+            onClick={() => setUnknownGenre(null)}
+            className="shrink-0 font-medium text-accent hover:text-accent-strong"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Mobile-only result count, moved out of the top control row. */}
       <p className="px-4 pt-2 text-[11px] text-text-tertiary sm:hidden">{countLabel}</p>
 
@@ -924,13 +1101,10 @@ export default function EventExplorer({
                   <select
                     id="genre-filter-mobile"
                     value={draftGenre}
-                    onChange={(e) => setDraftGenre(e.target.value as MainGenreSlug | "all")}
+                    onChange={(e) => setDraftGenre(e.target.value as GenreFilterValue | "all")}
                     className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
                   >
-                    <option value="all">All genres</option>
-                    {MAIN_GENRES.map((g) => (
-                      <option key={g.slug} value={g.slug}>{g.label}</option>
-                    ))}
+                    {genreOptions(draftGenre)}
                   </select>
                 </div>
 
@@ -978,7 +1152,7 @@ export default function EventExplorer({
         </div>
       )}
 
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6" onClickCapture={rememberListReturn}>
         {groups.length === 0 ? (
           <EmptyState
             title={mode === "all" ? "No events match" : MODE_EMPTY_TITLE[mode as Exclude<Mode, "all">]}

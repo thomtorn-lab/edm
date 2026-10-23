@@ -6,6 +6,7 @@ import { createEvent, insertDiscoveryItem } from "@/db/writes";
 import { notifyDiscoveryQueueInsert } from "@/lib/discoveryNotification";
 import { classifyAdminQueueRow, mapPendingDiscoveryQueueForDedup } from "@/lib/adminQueue";
 import { findBestDuplicateMatch } from "@/lib/dedup";
+import { isResidentAdvisorUrl } from "@/lib/links";
 import type { RawCandidateEvent } from "@/lib/adapters/types";
 
 /**
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     // a pasted Facebook event URL is already carried as officialEventUrl
     // above, so setting facebookUrl here too would only ever duplicate it.
     facebookUrl: null,
-    residentAdvisorUrl: parsed.hostname.includes("ra.co") ? parsed.toString() : null,
+    residentAdvisorUrl: isResidentAdvisorUrl(parsed.toString()) ? parsed.toString() : null,
     imageUrl: image,
     priceFrom: null,
     genreHint: null,

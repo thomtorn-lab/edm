@@ -6,9 +6,18 @@ import DiscoveryQueue from "./DiscoveryQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
 import type { AdminQueueCategory, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
 import { ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
-import { formatFullDateLabel } from "@/lib/format";
+import { formatFullDateLabel, formatRowDateLabel } from "@/lib/format";
+import {
+  splitPossibleForDisplay,
+  type NotInSourceReview,
+  type PastStaleSplit,
+  type PrioritizedReviewRow,
+  type ReviewPriority,
+  type GroupedReviewList,
+  type ReviewGroup,
+} from "@/lib/reviewPriority";
 
-type Tab = AdminQueueCategory | "published" | "admin_unpublished";
+type Tab = AdminQueueCategory | "likely_relevant" | "published" | "admin_unpublished";
 
 const UNPUBLISH_REASON_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
@@ -23,6 +32,12 @@ interface Props {
   published: PublishedQueueRow[];
   adminUnpublished: AdminUnpublishedRow[];
   venues: Venue[];
+  /** Ranked likely/possible-relevant rows from Insufficient evidence (see src/lib/reviewPriority.ts). */
+  priorityList?: GroupedReviewList;
+  /** Display split of the Past / stale tab: expired vs still-upcoming rows the source no longer lists. */
+  pastStaleSplit?: PastStaleSplit<DiscoveryQueueItem>;
+  /** The upcoming-but-no-longer-listed rows, ranked with the same signals as Likely relevant. */
+  notInSource?: NotInSourceReview;
 }
 
 /**
@@ -33,9 +48,19 @@ interface Props {
  * (that's classifyAdminQueueRow's job, see src/lib/adminQueue.ts), it only
  * decides which already-classified list to show.
  */
-const VALID_TABS: Tab[] = ["needs_review", "venue_blocked", "insufficient", "rejected", "past_stale", "published", "admin_unpublished"];
+const VALID_TABS: Tab[] = ["needs_review", "likely_relevant", "venue_blocked", "insufficient", "rejected", "past_stale", "published", "admin_unpublished"];
 
-export default function AdminQueueTabs({ groups, published, adminUnpublished, venues }: Props) {
+const EMPTY_PRIORITY_LIST: GroupedReviewList = { likely: [], possible: [], urgentCount: 0, urgentLikelyCount: 0, urgentPossibleCount: 0 };
+
+export default function AdminQueueTabs({
+  groups,
+  published,
+  adminUnpublished,
+  venues,
+  priorityList = EMPTY_PRIORITY_LIST,
+  pastStaleSplit,
+  notInSource,
+}: Props) {
   // Direct handoff (unified event create/edit model, 2026-09-08 — Section
   // 5/10): AddEventFromUrl and AdminQueueTabs are sibling client components
   // on the same server-rendered /admin page (see src/app/admin/page.tsx) —
@@ -52,6 +77,7 @@ export default function AdminQueueTabs({ groups, published, adminUnpublished, ve
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "needs_review", label: ADMIN_QUEUE_CATEGORY_LABELS.needs_review, count: groups.needs_review.length },
+    { key: "likely_relevant", label: "Likely relevant", count: priorityList.likely.length + priorityList.possible.length },
     { key: "venue_blocked", label: ADMIN_QUEUE_CATEGORY_LABELS.venue_blocked, count: groups.venue_blocked.length },
     { key: "insufficient", label: ADMIN_QUEUE_CATEGORY_LABELS.insufficient, count: groups.insufficient.length },
     { key: "rejected", label: ADMIN_QUEUE_CATEGORY_LABELS.rejected, count: groups.rejected.length },
@@ -62,6 +88,27 @@ export default function AdminQueueTabs({ groups, published, adminUnpublished, ve
 
   return (
     <div>
+      {priorityList.likely.length + priorityList.possible.length > 0 && (
+        <div
+          role={priorityList.urgentCount > 0 ? "alert" : "status"}
+          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+            priorityList.urgentCount > 0 ? "border-status-warn" : "border-border-strong"
+          }`}
+        >
+          <div className="text-xs">
+            <p className="text-text-primary">
+              Waiting for review: <strong>{priorityList.likely.length} likely relevant</strong> ·{" "}
+              {priorityList.possible.length} possible (source category only)
+            </p>
+            {priorityList.urgentCount > 0 && (
+              <p className="mt-0.5 font-semibold text-status-warn">{urgentSentence(priorityList)}</p>
+            )}
+          </div>
+          <button type="button" onClick={() => setTab("likely_relevant")} className="text-xs font-semibold text-accent-strong underline decoration-dotted underline-offset-2">
+            Review them
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap gap-1.5" role="tablist">
         {tabs.map((t) => (
           <button
@@ -83,12 +130,281 @@ export default function AdminQueueTabs({ groups, published, adminUnpublished, ve
 
       <div className="mt-4">
         {tab === "needs_review" && <DiscoveryQueue items={groups.needs_review} venues={venues} />}
+        {tab === "likely_relevant" && <LikelyRelevantList list={priorityList} venues={venues} />}
         {tab === "venue_blocked" && <DiscoveryQueue items={groups.venue_blocked} venues={venues} />}
         {tab === "insufficient" && <DiscoveryQueue items={groups.insufficient} venues={venues} />}
         {tab === "rejected" && <DiscoveryQueue items={groups.rejected} venues={venues} />}
-        {tab === "past_stale" && <DiscoveryQueue items={groups.past_stale} venues={venues} />}
+        {tab === "past_stale" &&
+          (pastStaleSplit ? (
+            <PastStaleList split={pastStaleSplit} notInSource={notInSource} venues={venues} />
+          ) : (
+            <DiscoveryQueue items={groups.past_stale} venues={venues} />
+          ))}
         {tab === "published" && <PublishedList rows={published} />}
         {tab === "admin_unpublished" && <UnpublishedByAdminList rows={adminUnpublished} />}
+      </div>
+    </div>
+  );
+}
+
+function urgentSentence(list: GroupedReviewList): string {
+  const parts: string[] = [];
+  if (list.urgentLikelyCount > 0) parts.push(`${list.urgentLikelyCount} likely relevant`);
+  if (list.urgentPossibleCount > 0) parts.push(`${list.urgentPossibleCount} possible`);
+  const verb = list.urgentCount === 1 ? "starts" : "start";
+  return `${parts.join(" and ")} ${list.urgentCount === 1 ? "event" : "events"} ${verb} within 72 hours and ${list.urgentCount === 1 ? "has" : "have"} not been handled yet.`;
+}
+
+const RELEVANCE_STATE_LABELS: Record<ReviewPriority["relevanceState"], string> = {
+  missing_genre_info: "Genre information missing",
+  uncertain_relevance: "Uncertain electronic relevance",
+};
+
+const TIER_BADGES: Record<"likely" | "possible", { label: string; className: string }> = {
+  likely: { label: "Likely relevant", className: "border-accent text-accent-strong" },
+  possible: { label: "Possible · source category only", className: "border-dashed border-status-warn text-status-warn" },
+};
+
+/** Why a row was prioritised and what to do with it — read-only, shown under the row's title. */
+function PriorityExplanation({ priority }: { priority: ReviewPriority }) {
+  const series = priority.signals.filter((s) => s.key.startsWith("series_"));
+  const others = priority.signals.filter((s) => !s.key.startsWith("series_"));
+  const positives = others.filter((s) => s.points > 0);
+  const negatives = others.filter((s) => s.points < 0);
+  const notes = others.filter((s) => s.points === 0);
+  const badge = priority.tier === "none" ? null : TIER_BADGES[priority.tier];
+  return (
+    <div
+      className={`mt-2 rounded-md border px-3 py-2 text-xs ${priority.tier === "possible" ? "border-dashed border-status-warn" : "border-border"}`}
+      data-testid="priority-explanation"
+      data-tier={priority.tier}
+    >
+      <p className="font-semibold text-text-primary">
+        {badge && (
+          <span className={`mr-2 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
+        )}
+        {RELEVANCE_STATE_LABELS[priority.relevanceState]} · score {priority.relevanceScore}
+        {priority.startsWithin72h && <span className="ml-2 text-status-warn">Starts within 72 hours</span>}
+      </p>
+      {positives.length > 0 && <p className="mt-1 text-text-secondary">For: {positives.map((s) => s.label).join(" · ")}</p>}
+      {negatives.length > 0 && <p className="mt-1 text-status-warn">Against: {negatives.map((s) => s.label).join(" · ")}</p>}
+      {notes.length > 0 && <p className="mt-1 text-text-tertiary">{notes.map((s) => s.label).join(" · ")}</p>}
+      {series.map((s) => (
+        <p
+          key={s.key}
+          className={`mt-1 ${s.points < 0 ? "text-status-warn" : s.points > 0 ? "text-text-secondary" : "text-text-tertiary"}`}
+          data-testid="series-memory"
+        >
+          Series memory ({s.points > 0 ? `+${s.points}` : s.points}, ranking only — never publishes or sets a genre): {s.label}
+        </p>
+      ))}
+      <p className="mt-1 font-semibold text-accent-strong">Recommended: {priority.recommendedAction}</p>
+    </div>
+  );
+}
+
+function PrioritizedQueue({ rows, venues, emptyMessage }: { rows: PrioritizedReviewRow[]; venues: Venue[]; emptyMessage: string }) {
+  const byId = new Map(rows.map((r) => [r.item.id, r.priority]));
+  return (
+    <DiscoveryQueue
+      items={rows.map((r) => r.item)}
+      venues={venues}
+      emptyMessage={emptyMessage}
+      annotate={(item) => {
+        const priority = byId.get(item.id);
+        return priority ? <PriorityExplanation priority={priority} /> : null;
+      }}
+    />
+  );
+}
+
+/** Display name of a row's source, e.g. "KultuNaut" — falls back to the source id. */
+function sourceLabel(row: PrioritizedReviewRow): string {
+  return row.item.sourceName || row.item.sourceId || "admin";
+}
+
+/**
+ * The same event listed by more than one source, shown as one queue entry:
+ * the best-ranked row with all its sources named, and every other source's
+ * row one click away with its own actions. Nothing is merged.
+ */
+function GroupSources({ group, venues }: { group: ReviewGroup; venues: Venue[] }) {
+  const [open, setOpen] = useState(false);
+  const all = [group.primary, ...group.others];
+  return (
+    <div className="mt-2 rounded-md border border-border px-3 py-2 text-xs" data-testid="group-sources">
+      <p className="text-text-secondary">
+        Same event from {all.length} sources: <strong>{all.map(sourceLabel).join(" · ")}</strong>. Each listing keeps its own actions.
+      </p>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="mt-1 font-semibold text-accent-strong underline decoration-dotted underline-offset-2">
+        {open ? "Hide" : "Show"} the other {group.others.length === 1 ? "listing" : `${group.others.length} listings`}
+      </button>
+      {open && (
+        <div className="mt-2 border-l-2 border-border pl-3">
+          <PrioritizedQueue rows={group.others} venues={venues} emptyMessage="" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupedQueue({ groups, venues, emptyMessage }: { groups: ReviewGroup[]; venues: Venue[]; emptyMessage: string }) {
+  const byId = new Map(groups.map((g) => [g.primary.item.id, g]));
+  return (
+    <DiscoveryQueue
+      items={groups.map((g) => g.primary.item)}
+      venues={venues}
+      emptyMessage={emptyMessage}
+      annotate={(item) => {
+        const group = byId.get(item.id);
+        if (!group) return null;
+        return (
+          <>
+            <PriorityExplanation priority={group.primary.priority} />
+            {group.others.length > 0 && <GroupSources group={group} venues={venues} />}
+          </>
+        );
+      }}
+    />
+  );
+}
+
+const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide";
+
+/**
+ * One possible event as a single compact line: date, title, venue and how
+ * many sources list it. Clicking it opens the full entry (explanation,
+ * other sources and the usual actions) in its place, so it is never shown
+ * twice.
+ */
+function CompactPossibleRow({ group, venues }: { group: ReviewGroup; venues: Venue[] }) {
+  const [open, setOpen] = useState(false);
+  const { item } = group.primary;
+  const sources = group.others.length + 1;
+  return (
+    <li className="border-b border-border last:border-b-0" data-testid="compact-possible-row">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={item.probableTitle}
+        className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 py-2 text-left text-xs hover:bg-surface-2 sm:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,12rem)_auto] sm:items-baseline"
+      >
+        <span className="order-1 text-text-tertiary">{item.probableStart ? formatRowDateLabel(item.probableStart) : "No date"}</span>
+        <span className="order-2 text-[10px] font-semibold uppercase tracking-wide text-status-warn sm:order-4">{open ? "Close" : "Open"}</span>
+        <span className="order-3 col-span-2 truncate font-semibold text-text-primary sm:order-2 sm:col-span-1">{item.probableTitle}</span>
+        <span className="order-4 col-span-2 truncate text-text-secondary sm:order-3 sm:col-span-1">
+          {item.probableVenueName ?? "No venue"}
+          {sources > 1 && ` · ${sources} sources`}
+        </span>
+      </button>
+      {open && (
+        <div className="pb-3">
+          <GroupedQueue groups={[group]} venues={venues} emptyMessage="" />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Insufficient-evidence rows ranked by how likely they are to be electronic
+ * and how soon they start. They stay in Insufficient evidence too: this is a
+ * prioritised view of the same rows, using the same publish/ignore actions.
+ * Every event appears exactly once: likely ones in full, possible ones
+ * starting within 72 hours in full (the banner's own urgency rule), and the
+ * other possible ones as compact rows by start date that open in place — so
+ * none of them needs "show all" to be found.
+ */
+function LikelyRelevantList({ list, venues }: { list: GroupedReviewList; venues: Venue[] }) {
+  const possible = splitPossibleForDisplay(list.possible);
+  return (
+    <div>
+      <p className="mb-3 text-xs text-text-secondary">
+        Pending rows from Insufficient evidence whose source text names no genre, but where the venue, wording, lineup or
+        source category points at electronic music. Nothing here is published automatically.
+      </p>
+
+      <section aria-label="Likely relevant">
+        <h3 className={`${SECTION_HEADING} text-accent-strong`}>Likely relevant ({list.likely.length})</h3>
+        <p className="mt-1 mb-2 text-xs text-text-tertiary">Backed by a genre, DJ/rave/club wording or a primarily electronic venue.</p>
+        <GroupedQueue groups={list.likely} venues={venues} emptyMessage="No likely relevant rows right now." />
+      </section>
+
+      <section aria-label="Possible — source category only" className="mt-6 rounded-md border border-dashed border-status-warn px-3 py-3">
+        <h3 className={`${SECTION_HEADING} text-status-warn`}>Possible — source category only ({list.possible.length})</h3>
+        <p className="mt-1 mb-2 text-xs text-text-tertiary">
+          Lower certainty. Only the source&rsquo;s own electronic category (e.g. KultuNaut&rsquo;s Elektronisk / Club-DJ listing) speaks for
+          these, and that category also contains concerts that are not electronic — check the artist first. Open a row for the
+          reasons and the usual actions.
+        </p>
+        {list.possible.length === 0 && <p className="text-xs text-text-tertiary">No possible rows right now.</p>}
+        {possible.urgent.length > 0 && (
+          <div aria-label="Possible — starts within 72 hours" role="group">
+            <h4 className={`${SECTION_HEADING} mt-2 text-status-warn`}>Starts within 72 hours ({possible.urgent.length})</h4>
+            <GroupedQueue groups={possible.urgent} venues={venues} emptyMessage="" />
+          </div>
+        )}
+        {possible.buckets.map((bucket) => (
+          <div key={bucket.key} role="group" aria-label={`Possible — ${bucket.label}`} className="mt-3">
+            <h4 className={`${SECTION_HEADING} text-text-secondary`}>
+              {bucket.label} ({bucket.groups.length})
+            </h4>
+            <ul className="mt-1">
+              {bucket.groups.map((group) => (
+                <CompactPossibleRow key={group.primary.item.id} group={group} venues={venues} />
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Past / stale, split for display: upcoming rows the source stopped listing
+ * may have moved, been renamed or been cancelled — or the source may simply
+ * have dropped them. Relevant-looking ones are ranked first; the rest and the
+ * expired rows are collapsed. Nothing is concluded automatically.
+ */
+function PastStaleList({ split, notInSource, venues }: { split: PastStaleSplit<DiscoveryQueueItem>; notInSource?: NotInSourceReview; venues: Venue[] }) {
+  const [showOthers, setShowOthers] = useState(false);
+  const [showExpired, setShowExpired] = useState(false);
+  const ranked = notInSource ? [...notInSource.prioritized.likely, ...notInSource.prioritized.possible] : [];
+  const others = notInSource ? notInSource.others : split.upcomingNotInSource;
+  return (
+    <div>
+      <h3 className={`${SECTION_HEADING} text-text-primary`}>Upcoming, no longer listed by the source ({split.upcomingNotInSource.length})</h3>
+      <p className="mt-1 mb-2 text-xs text-text-secondary">
+        The source stopped listing these before they happened. That can mean a move, a new name, a cancellation or just a source
+        glitch — check the source before acting. Nothing here has been marked cancelled or moved.
+      </p>
+      {notInSource && (
+        <>
+          <h4 className={`${SECTION_HEADING} mt-3 text-accent-strong`}>Possibly electronic ({ranked.length})</h4>
+          <PrioritizedQueue rows={ranked} venues={venues} emptyMessage="None of these look electronic." />
+        </>
+      )}
+      <div className="mt-4">
+        <button type="button" onClick={() => setShowOthers((v) => !v)} aria-expanded={showOthers} className={`${SECTION_HEADING} text-text-secondary hover:text-text-primary`}>
+          {showOthers ? "Hide" : "Show"} {notInSource ? "the rest" : "all"} ({others.length})
+        </button>
+        {showOthers && (
+          <div className="mt-2">
+            <DiscoveryQueue items={others} venues={venues} emptyMessage="None." />
+          </div>
+        )}
+      </div>
+      <div className="mt-6">
+        <button type="button" onClick={() => setShowExpired((v) => !v)} aria-expanded={showExpired} className={`${SECTION_HEADING} text-text-secondary hover:text-text-primary`}>
+          {showExpired ? "Hide" : "Show"} expired ({split.expired.length})
+        </button>
+        {showExpired && (
+          <div className="mt-2">
+            <DiscoveryQueue items={split.expired} venues={venues} emptyMessage="None." />
+          </div>
+        )}
       </div>
     </div>
   );
