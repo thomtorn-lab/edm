@@ -1,4 +1,4 @@
-import { isGenreSlug, type GenreSlug } from "./taxonomy";
+import { isGenreFilterValue, type GenreFilterValue } from "./taxonomy";
 
 /**
  * URL-backed homepage filter state (homepage search/navigation work,
@@ -11,7 +11,8 @@ import { isGenreSlug, type GenreSlug } from "./taxonomy";
  * The page's canonical stays "/" (see src/app/page.tsx), so these views are
  * never indexed as separate pages. Unknown or invalid values are ignored
  * rather than rejected — a stale or hand-edited link still opens the
- * homepage, just without that one filter.
+ * homepage, just without that one filter (an unknown genre is reported on
+ * screen — see `unknownGenre`).
  */
 
 export type ExplorerMode = "all" | "tonight" | "weekend" | "next-weekend";
@@ -21,9 +22,16 @@ export const EXPLORER_DATE_MODES = ["tonight", "weekend", "next-weekend"] as con
 /** Filter state as the URL carries it. `venueSlug` is resolved to a venue id by EventExplorer against the venues it actually lists. */
 export interface ExplorerUrlFilters {
   mode: ExplorerMode;
-  genre: GenreSlug | "all";
+  genre: GenreFilterValue | "all";
   venueSlug: string | null;
   query: string;
+  /**
+   * A `genre` value the URL carried that is no known genre (a typo or a
+   * genre since removed). The filter then falls back to all genres, and
+   * EventExplorer says so on screen rather than silently listing
+   * everything. Never written back to the URL.
+   */
+  unknownGenre?: string;
 }
 
 export const DEFAULT_EXPLORER_URL_FILTERS: ExplorerUrlFilters = {
@@ -49,14 +57,15 @@ export function parseExplorerFilters(params: ParamsLike | null | undefined): Exp
     : "all";
 
   const rawGenre = params.get(KEYS.genre);
-  const genre = isGenreSlug(rawGenre) ? rawGenre : "all";
+  const genre = isGenreFilterValue(rawGenre) ? rawGenre : "all";
+  const unknownGenre = rawGenre && rawGenre !== "all" && genre === "all" ? rawGenre.slice(0, 100) : undefined;
 
   const rawVenue = params.get(KEYS.venue)?.trim() ?? "";
   const venueSlug = /^[a-z0-9-]{1,100}$/.test(rawVenue) ? rawVenue : null;
 
   const query = (params.get(KEYS.query) ?? "").slice(0, MAX_QUERY_LENGTH);
 
-  return { mode, genre, venueSlug, query };
+  return { mode, genre, venueSlug, query, ...(unknownGenre ? { unknownGenre } : {}) };
 }
 
 /**

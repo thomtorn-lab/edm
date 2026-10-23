@@ -154,6 +154,106 @@ describe("EventExplorer — initial filters from the URL", () => {
   });
 });
 
+describe("EventExplorer — genre links (exact match, legacy groups, unknown values)", () => {
+  const genreEvent = (title: string, subgenres: GenreSlug[], day: number) =>
+    makeEvent({ title, startDatetime: `2026-09-${String(day).padStart(2, "0")}T20:00:00.000Z`, primaryGenre: subgenres[0], subgenres });
+  const GENRE_EVENTS = [
+    genreEvent("Techno Night", ["techno"], 1),
+    genreEvent("Melodic Night", ["melodic-techno"], 2),
+    genreEvent("Industrial Night", ["industrial"], 3),
+    genreEvent("Techno Industrial Night", ["techno", "industrial"], 4),
+    genreEvent("Dubstep Night", ["dubstep"], 5),
+    genreEvent("Garage Night", ["garage"], 6),
+    genreEvent("Hardstyle Night", ["hardstyle"], 7),
+    genreEvent("Rawstyle Night", ["rawstyle"], 8),
+    genreEvent("Hardcore Night", ["hardcore"], 9),
+  ];
+  function renderGenresAt(url: string) {
+    window.history.replaceState(null, "", url);
+    mockSearchParams = new URLSearchParams(window.location.search);
+    return render(<EventExplorer events={GENRE_EVENTS} serverNow={SERVER_NOW} />);
+  }
+  // Longest matching title wins: "Techno Industrial Night" also contains "Industrial Night".
+  const byLength = [...GENRE_EVENTS].sort((a, b) => b.title.length - a.title.length);
+  const listed = () => titles().map((t) => byLength.find((e) => t.includes(e.title))?.title).filter(Boolean).sort();
+  const notice = () => screen.queryByRole("status");
+
+  it("?genre=techno lists only events tagged Techno — not Melodic Techno or Industrial-only events", () => {
+    renderGenresAt("/?genre=techno");
+    expect(listed()).toEqual(["Techno Industrial Night", "Techno Night"]);
+  });
+
+  it("?genre=industrial lists every event tagged Industrial, including the two-genre one", () => {
+    renderGenresAt("/?genre=industrial");
+    expect(listed()).toEqual(["Industrial Night", "Techno Industrial Night"]);
+  });
+
+  it("the legacy ?genre=garage-bass link keeps its group meaning (Dubstep + Garage) without offering the group as a choice", () => {
+    renderGenresAt("/?genre=garage-bass");
+    expect(listed()).toEqual(["Dubstep Night", "Garage Night"]);
+    const select = document.getElementById("genre-filter") as HTMLSelectElement;
+    expect(select.value).toBe("garage-bass");
+    const legacyOption = Array.from(select.options).find((o) => o.value === "garage-bass")!;
+    expect(legacyOption.hidden).toBe(true);
+    expect(legacyOption.textContent).toBe("UK Garage / Bass Music");
+    expect(window.location.search).toBe("?genre=garage-bass");
+    expect(notice()).toBeNull();
+  });
+
+  it("the legacy ?genre=hardstyle-hardcore link keeps its group meaning (Hardstyle + Rawstyle + Hardcore)", () => {
+    renderGenresAt("/?genre=hardstyle-hardcore");
+    expect(listed()).toEqual(["Hardcore Night", "Hardstyle Night", "Rawstyle Night"]);
+  });
+
+  it("picking a real genre after a legacy link drops the legacy group from the options", () => {
+    renderGenresAt("/?genre=hardstyle-hardcore");
+    const select = document.getElementById("genre-filter") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "hardstyle" } });
+    expect(listed()).toEqual(["Hardstyle Night"]);
+    expect(Array.from(select.options).some((o) => o.value === "hardstyle-hardcore")).toBe(false);
+    expect(window.location.search).toBe("?genre=hardstyle");
+  });
+
+  it("without a legacy link, neither legacy group is an option — only All genres plus the admin's 22 genres", () => {
+    renderGenresAt("/");
+    const values = Array.from((document.getElementById("genre-filter") as HTMLSelectElement).options).map((o) => o.value);
+    expect(values).toHaveLength(23);
+    expect(values).not.toContain("garage-bass");
+    expect(values).not.toContain("hardstyle-hardcore");
+  });
+
+  it("an unknown ?genre= value is reported on screen, not silently turned into the full list", () => {
+    renderGenresAt("/?genre=polka&when=weekend");
+    expect(notice()?.textContent).toContain("“polka”");
+    expect(notice()?.textContent).toContain("isn’t recognised");
+    expect((document.getElementById("genre-filter") as HTMLSelectElement).value).toBe("all");
+    // the other filters from the link still apply
+    for (const button of screen.getAllByRole("button", { name: "This weekend" })) {
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+    }
+  });
+
+  it("the unknown-genre notice goes away when the visitor dismisses it or picks a genre", () => {
+    renderGenresAt("/?genre=polka");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(notice()).toBeNull();
+    cleanup();
+    renderGenresAt("/?genre=polka");
+    fireEvent.change(document.getElementById("genre-filter")!, { target: { value: "industrial" } });
+    expect(notice()).toBeNull();
+    expect(listed()).toEqual(["Industrial Night", "Techno Industrial Night"]);
+  });
+
+  it("mobile: the filters sheet uses the same exact match", () => {
+    renderGenresAt("/");
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    fireEvent.change(document.getElementById("genre-filter-mobile")!, { target: { value: "melodic-techno" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Show \d+ events?$/ }));
+    expect(listed()).toEqual(["Melodic Night"]);
+    expect(window.location.search).toBe("?genre=melodic-techno");
+  });
+});
+
 describe("EventExplorer — mirroring filters into the URL", () => {
   it("writes a changed filter with replaceState, never pushState, keeping unrelated params and the month hash", () => {
     renderAt("/?utm_source=newsletter#month-2026-09");

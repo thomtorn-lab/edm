@@ -7,6 +7,8 @@ import {
   getGenre,
   mainGenreOf,
   mainGenrePagePath,
+  genreFilterLabel,
+  isGenreFilterValue,
   matchesGenreFilter,
   matchesMainGenre,
   isGenreSlug,
@@ -155,14 +157,44 @@ describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
 });
 
 describe("homepage genre filter matches the admin genre list", () => {
-  it("a group genre also matches its subgenres; a precise subgenre matches only itself", () => {
-    const technoMatches = GENRES.map((g) => g.slug).filter((slug) => matchesGenreFilter([slug], "techno"));
-    expect(technoMatches.sort()).toEqual(["industrial", "melodic-techno", "minimal-techno", "techno"]);
-    expect(matchesGenreFilter(["deep-house"], "house")).toBe(true);
+  it("matches exactly: a genre never pulls in its subgenres", () => {
+    expect(matchesGenreFilter(["melodic-techno"], "techno")).toBe(false);
+    expect(matchesGenreFilter(["industrial"], "techno")).toBe(false);
+    expect(matchesGenreFilter(["deep-house"], "house")).toBe(false);
     expect(matchesGenreFilter(["house"], "deep-house")).toBe(false);
-    expect(matchesGenreFilter(["deep-house"], "deep-house")).toBe(true);
     expect(matchesGenreFilter(["hardcore"], "hardstyle")).toBe(false);
-    expect(matchesGenreFilter(["house", "disco"] as GenreSlug[], "disco")).toBe(true);
+    expect(matchesGenreFilter([], "techno")).toBe(false);
+  });
+
+  it("a two-genre event matches either of its genres", () => {
+    const both = ["techno", "industrial"] as GenreSlug[];
+    expect(matchesGenreFilter(both, "techno")).toBe(true);
+    expect(matchesGenreFilter(both, "industrial")).toBe(true);
+    expect(matchesGenreFilter(both, "melodic-techno")).toBe(false);
+  });
+
+  it("each of the 22 genres matches only itself", () => {
+    expect(GENRES).toHaveLength(22);
+    for (const g of GENRES) {
+      for (const other of GENRES) expect(matchesGenreFilter([other.slug], g.slug), `${g.slug}/${other.slug}`).toBe(g.slug === other.slug);
+    }
+  });
+
+  it("legacy group links keep their original meaning", () => {
+    const garageBass = GENRES.map((g) => g.slug).filter((slug) => matchesGenreFilter([slug], "garage-bass"));
+    expect(garageBass.sort()).toEqual(["dubstep", "garage"]);
+    const hardDance = GENRES.map((g) => g.slug).filter((slug) => matchesGenreFilter([slug], "hardstyle-hardcore"));
+    expect(hardDance.sort()).toEqual(["hardcore", "hardstyle", "rawstyle"]);
+    expect(genreFilterLabel("garage-bass")).toBe("UK Garage / Bass Music");
+    expect(genreFilterLabel("hardstyle-hardcore")).toBe("Hardstyle / Hardcore");
+  });
+
+  it("isGenreFilterValue accepts the 22 genres and the two legacy groups, nothing else", () => {
+    for (const g of GENRES) expect(isGenreFilterValue(g.slug)).toBe(true);
+    expect(isGenreFilterValue("garage-bass")).toBe(true);
+    expect(isGenreFilterValue("hardstyle-hardcore")).toBe(true);
+    expect(isGenreFilterValue("polka")).toBe(false);
+    expect(isGenreFilterValue("breaks")).toBe(false);
   });
 
   it("every admin genre finds at least the events tagged with it", () => {

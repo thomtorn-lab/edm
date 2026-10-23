@@ -79,8 +79,9 @@ export function getGenre(slug: GenreSlug): GenreDef {
 /**
  * Approved public genre GROUPING taxonomy (Electronic CPH data-quality work
  * package, Workstream B): a fixed set of 12 broad categories, used for
- * newsletter genre preferences and for filter-inheritance (the homepage
- * filter itself lists GENRES — see matchesGenreFilter) — a specific
+ * newsletter genre preferences, the /genres/techno landing page and the two
+ * legacy homepage filter links (the homepage filter itself lists GENRES with
+ * exact matching — see matchesGenreFilter) — a specific
  * subgenre like "melodic-techno" is discoverable both under its own exact
  * label (search — see search.ts) and under its broader group ("Techno" in
  * the filter dropdown), via mainGenreOf/GENRE_TO_MAIN below.
@@ -215,20 +216,36 @@ export function matchesMainGenre(subgenres: readonly GenreSlug[], genre: MainGen
 
 /**
  * The homepage genre FILTER (EventExplorer.tsx) offers exactly the genres
- * the admin can pick (GENRES), so the two lists can never disagree. A genre
- * that is itself a filter group ("Techno", "House", "Trance", …) also matches
- * the subgenres grouped under it via GENRE_TO_MAIN — "Techno" still finds
- * Melodic Techno, Minimal Techno and Industrial — while a precise subgenre
- * ("Deep House", "Hardstyle") matches only events tagged with it.
+ * the admin can pick (GENRES), in the same order, and each option is an
+ * EXACT match: "Techno" finds only events tagged Techno, never Melodic
+ * Techno or Industrial — an event tagged with two genres shows under both.
+ *
+ * Two broad groups from the earlier filter have no genre of their own
+ * ("garage-bass", "hardstyle-hardcore"); old links carrying them keep
+ * their original group meaning, but they are not offered as options.
  */
-export function matchesGenreFilter(subgenres: readonly GenreSlug[], genre: GenreSlug): boolean {
-  const main = mainGenreOf(genre);
-  if (genre === main) return matchesMainGenre(subgenres, main);
-  return subgenres.includes(genre);
-}
+export const LEGACY_GENRE_FILTERS = ["garage-bass", "hardstyle-hardcore"] as const satisfies readonly MainGenreSlug[];
+export type LegacyGenreFilter = (typeof LEGACY_GENRE_FILTERS)[number];
+export type GenreFilterValue = GenreSlug | LegacyGenreFilter;
 
 export function isGenreSlug(value: unknown): value is GenreSlug {
   return typeof value === "string" && GENRE_BY_SLUG.has(value as GenreSlug);
+}
+
+export function isLegacyGenreFilter(value: unknown): value is LegacyGenreFilter {
+  return (LEGACY_GENRE_FILTERS as readonly unknown[]).includes(value);
+}
+
+export function isGenreFilterValue(value: unknown): value is GenreFilterValue {
+  return isGenreSlug(value) || isLegacyGenreFilter(value);
+}
+
+export function genreFilterLabel(value: GenreFilterValue): string {
+  return isLegacyGenreFilter(value) ? getMainGenre(value).label : getGenre(value).label;
+}
+
+export function matchesGenreFilter(subgenres: readonly GenreSlug[], genre: GenreFilterValue): boolean {
+  return isLegacyGenreFilter(genre) ? matchesMainGenre(subgenres, genre) : subgenres.includes(genre);
 }
 
 /**

@@ -21,7 +21,7 @@ import {
   writeListReturn,
   type ExplorerMode,
 } from "@/lib/explorerFilters";
-import { GENRES, matchesGenreFilter, type GenreSlug } from "@/lib/taxonomy";
+import { GENRES, genreFilterLabel, isLegacyGenreFilter, matchesGenreFilter, type GenreFilterValue } from "@/lib/taxonomy";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
 
@@ -65,7 +65,7 @@ function applyFilters(
   upcoming: HomepageEvent[],
   now: Date,
   mode: Mode,
-  genre: GenreSlug | "all",
+  genre: GenreFilterValue | "all",
   venueId: string | "all",
   query: string
 ): HomepageEvent[] {
@@ -202,7 +202,7 @@ function EventExplorerList({
   const searchParams = useSearchParams();
   const [initialUrlFilters] = useState(() => parseExplorerFilters(searchParams));
   const [mode, setMode] = useState<Mode>(initialUrlFilters.mode);
-  const [genre, setGenre] = useState<GenreSlug | "all">(initialUrlFilters.genre);
+  const [genre, setGenre] = useState<GenreFilterValue | "all">(initialUrlFilters.genre);
   // The URL names a venue by slug; it only selects a venue that actually
   // has an upcoming event in this list (the same set the venue dropdown
   // offers), otherwise it's ignored like any other invalid value.
@@ -213,6 +213,9 @@ function EventExplorerList({
     return match ? match.venue.id : "all";
   });
   const [query, setQuery] = useState(initialUrlFilters.query);
+  // An unrecognised ?genre= value: shown as a notice until the visitor picks
+  // a genre or dismisses it, so "all events" is never a silent fallback.
+  const [unknownGenre, setUnknownGenre] = useState(initialUrlFilters.unknownGenre ?? null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // Draft copies of genre/venue, edited only while the mobile filters sheet
   // is open (filter-state architecture rework, 2026-09-12): the sheet used
@@ -224,7 +227,7 @@ function EventExplorerList({
   // "Show N events" is tapped; closing/cancelling any other way just
   // discards them, since the next open re-seeds from the (untouched) real
   // values anyway.
-  const [draftGenre, setDraftGenre] = useState<GenreSlug | "all">("all");
+  const [draftGenre, setDraftGenre] = useState<GenreFilterValue | "all">("all");
   const [draftVenueId, setDraftVenueId] = useState<string | "all">("all");
   const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
   const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
@@ -815,6 +818,7 @@ function EventExplorerList({
   function clearFilters() {
     setMode("all");
     setGenre("all");
+    setUnknownGenre(null);
     setVenueId("all");
     setQuery("");
   }
@@ -839,22 +843,40 @@ function EventExplorerList({
   // ever happens once the sheet is already closing, never while it's still
   // open and covering/scroll-locking the page underneath.
   function applyMobileFilters() {
-    setGenre(draftGenre);
+    if (draftGenre !== genre) changeGenre(draftGenre);
     setVenueId(draftVenueId);
     setMobileFiltersOpen(false);
+  }
+
+  // Options are exactly the admin's genre list. A legacy group from an old
+  // link ("garage-bass", "hardstyle-hardcore") gets a hidden option only
+  // while it is the selected value, so the select shows what is applied
+  // without offering the group as a choice.
+  const genreOptions = (selected: GenreFilterValue | "all") => (
+    <>
+      <option value="all">All genres</option>
+      {isLegacyGenreFilter(selected) && (
+        <option value={selected} hidden>{genreFilterLabel(selected)}</option>
+      )}
+      {GENRES.map((g) => (
+        <option key={g.slug} value={g.slug}>{g.label}</option>
+      ))}
+    </>
+  );
+
+  function changeGenre(value: GenreFilterValue | "all") {
+    setGenre(value);
+    setUnknownGenre(null);
   }
 
   const genreSelect = (id: string) => (
     <select
       id={id}
       value={genre}
-      onChange={(e) => setGenre(e.target.value as GenreSlug | "all")}
+      onChange={(e) => changeGenre(e.target.value as GenreFilterValue | "all")}
       className={selectClasses(genre !== "all")}
     >
-      <option value="all">All genres</option>
-      {GENRES.map((g) => (
-        <option key={g.slug} value={g.slug}>{g.label}</option>
-      ))}
+      {genreOptions(genre)}
     </select>
   );
 
@@ -1018,6 +1040,25 @@ function EventExplorerList({
         )}
       </div>
 
+      {unknownGenre && (
+        <div
+          role="status"
+          className="mx-auto mt-3 flex max-w-6xl items-start justify-between gap-3 px-4 text-xs text-text-secondary sm:px-6"
+        >
+          <p>
+            The genre &ldquo;{unknownGenre}&rdquo; from this link isn&rsquo;t recognised, so all genres are shown.
+            Pick a genre from the Genre filter to narrow the list.
+          </p>
+          <button
+            type="button"
+            onClick={() => setUnknownGenre(null)}
+            className="shrink-0 font-medium text-accent hover:text-accent-strong"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Mobile-only result count, moved out of the top control row. */}
       <p className="px-4 pt-2 text-[11px] text-text-tertiary sm:hidden">{countLabel}</p>
 
@@ -1060,13 +1101,10 @@ function EventExplorerList({
                   <select
                     id="genre-filter-mobile"
                     value={draftGenre}
-                    onChange={(e) => setDraftGenre(e.target.value as GenreSlug | "all")}
+                    onChange={(e) => setDraftGenre(e.target.value as GenreFilterValue | "all")}
                     className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
                   >
-                    <option value="all">All genres</option>
-                    {GENRES.map((g) => (
-                      <option key={g.slug} value={g.slug}>{g.label}</option>
-                    ))}
+                    {genreOptions(draftGenre)}
                   </select>
                 </div>
 
