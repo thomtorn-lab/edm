@@ -274,6 +274,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           {artistVideoPreview && (
             <ArtistVideoPreview
               artistName={artistVideoPreview.artistName}
+              eventTitle={title}
               videoId={artistVideoPreview.videoId}
               videoTitle={artistVideoPreview.videoTitle}
             />
