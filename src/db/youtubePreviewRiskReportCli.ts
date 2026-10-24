@@ -4,6 +4,7 @@
  * .github/workflows/youtube-preview-risk-report-readonly.yml:
  *
  *   node --import tsx src/db/youtubePreviewRiskReportCli.ts --out=youtube-preview-risk-report.json
+ *   node --import tsx src/db/youtubePreviewRiskReportCli.ts --check-only   (role proof only, no data read)
  *
  * Reads DATABASE_URL_REPORT_RO (a dedicated read-only role — never
  * DATABASE_URL) from the environment and never prints it; the report refuses
@@ -14,7 +15,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
 import { readReportConnectionString } from "./reportReadOnlyGuard";
-import { runYoutubePreviewRiskReport, type EventEntry, type JournalEntry, type NameEntry, type RiskReport } from "./youtubePreviewRiskReport";
+import { checkReportConnection, runYoutubePreviewRiskReport, type EventEntry, type JournalEntry, type NameEntry, type RiskReport } from "./youtubePreviewRiskReport";
 import type { AcceptedReplay } from "@/lib/enrichment/youtubePreviewRuleReplay";
 
 function readOptionalArg(name: string): string | null {
@@ -167,6 +168,13 @@ async function main() {
   const client = new Client({ connectionString });
   await client.connect();
   try {
+    if (process.argv.includes("--check-only")) {
+      const guard = await checkReportConnection(client);
+      console.log(`Connection check only: database role ${guard.role} is proven read-only. No data table was queried.`);
+      for (const w of guard.warnings) console.log(`::warning::${w}`);
+      console.log("Transaction rolled back (read-only). No YouTube calls were made.");
+      return;
+    }
     const journal = (JSON.parse(readFileSync(path.join(process.cwd(), "src/db/migrations/meta/_journal.json"), "utf8")) as { entries: JournalEntry[] }).entries;
     const report = await runYoutubePreviewRiskReport(client, new Date(), journal.map((j) => ({ tag: j.tag, when: j.when })));
     printReport(report);

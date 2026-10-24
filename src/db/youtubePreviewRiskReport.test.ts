@@ -15,6 +15,7 @@ import {
   OVERRIDES_SQL,
   OVERRIDES_TABLE_SQL,
   READ_ONLY_TX_STATEMENTS,
+  checkReportConnection,
   runYoutubePreviewRiskReport,
   type CacheRow,
   type QueryClient,
@@ -198,6 +199,18 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
     expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
   });
 
+  it("--check-only proves the role and rolls back without querying any data table", async () => {
+    const client = new FakeClient();
+    await expect(checkReportConnection(client)).resolves.toMatchObject({ ok: true, role: "report_ro" });
+    expect(client.statements).toEqual([READ_ONLY_TX_STATEMENTS.begin, READ_ONLY_TX_STATEMENTS.timeout, READ_ONLY_TX_STATEMENTS.verify, ...GUARD_STATEMENTS, READ_ONLY_TX_STATEMENTS.rollback]);
+  });
+
+  it("--check-only fails closed for a role that can write, and still rolls back", async () => {
+    const client = new FakeClient("on", null, null, "drizzle.__drizzle_migrations", true);
+    await expect(checkReportConnection(client)).rejects.toThrow(/not proven read-only/);
+    expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
+  });
+
   it("checks the role only after the READ ONLY transaction is verified", async () => {
     const client = new FakeClient("off");
     await expect(runYoutubePreviewRiskReport(client)).rejects.toThrow(/expected "on"/);
@@ -292,7 +305,8 @@ describe("youtube-preview-risk-report-readonly.yml", () => {
     expect(yaml).toMatch(/^on:\n {2}workflow_dispatch:\n {2}pull_request:\n {4}types: \[labeled\]\n\n/m);
     expect(yaml).not.toMatch(/^\s*(schedule|push|pull_request_target|workflow_run):/m);
     expect(yaml).toContain("github.event_name == 'workflow_dispatch' ||");
-    expect(yaml).toContain("github.event.label.name == 'run-youtube-risk-report' &&");
+    expect(yaml).toContain("((github.event.label.name == 'run-youtube-risk-report' ||");
+    expect(yaml).toContain("github.event.label.name == 'check-report-ro-connection') &&");
     expect(yaml).toContain("github.event.pull_request.number == 141 &&");
     expect(yaml).toContain("github.event.pull_request.head.repo.full_name == github.repository)");
   });
@@ -300,6 +314,10 @@ describe("youtube-preview-risk-report-readonly.yml", () => {
   it("passes only DATABASE_URL_REPORT_RO, and only to the secret check and the report step — never DATABASE_URL", () => {
     expect([...yaml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1])).toEqual(["DATABASE_URL_REPORT_RO", "DATABASE_URL_REPORT_RO"]);
     expect(yaml).not.toMatch(/\bDATABASE_URL\b(?!_REPORT_RO)/);
+  });
+
+  it("the connection-check label runs --check-only, everything else the full report", () => {
+    expect(yaml).toContain('if [ "${REPORT_LABEL:-}" = "check-report-ro-connection" ]; then\n            node --import tsx src/db/youtubePreviewRiskReportCli.ts --check-only\n          else');
   });
 
   it("stops before installing anything when the secret is missing", () => {

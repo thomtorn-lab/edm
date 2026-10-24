@@ -1,13 +1,17 @@
-# Read-only database role for the YouTube preview risk report
+# Shared read-only database role `report_ro`
 
-The risk report (`.github/workflows/youtube-preview-risk-report-readonly.yml`,
-`src/db/youtubePreviewRiskReportCli.ts`) connects with its own Postgres role,
-`report_ro`, through the GitHub secret `DATABASE_URL_REPORT_RO`. It never uses
+One Postgres role, `report_ro`, is shared by every read-only audit (owner
+decision 2026-10-24). That covers the YouTube preview risk report
+(`.github/workflows/youtube-preview-risk-report-readonly.yml`), the Artist
+Alerts identity audit, SoundCloud audits, and later audits that need it. They
+all connect through the GitHub secret `DATABASE_URL_REPORT_RO`, never
 `DATABASE_URL`.
 
-The role can log in and SELECT from six tables. It has no other rights. Before
-reading any data the report checks the role in the database catalogs
-(`src/db/reportReadOnlyGuard.ts`) and stops if the role could write.
+The role can log in and SELECT from the tables listed in step 2. It has no
+other rights. Before reading any data, each audit checks the role in the
+database catalogs (`src/db/reportReadOnlyGuard.ts`, with its own table list)
+and stops if the role could write. The tables granted are exactly
+`SHARED_REPORT_RO_TABLES` in that module, which a test enforces.
 
 ## What the report refuses
 
@@ -75,15 +79,17 @@ WHERE p.prosecdef
   AND (n.nspname IN ('public', 'drizzle') OR has_schema_privilege('public', n.oid, 'USAGE'))
 ORDER BY 1, 2;
 
--- b) Row-level security on the report's tables (expected: false everywhere).
+-- b) Row-level security on the granted tables (expected: false everywhere).
 SELECT n.nspname AS schema, c.relname AS table, c.relrowsecurity AS rls
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE (n.nspname, c.relname) IN (('public', 'artist_youtube_preview_cache'), ('public', 'events'),
   ('public', 'discovery_queue'), ('public', 'source_event_links'),
-  ('public', 'event_youtube_preview_overrides'), ('drizzle', '__drizzle_migrations'));
+  ('public', 'event_youtube_preview_overrides'), ('drizzle', '__drizzle_migrations'),
+  ('public', 'venues'), ('public', 'sources'), ('public', 'event_soundcloud_links'),
+  ('public', 'soundcloud_link_blocks'), ('public', 'artist_genre_cache'), ('public', 'event_change_log'));
 ```
 
-Query b) must list all six tables. If `event_youtube_preview_overrides` is
+Query b) must list all twelve tables. If `event_youtube_preview_overrides` is
 missing, migration 0023 has not been applied. In that case, remove that table
 from the GRANT in step 2.
 
@@ -114,11 +120,32 @@ GRANT SELECT ON
   public.discovery_queue,
   public.source_event_links,
   public.event_youtube_preview_overrides,
-  drizzle.__drizzle_migrations
+  drizzle.__drizzle_migrations,
+  public.venues,
+  public.sources,
+  public.event_soundcloud_links,
+  public.soundcloud_link_blocks,
+  public.artist_genre_cache,
+  public.event_change_log
 TO report_ro;
 ```
 
 Then clear the editor, so the password does not stay in a saved snippet.
+
+If `report_ro` already exists with only the first six tables, run just the
+additive statement below instead of the whole block:
+
+```sql
+GRANT SELECT ON public.venues, public.sources, public.event_soundcloud_links,
+  public.soundcloud_link_blocks, public.artist_genre_cache, public.event_change_log
+  TO report_ro;
+```
+
+The first six tables are the YouTube risk report's and the last six are the
+Artist Alerts audit's. Both audits also read `events` and `discovery_queue`.
+None of the tables holds personal data. Never grant the role
+`newsletter_subscribers`, `newsletter_sends` or any other table with personal
+data.
 
 Nothing else is granted. Supabase's default privileges for new tables go to
 `anon`, `authenticated` and `service_role`, not to `report_ro`. Tables created
@@ -153,11 +180,24 @@ workflow only checks whether it is empty. The report never prints it, and
 its error messages name the variable but never its value, which the tests
 check.
 
-### 5. After the run
+### 5. Confirm the connection without reading data (needs approval)
+
+The label `check-report-ro-connection` on PR #141 runs the workflow with
+`--check-only`. It does the same read-only transaction and the same role proof
+as the report, prints the role it logged in as, and rolls back. No data table
+is queried. Use it to confirm that the secret really logs in as `report_ro`
+before any audit reads data.
+
+### 6. Between audits
+
+The role is shared, so keep it. To block logins while no audit is planned:
 
 ```sql
-ALTER ROLE report_ro NOLOGIN;  -- keeps the grants for a later run
+ALTER ROLE report_ro NOLOGIN;  -- keeps the grants; LOGIN turns it back on
 ```
+
+To change the password, run
+`ALTER ROLE report_ro PASSWORD '<new>';` and update the GitHub secret.
 
 To remove it completely:
 
@@ -168,6 +208,23 @@ DROP ROLE report_ro;
 ```
 
 Also delete the GitHub secret.
+
+## Adding an audit that needs another table
+
+1. Add the table to `SHARED_REPORT_RO_TABLES` in `src/db/reportReadOnlyGuard.ts`
+   and to the GRANT in step 2, in the same PR. The test fails until both
+   match.
+2. In that audit, pass the audit's own table list to
+   `assertReadOnlyRole(client, tables)`.
+3. The owner runs one additive statement in the SQL editor. No workflow runs
+   it.
+
+   ```sql
+   GRANT SELECT ON public.<table> TO report_ro;
+   ```
+
+Only SELECT is ever granted. Never grant write, schema, create or ownership
+rights. The check refuses the role if it has any of them.
 
 ## If the report refuses
 

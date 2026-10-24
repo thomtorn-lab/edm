@@ -5,8 +5,10 @@ import {
   evaluateGuard,
   GUARD_STATEMENTS,
   READ_ACCESS_SQL,
+  readAccessSql,
   readReportConnectionString,
   REPORT_TABLES,
+  SHARED_REPORT_RO_TABLES,
   ROLE_SQL,
   WRITABLE_RELATIONS_SQL,
   WRITABLE_SCHEMAS_SQL,
@@ -104,10 +106,48 @@ class FakeClient implements QueryClient {
     if (sql === WRITABLE_RELATIONS_SQL) return { rows: this.facts.writableRelations };
     if (sql === WRITABLE_SCHEMAS_SQL) return { rows: this.facts.writableSchemas };
     if (sql === DEFINER_FUNCTIONS_SQL) return { rows: this.facts.definerFunctions };
-    if (sql === READ_ACCESS_SQL) return { rows: this.facts.readAccess };
+    if (sql === READ_ACCESS_SQL || sql.includes("has_table_privilege(c.oid, 'SELECT') AS can_select")) return { rows: this.facts.readAccess };
     throw new Error(`unexpected ${sql}`);
   }
 }
+
+describe("shared use: each audit passes its own table list", () => {
+  const AUDIT = [
+    { schema: "public", name: "events", optional: false },
+    { schema: "public", name: "venues", optional: false },
+  ];
+
+  it("the default SQL is the YouTube report's table list", () => {
+    expect(readAccessSql(REPORT_TABLES)).toBe(READ_ACCESS_SQL);
+    expect(readAccessSql(AUDIT)).toContain("('public', 'venues')");
+  });
+
+  it("rejects a table name that is not a plain identifier", () => {
+    expect(() => readAccessSql([{ schema: "public", name: "events'); DROP TABLE x; --", optional: false }])).toThrow(/Invalid report table name/);
+    expect(() => readAccessSql([{ schema: "Public", name: "events", optional: false }])).toThrow(/Invalid report table name/);
+  });
+
+  it("requires SELECT on the audit's own tables, not the YouTube report's", () => {
+    const f = cleanFacts();
+    f.readAccess = [{ schema: "public", name: "events", can_select: true, rls: false, open_policy: false, restrictive_policy: false }];
+    expect(evaluateGuard(f, AUDIT).violations).toEqual(["public.venues does not exist or is not visible"]);
+    f.readAccess.push({ schema: "public", name: "venues", can_select: true, rls: false, open_policy: false, restrictive_policy: false });
+    expect(evaluateGuard(f, AUDIT).ok).toBe(true);
+  });
+
+  it("asks the catalogs about the audit's own tables", async () => {
+    const f = cleanFacts();
+    const client = new FakeClient(f);
+    await expect(assertReadOnlyRole(client, AUDIT)).rejects.toThrow(/public\.venues does not exist/);
+    expect(client.statements.at(-1)).toBe(readAccessSql(AUDIT));
+  });
+
+  it("the shared role's grant list covers the YouTube report and holds no personal data", () => {
+    for (const t of REPORT_TABLES) expect(SHARED_REPORT_RO_TABLES).toContain(`${t.schema}.${t.name}`);
+    expect(new Set(SHARED_REPORT_RO_TABLES).size).toBe(SHARED_REPORT_RO_TABLES.length);
+    expect(SHARED_REPORT_RO_TABLES.join(" ")).not.toMatch(/newsletter|subscriber|email|user/i);
+  });
+});
 
 describe("assertReadOnlyRole", () => {
   it("runs exactly the catalog checks, in order", async () => {
@@ -168,12 +208,12 @@ describe("readReportConnectionString — fails closed before connecting", () => 
 });
 
 describe("docs/youtube-preview-risk-report-readonly-role.md", () => {
-  it("grants SELECT on exactly the tables the guard requires", async () => {
+  it("grants SELECT on exactly the shared role's table list", async () => {
     const { readFileSync } = await import("node:fs");
     const doc = readFileSync(`${process.cwd()}/docs/youtube-preview-risk-report-readonly-role.md`, "utf-8");
     const grant = /GRANT SELECT ON\n([\s\S]*?)\nTO report_ro;/.exec(doc)?.[1] ?? "";
     const granted = grant.split(",").map((s) => s.trim()).filter(Boolean).sort();
-    expect(granted).toEqual(REPORT_TABLES.map((t) => `${t.schema}.${t.name}`).sort());
+    expect(granted).toEqual([...SHARED_REPORT_RO_TABLES].sort());
     expect(doc).toContain("GRANT USAGE ON SCHEMA public, drizzle TO report_ro;");
     expect(doc).not.toMatch(/GRANT (INSERT|UPDATE|DELETE|ALL|CREATE)/);
   });

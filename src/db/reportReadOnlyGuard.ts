@@ -22,6 +22,11 @@
  * Every check is a catalog SELECT, run inside the report's verified READ ONLY
  * transaction (kept as a second layer). Any violation — or any check that
  * cannot be evaluated — stops the report before its first data query.
+ *
+ * Shared by every read-only audit that logs in as the shared role report_ro
+ * (owner decision 2026-10-24: YouTube, Artist Alerts, SoundCloud and later
+ * audits). Each audit passes its own table list; the rules are the same for
+ * all. Vendored copies on other branches are replaced by this module.
  */
 
 export type QueryClient = {
@@ -69,8 +74,10 @@ WHERE ${SYSTEM_SCHEMA_FILTER}
 ORDER BY 1, 2
 LIMIT 50`;
 
-/** The tables the report reads. The override table is optional: before migration 0023 it does not exist. */
-export const REPORT_TABLES: { schema: string; name: string; optional: boolean }[] = [
+export type ReportTable = { schema: string; name: string; optional: boolean };
+
+/** The tables the YouTube preview risk report reads. The override table is optional: before migration 0023 it does not exist. */
+export const REPORT_TABLES: ReportTable[] = [
   { schema: "public", name: "artist_youtube_preview_cache", optional: false },
   { schema: "public", name: "events", optional: false },
   { schema: "public", name: "discovery_queue", optional: false },
@@ -79,7 +86,34 @@ export const REPORT_TABLES: { schema: string; name: string; optional: boolean }[
   { schema: "drizzle", name: "__drizzle_migrations", optional: false },
 ];
 
-export const READ_ACCESS_SQL = `SELECT n.nspname::text AS schema, c.relname::text AS name,
+/**
+ * Every table the shared report_ro role is granted SELECT on — the union of
+ * the audits' table lists. docs/youtube-preview-risk-report-readonly-role.md
+ * grants exactly these (tested). Adding an audit that needs another table
+ * means adding it here and to that GRANT, in the same PR, SELECT only.
+ */
+export const SHARED_REPORT_RO_TABLES: readonly string[] = [
+  // YouTube preview risk report (#141)
+  "public.artist_youtube_preview_cache",
+  "public.events",
+  "public.discovery_queue",
+  "public.source_event_links",
+  "public.event_youtube_preview_overrides",
+  "drizzle.__drizzle_migrations",
+  // Artist Alerts identity audit (also reads events and discovery_queue)
+  "public.venues",
+  "public.sources",
+  "public.event_soundcloud_links",
+  "public.soundcloud_link_blocks",
+  "public.artist_genre_cache",
+  "public.event_change_log",
+];
+
+export function readAccessSql(tables: readonly ReportTable[]): string {
+  for (const t of tables) {
+    if (!/^[a-z_][a-z0-9_]*$/.test(t.schema) || !/^[a-z_][a-z0-9_]*$/.test(t.name)) throw new Error(`Invalid report table name: ${t.schema}.${t.name}`);
+  }
+  return `SELECT n.nspname::text AS schema, c.relname::text AS name,
   has_schema_privilege(n.oid, 'USAGE') AND has_table_privilege(c.oid, 'SELECT') AS can_select,
   c.relrowsecurity AS rls,
   EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = n.nspname AND p.tablename = c.relname
@@ -87,8 +121,11 @@ export const READ_ACCESS_SQL = `SELECT n.nspname::text AS schema, c.relname::tex
     AND (p.roles @> ARRAY[current_user]::name[] OR p.roles @> ARRAY['public']::name[])) AS open_policy,
   EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = n.nspname AND p.tablename = c.relname AND p.permissive = 'RESTRICTIVE') AS restrictive_policy
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE (n.nspname, c.relname) IN (${REPORT_TABLES.map((t) => `('${t.schema}', '${t.name}')`).join(", ")})
+WHERE (n.nspname, c.relname) IN (${tables.map((t) => `('${t.schema}', '${t.name}')`).join(", ")})
 ORDER BY 1, 2`;
+}
+
+export const READ_ACCESS_SQL = readAccessSql(REPORT_TABLES);
 
 export const GUARD_STATEMENTS = [ROLE_SQL, WRITABLE_RELATIONS_SQL, WRITABLE_SCHEMAS_SQL, DEFINER_FUNCTIONS_SQL, READ_ACCESS_SQL] as const;
 
@@ -124,7 +161,7 @@ export interface GuardResult {
 const list = (items: string[]) => (items.length > 10 ? `${items.slice(0, 10).join(", ")}, … (+${items.length - 10})` : items.join(", "));
 
 /** Pure: anything not positively proven harmless is a violation. */
-export function evaluateGuard(f: GuardFacts): GuardResult {
+export function evaluateGuard(f: GuardFacts, tables: readonly ReportTable[] = REPORT_TABLES): GuardResult {
   const violations: string[] = [];
   const warnings: string[] = [];
   const r = f.role;
@@ -148,7 +185,7 @@ export function evaluateGuard(f: GuardFacts): GuardResult {
   if (f.definerFunctions.length > 0) {
     violations.push(`role can execute functions that run with their owner's rights (or owns them): ${list(f.definerFunctions.map((x) => `${x.schema}.${x.name}`))}`);
   }
-  for (const t of REPORT_TABLES) {
+  for (const t of tables) {
     const a = f.readAccess.find((x) => x.schema === t.schema && x.name === t.name);
     const label = `${t.schema}.${t.name}`;
     if (!a) {
@@ -168,15 +205,15 @@ export function evaluateGuard(f: GuardFacts): GuardResult {
 }
 
 /** Runs the catalog checks (inside the caller's READ ONLY transaction) and throws unless the role is proven read-only. */
-export async function assertReadOnlyRole(client: QueryClient): Promise<GuardResult> {
+export async function assertReadOnlyRole(client: QueryClient, tables: readonly ReportTable[] = REPORT_TABLES): Promise<GuardResult> {
   const facts: GuardFacts = {
     role: (await client.query(ROLE_SQL)).rows[0] as RoleFacts | undefined,
     writableRelations: (await client.query(WRITABLE_RELATIONS_SQL)).rows as GuardFacts["writableRelations"],
     writableSchemas: (await client.query(WRITABLE_SCHEMAS_SQL)).rows as GuardFacts["writableSchemas"],
     definerFunctions: (await client.query(DEFINER_FUNCTIONS_SQL)).rows as GuardFacts["definerFunctions"],
-    readAccess: (await client.query(READ_ACCESS_SQL)).rows as GuardFacts["readAccess"],
+    readAccess: (await client.query(readAccessSql(tables))).rows as GuardFacts["readAccess"],
   };
-  const result = evaluateGuard(facts);
+  const result = evaluateGuard(facts, tables);
   if (!result.ok) {
     throw new Error(`Refusing to run: database role ${result.role ?? "(unknown)"} is not proven read-only:\n  - ${result.violations.join("\n  - ")}`);
   }

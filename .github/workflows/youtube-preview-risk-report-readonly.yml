@@ -23,9 +23,12 @@ name: YouTube Preview Risk Report (Read-Only)
 # only works once this file is on the default branch, so while PR #141 is
 # open the job can also be started by adding the label
 # "run-youtube-risk-report" to PR #141 — the "pull_request: labeled" event
-# runs this file from the PR's merge ref. Only someone with write access can
-# add a label; the job is skipped for every other label, PR, or a fork.
-# This trigger is removed again after that one run.
+# runs this file from the PR's merge ref. The label
+# "check-report-ro-connection" runs only the connection check (proves the
+# login role is report_ro-like and cannot write, then rolls back; no data
+# table is queried). Only someone with write access can add a label; the job
+# is skipped for every other label, PR, or a fork. This trigger is removed
+# again after that one run.
 #
 # Safety: no inputs. Uses DATABASE_URL_REPORT_RO only — a dedicated Postgres
 # role with SELECT on the report's tables and nothing else (setup:
@@ -53,7 +56,8 @@ jobs:
   report:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.label.name == 'run-youtube-risk-report' &&
+      ((github.event.label.name == 'run-youtube-risk-report' ||
+      github.event.label.name == 'check-report-ro-connection') &&
       github.event.pull_request.number == 141 &&
       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
@@ -83,7 +87,13 @@ jobs:
       - name: Run YouTube preview risk report
         env:
           DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
-        run: node --import tsx src/db/youtubePreviewRiskReportCli.ts --out=youtube-preview-risk-report.json
+          REPORT_LABEL: ${{ github.event.label.name }}
+        run: |
+          if [ "${REPORT_LABEL:-}" = "check-report-ro-connection" ]; then
+            node --import tsx src/db/youtubePreviewRiskReportCli.ts --check-only
+          else
+            node --import tsx src/db/youtubePreviewRiskReportCli.ts --out=youtube-preview-risk-report.json
+          fi
 
       - name: Upload JSON report
         if: always()

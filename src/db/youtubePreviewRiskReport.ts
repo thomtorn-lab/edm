@@ -878,16 +878,34 @@ export function summarizeDecision(events: EventEntry[]): DecisionSummary {
   };
 }
 
+/** Inside an open transaction: verify it is READ ONLY, then prove the login role cannot write. Throws otherwise. */
+async function verifyReadOnly(client: QueryClient): Promise<GuardResult> {
+  await client.query(READ_ONLY_TX_STATEMENTS.timeout);
+  const ro = (await client.query(READ_ONLY_TX_STATEMENTS.verify)).rows[0] as { transaction_read_only?: string } | undefined;
+  if (ro?.transaction_read_only !== "on") {
+    throw new Error(`Refusing to run: transaction_read_only is "${ro?.transaction_read_only}", expected "on".`);
+  }
+  return assertReadOnlyRole(client);
+}
+
+/**
+ * Connection check only (--check-only): the same read-only transaction and
+ * role proof as the report, then ROLLBACK — no data table is queried.
+ */
+export async function checkReportConnection(client: QueryClient): Promise<GuardResult> {
+  await client.query(READ_ONLY_TX_STATEMENTS.begin);
+  try {
+    return await verifyReadOnly(client);
+  } finally {
+    await client.query(READ_ONLY_TX_STATEMENTS.rollback);
+  }
+}
+
 /** Runs every query inside a verified read-only transaction that is ALWAYS rolled back. */
 export async function runYoutubePreviewRiskReport(client: QueryClient, now: Date = new Date(), journal: JournalEntry[] = []): Promise<RiskReport> {
   await client.query(READ_ONLY_TX_STATEMENTS.begin);
   try {
-    await client.query(READ_ONLY_TX_STATEMENTS.timeout);
-    const ro = (await client.query(READ_ONLY_TX_STATEMENTS.verify)).rows[0] as { transaction_read_only?: string } | undefined;
-    if (ro?.transaction_read_only !== "on") {
-      throw new Error(`Refusing to run: transaction_read_only is "${ro?.transaction_read_only}", expected "on".`);
-    }
-    const guard = await assertReadOnlyRole(client);
+    const guard = await verifyReadOnly(client);
     const cacheRows = (await client.query(CACHE_SQL)).rows as CacheRow[];
     const eventNames = (await client.query(EVENT_NAMES_SQL)).rows as EventNameRow[];
     const discoveryNames = (await client.query(DISCOVERY_NAMES_SQL)).rows as DiscoveryNameRow[];
