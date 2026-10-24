@@ -711,3 +711,24 @@ describe("Billetto candidates through the shared dedup model", () => {
     expect(best).toBeNull();
   });
 });
+
+describe("headliner names are not genre evidence (genre QA, 2026-10-17)", () => {
+  const withHeadliner = (title: string, description: string) =>
+    ({
+      ...FIXTURES.mellemOsSagt,
+      title,
+      description,
+      categorization: null,
+      headliners: { data: [{ name: "PAB DISCO" }] },
+    }) as unknown as BillettoEvent;
+
+  it("a headliner named PAB DISCO never makes the text fallback resolve to disco", () => {
+    const mapped = mapBillettoEvent(withHeadliner("PAB DISCO live", "PAB DISCO spiller hele natten."));
+    expect(mapped!.genreHint).toBeNull();
+    expect(mapped!.lineupNamesAreStructured).toBe(true);
+  });
+
+  it("an explicit genre word in the event's own text is kept", () => {
+    expect(mapBillettoEvent(withHeadliner("PAB DISCO live", "En nat med disco og funk."))!.genreHint).toBe("disco");
+  });
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { DiscoveryQueueItem } from "@/lib/types";
 import type { Venue } from "@/lib/types";
@@ -14,23 +14,26 @@ import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor"
 interface Props {
   items: DiscoveryQueueItem[];
   venues: Venue[];
+  /** Optional extra block shown under a row's title (e.g. why it was prioritised); never changes the row's actions. */
+  annotate?: (item: DiscoveryQueueItem) => ReactNode;
+  emptyMessage?: string;
 }
 
-export default function DiscoveryQueue({ items, venues }: Props) {
+export default function DiscoveryQueue({ items, venues, annotate, emptyMessage }: Props) {
   if (items.length === 0) {
-    return <p className="text-sm text-text-secondary">Queue is empty — nothing needs manual review right now.</p>;
+    return <p className="text-sm text-text-secondary">{emptyMessage ?? "Queue is empty — nothing needs manual review right now."}</p>;
   }
 
   return (
     <ul>
       {items.map((item) => (
-        <QueueRow key={item.id} item={item} venues={venues} />
+        <QueueRow key={item.id} item={item} venues={venues} annotation={annotate?.(item)} />
       ))}
     </ul>
   );
 }
 
-function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] }) {
+function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venues: Venue[]; annotation?: ReactNode }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -210,6 +213,7 @@ function QueueRow({ item, venues }: { item: DiscoveryQueueItem; venues: Venue[] 
         {item.probableVenueName ?? "Venue unresolved"}
         {item.probableSubVenue ? ` (${item.probableSubVenue})` : ""} · source: {item.sourceName}
       </p>
+      {annotation}
       {item.detectedLineup.length > 0 && (
         <p className="mt-1 text-xs text-text-tertiary">Lineup: {item.detectedLineup.join(", ")}</p>
       )}

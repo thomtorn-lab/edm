@@ -4,6 +4,7 @@ import {
   findAllGenreMatches,
   hasExplicitDjOrRaveSignal,
   hasRichGenreEvidence,
+  maskLineupNamesWithGenreKeywords,
   refineGenreFromText,
 } from "./deterministicGenreMapping";
 
@@ -366,5 +367,49 @@ describe("findAllGenreMatches (secondary-genre suggestion building block, 2026-1
   it("never lets a later, broader pattern re-claim a span an earlier, more specific pattern already matched (melodic techno stays one match, not also a bare techno match)", () => {
     const matches = findAllGenreMatches("Melodic techno all night.");
     expect(matches.map((m) => m.genre)).toEqual(["melodic-techno"]);
+  });
+});
+
+describe("maskLineupNamesWithGenreKeywords — artist names are not genre evidence (genre QA, 2026-10-17)", () => {
+  const mask = maskLineupNamesWithGenreKeywords;
+
+  it("PAB DISCO: the name alone never yields the disco genre, in any case", () => {
+    const text = "Black Box: FABIAN KROOSS, PAB DISCO, MISS ALBA. Setting the tone is MISS ALBA, while Pab Disco takes the Black Box through to the final track.";
+    expect(deterministicGenreFromText(text)).toBe("disco"); // the bug, unmasked
+    expect(deterministicGenreFromText(mask(text, ["FABIAN KROOSS", "PAB DISCO", "MISS ALBA"]))).toBeNull();
+  });
+
+  it("keeps an independent genre word, even right next to the name", () => {
+    expect(deterministicGenreFromText(mask("Pab Disco plays a disco set all night", ["PAB DISCO"]))).toBe("disco");
+    expect(deterministicGenreFromText(mask("A deep house night with PAB DISCO", ["PAB DISCO"]))).toBe("deep-house");
+    expect(deterministicGenreFromText(mask("PAB DISCO b2b ANNA — techno until close", ["PAB DISCO", "ANNA"]))).toBe("techno");
+  });
+
+  it("never masks a name equal to the event title (adapters that fall back to the title as the only artist)", () => {
+    expect(mask("Techno Bunker", ["Techno Bunker"], "Techno Bunker")).toBe("Techno Bunker");
+  });
+
+  it("never masks a name that is only a genre phrase (the keyword IS the name)", () => {
+    expect(mask("Deep House all night", ["Deep House"])).toBe("Deep House all night");
+    expect(mask("Techno", ["TECHNO"])).toBe("Techno");
+  });
+
+  it("names without a genre keyword never change the text at all", () => {
+    const text = "Mollono.Bass headlines NILU & Friends with deep house grooves.";
+    expect(mask(text, ["MOLLONO.BASS", "NILU", "MOUSAN CORR"])).toBe(text);
+  });
+
+  it("whole-name matches only: a longer word containing the name is untouched", () => {
+    expect(mask("PAB DISCOTHEQUE night", ["PAB DISCO"])).toBe("PAB DISCOTHEQUE night");
+    expect(mask("XPAB DISCO", ["PAB DISCO"])).toBe("XPAB DISCO");
+  });
+
+  it("is safe for names with regex characters and flexible whitespace", () => {
+    expect(deterministicGenreFromText(mask("Live: D&B (Techno) Crew tonight", ["D&B (Techno) Crew"]))).toBeNull();
+    expect(deterministicGenreFromText(mask("PAB   DISCO tonight", ["PAB DISCO"]))).toBeNull();
+  });
+
+  it("with no lineup names the text is returned unchanged", () => {
+    expect(mask("PAB DISCO", [])).toBe("PAB DISCO");
   });
 });

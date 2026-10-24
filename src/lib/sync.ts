@@ -6,6 +6,7 @@ import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
 import { resolveByCanonicalPriority, type PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
+import { usableDiscoveryDescription } from "./descriptionQuality";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -53,6 +54,13 @@ export interface ResolvedCandidate {
   normalizedArtists: string[];
   genre: GenreSlug | null;
   genreConfidence: ConfidenceLevel;
+  /**
+   * True when `genre` came from Discogs enrichment of artist names the
+   * adapter guessed from the title (RawCandidateEvent.artistsGuessedFromTitle,
+   * 2026-10-23). Such a genre is never written onto an existing event.
+   * Omitted means false.
+   */
+  genreFromTitleGuessedArtists?: boolean;
 }
 
 export interface SyncPatchResult {
@@ -82,7 +90,9 @@ export function buildSyncPatch(
 
   if (raw.title.trim() && raw.title !== existing.title) patch.title = raw.title;
   if (raw.description && raw.description !== existing.description) patch.description = raw.description;
-  if (resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {
+  // Names guessed from the title (RawCandidateEvent.artistsGuessedFromTitle)
+  // never rewrite an existing event's artists.
+  if (!raw.artistsGuessedFromTitle && resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {
     patch.artists = resolved.normalizedArtists;
   }
   if (resolved.resolvedVenueId && resolved.resolvedVenueId !== existing.venueId) {
@@ -135,7 +145,7 @@ export function buildSyncPatch(
     patch.residentAdvisorUrl = raw.residentAdvisorUrl;
   }
   if (raw.imageUrl && raw.imageUrl !== existing.imageUrl) patch.imageUrl = raw.imageUrl;
-  if (resolved.genre && resolved.genre !== existing.primaryGenre) {
+  if (resolved.genre && !resolved.genreFromTitleGuessedArtists && resolved.genre !== existing.primaryGenre) {
     patch.primaryGenre = resolved.genre;
     patch.subgenres = [resolved.genre];
   }
@@ -191,7 +201,8 @@ export function buildSyncPatch(
   // a bare time change deliberately stays internal-only, see StatusBadge).
   // Admin-set postponed status stays protected as usual (this patch, like
   // every field here, still goes through stripOverriddenFields downstream —
-  // see db/writes.ts).
+  // see db/writes.ts). When the start itself is locked, this flag and
+  // dateChanged/timeChanged are held back with it (stripLockedSyncFields).
   if ((dateChanged || timeChanged) && existing.postponed) {
     patch.postponed = false;
   }
@@ -364,6 +375,13 @@ export interface DiscoveryQueueTarget {
    *  re-keying the row. See buildDiscoveryQueueClassificationPatch's own
    *  OFFICIAL-EVENT-URL ENRICHMENT self-heal below. */
   probableOfficialEventUrl: string | null;
+  /** Currently stored probable_resident_advisor_url (RA link integrity,
+   *  2026-10-17). Optional so existing call sites keep compiling; omitted
+   *  means "unknown", and the RA fill below then never runs. */
+  probableResidentAdvisorUrl?: string | null;
+  /** Currently stored description (description fill, 2026-10-23). Optional;
+   *  omitted means "unknown", and the DESCRIPTION FILL below then never runs. */
+  description?: string | null;
   /** Currently stored suspected_duplicate_of_event_id, so a fresh dedup pass
    *  only ever fills this in once — never overwrites or clears an existing
    *  suspicion a reviewer may already be acting on. */
@@ -483,6 +501,20 @@ export interface DiscoveryQueueClassification {
    * value) — see buildDiscoveryQueueClassificationPatch's own doc comment.
    */
   officialEventUrl?: string | null;
+  /**
+   * This run's freshly extracted Resident Advisor URL (RA link integrity,
+   * 2026-10-17), straight from the adapter. Optional; omitted never touches
+   * probableResidentAdvisorUrl. See the RA-REFERENCE FILL in
+   * buildDiscoveryQueueClassificationPatch.
+   */
+  residentAdvisorUrl?: string | null;
+  /**
+   * This run's freshly extracted description (description fill, 2026-10-23),
+   * straight from the adapter after the pipeline's text normalization.
+   * Optional; omitted never touches the stored description. See the
+   * DESCRIPTION FILL in buildDiscoveryQueueClassificationPatch.
+   */
+  description?: string | null;
 }
 
 export interface DiscoveryQueueClassificationPatch {
@@ -501,6 +533,10 @@ export interface DiscoveryQueueClassificationPatch {
   probableTicketUrl?: string | null;
   /** See DiscoveryQueueClassification.officialEventUrl / DiscoveryQueueTarget.probableOfficialEventUrl's own doc comments for the self-heal semantics this carries. Only ever set (never null) — omitted (undefined) always means "don't touch it". */
   probableOfficialEventUrl?: string | null;
+  /** RA-REFERENCE FILL (RA link integrity, 2026-10-17): only ever set into an empty column, never cleared or replaced. */
+  probableResidentAdvisorUrl?: string | null;
+  /** DESCRIPTION FILL (2026-10-23): only ever set into an empty column, never cleared or replaced. */
+  description?: string;
 }
 
 /**
@@ -774,6 +810,40 @@ export function buildDiscoveryQueueClassificationPatch(
     fresh.officialEventUrl !== existing.probableOfficialEventUrl
   ) {
     patch.probableOfficialEventUrl = fresh.officialEventUrl;
+  }
+
+  // RA-REFERENCE FILL (RA link integrity, 2026-10-17). A row queued before
+  // the DQ insert carried residentAdvisorUrl (src/db/sync.ts) has an empty
+  // probableResidentAdvisorUrl even though its source (e.g. HvadErPå's
+  // offers.url) reports one. Fill-only: never replaces a stored value (it may
+  // be admin-entered) and never clears one. Absence on a later run is not
+  // evidence. It stays a reference for the reviewer and is never a ticket
+  // link: publishDiscoveryItem carries it to residentAdvisorUrl, which
+  // src/lib/links.ts never shows as a CTA.
+  if (
+    !existing.overriddenFields.includes("probableResidentAdvisorUrl") &&
+    fresh.residentAdvisorUrl != null &&
+    existing.probableResidentAdvisorUrl === null
+  ) {
+    patch.probableResidentAdvisorUrl = fresh.residentAdvisorUrl;
+  }
+
+  // DESCRIPTION FILL (2026-10-23). Rows queued before 2026-10-07 (25cd043)
+  // were inserted without the adapter's description, and nothing ever filled
+  // it in later: on 2026-10-18, 24 of the 26 "possible" KultuNaut rows in the
+  // review queue had none, so neither the reviewer nor the review-priority
+  // signals (DJ/club wording, non-electronic genre) could see their text.
+  // Fill-only, into an empty column: never replaces a stored description,
+  // never fills one an admin edited or deliberately cleared (both put
+  // "description" in overriddenFields), and never stores the venue's
+  // practical boilerplate alone (usableDiscoveryDescription). Genre, status
+  // and hold reason are untouched by this; they already come from this
+  // run's own full relevanceText.
+  if (fresh.description !== undefined && existing.description !== undefined) {
+    const usable = usableDiscoveryDescription(fresh.description);
+    if (usable && !existing.overriddenFields.includes("description") && !existing.description?.trim()) {
+      patch.description = usable;
+    }
   }
 
   return patch;

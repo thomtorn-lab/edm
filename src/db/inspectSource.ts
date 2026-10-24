@@ -24,6 +24,20 @@ import type { GenreSlug } from "@/lib/taxonomy";
 import type { PublishDecision } from "@/lib/classification";
 import type { HoldReason } from "@/lib/adapters/pipeline";
 import { classifyAdminQueueRow, type AdminQueueCategory, ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
+import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
+import { buildSeriesIndex, type SeriesHistoryEvent } from "@/lib/seriesMemory";
+import {
+  buildReviewPriorityList,
+  groupReviewList,
+  prioritizeNotInSource,
+  splitPastStale,
+  splitVisibleReviewRows,
+  REVIEW_PRIORITY_DEFAULT_VISIBLE,
+  type GroupedReviewList,
+  type ReviewPriorityContext,
+  type ReviewPriorityInput,
+} from "@/lib/reviewPriority";
+import { hasNonElectronicGenreSignal, hasPopOrRnbSignal } from "@/lib/relevance";
 
 /**
  * Permanent, parameterized, READ-ONLY source diagnostic tool (source
@@ -1595,11 +1609,14 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   const detailSource = typeof args["detail-source"] === "string" ? args["detail-source"] : null;
   const detailLimit = typeof args["detail-limit"] === "string" ? Number(args["detail-limit"]) : null;
   const detailOffset = typeof args["detail-offset"] === "string" ? Number(args["detail-offset"]) : 0;
-  let venues: Venue[] = [];
-  if (detailCategory) {
-    const venueRows = await client.query("SELECT * FROM venues");
-    venues = venueRows.rows.map(rowToVenue);
-  }
+  // Venues and source trust are always loaded now: the review-priority
+  // summary below needs them to resolve venues and weigh sources.
+  const venueRows = await client.query("SELECT * FROM venues");
+  const venues: Venue[] = venueRows.rows.map(rowToVenue);
+  const trustRows = await client.query("SELECT id, trust_level FROM sources");
+  const sourceTrust = new Map(trustRows.rows.map((r) => [r.id as string, r.trust_level as Source["trustLevel"]]));
+  const insufficientInputs: ReviewPriorityInput[] = [];
+  const pastStaleInputs: ReviewPriorityInput[] = [];
 
   const pending = rows.rows.filter((r) => r.status === "pending");
   const published = rows.rows.filter((r) => r.status === "published");
@@ -1632,6 +1649,37 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
       { lastCompleteSyncAt, now },
     );
     groups[category].push({ id: r.id, title: r.probable_title, sourceId: r.source_id });
+    const probableStart = r.probable_start ? new Date(r.probable_start as string).toISOString() : null;
+    const probableEnd = r.probable_end ? new Date(r.probable_end as string).toISOString() : null;
+    if (category === "insufficient") {
+      insufficientInputs.push({
+        id: r.id as string,
+        probableTitle: r.probable_title as string,
+        probableStart,
+        probableEnd,
+        probableVenueName: (r.probable_venue_name as string | null) ?? null,
+        sourceId: (r.source_id as string | null) ?? null,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
+        description: (r.description as string | null) ?? null,
+        probableSubVenue: (r.probable_sub_venue as string | null) ?? null,
+        probableOfficialEventUrl: (r.probable_official_event_url as string | null) ?? null,
+        probableTicketUrl: (r.probable_ticket_url as string | null) ?? null,
+      });
+    }
+    if (category === "past_stale") {
+      pastStaleInputs.push({
+        id: r.id as string,
+        probableTitle: r.probable_title as string,
+        probableStart,
+        probableEnd,
+        probableVenueName: (r.probable_venue_name as string | null) ?? null,
+        sourceId: (r.source_id as string | null) ?? null,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
+        description: (r.description as string | null) ?? null,
+      });
+    }
 
     if (detailCategory && category === detailCategory) {
       if (detailSource && r.source_id !== detailSource) continue;
@@ -1698,6 +1746,66 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
   section(`Unpublished by admin (${adminUnpublished.rows.length}) — exact rows`);
   console.log(JSON.stringify(adminUnpublished.rows, null, 2));
 
+  // Review prioritisation (src/lib/reviewPriority.ts): exactly what the
+  // admin's "Likely relevant" tab and 72-hour warning would show right now,
+  // so the list's size, its noise and the known cases can be checked
+  // against Production without opening the UI.
+  const priorityList = buildReviewPriorityList(insufficientInputs, { venues, sourceTrust, now });
+  const groupedList = groupReviewList(priorityList, venues);
+  const visible = splitVisibleReviewRows(groupedList);
+  const summarize = (rows: typeof priorityList.likely) =>
+    rows.map(({ item, priority }) => ({
+      id: item.id,
+      title: item.probableTitle,
+      sourceId: item.sourceId,
+      venue: item.probableVenueName,
+      start: item.probableStart,
+      score: priority.relevanceScore,
+      priority: priority.priority,
+      state: priority.relevanceState,
+      startsWithin72h: priority.startsWithin72h,
+      signals: priority.signals.map((sig) => `${sig.points >= 0 ? "+" : ""}${sig.points} ${sig.label}`),
+      recommendedAction: priority.recommendedAction,
+    }));
+  section("REVIEW PRIORITY — Likely relevant tab (from Insufficient evidence)");
+  console.log(
+    JSON.stringify(
+      {
+        insufficientRowsScored: insufficientInputs.length,
+        likely: priorityList.likely.length,
+        possibleSourceCategoryOnly: priorityList.possible.length,
+        startsWithin72h: priorityList.urgentCount,
+        startsWithin72hLikely: priorityList.urgentLikelyCount,
+        startsWithin72hPossible: priorityList.urgentPossibleCount,
+        defaultVisible: REVIEW_PRIORITY_DEFAULT_VISIBLE,
+        likelyEvents: groupedList.likely.length,
+        possibleEvents: groupedList.possible.length,
+        defaultViewLikely: visible.likelyShown.length,
+        defaultViewPossibleFill: visible.possibleShown.length,
+        groupedDuplicates: [...groupedList.likely, ...groupedList.possible]
+          .filter((g) => g.others.length > 0)
+          .map((g) => ({ title: g.primary.item.probableTitle, rows: [g.primary, ...g.others].map((r) => `${r.item.id} (${r.item.sourceId})`) })),
+      },
+      null,
+      2,
+    ),
+  );
+  section(`REVIEW PRIORITY — likely tier (${priorityList.likely.length}), in display order`);
+  console.log(JSON.stringify(summarize(priorityList.likely), null, 2));
+  section(`REVIEW PRIORITY — possible tier, source category only (${priorityList.possible.length}), in display order`);
+  console.log(JSON.stringify(summarize(priorityList.possible), null, 2));
+  const staleSplit = splitPastStale(pastStaleInputs, now);
+  const notInSource = prioritizeNotInSource(staleSplit.upcomingNotInSource, { venues, sourceTrust, now });
+  section(
+    `PAST / STALE — upcoming but no longer listed by the source (${staleSplit.upcomingNotInSource.length}); expired ${staleSplit.expired.length}`,
+  );
+  section(`PAST / STALE — not in source, ranked likely (${notInSource.prioritized.likely.length})`);
+  console.log(JSON.stringify(summarize(notInSource.prioritized.likely), null, 2));
+  section(`PAST / STALE — not in source, ranked possible (${notInSource.prioritized.possible.length})`);
+  console.log(JSON.stringify(summarize(notInSource.prioritized.possible), null, 2));
+  section(`PAST / STALE — not in source, the rest (${notInSource.others.length}), collapsed in the admin`);
+  console.log(JSON.stringify(notInSource.others.map((r) => ({ id: r.id, title: r.probableTitle, sourceId: r.sourceId, start: r.probableStart })), null, 2));
+
   if (detailCategory) {
     // Deterministic order (id) so --detail-limit/--detail-offset pages are
     // stable and combinable across multiple runs into one exhaustive set.
@@ -1708,6 +1816,343 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
     );
     console.log(JSON.stringify(page, null, 2));
   }
+}
+
+/**
+ * Read-only look at the Discogs artist genre cache (artist_genre_cache),
+ * added to judge whether cached artist data could help rank Discovery Queue
+ * rows (coverage work, phase 2). Three SELECTs, nothing else:
+ *   1. the cache's overall distribution by lookup status, proposed genre and
+ *      confidence;
+ *   2. the full rows for `--artists="A, B"` (matched on the same
+ *      normalisation the enrichment uses), with a missing name reported as
+ *      "no cache row" — which says nothing about whether the artist is
+ *      electronic;
+ *   3. coverage of every pending Discovery Queue row's lineup: how many of
+ *      its names have a cache row, and what it says.
+ * Evidence JSON is truncated so the log stays readable.
+ */
+async function modeArtistGenreCache(client: Client, args: Record<string, string | boolean>) {
+  const requested = typeof args.artists === "string" ? args.artists.split(",").map((a) => a.trim()).filter(Boolean) : [];
+  const cols =
+    "artist_name_normalized, lookup_status, proposed_genre, genre_confidence, identity_confidence, discogs_artist_id, classification_method, looked_up_at, expires_at, evidence";
+  const shorten = (row: Record<string, unknown>) => ({ ...row, evidence: JSON.stringify(row.evidence).slice(0, 600) });
+
+  section("artist_genre_cache — distribution");
+  const dist = await client.query(
+    `SELECT lookup_status, proposed_genre, genre_confidence, identity_confidence, count(*)::int AS n
+     FROM artist_genre_cache
+     GROUP BY lookup_status, proposed_genre, genre_confidence, identity_confidence
+     ORDER BY n DESC`,
+  );
+  console.log(JSON.stringify(dist.rows, null, 2));
+
+  if (requested.length > 0) {
+    const names = requested.map(normalizeArtistName);
+    const found = await client.query(`SELECT ${cols} FROM artist_genre_cache WHERE artist_name_normalized = ANY($1::text[])`, [names]);
+    const byName = new Map(found.rows.map((r) => [r.artist_name_normalized as string, r]));
+    section(`artist_genre_cache — requested artists (${requested.length})`);
+    console.log(
+      JSON.stringify(
+        requested.map((name, i) => {
+          const row = byName.get(names[i]);
+          return row ? { requested: name, ...shorten(row) } : { requested: name, normalized: names[i], cacheRow: null };
+        }),
+        null,
+        2,
+      ),
+    );
+  }
+
+  const pending = await client.query(
+    `SELECT id, probable_title, source_id, detected_lineup
+     FROM discovery_queue
+     WHERE status = 'pending' AND cardinality(detected_lineup) > 0`,
+  );
+  const lineupNames = Array.from(new Set(pending.rows.flatMap((r) => (r.detected_lineup as string[]).map(normalizeArtistName))));
+  const cached = lineupNames.length
+    ? await client.query(
+        `SELECT artist_name_normalized, lookup_status, proposed_genre, genre_confidence, identity_confidence
+         FROM artist_genre_cache WHERE artist_name_normalized = ANY($1::text[])`,
+        [lineupNames],
+      )
+    : { rows: [] as Record<string, unknown>[] };
+  const cacheByName = new Map(cached.rows.map((r) => [r.artist_name_normalized as string, r]));
+  const bySource: Record<string, { rows: number; names: number; namesWithCacheRow: number; namesWithProposedGenre: number }> = {};
+  const rowsDetail: Record<string, unknown>[] = [];
+  for (const r of pending.rows) {
+    const source = (r.source_id as string | null) ?? "admin";
+    const names = (r.detected_lineup as string[]).map(normalizeArtistName);
+    const entry = (bySource[source] ??= { rows: 0, names: 0, namesWithCacheRow: 0, namesWithProposedGenre: 0 });
+    entry.rows++;
+    for (const n of names) {
+      entry.names++;
+      const c = cacheByName.get(n);
+      if (c) entry.namesWithCacheRow++;
+      if (c?.proposed_genre) entry.namesWithProposedGenre++;
+    }
+    if (source === "src-kultunaut") {
+      rowsDetail.push({ id: r.id, title: r.probable_title, lineup: names.map((n) => ({ name: n, cache: cacheByName.get(n) ?? null })) });
+    }
+  }
+  section(`Pending Discovery Queue lineups — cache coverage (${pending.rows.length} rows with a lineup, ${lineupNames.length} distinct names)`);
+  console.log(JSON.stringify(bySource, null, 2));
+  section(`Pending KultuNaut rows — per-name cache rows (${rowsDetail.length})`);
+  console.log(JSON.stringify(rowsDetail, null, 2));
+}
+
+// ---- review-discogs-measure: one read-only measurement, no scoring change ----
+
+/**
+ * Discogs top-level genres that are not electronic, with the words that would
+ * show the event's OWN text describes the same family. Diagnostic only: this
+ * is the hypothesis being measured, not a rule the admin uses.
+ */
+const NON_ELECTRONIC_FAMILY_TEXT: Readonly<Record<string, RegExp>> = {
+  Rock: /\b(?:rock\w*|\w*metal\w*|punk\w*|grunge|indie ?rock|guitar band|guitarband)\b/i,
+  Pop: /\b(?:pop|popmusik\w*|popsang\w*|popstjerne\w*|singer[- ]songwriter|sangskriver\w*)\b/i,
+  Jazz: /\b(?:jazz\w*)\b/i,
+  "Hip Hop": /\b(?:hip ?-?hop|rap|rapper\w*|rapscene\w*)\b/i,
+  "Folk, World, & Country": /\b(?:folk\w*|country|world music|verdensmusik\w*|viser?)\b/i,
+  "Funk / Soul": /\b(?:funk\w*|soul|r&b|rnb)\b/i,
+  Classical: /\b(?:klassisk\w*|classical|orkester\w*|orchestra\w*|symfoni\w*)\b/i,
+  Blues: /\b(?:blues)\b/i,
+  Reggae: /\b(?:reggae|dancehall|dub)\b/i,
+  Latin: /\b(?:latin\w*|salsa|cumbia|reggaeton)\b/i,
+  Schlager: /\b(?:schlager\w*|dansktop\w*)\b/i,
+};
+
+interface DiscogsArtistVerdict {
+  name: string;
+  cacheKey: string;
+  /** "negative_candidate" only when every artist-level condition of the hypothesis holds. */
+  verdict: "negative_candidate" | "no_cache_row" | "expired" | "not_found" | "ambiguous" | "electronic_evidence" | "short_generic_name" | "too_few_releases" | "mixed_families";
+  family: string | null;
+  releases: number;
+  discogsTitle: string | null;
+  genresSeen: string[];
+}
+
+function evaluateDiscogsArtist(name: string, row: Record<string, unknown> | undefined, now: Date): DiscogsArtistVerdict {
+  const cacheKey = normalizeArtistName(cleanArtistDisplayName(name));
+  const base = { name, cacheKey, family: null, releases: 0, discogsTitle: null, genresSeen: [] as string[] };
+  if (!row) return { ...base, verdict: "no_cache_row" };
+  const ev = (row.evidence ?? {}) as {
+    releasesExamined?: { genres: string[]; styles: string[] }[];
+    discogsArtistTitle?: string;
+    shortGenericName?: boolean;
+    confirmedElectronic?: boolean;
+  };
+  const releases = ev.releasesExamined ?? [];
+  const genresSeen = Array.from(new Set(releases.flatMap((r) => [...r.genres, ...r.styles])));
+  const withData = { ...base, releases: releases.length, discogsTitle: ev.discogsArtistTitle ?? null, genresSeen };
+  if (row.lookup_status === "not_found") return { ...withData, verdict: "not_found" };
+  if (row.lookup_status === "ambiguous") return { ...withData, verdict: "ambiguous" };
+  if (new Date(row.expires_at as string).getTime() <= now.getTime()) return { ...withData, verdict: "expired" };
+  if (row.proposed_genre || ev.confirmedElectronic || releases.some((r) => r.genres.some((g) => g.toLowerCase() === "electronic"))) {
+    return { ...withData, verdict: "electronic_evidence" };
+  }
+  if (ev.shortGenericName) return { ...withData, verdict: "short_generic_name" };
+  if (releases.length < 2) return { ...withData, verdict: "too_few_releases" };
+  const shared = releases.map((r) => new Set(r.genres)).reduce((a, b) => new Set([...a].filter((g) => b.has(g))));
+  const family = [...shared].find((g) => g in NON_ELECTRONIC_FAMILY_TEXT) ?? [...shared][0] ?? null;
+  if (!family) return { ...withData, verdict: "mixed_families" };
+  return { ...withData, verdict: "negative_candidate", family };
+}
+
+/**
+ * One read-only measurement (coverage work, phase 2, 2026-10-18) of a
+ * PROPOSED negative Discogs signal for the review queue — nothing here is
+ * used by the admin or the pipeline. It reads stored data only (pending
+ * Discovery Queue rows with their descriptions, venues, source trust, events
+ * for series memory, and the existing artist_genre_cache); it makes no
+ * Discogs request. Every statement is a SELECT, enforced below on top of the
+ * read-only transaction withReadOnlyTx opens and rolls back.
+ *
+ * Hypothesis, per row: only a "possible" row (no genre, DJ/club wording or
+ * electronic venue) is touched; at least one lineup artist has exactly one
+ * exact, non-generic, unexpired Discogs match with two or more examined
+ * releases, none Electronic, sharing one non-electronic genre; no lineup
+ * artist has electronic evidence; and the event's own title/description
+ * names that same genre family. The only effect would be ordering the row
+ * last within "possible", with its reason shown — never hiding, rejecting or
+ * changing its tier.
+ */
+async function modeReviewDiscogsMeasure(client: Client) {
+  const statements: string[] = [];
+  const select = async (sql: string, params?: unknown[]) => {
+    if (!/^\s*SELECT\s/i.test(sql) || sql.includes(";")) throw new Error(`review-discogs-measure only runs single SELECT statements, refused: ${sql.slice(0, 60)}`);
+    statements.push(sql.replace(/\s+/g, " ").trim());
+    return client.query(sql, params);
+  };
+  const ro = await client.query("SHOW transaction_read_only");
+  section("SAFETY");
+  console.log(JSON.stringify({ transaction_read_only: ro.rows[0]?.transaction_read_only, discogsRequests: 0 }, null, 2));
+  if (ro.rows[0]?.transaction_read_only !== "on") throw new Error("Not in a read-only transaction — stopping before any query.");
+
+  const now = new Date();
+  const venues: Venue[] = (await select("SELECT * FROM venues")).rows.map(rowToVenue);
+  const trust = await select("SELECT id, trust_level FROM sources");
+  const sourceTrust = new Map(trust.rows.map((r) => [r.id as string, r.trust_level as Source["trustLevel"]]));
+  const dq = await select(`
+    SELECT dq.id, dq.probable_title, dq.probable_start, dq.probable_end, dq.missing_fields, dq.overall_confidence,
+           dq.hold_reason, dq.venue_resolved_decision, dq.last_seen_at, dq.source_id, s.last_complete_sync_at,
+           dq.probable_venue_name, dq.probable_sub_venue, dq.predicted_genre, dq.detected_lineup, dq.description,
+           dq.probable_official_event_url, dq.probable_ticket_url
+    FROM discovery_queue dq LEFT JOIN sources s ON s.id = dq.source_id
+    WHERE dq.status = 'pending'`);
+  const history = await select(
+    "SELECT id, title, venue_id, artists, start_datetime, published, admin_unpublish_reason FROM events",
+  );
+  const seriesHistory: SeriesHistoryEvent[] = history.rows.map((r) => ({
+    id: r.id as string,
+    title: r.title as string,
+    venueId: r.venue_id as string,
+    artists: (r.artists as string[]) ?? [],
+    startDatetime: new Date(r.start_datetime as string).toISOString(),
+    published: r.published as boolean,
+    adminUnpublishReason: (r.admin_unpublish_reason as SeriesHistoryEvent["adminUnpublishReason"]) ?? null,
+  }));
+
+  const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
+  const inputs: ReviewPriorityInput[] = [];
+  for (const r of dq.rows) {
+    const category = classifyAdminQueueRow(
+      {
+        overallConfidence: r.overall_confidence,
+        holdReason: r.hold_reason as HoldReason,
+        venueResolvedDecision: r.venue_resolved_decision as PublishDecision | null,
+        missingFields: (r.missing_fields as string[]) ?? [],
+        probableStart: iso(r.probable_start),
+        probableEnd: iso(r.probable_end),
+        lastSeenAt: iso(r.last_seen_at),
+        sourceId: (r.source_id as string | null) ?? null,
+        probableTitle: r.probable_title as string,
+        detectedLineup: (r.detected_lineup as string[]) ?? [],
+        predictedGenre: r.predicted_genre as GenreSlug | null,
+      },
+      { lastCompleteSyncAt: iso(r.last_complete_sync_at), now },
+    );
+    if (category !== "insufficient") continue;
+    inputs.push({
+      id: r.id as string,
+      probableTitle: r.probable_title as string,
+      probableStart: iso(r.probable_start),
+      probableEnd: iso(r.probable_end),
+      probableVenueName: (r.probable_venue_name as string | null) ?? null,
+      sourceId: (r.source_id as string | null) ?? null,
+      detectedLineup: (r.detected_lineup as string[]) ?? [],
+      predictedGenre: r.predicted_genre as GenreSlug | null,
+      description: (r.description as string | null) ?? null,
+      probableSubVenue: (r.probable_sub_venue as string | null) ?? null,
+      probableOfficialEventUrl: (r.probable_official_event_url as string | null) ?? null,
+      probableTicketUrl: (r.probable_ticket_url as string | null) ?? null,
+    });
+  }
+
+  const baseCtx: ReviewPriorityContext = { venues, sourceTrust, now };
+  const withSeries: ReviewPriorityContext = { ...baseCtx, seriesIndex: buildSeriesIndex(seriesHistory, venues) };
+  const grouped = groupReviewList(buildReviewPriorityList(inputs, withSeries), venues);
+  const groupedNoSeries = groupReviewList(buildReviewPriorityList(inputs, baseCtx), venues);
+
+  const lineupNames = Array.from(new Set(inputs.flatMap((i) => i.detectedLineup.map((n) => normalizeArtistName(cleanArtistDisplayName(n))))));
+  const cache = lineupNames.length
+    ? await select(
+        "SELECT artist_name_normalized, lookup_status, proposed_genre, identity_confidence, expires_at, evidence FROM artist_genre_cache WHERE artist_name_normalized = ANY($1::text[])",
+        [lineupNames],
+      )
+    : { rows: [] as Record<string, unknown>[] };
+  const cacheByKey = new Map(cache.rows.map((r) => [r.artist_name_normalized as string, r]));
+
+  type Group = GroupedReviewList<ReviewPriorityInput>["likely"][number];
+  const evaluate = (g: Group) => {
+    const members = [g.primary, ...g.others];
+    const names = Array.from(new Set(members.flatMap((m) => m.item.detectedLineup)));
+    const artists = names.map((n) => evaluateDiscogsArtist(n, cacheByKey.get(normalizeArtistName(cleanArtistDisplayName(n))), now));
+    const text = members.map((m) => `${m.item.probableTitle} ${m.item.description ?? ""}`).join(" ");
+    const candidates = artists.filter((a) => a.verdict === "negative_candidate");
+    const anyElectronic = artists.some((a) => a.verdict === "electronic_evidence");
+    const corroborated = candidates.filter((a) => a.family && NON_ELECTRONIC_FAMILY_TEXT[a.family]?.test(text));
+    const strongOwnSignal = members.some((m) => m.priority.signals.some((sig) => ["genre", "dj_or_club_title", "dj_or_club_description", "strong_venue"].includes(sig.key)));
+    const textNonElectronic = hasNonElectronicGenreSignal(text, names) || hasPopOrRnbSignal(text, names);
+    const wouldDemote = g.primary.priority.tier === "possible" && !strongOwnSignal && !anyElectronic && corroborated.length > 0;
+    return {
+      title: g.primary.item.probableTitle,
+      ids: members.map((m) => `${m.item.id} (${m.item.sourceId})`),
+      tier: g.primary.priority.tier,
+      start: g.primary.item.probableStart,
+      venue: g.primary.item.probableVenueName,
+      wouldDemote,
+      artistLevelNegative: candidates.map((a) => `${a.name} → ${a.family} (${a.releases} releases: ${a.genresSeen.join(", ")})`),
+      textCorroborates: corroborated.map((a) => a.family),
+      textNamesNonElectronicGenre: textNonElectronic,
+      artists: artists.map((a) => `${a.name} [${a.cacheKey}]: ${a.verdict}${a.discogsTitle ? ` (Discogs "${a.discogsTitle}", ${a.releases} rel: ${a.genresSeen.join(", ")})` : ""}`),
+      description: (g.primary.item.description ?? "").replace(/\s+/g, " ").slice(0, 400),
+      signals: g.primary.priority.signals.map((sig) => `${sig.points >= 0 ? "+" : ""}${sig.points} ${sig.label}`),
+    };
+  };
+
+  const brief = (g: Group, i: number) =>
+    `${String(i + 1).padStart(3)}. [${g.primary.priority.tier}] p=${g.primary.priority.priority} ${g.primary.item.probableTitle} @ ${g.primary.item.probableVenueName ?? "?"} ${g.primary.item.probableStart?.slice(0, 10) ?? "no date"}${g.others.length ? ` [+${g.others.map((o) => o.item.sourceId).join(", ")}]` : ""}`;
+  const order = (list: GroupedReviewList<ReviewPriorityInput>) => [...list.likely, ...list.possible];
+
+  section("COUNTS");
+  console.log(
+    JSON.stringify(
+      {
+        pendingRows: dq.rows.length,
+        insufficientRows: inputs.length,
+        historyEvents: seriesHistory.length,
+        withSeries: { likelyEvents: grouped.likely.length, possibleEvents: grouped.possible.length },
+        withoutSeries: { likelyEvents: groupedNoSeries.likely.length, possibleEvents: groupedNoSeries.possible.length },
+        lineupNamesLookedUpInCache: lineupNames.length,
+        cacheRowsFound: cache.rows.length,
+      },
+      null,
+      2,
+    ),
+  );
+
+  section("FULL ORDER — with series memory (as the admin would show it now)");
+  console.log(order(grouped).map(brief).join("\n"));
+  section("FULL ORDER — without series memory (isolated comparison)");
+  console.log(order(groupedNoSeries).map(brief).join("\n"));
+
+  section("SERIES MEMORY — every row with a series signal");
+  console.log(
+    JSON.stringify(
+      order(grouped)
+        .flatMap((g) => [g.primary, ...g.others])
+        .filter((r) => r.priority.signals.some((sig) => sig.key.startsWith("series_")))
+        .map((r) => ({
+          id: r.item.id,
+          title: r.item.probableTitle,
+          tier: r.priority.tier,
+          series: r.priority.signals.filter((sig) => sig.key.startsWith("series_")).map((sig) => `${sig.key} ${sig.points}: ${sig.label}`),
+        })),
+      null,
+      2,
+    ),
+  );
+
+  const evaluatedPossible = grouped.possible.map(evaluate);
+  const evaluatedLikely = grouped.likely.map(evaluate);
+  section(`DISCOGS HYPOTHESIS — possible events (${evaluatedPossible.length}), in display order`);
+  console.log(JSON.stringify(evaluatedPossible, null, 2));
+  section("DISCOGS HYPOTHESIS — likely events where an artist meets the artist-level negative conditions (would be false positives if the tier restriction were dropped)");
+  console.log(JSON.stringify(evaluatedLikely.filter((e) => e.artistLevelNegative.length > 0), null, 2));
+
+  const demoted = new Set(evaluatedPossible.filter((e) => e.wouldDemote).map((e) => e.ids[0]));
+  const key = (g: Group) => `${g.primary.item.id} (${g.primary.item.sourceId})`;
+  const reordered = { ...grouped, possible: [...grouped.possible.filter((g) => !demoted.has(key(g))), ...grouped.possible.filter((g) => demoted.has(key(g)))] };
+  const visibleNow = splitVisibleReviewRows(grouped);
+  const visibleHypo = splitVisibleReviewRows(reordered);
+  const shown = (v: typeof visibleNow) => [...v.likelyShown, ...v.possibleShown];
+  section(`DEFAULT VIEW (${REVIEW_PRIORITY_DEFAULT_VISIBLE}) — now vs. with the hypothetical Discogs ordering`);
+  console.log(JSON.stringify({ now: shown(visibleNow).map(brief), hypothetical: shown(visibleHypo).map(brief), demoted: [...demoted] }, null, 2));
+
+  section("STATEMENTS EXECUTED (all SELECT, read-only transaction, rolled back)");
+  console.log(statements.map((sql, i) => `${i + 1}. ${sql.slice(0, 160)}`).join("\n"));
 }
 
 /**
@@ -2527,6 +2972,8 @@ async function main() {
     "youtube-preview-backlog-projection": modeYoutubePreviewBacklogProjection,
     "youtube-preview-cache-row": modeYoutubePreviewCacheRow,
     "migration-status": modeMigrationStatus,
+    "artist-genre-cache": modeArtistGenreCache,
+    "review-discogs-measure": modeReviewDiscogsMeasure,
   };
 
   if (mode === "reachability") {
@@ -2543,7 +2990,7 @@ async function main() {
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
     );
     process.exit(1);
   }

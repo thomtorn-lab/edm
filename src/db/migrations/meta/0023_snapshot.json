@@ -1,5 +1,5 @@
 {
-  "id": "fcb55b1d-9d81-4e59-bf9d-45c1d7aeb13c",
+  "id": "d4f7a3c2-96ae-4700-a7ea-66bb323e0cbd",
   "prevId": "7f50a467-327a-49cf-b23f-6f8cc7b6fae6",
   "version": "7",
   "dialect": "postgresql",
@@ -473,89 +473,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.event_description_translations": {
-      "name": "event_description_translations",
-      "schema": "",
-      "columns": {
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "source_hash": {
-          "name": "source_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_language": {
-          "name": "source_language",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "translated_text": {
-          "name": "translated_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "event_description_translations_event_id_events_id_fk": {
-          "name": "event_description_translations_event_id_events_id_fk",
-          "tableFrom": "event_description_translations",
-          "tableTo": "events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.event_soundcloud_links": {
       "name": "event_soundcloud_links",
       "schema": "",
@@ -638,6 +555,108 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.event_youtube_preview_overrides": {
+      "name": "event_youtube_preview_overrides",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "video_id": {
+          "name": "video_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "video_title": {
+          "name": "video_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel_title": {
+          "name": "channel_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "artist_name": {
+          "name": "artist_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "available": {
+          "name": "available",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "last_verified_at": {
+          "name": "last_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unavailable_since": {
+          "name": "unavailable_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "event_youtube_preview_overrides_event_id_events_id_fk": {
+          "name": "event_youtube_preview_overrides_event_id_events_id_fk",
+          "tableFrom": "event_youtube_preview_overrides",
+          "tableTo": "events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
