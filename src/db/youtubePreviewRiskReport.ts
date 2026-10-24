@@ -4,6 +4,7 @@ import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/ge
 import { resolveEventOverride, type EventOverrideDecision } from "@/lib/eventYoutubeOverride";
 import {
   billedPartners,
+  parseEvidence,
   PROPOSED_RULES,
   replayAcceptedRow,
   verifiedAlternatives,
@@ -188,7 +189,12 @@ export interface EventRow {
   source_ids: string[] | null;
 }
 
-type CacheStatus = "accepted" | "abstain" | "blocked" | "none";
+/**
+ * abstain_no_evidence: an abstain row with no stored search attempt — e.g. a
+ * former manual pin handed back to automatic matching, whose original search
+ * evidence the pin overwrote. Unknown, not "searched and found nothing".
+ */
+type CacheStatus = "accepted" | "abstain" | "abstain_no_evidence" | "blocked" | "none";
 
 export interface VideoView {
   artist: string;
@@ -225,6 +231,8 @@ export type EventOutcome =
   | "ok_headliner_shown"
   | "headliner_has_video_not_shown"
   | "headliner_no_match"
+  /** Like headliner_no_match, but no headliner was ever really searched (no stored evidence, e.g. overwritten by a former manual pin). */
+  | "headliner_evidence_missing"
   | "headliner_b2b_outsider_with_verified_solo"
   | "headliner_b2b_outsider_no_alt"
   | "no_prioritized_headliner"
@@ -287,7 +295,7 @@ export interface DecisionSummary {
   /** Changes the simulation would make using only videos already verified — no YouTube call. */
   solvableWithVerifiedVideos: { fromCacheRow: number; fromStoredEvidenceOnly: number; otherPerformerFallback: number };
   /** No suitable video after simulation (manual choices excluded). */
-  missingSuitableVideo: { prioritizedHeadlinerWithoutMatch: number; noPrioritizedHeadliner: number; total: number };
+  missingSuitableVideo: { prioritizedHeadlinerWithoutMatch: number; headlinerEvidenceMissing: number; noPrioritizedHeadliner: number; total: number };
   /** How the headliner was inferred: strong signal, or which independent groups support it. */
   headlinerBasis: Record<string, number>;
   /** Events kept out of every change because a person decided (event override or artist pin). */
@@ -565,7 +573,8 @@ export function shownPreviewArtist(lineup: string[], cacheByKey: Map<string, Cac
 function cacheStatusOf(row: CacheRow | undefined): CacheStatus {
   if (!row) return "none";
   if (row.manual_block) return "blocked";
-  return row.status === "accepted" && row.video_id ? "accepted" : "abstain";
+  if (row.status === "accepted" && row.video_id) return "accepted";
+  return parseEvidence(row.evidence, row.artist_name_normalized) ? "abstain" : "abstain_no_evidence";
 }
 
 function inLineup(name: string, lineup: string[]): boolean {
@@ -612,6 +621,7 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
     ok_headliner_shown: 0,
     headliner_has_video_not_shown: 0,
     headliner_no_match: 0,
+    headliner_evidence_missing: 0,
     headliner_b2b_outsider_with_verified_solo: 0,
     headliner_b2b_outsider_no_alt: 0,
     no_prioritized_headliner: 0,
@@ -765,7 +775,8 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
     } else if (simulated.reason === "headliner_solo" || simulated.reason === "headliner_b2b_in_lineup") {
       outcome = shownToday?.isHeadliner && !simulated.changesFromToday ? "ok_headliner_shown" : "headliner_has_video_not_shown";
     } else {
-      outcome = "headliner_no_match";
+      const unknown = headliners.length > 0 && headliners.every((h) => h.cacheStatus === "abstain_no_evidence" || h.cacheStatus === "none");
+      outcome = unknown && headliners.some((h) => h.cacheStatus === "abstain_no_evidence") ? "headliner_evidence_missing" : "headliner_no_match";
       outcomeDetail = headliners.map((h) => `${h.artist}: ${h.cacheStatus}`).join("; ");
     }
     outcomeCounts[outcome]++;
@@ -845,7 +856,8 @@ export function summarizeDecision(events: EventEntry[]): DecisionSummary {
       otherPerformerFallback: changed.filter((e) => e.simulated.reason === "fallback_strong").length,
     },
     missingSuitableVideo: {
-      prioritizedHeadlinerWithoutMatch: missing.filter((e) => e.simulated.reason === "none").length,
+      prioritizedHeadlinerWithoutMatch: missing.filter((e) => e.simulated.reason === "none" && e.outcome === "headliner_no_match").length,
+      headlinerEvidenceMissing: missing.filter((e) => e.outcome === "headliner_evidence_missing").length,
       noPrioritizedHeadliner: missing.filter((e) => e.simulated.reason === "no_prioritized_headliner").length,
       total: missing.length,
     },

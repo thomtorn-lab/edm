@@ -33,8 +33,10 @@ function accepted(key: string, cleanedName: string, current: Cand, others: Cand[
   };
 }
 
+/** A real abstain: searched, nothing passed. */
 function abstain(key: string): CacheRow {
-  return { artist_name_normalized: key, status: "abstain", video_id: null, video_title: null, channel_title: null, manual_block: false, evidence: {} };
+  const attempt = { query: `${key} dj set`, candidatesReturned: 0, structurallyEligible: [], rejected: [], verified: [], selected: null, rejectedAfterVerification: [] };
+  return { artist_name_normalized: key, status: "abstain", video_id: null, video_title: null, channel_title: null, manual_block: false, evidence: { rawArtistName: key, cleanedName: key, primaryAttempt: attempt, fallbackAttempt: null } };
 }
 
 function event(overrides: Partial<EventRow> & Pick<EventRow, "id" | "artists">): EventRow {
@@ -322,5 +324,20 @@ describe("summarizeDecision — the owner's decision basis", () => {
 
   it("names how each headliner was inferred", () => {
     expect(Object.values(d.headlinerBasis).reduce((a, b) => a + b, 0)).toBe(3);
+  });
+});
+
+describe("buildEventSection — missing evidence is not 'no suitable video'", () => {
+  it("a headliner whose search evidence was overwritten by a former manual pin is reported as evidence missing", () => {
+    const night = event({ id: "e-cfb6beb2", artists: ["STEAMBOI", "Opener"], description: "STEAMBOI headlines the night." });
+    const released: CacheRow = { artist_name_normalized: "steamboi", status: "abstain", match_rule: null, video_id: null, video_title: null, channel_title: null, manual_block: false, evidence: {} };
+    const s = buildEventSection([night], [released], []);
+    expect(s.events[0]).toMatchObject({ outcome: "headliner_evidence_missing", headliners: [{ artist: "STEAMBOI", cacheStatus: "abstain_no_evidence" }] });
+    expect(s.decision.missingSuitableVideo).toMatchObject({ headlinerEvidenceMissing: 1, prioritizedHeadlinerWithoutMatch: 0 });
+  });
+
+  it("a searched abstain stays headliner_no_match", () => {
+    const night = event({ id: "n1", artists: ["Big Name"], description: "Big Name headlines." });
+    expect(buildEventSection([night], [abstain("big name")], []).events[0].outcome).toBe("headliner_no_match");
   });
 });

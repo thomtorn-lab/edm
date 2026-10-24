@@ -144,7 +144,7 @@ export function printReport(report: RiskReport): void {
     `Solvable with already-verified videos (no YouTube call): from the cache row ${d.solvableWithVerifiedVideos.fromCacheRow}, ` +
       `only from stored evidence ${d.solvableWithVerifiedVideos.fromStoredEvidenceOnly}, other performer (artist name must be shown) ${d.solvableWithVerifiedVideos.otherPerformerFallback}`,
   );
-  console.log(`Missing a suitable video: ${d.missingSuitableVideo.total} (prioritized headliner without match ${d.missingSuitableVideo.prioritizedHeadlinerWithoutMatch}, no prioritized headliner ${d.missingSuitableVideo.noPrioritizedHeadliner})`);
+  console.log(`Missing a suitable video: ${d.missingSuitableVideo.total} (prioritized headliner without match ${d.missingSuitableVideo.prioritizedHeadlinerWithoutMatch}, headliner never really searched — evidence missing ${d.missingSuitableVideo.headlinerEvidenceMissing}, no prioritized headliner ${d.missingSuitableVideo.noPrioritizedHeadliner})`);
   console.log(`How the headliner was inferred (independent signal groups): ${JSON.stringify(d.headlinerBasis)}`);
   console.log(`Manual choices kept untouched: ${d.manualChoicesKept}`);
   console.log(`\nChanges the simulation would make (${d.changes.length}) — proposals for review, never applied:`);
