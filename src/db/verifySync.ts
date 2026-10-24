@@ -7,6 +7,7 @@ import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangar
 import type { RawCandidateEvent } from "@/lib/adapters/types";
 import type { SourceAdapter } from "@/lib/adapters/types";
 import { getEventBySlugWithVenue, getPublishedEventsWithVenue } from "@/lib/queries";
+import { checkLocalDatabase } from "./localDatabaseGuard";
 
 /**
  * End-to-end proof for the Hangaren ingestion adapter (task 6). Runs the
@@ -115,6 +116,9 @@ async function cleanup() {
 }
 
 async function main() {
+  // Same check as the package.json guard, for a direct `node src/db/verifySync.ts` run: this script writes and deletes events.
+  const guard = checkLocalDatabase("db:verify-sync", process.env);
+  if (!guard.ok) throw new Error(guard.message);
   console.log("=== Hangaren ingestion — end-to-end proof ===\n");
   await cleanup();
 

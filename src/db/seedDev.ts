@@ -19,8 +19,12 @@ import { SOURCES } from "../lib/data/sources";
 import { EVENTS } from "../lib/data/events";
 import { DISCOVERY_QUEUE } from "../lib/data/discoveryQueue";
 import { sql } from "drizzle-orm";
+import { checkLocalDatabase } from "./localDatabaseGuard";
 
 async function seed() {
+  // Also checked here, not only in package.json, so running this file directly can't reach a hosted database either.
+  const guard = checkLocalDatabase("db:seed:dev", process.env);
+  if (!guard.ok) throw new Error(guard.message);
   const venueCount = await seedVenues();
   console.log(`Seeded ${venueCount} venues.`);
 

@@ -13,14 +13,33 @@
  * anchor — so this component has no heading of its own. No artist caption
  * under the player either (removed 2026-10-18): the YouTube player already
  * shows the video's own title/channel, and the extra line was visual noise.
- * `artistName` stays only as the iframe's accessible-title fallback.
+ * `artistName` and `eventTitle` are used only for the iframe's accessible
+ * title (see videoPlayerTitle).
  */
+
+/**
+ * The iframe's accessible name (2026-10-24): says it is a YouTube video and
+ * which one — the video's own title when there is one; otherwise the artist
+ * it was matched or chosen for; otherwise the event (an admin-chosen video
+ * recorded without an artist). A blank title counts as missing, so the
+ * player is never left unnamed.
+ */
+export function videoPlayerTitle({ videoTitle, artistName, eventTitle }: { videoTitle: string | null; artistName: string | null; eventTitle: string }): string {
+  const video = videoTitle?.trim();
+  if (video) return `YouTube video: ${video}`;
+  const artist = artistName?.trim();
+  if (artist) return `YouTube video: ${artist}`;
+  return `YouTube video for ${eventTitle.trim() || "this event"}`;
+}
+
 export default function ArtistVideoPreview({
   artistName,
+  eventTitle,
   videoId,
   videoTitle,
 }: {
-  artistName: string;
+  artistName: string | null;
+  eventTitle: string;
   videoId: string;
   videoTitle: string | null;
 }) {
@@ -29,7 +48,7 @@ export default function ArtistVideoPreview({
       <iframe
         className="h-full w-full"
         src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-        title={videoTitle ?? `${artistName} video preview`}
+        title={videoPlayerTitle({ videoTitle, artistName, eventTitle })}
         allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         referrerPolicy="strict-origin-when-cross-origin"
         allowFullScreen

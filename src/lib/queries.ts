@@ -325,20 +325,29 @@ async function readEventOverrides(eventIds: string[]): Promise<Map<string, Event
 }
 
 /**
+ * What the event page embeds. artistName is null for an admin-chosen video
+ * recorded without one (every video chosen in the admin UI): the page then
+ * names the player after the event, not after a lineup name the video may
+ * have nothing to do with.
+ */
+export type EventYoutubePreview = Omit<ArtistYoutubePreview, "artistName"> & { artistName: string | null };
+
+/**
  * The event page's video: the event's own override when it has one (a chosen
  * video, or deliberately none — hidden, or the chosen video is unavailable),
  * otherwise the automated lineup match (getArtistYoutubePreviewForLineup,
  * unchanged). The artist cache is not even read when an override decides, or
  * when the override read failed (no video then — see readEventOverrides).
  */
-export async function getEventYoutubePreview(event: { id: string; artists: string[] }): Promise<ArtistYoutubePreview | null> {
+export async function getEventYoutubePreview(event: { id: string; artists: string[] }): Promise<EventYoutubePreview | null> {
   const overrides = await readEventOverrides([event.id]);
   if (!overrides) return null;
   const decision = resolveEventOverride(overrides.get(event.id));
   if (decision.kind === "none") return null;
   if (decision.kind === "video") {
     return {
-      artistName: decision.artistName ?? event.artists[0] ?? "Artist",
+      // Only the name the video was actually chosen for — never a guess from the lineup (2026-10-24).
+      artistName: decision.artistName,
       videoId: decision.videoId,
       videoTitle: decision.videoTitle,
       channelTitle: decision.channelTitle,
