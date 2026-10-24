@@ -7,6 +7,9 @@ import {
   CACHE_SQL,
   DISCOVERY_NAMES_SQL,
   EVENT_NAMES_SQL,
+  EVENTS_SQL,
+  OVERRIDES_SQL,
+  OVERRIDES_TABLE_SQL,
   READ_ONLY_TX_STATEMENTS,
   runYoutubePreviewRiskReport,
   type CacheRow,
@@ -50,6 +53,24 @@ const CACHE: CacheRow[] = [
   accepted("Benji", "benjib", "Benji B | Boiler Room London", "Boiler Room", "trusted", true),
   { artist_name_normalized: "pippa", status: "abstain", video_id: null, video_title: null, channel_title: null, manual_block: false, evidence: {} },
 ];
+
+describe("buildRuleReplaySection — manual choices", () => {
+  it("a manual artist pin is reported as manual_pin, never judged by a rule", () => {
+    const pin: CacheRow = {
+      artist_name_normalized: "steamboi",
+      status: "accepted",
+      match_rule: "manual",
+      video_id: "Pbb0KmuwYSA",
+      video_title: "steamboi | REX Radio (10.11.25)",
+      channel_title: "REX Radio",
+      manual_block: false,
+      evidence: {},
+    };
+    const section = buildRuleReplaySection([pin]);
+    expect(section.outcomeCounts).toMatchObject({ manual_pin: 1, not_replayable: 0, would_abstain: 0, other_candidate_available: 0 });
+    expect(section.affectedByProposedRules).toEqual([]);
+  });
+});
 
 describe("buildRuleReplaySection", () => {
   const section = buildRuleReplaySection(CACHE);
@@ -106,12 +127,18 @@ describe("buildNameSection", () => {
 
 class FakeClient implements QueryClient {
   statements: string[] = [];
-  constructor(private readonly readOnly: string = "on", private readonly failOn: string | null = null) {}
+  constructor(
+    private readonly readOnly: string = "on",
+    private readonly failOn: string | null = null,
+    private readonly overrideTable: string | null = null,
+  ) {}
   async query(sql: string): Promise<{ rows: unknown[] }> {
     this.statements.push(sql);
     if (this.failOn && sql === this.failOn) throw new Error("boom");
     if (sql === READ_ONLY_TX_STATEMENTS.verify) return { rows: [{ transaction_read_only: this.readOnly }] };
     if (sql === CACHE_SQL) return { rows: CACHE };
+    if (sql === OVERRIDES_TABLE_SQL) return { rows: [{ t: this.overrideTable }] };
+    if (sql === OVERRIDES_SQL) return { rows: [{ event_id: "e1", mode: "hidden", video_id: null, available: true }] };
     return { rows: [] };
   }
 }
@@ -127,6 +154,8 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
       CACHE_SQL,
       EVENT_NAMES_SQL,
       DISCOVERY_NAMES_SQL,
+      EVENTS_SQL,
+      OVERRIDES_TABLE_SQL,
       READ_ONLY_TX_STATEMENTS.rollback,
     ]);
   });
@@ -144,8 +173,30 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
     expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
   });
 
+  it("reports a missing override table without querying it", async () => {
+    const client = new FakeClient();
+    const report = await runYoutubePreviewRiskReport(client);
+    expect(client.statements).not.toContain(OVERRIDES_SQL);
+    expect(report.events).toMatchObject({ eventOverrides: "table_not_present" });
+  });
+
+  it("reads the override table only after to_regclass finds it", async () => {
+    const client = new FakeClient("on", null, "event_youtube_preview_overrides");
+    const report = await runYoutubePreviewRiskReport(client);
+    expect(client.statements.slice(-3)).toEqual([OVERRIDES_TABLE_SQL, OVERRIDES_SQL, READ_ONLY_TX_STATEMENTS.rollback]);
+    expect(report.events).toMatchObject({ eventOverrides: { rows: 1 } });
+  });
+
+  it("fails closed: an unreadable override table skips the event section, keeps the rest, and rolls back", async () => {
+    const client = new FakeClient("on", OVERRIDES_SQL, "event_youtube_preview_overrides");
+    const report = await runYoutubePreviewRiskReport(client);
+    expect(report.events).toMatchObject({ skipped: true });
+    expect(report.rules.acceptedRows).toBe(4);
+    expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
+  });
+
   it("every data query is a plain SELECT", () => {
-    for (const sql of [CACHE_SQL, EVENT_NAMES_SQL, DISCOVERY_NAMES_SQL]) {
+    for (const sql of [CACHE_SQL, EVENT_NAMES_SQL, DISCOVERY_NAMES_SQL, EVENTS_SQL, OVERRIDES_TABLE_SQL, OVERRIDES_SQL]) {
       expect(sql.trimStart().startsWith("SELECT ")).toBe(true);
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT)\b/i);
     }

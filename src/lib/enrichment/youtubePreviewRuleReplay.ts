@@ -241,10 +241,14 @@ export type ReplayOutcome =
   /** The current video fails a check; no stored candidate passes and no further query exists — this row would have abstained. */
   | "would_abstain"
   /** The evidence has no replayable search attempt (e.g. a manual-block seed row or a pre-evidence row). */
-  | "not_replayable";
+  | "not_replayable"
+  /** A manual choice (match_rule "manual", e.g. the Steamboi pin from draft PR #163) — never second-guessed by a rule. */
+  | "manual_pin";
 
 export interface AcceptedRowInput {
   artistNameNormalized: string;
+  /** artist_youtube_preview_cache.match_rule — "manual" marks a hand-picked video. */
+  matchRule?: string | null;
   videoId: string | null;
   videoTitle: string | null;
   channelTitle: string | null;
@@ -279,7 +283,6 @@ export function replayAcceptedRow(row: AcceptedRowInput): AcceptedReplay {
     channelTitle: row.channelTitle,
     manualBlock: row.manualBlock,
   };
-  const parsed = parseEvidence(row.evidence, row.artistNameNormalized);
   const empty = {
     matchedOn: "unknown" as const,
     channelMatch: null,
@@ -289,6 +292,8 @@ export function replayAcceptedRow(row: AcceptedRowInput): AcceptedReplay {
     alternative: null,
     unverifiedPassingCandidates: 0,
   };
+  if (row.matchRule === "manual") return { ...base, ...empty, outcome: "manual_pin" };
+  const parsed = parseEvidence(row.evidence, row.artistNameNormalized);
   if (!parsed || !row.videoId) return { ...base, ...empty, outcome: "not_replayable" };
 
   const attempts: { kind: "primary" | "fallback"; attempt: StoredAttempt }[] = [];
@@ -327,4 +332,70 @@ export function replayAcceptedRow(row: AcceptedRowInput): AcceptedReplay {
   }
   const outcome: ReplayOutcome = owning.kind === "primary" && !parsed.fallback ? "needs_fallback_query" : "would_abstain";
   return { ...base, ...common, outcome, alternative: null, unverifiedPassingCandidates };
+}
+
+export interface VerifiedAlternative {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  channelMatch: ChannelMatch | null;
+  publishedAt: string;
+  matchedOn: "primary" | "fallback";
+}
+
+/**
+ * Stored candidates (other than `excludeVideoId`) that a render path could
+ * show without any new YouTube call: they pass today's production Rule A
+ * checks AND every proposed check, and their stored videos.list result
+ * passes duration/embeddable/public. Newest first. Report-only.
+ */
+export function verifiedAlternatives(evidence: unknown, artistNameNormalized: string, excludeVideoId: string | null): VerifiedAlternative[] {
+  const parsed = parseEvidence(evidence, artistNameNormalized);
+  if (!parsed) return [];
+  const out: (VerifiedAlternative & { time: number })[] = [];
+  for (const [kind, attempt] of [["primary", parsed.primary], ["fallback", parsed.fallback]] as const) {
+    if (!attempt) continue;
+    for (const c of replayAttempt(attempt, parsed.cleanedName, parsed.normalized)) {
+      if (c.videoId === excludeVideoId) continue;
+      if (!c.currentRules.eligible || c.proposedFailures.length > 0 || c.technicallySafe !== true) continue;
+      if (out.some((o) => o.videoId === c.videoId)) continue;
+      const time = Date.parse(c.publishedAt);
+      out.push({
+        videoId: c.videoId,
+        title: c.title,
+        channelTitle: c.channelTitle,
+        channelMatch: c.currentRules.channelMatch,
+        publishedAt: c.publishedAt,
+        matchedOn: kind,
+        time: Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time,
+      });
+    }
+  }
+  out.sort((a, b) => b.time - a.time);
+  return out.map((o) => ({ videoId: o.videoId, title: o.title, channelTitle: o.channelTitle, channelMatch: o.channelMatch, publishedAt: o.publishedAt, matchedOn: o.matchedOn }));
+}
+
+/**
+ * The names a video title bills before its first venue/event marker, with
+ * the artist's own entry removed — the other names are B2B partners. The
+ * channel's own name is cut off first ("Dasha Rush Boiler Room x Present
+ * Perfect" bills one name, not two), and each name is trimmed at a " - " /
+ * ":" clause break ("Friend Of Mine - Revolve Festival" → "Friend Of Mine").
+ */
+export function billedPartners(videoTitle: string, cleanedName: string, channelTitle: string): { solo: boolean; partners: string[] } {
+  const untagged = videoTitle.replace(/^\s*(?:[[(【][^\])】]*[\])】]\s*)+/u, "");
+  const stop = untagged.match(TITLE_STOP_MARKERS);
+  let billing = stop ? untagged.slice(0, stop.index) : untagged;
+  const channel = channelTitle.trim();
+  if (channel) {
+    const at = billing.toLowerCase().indexOf(channel.toLowerCase());
+    if (at > 0) billing = billing.slice(0, at);
+  }
+  const own = new RegExp(`^${escapeRegExp(cleanedName)}([^\\p{L}\\p{N}]|$)`, "iu");
+  const names = billing
+    .split(MULTI_BILLING_SEPARATORS)
+    .map((part) => part.split(/\s+[-–—]\s+|:\s/u)[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.!?]+$/gu, "").trim())
+    .filter(Boolean);
+  const partners = names.filter((n) => !own.test(n));
+  return { solo: partners.length === 0, partners };
 }
