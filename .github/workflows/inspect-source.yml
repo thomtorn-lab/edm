@@ -256,6 +256,7 @@ jobs:
       # write. No other input is used; no external service is called.
       - name: Run artist identity audit (dedicated read-only role)
         if: ${{ inputs.mode == 'artist-identity-audit' }}
+        timeout-minutes: 10
         env:
           DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
         run: |

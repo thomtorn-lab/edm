@@ -33,11 +33,16 @@ describe("inspect-source.yml — artist-identity-audit mode", () => {
   it("runs only the audit CLI, only with the dedicated read-only secret, and fails closed without it", () => {
     const audit = step("Run artist identity audit (dedicated read-only role)");
     expect(audit).toContain("if: ${{ inputs.mode == 'artist-identity-audit' }}");
+    expect(audit).toContain("timeout-minutes: 10");
     expect(audit).toContain("DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}");
     expect(audit).toMatch(/if \[ -z "\$\{DATABASE_URL_REPORT_RO:-\}" \]; then[\s\S]*exit 1/);
     expect(audit).toContain("node --import tsx src/db/artistIdentityAuditCli.ts --out=artist-identity-audit.json");
     expect(audit).not.toMatch(/YOUTUBE_API_KEY|BILLETTO_|RESEND|DISCOGS/);
     expect(audit.match(/\$\{\{/g)?.length).toBe(2); // the if: condition and the one secret
+  });
+
+  it("keeps the workflow's token read-only", () => {
+    expect(yaml).toMatch(/\npermissions:\n {2}contents: read\n/);
   });
 
   it("uploads the JSON report as a short-lived artifact", () => {

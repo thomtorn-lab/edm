@@ -3,8 +3,9 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AUDIT_TABLES } from "./artistIdentityAudit";
+import { runArtistIdentityAudit } from "./artistIdentityAuditCli";
 import { beginReadOnlyTransaction } from "./readOnlyTransaction";
 import { assertReadOnlyRole, evaluateGuard, readAccessSql, readReportConnectionString, READ_ACCESS_SQL, REPORT_TABLES } from "./reportReadOnlyGuard";
 
@@ -136,6 +137,10 @@ describe.runIf(CAN_RUN)("shared guard with the audit's tables, against the repo'
       "CREATE FUNCTION public.touch_events() RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ UPDATE events SET title = title WHERE false $$",
       "REVOKE EXECUTE ON FUNCTION public.touch_events() FROM PUBLIC",
       "GRANT EXECUTE ON FUNCTION public.touch_events() TO report_definer",
+      "INSERT INTO sources (id, source_name, source_type, base_url, trust_level, sync_frequency) VALUES ('src-a', 'Source A', 'venue', 'https://example.test', 'high', 'every 6h')",
+      "INSERT INTO venues (id, slug, name, address, city, postal_code, description) VALUES ('v-a', 'v-a', 'Club A', 'x', 'Copenhagen', '1000', 'x')",
+      "INSERT INTO events (id, title, slug, artists, start_datetime, venue_id, primary_genre, canonical_source_id) VALUES ('e-1', 'Night', 'e-1', '{\"KRÆ b2b KIRAKINGKONG\",\"Kevin de Vries & Massano\",TBA}', now() + interval '5 days', 'v-a', 'techno', 'src-a')",
+      "INSERT INTO event_soundcloud_links (event_id, source_id, artist_name, url) VALUES ('e-1', 'src-a', 'KRÆ', 'https://soundcloud.com/kraeh')",
     ]) {
       await admin.query(sql);
     }
@@ -165,6 +170,41 @@ describe.runIf(CAN_RUN)("shared guard with the audit's tables, against the repo'
     } finally {
       await c.end();
     }
+  });
+
+  async function databaseFingerprint(): Promise<string> {
+    const tables = (await admin.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1")).rows.map((r) => r.tablename as string);
+    const parts: string[] = [];
+    for (const t of tables) {
+      const r = await admin.query(`SELECT count(*)::text AS n, md5(COALESCE(string_agg(x::text, '|' ORDER BY x::text), '')) AS h FROM public."${t}" x`);
+      parts.push(`${t}:${r.rows[0].n}:${r.rows[0].h}`);
+    }
+    return parts.join("\n");
+  }
+
+  const url = (role: string) => `postgresql://${role}:not-a-real-password@localhost:${PORT}/postgres?host=${encodeURIComponent(dir)}`;
+
+  it("runs the whole audit as the read-only role and leaves every table byte-identical", async () => {
+    const before = await databaseFingerprint();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const report = await runArtistIdentityAudit(url("report_ro"));
+      expect(report.coverage.upcomingPublicEvents).toBe(1);
+      expect(report.appearanceBuckets.byBucket).toMatchObject({ handle: 1, distinct: 1, weak_split: 1, not_artist: 1 });
+      const printed = log.mock.calls.flat().join("\n");
+      expect(printed).toContain('role "report_ro" proven unable to write');
+      expect(printed).not.toContain("not-a-real-password");
+    } finally {
+      log.mockRestore();
+    }
+    expect(await databaseFingerprint()).toBe(before);
+  });
+
+  it("stops before any data query when the role can write, and changes nothing", async () => {
+    const before = await databaseFingerprint();
+    await expect(runArtistIdentityAudit(url("report_writer"))).rejects.toThrow(/not proven read-only[\s\S]*public\.events/);
+    await expect(runArtistIdentityAudit(url("report_member"))).rejects.toThrow(/pg_write_all_data/);
+    expect(await databaseFingerprint()).toBe(before);
   });
 
   it.each([

@@ -16,6 +16,12 @@ import { assertReadOnlyRole, readReportConnectionString } from "./reportReadOnly
  * to the --out JSON file. Never prints the connection string.
  */
 
+export const AUDIT_SESSION_LIMITS = [
+  "SET LOCAL statement_timeout = '60s'",
+  "SET LOCAL lock_timeout = '5s'",
+  "SET LOCAL idle_in_transaction_session_timeout = '120s'",
+] as const;
+
 function parseOut(argv: string[]): string | null {
   const arg = argv.find((a) => a.startsWith("--out="));
   return arg ? arg.slice("--out=".length) : null;
@@ -24,6 +30,7 @@ function parseOut(argv: string[]): string | null {
 export function summarize(report: ArtistIdentityAudit): string[] {
   const s = report.alertSupport;
   return [
+    `Rows read: ${JSON.stringify(report.rowsRead)}`,
     `Upcoming public events: ${report.coverage.upcomingPublicEvents}`,
     `  with a high-confidence appearance: ${s.eventsWithAHighAppearance} (+${s.eventsAlsoWithPendingDecision - s.eventsWithAHighAppearance} if titles-as-artists are accepted)`,
     `  without sufficient lineup data: ${report.insufficientLineup.total} ${JSON.stringify(report.insufficientLineup.byReason)}`,
@@ -42,10 +49,13 @@ export async function runArtistIdentityAudit(connectionString: string, now = new
   await client.connect();
   try {
     await beginReadOnlyTransaction(client);
+    // Bounded before the first catalog query: a slow query aborts instead of
+    // running on, a lock wait (e.g. behind a migration) gives up instead of
+    // queueing other sessions behind this one, and an idle transaction ends.
+    for (const sql of AUDIT_SESSION_LIMITS) await client.query(sql);
     const guard = await assertReadOnlyRole(client, AUDIT_TABLES);
     console.log(`Verified: read-only transaction; role "${guard.role}" proven unable to write; ${AUDIT_TABLES.length} report tables readable.`);
     for (const w of guard.warnings) console.log(`  warning: ${w}`);
-    await client.query("SET LOCAL statement_timeout = '60s'");
     const data = await loadArtistIdentityAuditData(client);
     await client.query("ROLLBACK");
     return buildArtistIdentityAudit(data, now);
