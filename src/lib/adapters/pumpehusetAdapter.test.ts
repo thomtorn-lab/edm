@@ -551,3 +551,75 @@ describe("isLikelyDanish — English-language guard (editorial-description follo
     expect(isLikelyDanish("A short quote with no special characters at all.")).toBe(false);
   });
 });
+
+/**
+ * `pumpehuset-fetch-concerts-2026-10-14.json` is a real recording of the
+ * live fetch_concerts response (page 1, all genres, the adapter's own
+ * request parameters), fetched via inspect-source.yml's reachability mode on
+ * 2026-10-14. `pumpehuset-detail-nimino.html` is the real
+ * https://pumpehuset.dk/koncerter/nimino/ page from the same day (extracted
+ * from the run log). Both show the venue's role labels per entry:
+ * "Support: Montee " and "Efterfest: NAT " (efterfest = the free after-party
+ * DJ set downstairs after the concert).
+ */
+const LIVE_CONCERTS_JSON = readFileSync(
+  path.join(__dirname, "__fixtures__", "pumpehuset-fetch-concerts-2026-10-14.json"),
+  "utf-8",
+);
+const NIMINO_DETAIL_HTML = readFileSync(path.join(__dirname, "__fixtures__", "pumpehuset-detail-nimino.html"), "utf-8");
+
+describe("support_bands role labels — real 2026-10-14 fetch_concerts fixture", () => {
+  const live = parsePumpehusetConcertsJson(LIVE_CONCERTS_JSON);
+  const byUrl = (slug: string) => live.find((e) => e.officialEventUrl === `https://pumpehuset.dk/koncerter/${slug}/`)!;
+
+  it("treats 'Efterfest:' as a role, not part of the name, and keeps the after-party act (nimino)", () => {
+    expect(byUrl("nimino").artists).toEqual(["nimino", "Montee", "NAT"]);
+  });
+
+  it("does not let the after-party DJ's bio decide the headline concert's genre (nimino)", () => {
+    // NAT's bio says "fremadskuende techno"; it previously made the concert "techno".
+    expect(byUrl("nimino").genreHint).toBe("electronic-other");
+    expect(byUrl("nimino").description ?? "").not.toContain("NAT");
+  });
+
+  it("strips both labels on a concert with a support act and an after-party (Dizzee Rascal)", () => {
+    const e = byUrl("dizzee-rascal");
+    expect(e.artists).toEqual(["Dizzee Rascal", "Grøn Dreng", "BUJA"]);
+    // The support act's bio stays part of the evidence; only the after-party bio is excluded.
+    expect(e.description).toContain("Grøn Dreng");
+    expect(e.description).not.toContain("BUJA");
+  });
+
+  it("keeps the PR #134 'Support:' behaviour (Silva Bumpa)", () => {
+    expect(byUrl("silva-bumpa").artists).toEqual(["Silva Bumpa", "Lisa Fosmark"]);
+  });
+
+  it("leaves unlabelled support_bands lists unchanged", () => {
+    const unlabelled = JSON.parse(LIVE_CONCERTS_JSON).filter(
+      (c: { support_bands: { band_name: string }[] | false | null }) =>
+        Array.isArray(c.support_bands) && c.support_bands.length > 0 && c.support_bands.every((b) => !/^\s*\w[\w\s-]*:/.test(b.band_name)),
+    );
+    expect(unlabelled.length).toBeGreaterThan(0);
+    for (const c of unlabelled) {
+      const e = live.find((x) => x.officialEventUrl === c.link)!;
+      expect(e.artists).toEqual(c.support_bands.map((b: { band_name: string }) => b.band_name.trim()).filter(Boolean));
+    }
+  });
+
+  it("enriched end to end with the real detail page: artists and genre stay correct (nimino)", async () => {
+    let page = 0;
+    const fetchImpl = async (url: string) => {
+      if (url.includes("admin-ajax")) {
+        page++;
+        return new Response(page === 1 ? LIVE_CONCERTS_JSON : "[]", { status: 200 });
+      }
+      if (url.includes("/koncerter/nimino/")) return new Response(NIMINO_DETAIL_HTML, { status: 200 });
+      return new Response("not found", { status: 404 });
+    };
+    const results = await createPumpehusetAdapter(fetchImpl as unknown as typeof fetch, 0, 0).fetchCandidates();
+    const nimino = results.find((e) => e.officialEventUrl === "https://pumpehuset.dk/koncerter/nimino/");
+    expect(nimino!.artists).toEqual(["nimino", "Montee", "NAT"]);
+    expect(nimino!.genreHint).toBe("electronic-other");
+    expect(nimino!.startDatetime).toBe("2026-10-15T19:00:00.000Z"); // 21:00 CEST, as the page states
+  });
+});
