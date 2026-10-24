@@ -21,7 +21,7 @@ function stubClient(response: unknown | Error): TranslationClient & { calls: unk
     if (response instanceof Error) throw response;
     return response;
   });
-  return { beta: { messages: { create } }, calls } as unknown as TranslationClient & { calls: unknown[] };
+  return { messages: { create }, calls } as unknown as TranslationClient & { calls: unknown[] };
 }
 
 function reply(json: unknown, stop_reason = "end_turn") {
@@ -48,6 +48,17 @@ describe("validateTranslation", () => {
     expect(validateTranslation("Line one is here.\nLine two is here.\nLine three is here.", "Line one is here. Line two is here. Line three is here.")).toMatch(/line structure/);
     expect(validateTranslation(DANISH.repeat(1), "Party. 250 www.vega.dk\n\nx")).toMatch(/length/);
   });
+  it("rejects a translation that altered an artist name, the title or the venue the source states", () => {
+    const src = "Den amerikanske artist WITCHZ spiller i Pumpehuset søndag.";
+    const ctx = { title: "WITCHZ", venueName: "Pumpehuset", artists: ["WITCHZ"] };
+    expect(validateTranslation(src, "The American artist WITCHZ plays at Pumpehuset on Sunday.", ctx)).toBeNull();
+    expect(validateTranslation(src, "The American artist Witchz plays at Pumpehuset on Sunday.", ctx)).toMatch(/name/);
+    expect(validateTranslation(src, "The American artist WITCHZ plays at the Pump House on Sunday.", ctx)).toMatch(/name/);
+  });
+  it("rejects a translation that dropped a genre name or a hashtag", () => {
+    expect(validateTranslation("En lyd mellem alternativ pop og mørk electronica.", "A sound between alternative pop and dark electronic music.")).toMatch(/genre/);
+    expect(validateTranslation("Fest i aften #cphnightlife hele natten", "Party tonight all night long")).toMatch(/hashtag/);
+  });
 });
 
 describe("translateDescription", () => {
@@ -57,14 +68,14 @@ describe("translateDescription", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("returns a validated translation, using the default model, structured output and server-side fallback", async () => {
+  it("returns a validated translation, using one fixed model, structured output and NO automatic fallback", async () => {
     const en = "After many years on stage, DJ Aligator says goodbye with one last party in Store VEGA.\n\nTickets: 250 kr. More info at www.vega.dk";
     const client = stubClient(reply({ source_language: "da", already_english: false, translation: en }));
     expect(await translateDescription(client, DANISH)).toEqual({ status: "translated", sourceLanguage: "da", text: en });
     const params = client.calls[0] as Record<string, unknown>;
     expect(params.model).toBe(DEFAULT_TRANSLATION_MODEL);
-    expect(params.fallbacks).toBe("default");
-    expect(params.betas).toEqual(["server-side-fallback-2026-07-01"]);
+    expect(params).not.toHaveProperty("fallbacks");
+    expect(params).not.toHaveProperty("betas");
     expect((params.output_config as { format: { type: string } }).format.type).toBe("json_schema");
     expect(JSON.stringify(params.messages)).toContain("<description>");
   });

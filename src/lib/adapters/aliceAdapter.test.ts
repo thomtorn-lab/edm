@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { STORED_DESCRIPTION_MAX_LENGTH } from "./htmlExtraction";
 import {
   parseAliceProgramHtml,
   parseAliceEventDetailHtml,
@@ -202,13 +201,11 @@ describe("parseAliceEventDetailHtml — relevanceText carries evidence past the 
   };
   const event = parseAliceEventDetailHtml(BRUNO_BERLE_HTML, entry);
 
-  // The stored-description cap was raised from 800 to
-  // STORED_DESCRIPTION_MAX_LENGTH and now keeps the page's paragraphs
-  // (About-text formatting, 2026-10-15), so this bio is no longer cut. What
-  // this block guards is unchanged: relevanceText is always the full, flat
-  // text, whatever the display description keeps.
-  it("keeps the whole bio in the stored description, with its paragraph breaks, within the stored-description cap", () => {
-    expect(event.description!.length).toBeLessThanOrEqual(STORED_DESCRIPTION_MAX_LENGTH);
+  // The stored description is no longer cut at 800 characters and keeps
+  // the page's paragraphs (About-text formatting, 2026-10-15/24). What this
+  // block guards is unchanged: relevanceText is always the full, flat text.
+  it("keeps the whole bio in the stored description, with its paragraph breaks", () => {
+    expect(event.description!.replace(/\s+/g, " ")).toBe(event.relevanceText);
     expect(event.description).toContain("Música Popular Brasileira");
     expect(event.description).toContain("\n\n");
   });

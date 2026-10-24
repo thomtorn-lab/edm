@@ -6,8 +6,6 @@ import {
   htmlToText,
   htmlToParagraphText,
   isSameHost,
-  truncateAtBoundary,
-  STORED_DESCRIPTION_MAX_LENGTH,
 } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
@@ -331,7 +329,7 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
         .replace(/\n{3,}/g, "\n\n")
         .trim()
     : "";
-  const description = structuredDescription ? truncateAtBoundary(structuredDescription, STORED_DESCRIPTION_MAX_LENGTH) : null;
+  const description = structuredDescription || null;
 
   const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
   const imageUrl = imageMatch ? decodeHtmlEntities(imageMatch[1]) : null;

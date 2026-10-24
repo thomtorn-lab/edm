@@ -6,8 +6,6 @@ import {
   htmlToText,
   htmlToParagraphText,
   extractLowestDkkAmount,
-  truncateAtBoundary,
-  STORED_DESCRIPTION_MAX_LENGTH,
 } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
@@ -189,9 +187,7 @@ export function parseAliceEventDetailHtml(html: string, entry: AliceProgramEntry
   // Stored description keeps the page's paragraphs (About-text formatting,
   // 2026-10-15); fullDescriptionText above stays flat for genre evidence.
   const structuredDescription = contentMatch ? htmlToParagraphText(contentMatch[1]) : "";
-  const description = structuredDescription
-    ? truncateAtBoundary(structuredDescription, STORED_DESCRIPTION_MAX_LENGTH)
-    : entry.teaser;
+  const description = structuredDescription || entry.teaser;
 
   // Genre evidence, evidence-hierarchy order (same rule as poolenAdapter.ts):
   // a specific subgenre keyword in the event's own description text is

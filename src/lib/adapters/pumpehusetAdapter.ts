@@ -637,6 +637,11 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
     // relevance/genre gate otherwise — this is a source-completeness fix,
     // not a threshold change.
     let dropUnconfirmed = candidate.genreHint === null;
+    // The description to STORE, with the body text's own line breaks kept
+    // (About-text formatting, 2026-10-24). Everything that reads the text as
+    // evidence — genre resolution and relevanceText below — keeps using the
+    // unchanged flat `next.description`, so classification can't shift.
+    let structuredDescription: string | null = null;
     if (candidate.officialEventUrl) {
       try {
         const res = await fetchWithRetry(
@@ -682,6 +687,9 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
         // line only when neither exists at all — never replaces real prose
         // with the presenter line.
         const combinedDescription = [next.description, bodyDescription].filter(Boolean).join("\n\n") || presenter || next.description;
+        if (bodyDescription) {
+          structuredDescription = [next.description, descriptionLines.join("\n").trim()].filter(Boolean).join("\n\n");
+        }
         if (combinedDescription !== next.description) next = { ...next, description: combinedDescription };
 
         // This candidate's listing genre didn't already confirm Elektronisk
@@ -725,13 +733,12 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
     // alongside a redacted description (relevance-architecture audit,
     // 2026-08-30). See RawCandidateEvent.relevanceText's doc comment.
     next = { ...next, relevanceText: next.description };
-    // English-language guard applies uniformly, whatever produced this
-    // candidate's description (detail-page prose, support-band bios alone,
-    // or the bare presenter-line fallback) — genre resolution above already
-    // used the real text as evidence; this only decides what's shown.
-    if (next.description && isLikelyDanish(next.description)) {
-      next = { ...next, description: null };
-    }
+    // Danish descriptions are kept (2026-10-24): the former English-language
+    // guard nulled them, but every About text is now shown in English via
+    // the cached translation (src/db/translateDescriptions.ts), with the
+    // original stored unchanged. Genre/relevance above are unaffected — they
+    // already used this same text as evidence before the guard.
+    if (structuredDescription) next = { ...next, description: structuredDescription };
     // dropUnconfirmed only ever clears when this candidate's own detail page
     // confirmed a real Elektronisk tag; a still-null genreHint here means
     // neither the listing nor the detail page ever confirmed relevance

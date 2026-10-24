@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, htmlToParagraphText, truncateAtBoundary, STORED_DESCRIPTION_MAX_LENGTH } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, htmlToParagraphText } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -279,7 +279,7 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
     sourceId: GRAVITY_SOURCE_ID,
     sourceUrl,
     title,
-    description: description ? truncateAtBoundary(description, STORED_DESCRIPTION_MAX_LENGTH) : null,
+    description: description || null,
     // Admin Discovery Queue cleanup quality audit, 2026-09-06 — same real
     // gap found and fixed on aliceAdapter.ts: `description` above is
     // truncated to 800 chars for display, but genreHint is resolved from

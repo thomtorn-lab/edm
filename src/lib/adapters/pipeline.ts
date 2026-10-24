@@ -19,7 +19,7 @@ import {
 } from "../relevance";
 import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
 import { suggestSecondaryGenre } from "./secondaryGenreSuggestion";
-import { sanitizeExtractedTitle, normalizeExtractedText } from "./htmlExtraction";
+import { sanitizeExtractedTitle, normalizeExtractedText, truncateAtBoundary, DESCRIPTION_SAFETY_MAX_LENGTH } from "./htmlExtraction";
 import { isPastEvent } from "../datetime";
 import type { RawCandidateEvent } from "./types";
 
@@ -407,6 +407,12 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // 2026-10-15) — the event page's formatter needs them to tell paragraphs
   // from line breaks; every other field keeps the flat shape.
   if (raw.description) raw.description = normalizeExtractedText(raw.description, { keepParagraphs: true });
+  if (raw.description && raw.description.length > DESCRIPTION_SAFETY_MAX_LENGTH) {
+    console.warn(
+      `[pipeline] ${raw.sourceId}: description of ${raw.description.length} characters exceeds the ${DESCRIPTION_SAFETY_MAX_LENGTH}-character safety ceiling (likely a broken extractor) — cut at a boundary: ${raw.title}`,
+    );
+    raw.description = truncateAtBoundary(raw.description, DESCRIPTION_SAFETY_MAX_LENGTH);
+  }
   if (raw.relevanceText) raw.relevanceText = normalizeExtractedText(raw.relevanceText);
   if (raw.structuredGenreField) raw.structuredGenreField = normalizeExtractedText(raw.structuredGenreField, { singleLine: true });
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });

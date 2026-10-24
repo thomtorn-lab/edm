@@ -1,5 +1,6 @@
 import { isPastEvent } from "../datetime";
 import { descriptionHash } from "./englishDescription";
+import type { TranslationContext } from "./descriptionTranslation";
 
 /** A failed description is retried on later runs at most this many times in total, until its text changes. */
 export const MAX_TRANSLATION_ATTEMPTS = 3;
@@ -7,6 +8,8 @@ export const MAX_TRANSLATION_ATTEMPTS = 3;
 export type TranslationWorkRow = {
   eventId: string;
   slug: string;
+  /** Title/venue/artists, checked to survive translation verbatim. */
+  context?: TranslationContext;
   description: string;
   startDatetime: string;
   endDatetime: string | null;

@@ -377,10 +377,14 @@ describe("createPumpehusetAdapter", () => {
     // detail page's own written description is read as real evidence for
     // genre resolution below — WITCHZ's real page explicitly says his own
     // sound is electronic ("elektroniske lyd" / "mørk electronica"). But
-    // that text is Danish (editorial-description follow-up: English-language
-    // guard), so it's never shown as the public description — only used
-    // internally as genre evidence.
-    expect(witchz!.description).toBeNull();
+    // that text is Danish. It used to be nulled by an English-language
+    // guard; since 2026-10-24 it is kept (shown in English via the cached
+    // translation) with its own line breaks, while genre/relevance evidence
+    // stays the same flat text as before.
+    expect(witchz!.description).toMatch(/^Den amerikanske artist WITCHZ står klar/);
+    expect(witchz!.description).toContain("\n");
+    expect(witchz!.relevanceText).not.toContain("\n");
+    expect(witchz!.description!.replace(/\s+/g, " ")).toBe(witchz!.relevanceText!.replace(/\s+/g, " "));
     expect(witchz!.genreHint).toBe("electronic-other"); // no NAMED specific subgenre — the assertion signal (relevance.ts) is what carries it, not genre precision
     expect(witchz!.genreConfidenceHint).toBe("high");
 
@@ -393,11 +397,11 @@ describe("createPumpehusetAdapter", () => {
     expect(byhaven!.genreConfidenceHint).toBe("high");
     expect(byhaven!.artists).toEqual(["Leeni & Danilo Kupfernagel", "Lush", "NILU"]);
 
-    // Editorial-description follow-up: real Byhaven copy is Danish, so the
-    // English-language guard suppresses it entirely here regardless of the
-    // lineup-duplication fix (see the dedicated lineup-range-exclusion unit
-    // test below, using English text, for that mechanism in isolation).
-    expect(byhaven!.description).toBeNull();
+    // Real Byhaven copy is Danish — kept since 2026-10-24 (see WITCHZ
+    // above), and the lineup list adopted as artists is still not repeated
+    // in the stored description.
+    expect(byhaven!.description).toBeTruthy();
+    expect(byhaven!.description).not.toMatch(/^Line[- ]?Up:?$/im);
 
     // Afro Sundown Fest data-quality gap fix (Round 5): the fetch_concerts
     // JSON carries no support_bands data (support_bands: false), so the
@@ -410,8 +414,8 @@ describe("createPumpehusetAdapter", () => {
     // lineup, keeping the combined act "Jayce + MC Mazi" as one entry.
     const afroSundown = results.find((e) => e.officialEventUrl === "https://pumpehuset.dk/koncerter/byhaven-afro-sundown-fest/");
     expect(afroSundown!.artists).toEqual(["Bullet", "Panda", "Sule", "Xzyl", "Ynxg Irie", "Jayce + MC Mazi"]);
-    // Also real Danish copy — suppressed by the same English-language guard.
-    expect(afroSundown!.description).toBeNull();
+    // Also real Danish copy — kept since 2026-10-24.
+    expect(afroSundown!.description).toBeTruthy();
   });
 });
 

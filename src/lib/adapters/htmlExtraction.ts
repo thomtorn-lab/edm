@@ -128,13 +128,17 @@ export function htmlToParagraphText(html: string): string {
 }
 
 /**
- * Length cap for a stored event description (About-text formatting,
- * 2026-10-15) — raised from the earlier 600/800-character caps, which cut
- * real descriptions (artist bios, practical information, code of conduct)
- * off mid-way. Still bounded, so a runaway page scrape can't store an
- * unbounded blob.
+ * Safety ceiling for a stored event description — NOT a display cut
+ * (About-text formatting, 2026-10-24). Adapters store the full description;
+ * long texts are handled by the page layout, never by dropping stored
+ * information. This only exists for two concrete technical reasons: a
+ * broken extractor (a selector that stops matching its end marker) could
+ * otherwise store an entire web page as "description", and the English
+ * translation of one description must fit in a single API response. Real
+ * descriptions are far below it (the longest fixture description is about
+ * 5,000 characters). Applied once, at the shared pipeline choke point.
  */
-export const STORED_DESCRIPTION_MAX_LENGTH = 2500;
+export const DESCRIPTION_SAFETY_MAX_LENGTH = 20_000;
 
 /** Renders an HTML fragment to plain text the way a browser would display it. */
 export function htmlToText(html: string): string {

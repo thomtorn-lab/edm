@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "./client";
-import { eventDescriptionTranslations, events } from "./schema";
+import { eventDescriptionTranslations, events, venues } from "./schema";
 import {
   DEFAULT_TRANSLATION_MODEL,
   descriptionHash,
@@ -37,7 +37,8 @@ import {
  * --mode=apply requires ANTHROPIC_API_KEY for non-English texts; without it,
  * clearly-English texts are still recorded and the rest are left pending
  * (exit code 0 — the event page keeps showing the original text).
- * DESCRIPTION_TRANSLATION_MODEL overrides the model (default claude-opus-5-5).
+ * DESCRIPTION_TRANSLATION_MODEL overrides the model (default: DEFAULT_TRANSLATION_MODEL).
+ * One fixed model per run, no automatic fallback to another model.
  */
 
 export const DEFAULT_RUN_LIMIT = 40;
@@ -56,6 +57,9 @@ async function loadRows(slug: string | null): Promise<TranslationWorkRow[]> {
     .select({
       eventId: events.id,
       slug: events.slug,
+      title: events.title,
+      artists: events.artists,
+      venueName: venues.name,
       description: events.description,
       startDatetime: events.startDatetime,
       endDatetime: events.endDatetime,
@@ -64,6 +68,7 @@ async function loadRows(slug: string | null): Promise<TranslationWorkRow[]> {
       attempts: eventDescriptionTranslations.attempts,
     })
     .from(events)
+    .innerJoin(venues, eq(venues.id, events.venueId))
     .leftJoin(eventDescriptionTranslations, eq(eventDescriptionTranslations.eventId, events.id))
     .where(
       and(
@@ -76,6 +81,7 @@ async function loadRows(slug: string | null): Promise<TranslationWorkRow[]> {
   return rows.map((r) => ({
     eventId: r.eventId,
     slug: r.slug,
+    context: { title: r.title, venueName: r.venueName, artists: r.artists },
     description: r.description as string,
     startDatetime: r.startDatetime.toISOString(),
     endDatetime: r.endDatetime ? r.endDatetime.toISOString() : null,
@@ -142,7 +148,7 @@ async function main(): Promise<void> {
       continue;
     }
     const result = client
-      ? await translateDescription(client, row.description, model)
+      ? await translateDescription(client, row.description, model, row.context)
       : ({ status: "english", sourceLanguage: "en" } as const);
     if (result.status === "failed") {
       counts.failed++;
