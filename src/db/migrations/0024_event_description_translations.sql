@@ -7,6 +7,8 @@ CREATE TABLE "event_description_translations" (
 	"model" text,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"last_error" text,
+	"review_reason" text,
+	"removed_duplicate_lines" integer DEFAULT 0 NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

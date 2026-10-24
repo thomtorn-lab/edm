@@ -1,5 +1,5 @@
 {
-  "id": "cd456c48-b85b-4091-bb25-424fe6dbfc04",
+  "id": "fc08d70d-5f8e-44f1-98a1-5623ea0df54d",
   "prevId": "d4f7a3c2-96ae-4700-a7ea-66bb323e0cbd",
   "version": "7",
   "dialect": "postgresql",
@@ -525,6 +525,19 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "review_reason": {
+          "name": "review_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_duplicate_lines": {
+          "name": "removed_duplicate_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "updated_at": {
           "name": "updated_at",

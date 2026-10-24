@@ -6,8 +6,10 @@ import { eventDescriptionTranslations, events, venues } from "./schema";
 import {
   DEFAULT_TRANSLATION_MODEL,
   descriptionHash,
+  estimateCostUsd,
   isClearlyEnglish,
   translateDescription,
+  type TranslationResult,
 } from "@/lib/translation/descriptionTranslation";
 import {
   nextAttemptCount,
@@ -36,7 +38,7 @@ import {
  * are pending and how many of those would need an API call.
  * --mode=apply requires ANTHROPIC_API_KEY for non-English texts; without it,
  * clearly-English texts are still recorded and the rest are left pending
- * (exit code 0 — the event page keeps showing the original text).
+ * (exit code 0 — non-English descriptions stay hidden on the public site).
  * DESCRIPTION_TRANSLATION_MODEL overrides the model (default: DEFAULT_TRANSLATION_MODEL).
  * One fixed model per run, no automatic fallback to another model.
  */
@@ -66,6 +68,7 @@ async function loadRows(slug: string | null): Promise<TranslationWorkRow[]> {
       sourceHash: eventDescriptionTranslations.sourceHash,
       status: eventDescriptionTranslations.status,
       attempts: eventDescriptionTranslations.attempts,
+      updatedAt: eventDescriptionTranslations.updatedAt,
     })
     .from(events)
     .innerJoin(venues, eq(venues.id, events.venueId))
@@ -85,7 +88,10 @@ async function loadRows(slug: string | null): Promise<TranslationWorkRow[]> {
     description: r.description as string,
     startDatetime: r.startDatetime.toISOString(),
     endDatetime: r.endDatetime ? r.endDatetime.toISOString() : null,
-    cached: r.sourceHash && r.status ? { sourceHash: r.sourceHash, status: r.status, attempts: r.attempts ?? 0 } : null,
+    cached:
+      r.sourceHash && r.status
+        ? { sourceHash: r.sourceHash, status: r.status, attempts: r.attempts ?? 0, updatedAt: r.updatedAt?.toISOString() ?? null }
+        : null,
   }));
 }
 
@@ -105,6 +111,8 @@ async function upsert(row: WriteRow): Promise<void> {
         model: row.model ?? null,
         attempts: row.attempts ?? 0,
         lastError: row.lastError ?? null,
+        reviewReason: row.reviewReason ?? null,
+        removedDuplicateLines: row.removedDuplicateLines ?? 0,
         updatedAt: new Date(),
       },
     });
@@ -137,19 +145,27 @@ async function main(): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : null;
   const model = process.env.DESCRIPTION_TRANSLATION_MODEL || DEFAULT_TRANSLATION_MODEL;
   if (!client) {
-    console.log("::notice::ANTHROPIC_API_KEY is not set — recording clearly-English descriptions only; others stay pending and keep showing their original text.");
+    console.log("::notice::ANTHROPIC_API_KEY is not set — recording clearly-English descriptions only; others stay pending (hidden on the public site until translated).");
   }
 
-  const counts = { english: 0, translated: 0, failed: 0, skipped: 0 };
+  const counts = { english: 0, translated: 0, failed: 0, skipped: 0, review: 0 };
+  let costUsd = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
   for (const row of batch) {
     const sourceHash = descriptionHash(row.description);
     if (!client && !isClearlyEnglish(row.description)) {
       counts.skipped++;
       continue;
     }
-    const result = client
+    const result: TranslationResult = client
       ? await translateDescription(client, row.description, model, row.context)
-      : ({ status: "english", sourceLanguage: "en" } as const);
+      : { status: "english", sourceLanguage: "en" };
+    if (result.usage) {
+      inputTokens += result.usage.inputTokens;
+      outputTokens += result.usage.outputTokens;
+      costUsd += estimateCostUsd(model, result.usage) ?? 0;
+    }
     if (result.status === "failed") {
       counts.failed++;
       console.log(`::warning::${row.slug}: translation failed — ${result.error}`);
@@ -173,11 +189,19 @@ async function main(): Promise<void> {
       model: result.status === "translated" ? model : null,
       attempts: nextAttemptCount(row, true),
       lastError: null,
+      reviewReason: result.status === "translated" ? result.reviewReason : null,
+      removedDuplicateLines: result.status === "translated" ? result.removedDuplicateLines : 0,
     });
-    console.log(`${row.slug}: ${result.status} (${result.sourceLanguage})`);
+    if (result.status === "translated" && result.reviewReason) {
+      counts.review++;
+      console.log(`::warning::${row.slug}: needs review — ${result.reviewReason}`);
+    }
+    const removed = result.status === "translated" && result.removedDuplicateLines ? `, ${result.removedDuplicateLines} repeated-language lines removed` : "";
+    console.log(`${row.slug}: ${result.status} (${result.sourceLanguage}${removed})`);
   }
   console.log(
-    `Done: ${counts.translated} translated, ${counts.english} already English, ${counts.failed} failed, ${counts.skipped} left pending (no API key).`,
+    `Done: ${counts.translated} translated (${counts.review} flagged for review), ${counts.english} already English, ${counts.failed} failed, ${counts.skipped} left pending (no API key). ` +
+      `API usage: ${inputTokens} input + ${outputTokens} output tokens ≈ $${costUsd.toFixed(4)} (${model}).`,
   );
 }
 

@@ -77,7 +77,7 @@ describe("translateDescription", () => {
   it("returns a validated translation, using one fixed model, structured output and NO automatic fallback", async () => {
     const en = "After many years on stage, DJ Aligator says goodbye with one last party in Store VEGA.\n\nTickets: 250 kr. More info at www.vega.dk";
     const client = stubClient(reply({ source_language: "da", already_english: false, translation: en }));
-    expect(await translateDescription(client, DANISH)).toEqual({ status: "translated", sourceLanguage: "da", text: en });
+    expect(await translateDescription(client, DANISH)).toMatchObject({ status: "translated", sourceLanguage: "da", text: en, removedDuplicateLines: 0, reviewReason: null });
     const params = client.calls[0] as Record<string, unknown>;
     expect(params.model).toBe(DEFAULT_TRANSLATION_MODEL);
     expect(params).not.toHaveProperty("fallbacks");
@@ -88,7 +88,7 @@ describe("translateDescription", () => {
 
   it("records the model's 'already English' verdict without storing a copy", async () => {
     const client = stubClient(reply({ source_language: "en", already_english: true, translation: "Techno all night" }));
-    expect(await translateDescription(client, "Techno all night")).toEqual({ status: "english", sourceLanguage: "en" });
+    expect(await translateDescription(client, "Techno all night")).toMatchObject({ status: "english", sourceLanguage: "en" });
   });
 
   it.each([
@@ -144,10 +144,12 @@ describe("translation work selection", () => {
     expect(needsTranslationWork(row({}))).toBe(true);
   });
 
-  it("retries a failure until the attempt cap, and starts counting afresh when the text changes", () => {
-    const failed = (attempts: number) => row({ cached: { sourceHash: descriptionHash(DANISH), status: "failed", attempts } });
-    expect(needsTranslationWork(failed(MAX_TRANSLATION_ATTEMPTS - 1))).toBe(true);
-    expect(needsTranslationWork(failed(MAX_TRANSLATION_ATTEMPTS))).toBe(false);
+  it("retries a failure on the next runs, then once a day — never gives up — and starts counting afresh when the text changes", () => {
+    const failed = (attempts: number, updatedAt = "2026-10-15T11:00:00.000Z") =>
+      row({ cached: { sourceHash: descriptionHash(DANISH), status: "failed", attempts, updatedAt } });
+    expect(needsTranslationWork(failed(MAX_TRANSLATION_ATTEMPTS - 1), now)).toBe(true);
+    expect(needsTranslationWork(failed(MAX_TRANSLATION_ATTEMPTS), now)).toBe(false); // failed an hour ago
+    expect(needsTranslationWork(failed(MAX_TRANSLATION_ATTEMPTS, "2026-10-14T11:00:00.000Z"), now)).toBe(true); // a day later
     expect(nextAttemptCount(failed(2), false)).toBe(3);
     expect(nextAttemptCount(row({ cached: { sourceHash: "old", status: "failed", attempts: 3 } }), false)).toBe(1);
   });

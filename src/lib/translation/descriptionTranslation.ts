@@ -13,8 +13,9 @@ import type Anthropic from "@anthropic-ai/sdk";
  *
  * Quality and cost stay controllable: one fixed model per run (no automatic
  * fallback to another model — a declined or failed request is simply
- * recorded as failed and the original text keeps being shown), and every
- * translation is checked by validateTranslation before it is stored.
+ * recorded as failed and retried later; the public site shows no About text
+ * until a valid English version exists), and every translation is checked
+ * by validateTranslation before it is stored.
  */
 
 /**
@@ -43,9 +44,11 @@ Rules:
 - Keep exactly as written: artist names, event titles, venue and room names, labels, organisers, genre names (such as techno, house, EBM, synthpop, electronica), URLs, email addresses, phone numbers, hashtags, prices and currencies (keep "kr." and "DKK" as written), ages, times and all numbers.
 - Dates: translate weekday and month names into English, keeping every day, month and year number unchanged (for example "søndag d. 13. september 2026" becomes "Sunday 13 September 2026").
 - Keep the line structure exactly: one output line for every input line, in the same order, with blank lines in the same places. Keep emojis and symbols (such as ☆, →, •) where they are.
-- If the description contains the same text in two languages, translate both versions; do not drop either.
+- If the description contains the same text in two languages, translate both versions in translation; do not drop either there.
 
-Return source_language as the ISO 639-1 code of the description's language, or codes joined with "+" when it mixes languages (for example "da+en"). Set already_english to true when the description is entirely in English, and then return it unchanged as translation.`;
+Return source_language as the ISO 639-1 code of the description's language, or codes joined with "+" when it mixes languages (for example "da+en"). Set already_english to true when the description is entirely in English, and then return it unchanged as translation.
+
+duplicate_lines: only for a description that gives the same text in two languages (for example a Danish version followed by an English one). List the 1-based numbers of the lines in your translation (counting every line, blank lines included) that you translated from the non-English version and that only repeat information the source's own English version already states, so the source's own English wording is kept. Also list lines that only point to the other language version, such as "(scroll down for English)". Never list a line that holds any detail — a name, date, time, price, link, place or fact — that no other line states. When in doubt, leave the line out of the list. Return an empty list for any other description.`;
 
 const OUTPUT_SCHEMA = {
   type: "object",
@@ -53,8 +56,9 @@ const OUTPUT_SCHEMA = {
     source_language: { type: "string" },
     already_english: { type: "boolean" },
     translation: { type: "string" },
+    duplicate_lines: { type: "array", items: { type: "integer" } },
   },
-  required: ["source_language", "already_english", "translation"],
+  required: ["source_language", "already_english", "translation", "duplicate_lines"],
   additionalProperties: false,
 } as const;
 
@@ -65,10 +69,35 @@ export type TranslationContext = {
   artists?: readonly string[];
 };
 
+/** Token usage of the API call, for cost logging (absent when no call was made). */
+export type TranslationUsage = { inputTokens: number; outputTokens: number };
+
 export type TranslationResult =
-  | { status: "english"; sourceLanguage: string }
-  | { status: "translated"; sourceLanguage: string; text: string }
-  | { status: "failed"; error: string };
+  | { status: "english"; sourceLanguage: string; usage?: TranslationUsage }
+  | {
+      status: "translated";
+      sourceLanguage: string;
+      text: string;
+      /** Repeated-language lines removed from the full translation (0 when none). */
+      removedDuplicateLines: number;
+      /** Set when a human should look at the result (e.g. duplicates that could not be removed safely). */
+      reviewReason: string | null;
+      usage?: TranslationUsage;
+    }
+  | { status: "failed"; error: string; usage?: TranslationUsage };
+
+/** USD per million tokens (input, output), for the models this job may run on (claude-api reference, 2026-10). */
+export const MODEL_PRICES_USD_PER_MTOK: Record<string, { input: number; output: number }> = {
+  "claude-sonnet-5-5": { input: 2, output: 10 },
+  "claude-opus-5-5": { input: 4, output: 20 },
+  "claude-haiku-5-5": { input: 0.1, output: 0.5 },
+};
+
+export function estimateCostUsd(model: string, usage: TranslationUsage | undefined): number | null {
+  const price = MODEL_PRICES_USD_PER_MTOK[model];
+  if (!price || !usage) return null;
+  return (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1_000_000;
+}
 
 const URL_IN_TEXT_RE = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi;
 const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
@@ -113,8 +142,8 @@ function containsTerm(text: string, term: string): boolean {
  * verbatim; every artist name, the event title and the venue name, and
  * every genre name the source states must survive; the line structure must
  * be (nearly) the same; and the length must be plausible for a translation
- * rather than a summary or an expansion. A failure means the original text
- * keeps being shown.
+ * rather than a summary or an expansion. A failure is recorded and retried;
+ * the public site shows no About text until a valid English version exists.
  */
 export function validateTranslation(source: string, translation: string, context: TranslationContext = {}): string | null {
   if (!translation.trim()) return "empty translation";
@@ -150,6 +179,74 @@ export function validateTranslation(source: string, translation: string, context
   return null;
 }
 
+// Lines that only point at another language version of the same text.
+const LANGUAGE_POINTER_RE =
+  /^\(?\s*(?:scroll down for (?:the )?english(?: version)?|see english (?:version )?below|english (?:version )?below|english(?: version)?|in english|dansk(?: version)?|på dansk|danish(?: version)?)\s*[-–:.)]*\s*\)?$/i;
+
+const STOPWORDS = new Set("this that with from have will your they them their there where when what which into over than then been were also only just more most very such some".split(" "));
+
+function contentWords(text: string): string[] {
+  return (text.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'’:-]*/gu) ?? []).filter((w) => w.length >= 4 && !STOPWORDS.has(w));
+}
+
+/** Capitalised words that do not start a sentence — names, places, titles. */
+function namedTokens(line: string): string[] {
+  const out: string[] = [];
+  const re = /(^|[.!?…]\s+|\s)([\p{Lu}][\p{L}\p{N}'’:-]+)/gu;
+  for (const m of line.matchAll(re)) {
+    const sentenceStart = m[1] === "" || /[.!?…]/.test(m[1]);
+    if (!sentenceStart) out.push(m[2]);
+  }
+  return out;
+}
+
+/**
+ * Removes repeated-language lines from a full translation only when that is
+ * certain to lose nothing (bilingual descriptions, 2026-10-24). A line is
+ * removed only if it is a pure language pointer ("(scroll down for
+ * English)"), or every number, URL, email, hashtag, capitalised name and
+ * genre name in it also appears in the remaining text AND at least 65% of
+ * its content words do. If any requested line fails, nothing is removed and
+ * the result is flagged for review instead — content is never lost to
+ * de-duplication.
+ */
+export function removeDuplicateLines(
+  translation: string,
+  duplicateLines: readonly number[],
+): { text: string; removed: number; reviewReason: string | null } {
+  const lines = translation.split("\n");
+  const requested = [...new Set(duplicateLines)].filter((n) => Number.isInteger(n) && n >= 1 && n <= lines.length && lines[n - 1].trim());
+  if (requested.length === 0) return { text: translation, removed: 0, reviewReason: null };
+  const removeSet = new Set(requested.map((n) => n - 1));
+  const kept = lines.filter((_, i) => !removeSet.has(i)).join("\n");
+  const keptWords = new Set(contentWords(kept));
+  for (const i of removeSet) {
+    const line = lines[i].trim();
+    if (LANGUAGE_POINTER_RE.test(line)) continue;
+    const facts = [
+      ...(line.match(URL_IN_TEXT_RE) ?? []),
+      ...(line.match(EMAIL_RE) ?? []),
+      ...(line.match(HASHTAG_RE) ?? []),
+      ...namedTokens(line),
+    ];
+    const missingFact = facts.find((f) => !kept.includes(f));
+    const keptNumbers = new Set(kept.match(NUMBER_RE) ?? []);
+    const missingNumber = (line.match(NUMBER_RE) ?? []).find((n) => !keptNumbers.has(n));
+    const missingGenre = GENRE_TERMS.find((t) => containsTerm(line, t) && !containsTerm(kept, t));
+    const words = contentWords(line);
+    const coverage = words.length === 0 ? 1 : words.filter((w) => keptWords.has(w)).length / words.length;
+    if (missingFact || missingNumber || missingGenre || coverage < 0.65) {
+      const why = missingFact ?? missingNumber ?? missingGenre ?? `only ${Math.round(coverage * 100)}% of its wording found elsewhere`;
+      return {
+        text: translation,
+        removed: 0,
+        reviewReason: `bilingual description not merged automatically: line ${i + 1} may hold unique information (${why})`,
+      };
+    }
+  }
+  return { text: kept.replace(/\n{3,}/g, "\n\n").trim(), removed: removeSet.size, reviewReason: null };
+}
+
 /** Minimal client surface used here, so tests can pass a stub. */
 export type TranslationClient = Pick<Anthropic, "messages">;
 
@@ -165,7 +262,7 @@ function eventContextBlock(context: TranslationContext): string {
 /**
  * Translates one description. Never throws: an API error, a refusal, a
  * truncated or unparsable response, or a failed validation all come back as
- * { status: "failed" }, and the caller keeps showing the original text.
+ * { status: "failed" }; the caller records it and retries on a later run.
  */
 export async function translateDescription(
   client: TranslationClient,
@@ -186,21 +283,37 @@ export async function translateDescription(
   } catch (err) {
     return { status: "failed", error: `API error: ${err instanceof Error ? err.message : String(err)}` };
   }
-  if (response.stop_reason === "refusal") return { status: "failed", error: "model declined the request" };
-  if (response.stop_reason === "max_tokens") return { status: "failed", error: "response truncated (max_tokens)" };
+  const usage: TranslationUsage = { inputTokens: response.usage?.input_tokens ?? 0, outputTokens: response.usage?.output_tokens ?? 0 };
+  if (response.stop_reason === "refusal") return { status: "failed", error: "model declined the request", usage };
+  if (response.stop_reason === "max_tokens") return { status: "failed", error: "response truncated (max_tokens)", usage };
   const json = response.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text;
-  if (!json) return { status: "failed", error: "no text in response" };
-  let parsed: { source_language?: unknown; already_english?: unknown; translation?: unknown };
+  if (!json) return { status: "failed", error: "no text in response", usage };
+  let parsed: { source_language?: unknown; already_english?: unknown; translation?: unknown; duplicate_lines?: unknown };
   try {
     parsed = JSON.parse(json);
   } catch {
-    return { status: "failed", error: "response was not valid JSON" };
+    return { status: "failed", error: "response was not valid JSON", usage };
   }
   const sourceLanguage = typeof parsed.source_language === "string" ? parsed.source_language.slice(0, 20) : "unknown";
-  if (parsed.already_english === true) return { status: "english", sourceLanguage };
-  if (typeof parsed.translation !== "string") return { status: "failed", error: "response had no translation" };
+  if (parsed.already_english === true) return { status: "english", sourceLanguage, usage };
+  if (typeof parsed.translation !== "string") return { status: "failed", error: "response had no translation", usage };
+  // The full translation (every line, both language versions) is validated
+  // strictly first; only then may repeated-language lines be removed.
   const translation = parsed.translation.replace(/\r\n?/g, "\n").trim();
   const problem = validateTranslation(text, translation, context);
-  if (problem) return { status: "failed", error: problem };
-  return { status: "translated", sourceLanguage, text: translation };
+  if (problem) return { status: "failed", error: problem, usage };
+  const duplicates = Array.isArray(parsed.duplicate_lines) ? parsed.duplicate_lines.filter((n): n is number => typeof n === "number") : [];
+  const merged = removeDuplicateLines(translation, duplicates);
+  const looksBilingual = sourceLanguage.includes("+") && text.split("\n").some((l) => LANGUAGE_POINTER_RE.test(l.trim()) || /\benglish\s*[-–:]\s*$/i.test(l.trim()));
+  if (merged.removed === 0 && !merged.reviewReason && looksBilingual) {
+    merged.reviewReason = "bilingual description: both language versions kept (no repeated lines could be removed safely)";
+  }
+  return {
+    status: "translated",
+    sourceLanguage,
+    text: merged.text,
+    removedDuplicateLines: merged.removed,
+    reviewReason: merged.reviewReason,
+    usage,
+  };
 }

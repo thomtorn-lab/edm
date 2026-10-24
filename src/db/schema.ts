@@ -713,8 +713,9 @@ export const newsletterSends = pgTable(
  *
  * `status`: "english" — already English, nothing to translate (shown as
  * is); "translated" — `translatedText` holds the English version; "failed"
- * — the last attempt failed validation or errored (`attempts` caps retries;
- * the original text keeps being shown).
+ * — the last attempt failed validation or errored (retried on the next
+ * runs, then daily — see translationWork.ts; the public site shows no About
+ * text for a non-English description until it has a valid English version).
  */
 export const eventDescriptionTranslations = pgTable("event_description_translations", {
   eventId: text("event_id")
@@ -728,5 +729,14 @@ export const eventDescriptionTranslations = pgTable("event_description_translati
   model: text("model"),
   attempts: integer("attempts").notNull().default(0),
   lastError: text("last_error"),
+  /**
+   * Set when a person should look at this result (bilingual description,
+   * 2026-10-24): e.g. a text given in two languages whose repeated version
+   * could not be removed without risking unique information — the full
+   * translation is kept and shown. Null = nothing to review.
+   */
+  reviewReason: text("review_reason"),
+  /** Repeated-language lines removed from the full translation (0 = none). */
+  removedDuplicateLines: integer("removed_duplicate_lines").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
