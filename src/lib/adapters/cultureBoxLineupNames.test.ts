@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 import { extractLineupNames, isAcceptablePlainName } from "./cultureBoxLineupNames";
 import { parseCultureBoxEventsHtml } from "./cultureBoxAdapter";
 import { decodeHtmlEntities } from "./htmlExtraction";
+import { runIngestionPipeline } from "./pipeline";
+import { VENUES } from "../data/venues";
+import { buildSyncPatch, type SyncTargetEvent } from "../sync";
+import { stripLockedSyncFields } from "../override";
 
 const a = (name: string) => `<a href="https://soundcloud.com/${name.toLowerCase().replace(/\W+/g, "-")}">${name}</a>`;
 const p = (...lines: string[]) => lines.join("<br />\n");
@@ -105,7 +109,12 @@ describe("extractLineupNames — never invents artists (identified false positiv
           "A VERY LONG ANNOUNCEMENT NAME OVER LIMIT",
           "1234",
           "HARD TECHNO",
-          "DISCO DAN",
+          "ALL NIGHT LONG",
+          "SOLD OUT",
+          "FREE ENTRY",
+          "ARTO LIVE",
+          "LIVE",
+          "DJ SET",
           a("KEPT"),
         ),
       ),
@@ -195,8 +204,92 @@ describe("unlinked duos and collabs are never split into invented artists", () =
   });
 });
 
-describe("genre words", () => {
-  it("an unlinked token with a genre keyword is left out; a linked one is kept as before", () => {
-    expect(extractLineupNames(p("HOUSE OF X", "TECHNO", a("PAB DISCO")))).toEqual(["PAB DISCO"]);
+describe("genre words: never a showcase or a bare genre, but real names that contain one are kept", () => {
+  it("a token made only of genre keywords is never a name, anywhere", () => {
+    expect(extractLineupNames(p(a("ANA"), "TECHNO", "HARD TECHNO", "DEEP HOUSE", "D&amp;B", a("PAB DISCO")))).toEqual(["ANA", "PAB DISCO"]);
+  });
+
+  it("a name containing a genre word is kept in a lineup slot (unlinked PAB DISCO, DISCO DAN, HOUSE OF GLASS)", () => {
+    expect(extractLineupNames(p(a("ANA"), "PAB DISCO", `DISCO DAN B2B ${a("RÓS")}`, "HOUSE OF GLASS"))).toEqual(["ANA", "PAB DISCO", "DISCO DAN", "RÓS", "HOUSE OF GLASS"]);
+    // a trailing "X" without a link after it is the dangling-connector case (MALCOLM X), not the genre rule
+    expect(extractLineupNames(p(a("ANA"), "HOUSE OF X"))).toEqual(["ANA"]);
+  });
+
+  it("on the room's first line (where an unmarked showcase sits) a genre-bearing token is left out", () => {
+    expect(extractLineupNames(p("TECHNO TUESDAY", a("ANA")))).toEqual(["ANA"]);
+    expect(extractLineupNames(p("HOUSE OF GLASS", a("ANA")))).toEqual(["ANA"]);
+    // the first lineup line right after a <strong> showcase counts as the first line too (conservative)
+    expect(extractLineupNames(p("<strong>THE GATHERING</strong>", "DISCO DAN", a("ANA")))).toEqual(["ANA"]);
+    // a first-line name without a genre word is unaffected (16 Oct SHK)
+    expect(extractLineupNames(p("<strong>THE GATHERING</strong>", "SHK", a("ANA")))).toEqual(["SHK", "ANA"]);
+  });
+
+  it("trailing format/party words: TECHNO NIGHT, CLUB NIGHT, X PARTY are not names", () => {
+    expect(extractLineupNames(p(a("ANA"), "TECHNO NIGHT", "CLUB NIGHT", "BOX PARTY"))).toEqual(["ANA"]);
+  });
+});
+
+describe("real names with words that also appear in announcements are not lost", () => {
+  it("NIGHT SHIFT, OPEN MIND, FREE RADICAL, ALL CAPS, MORE OR LESS are kept", () => {
+    expect(extractLineupNames(p(a("ANA"), "NIGHT SHIFT", "OPEN MIND", "FREE RADICAL", "ALL CAPS", "MORE OR LESS"))).toEqual([
+      "ANA",
+      "NIGHT SHIFT",
+      "OPEN MIND",
+      "FREE RADICAL",
+      "ALL CAPS",
+      "MORE OR LESS",
+    ]);
+  });
+});
+
+describe("downstream: stored lineup and admin overrides", () => {
+  const html = readFileSync(path.join(__dirname, "__fixtures__", "culture-box-events-2026-10-13.html"), "utf-8");
+  const article = html.match(/<article class="post-block[^"]*">(?:(?!<\/article>)[\s\S])*?CHICH[\s\S]*?<\/article>/)![0];
+  const pipeline = (raw: ReturnType<typeof parseCultureBoxEventsHtml>[number]) =>
+    runIngestionPipeline({ ...raw }, { venues: VENUES, existingEvents: [], trustedElectronicSource: true });
+
+  it("an artist linked in one room and unlinked in the other is stored once (dedupeArtistList)", () => {
+    const both = article.replace(/(<a [^>]*>REXXX M<\/a>)/, '$1<br /> <a href="https://soundcloud.com/shk">Shk</a>');
+    const [night] = parseCultureBoxEventsHtml(`<html><body>${both}</body></html>`);
+    expect(night.artists.filter((n) => n.toUpperCase() === "SHK")).toHaveLength(2);
+    expect(pipeline(night).normalizedArtists).toEqual(["CHICH", "KALLAX", "REXXX M", "Shk", "GEORGEBOX", "GEORGEOUS", "DANI PANDA"]);
+  });
+
+  it("16 Oct in Production (title/artists/description admin-protected): the new names never reach the stored row", () => {
+    const [night] = parseCultureBoxEventsHtml(`<html><body>${article}</body></html>`);
+    const result = pipeline(night);
+    const existing: SyncTargetEvent = {
+      id: "e-8a410de7",
+      title: "CHICH, KALLAX, REXXX M, THE GATHERING",
+      description: "admin-edited text",
+      artists: ["SHK", "GEORGEBOX", "GEORGEOUS", "DANI PANDA", "ALX"],
+      venueId: result.resolvedVenueId,
+      subVenue: result.resolvedSubVenue ?? null,
+      startDatetime: new Date(night.startDatetime as string | Date).toISOString(),
+      endDatetime: night.endDatetime ? new Date(night.endDatetime as string | Date).toISOString() : null,
+      officialEventUrl: night.officialEventUrl,
+      ticketUrl: night.ticketUrl,
+      facebookUrl: night.facebookUrl,
+      residentAdvisorUrl: night.residentAdvisorUrl,
+      imageUrl: night.imageUrl,
+      primaryGenre: result.genre,
+      canonicalSourceId: "src-culture-box",
+      overriddenFields: ["title", "artists", "description"],
+      soldOut: false,
+      cancelled: false,
+      postponed: false,
+    };
+    const { patch } = buildSyncPatch(
+      night,
+      { resolvedVenueId: result.resolvedVenueId, resolvedSubVenue: result.resolvedSubVenue, normalizedArtists: result.normalizedArtists, genre: result.genre, genreConfidence: result.genreConfidence },
+      existing,
+    );
+    // The adapter now proposes the corrected lineup ...
+    expect(patch.artists).toEqual(["CHICH", "KALLAX", "REXXX M", "SHK", "GEORGEBOX", "GEORGEOUS", "DANI PANDA"]);
+    // ... and the override strip that applySourceSyncPatch applies before writing removes every protected field.
+    const { safePatch } = stripLockedSyncFields(patch, existing.overriddenFields);
+    expect(safePatch).not.toHaveProperty("artists");
+    expect(safePatch).not.toHaveProperty("title");
+    expect(safePatch).not.toHaveProperty("description");
   });
 });

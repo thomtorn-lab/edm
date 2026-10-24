@@ -127,10 +127,9 @@ export function maskLineupNamesWithGenreKeywords(text: string, lineupNames: read
   return masked;
 }
 
-/** A name containing a genre keyword plus at least one other letter-bearing word ("PAB DISCO" yes, "Deep House" no). */
-function isNameWithGenreKeyword(name: string): boolean {
-  const cleaned = lightlyCleanText(name);
-  let rest = cleaned;
+/** Whether `name` has a genre keyword, and whether any letter-bearing text remains once every genre keyword is removed. */
+function genreKeywordShape(name: string): { hasGenreKeyword: boolean; hasOtherWords: boolean } {
+  let rest = lightlyCleanText(name);
   let found = false;
   for (const [pattern] of KEYWORD_MAP) {
     const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
@@ -139,7 +138,19 @@ function isNameWithGenreKeyword(name: string): boolean {
       rest = rest.replace(new RegExp(pattern.source, global.flags), " ");
     }
   }
-  return found && /\p{L}/u.test(rest);
+  return { hasGenreKeyword: found, hasOtherWords: /\p{L}/u.test(rest) };
+}
+
+/** A name containing a genre keyword plus at least one other letter-bearing word ("PAB DISCO" yes, "Deep House" no). */
+export function isNameWithGenreKeyword(name: string): boolean {
+  const { hasGenreKeyword, hasOtherWords } = genreKeywordShape(name);
+  return hasGenreKeyword && hasOtherWords;
+}
+
+/** Text made only of genre keywords ("TECHNO", "Deep House", "HARD TECHNO"): never an artist name. */
+export function isGenrePhraseOnly(text: string): boolean {
+  const { hasGenreKeyword, hasOtherWords } = genreKeywordShape(text);
+  return hasGenreKeyword && !hasOtherWords;
 }
 
 export function deterministicGenreFromText(text: string): GenreSlug | null {

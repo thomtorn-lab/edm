@@ -1,5 +1,5 @@
 import { decodeHtmlEntities } from "./htmlExtraction";
-import { deterministicGenreFromText } from "./deterministicGenreMapping";
+import { isGenrePhraseOnly, isNameWithGenreKeyword } from "./deterministicGenreMapping";
 
 /**
  * Lineup names of one Culture Box room paragraph (2026-10-14): every linked
@@ -28,11 +28,18 @@ import { deterministicGenreFromText } from "./deterministicGenreMapping";
  *     "&" or "x" there may be one duo/collab act or two artists, so the
  *     segment is dropped.
  *   - A plain token is accepted only if it is written in capitals like the
- *     venue's names, has a letter, is at most 30 characters and 3 words, has
- *     no ":", ",", ";" or "/", has none of the words that mark
- *     non-artist text (TBA, GUESTS, LINEUP, DOORS…), and has no genre
- *     keyword (likely a showcase; it would also be masked from genre
- *     matching, see RawCandidateEvent.lineupNamesAreStructured).
+ *     venue's names, has a letter, is at most 30 characters and 3 words, and
+ *     has no ":", ",", ";" or "/". It is not an announcement: none of the
+ *     words TBA, GUESTS, LINEUP, DOORS…, not a whole announcement phrase
+ *     ("ALL NIGHT LONG", "SOLD OUT"), and not ending in LIVE/SET/NIGHT/PARTY.
+ *     Words such as NIGHT or OPEN alone don't disqualify a name
+ *     ("NIGHT SHIFT").
+ *   - Genre words: a token made only of genre keywords ("TECHNO", "HARD
+ *     TECHNO") is never a name. A name that contains one ("PAB DISCO") is
+ *     kept in a lineup slot, where the pipeline masks it from genre matching
+ *     exactly like the same linked name (RawCandidateEvent.lineupNamesAreStructured).
+ *     On the room's first line, where an unmarked showcase would sit
+ *     ("TECHNO TUESDAY"), it is left out.
  */
 
 const CONNECTOR = String.raw`(?:B2B|&|x|X|vs\.?|VS\.?)`;
@@ -41,16 +48,19 @@ const AMBIGUOUS_JOIN = /\s(?:&|x|X)\s/;
 const LEADING_CONNECTOR = new RegExp(String.raw`^${CONNECTOR}(?:\s+|$)`);
 const TRAILING_CONNECTOR = new RegExp(String.raw`(?:^|\s+)${CONNECTOR}$`);
 
-/** Words that mark announcement/prose text rather than an artist name. */
+/** Words that never occur in an artist name here: announcement/prose text, or a join ("AND", "WITH") that may hide two acts. */
 const NON_ARTIST_WORDS = new Set([
-  "TBA", "TBC", "TBD", "MORE", "GUEST", "GUESTS", "SPECIAL", "LINEUP", "LINE-UP", "DOORS", "OPEN", "TICKETS",
-  "PRESENTS", "PRESENT", "FREE", "ENTRY", "SOLD", "OUT", "SET", "SETS", "HOSTED", "BY", "FEAT", "FEAT.", "FT", "FT.",
-  "AND", "WITH", "PLUS", "SUPPORT", "ALL", "NIGHT", "LONG", "LIVE", "AKA",
+  "TBA", "TBC", "TBD", "GUEST", "GUESTS", "LINEUP", "LINE-UP", "DOORS", "TICKETS", "PRESENTS",
+  "HOSTED", "BY", "FEAT", "FEAT.", "FT", "FT.", "AND", "WITH", "PLUS", "SUPPORT", "AKA",
 ]);
+/** Whole-token announcement phrases made of words that do occur in real names. */
+const NON_ARTIST_PHRASES = new Set(["MORE", "ALL NIGHT LONG", "SOLD OUT", "FREE ENTRY", "OPEN AIR", "SPECIAL"]);
+/** A trailing word that makes the token a performance format or a party ("ARTO LIVE", "TECHNO NIGHT"). */
+const NON_ARTIST_LAST_WORDS = new Set(["LIVE", "SET", "SETS", "NIGHT", "PARTY"]);
 
 const textOf = (html: string) => decodeHtmlEntities(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 
-export function isAcceptablePlainName(token: string): boolean {
+export function isAcceptablePlainName(token: string, { firstLine = false }: { firstLine?: boolean } = {}): boolean {
   if (!token || token.length > 30) return false;
   if (!/\p{L}/u.test(token)) return false;
   if (token !== token.toUpperCase()) return false;
@@ -58,14 +68,14 @@ export function isAcceptablePlainName(token: string): boolean {
   const words = token.split(" ");
   if (words.length > 3) return false;
   if (words.some((w) => NON_ARTIST_WORDS.has(w))) return false;
-  // A genre word ("TECHNO", "HARD TECHNO NIGHT") is more likely a showcase
-  // than an artist, and the pipeline would mask it from genre matching
-  // (lineupNamesAreStructured), so an unlinked one is left out.
-  return deterministicGenreFromText(token) === null;
+  if (NON_ARTIST_PHRASES.has(token) || NON_ARTIST_LAST_WORDS.has(words[words.length - 1])) return false;
+  if (isGenrePhraseOnly(token)) return false;
+  if (firstLine && isNameWithGenreKeyword(token)) return false;
+  return true;
 }
 
 /** Plain names in one text segment between links; [] when anything about it is doubtful. */
-function plainNames(segment: string, linkBefore: boolean, linkAfter: boolean): string[] {
+function plainNames(segment: string, linkBefore: boolean, linkAfter: boolean, firstLine: boolean): string[] {
   let text = segment.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
   if (!text) return [];
   if (LEADING_CONNECTOR.test(text)) {
@@ -83,7 +93,7 @@ function plainNames(segment: string, linkBefore: boolean, linkAfter: boolean): s
   if (AMBIGUOUS_JOIN.test(text)) return [];
   const tokens = text.split(CONNECTOR_SPLIT).map((t) => t.trim());
   // All or nothing: one doubtful token makes the whole segment doubtful.
-  return tokens.every(isAcceptablePlainName) ? tokens : [];
+  return tokens.every((t) => isAcceptablePlainName(t, { firstLine })) ? tokens : [];
 }
 
 export function extractLineupNames(pHtml: string): string[] {
@@ -97,7 +107,7 @@ export function extractLineupNames(pHtml: string): string[] {
     if (index === 0 && anchors.length === 0 && plainText.endsWith(":")) return; // showcase/collective
     const readPlain = !/[[\]]|\baka\b/i.test(plainText);
     segments.forEach((segment, i) => {
-      if (readPlain) names.push(...plainNames(textOf(segment), i > 0, i < anchors.length));
+      if (readPlain) names.push(...plainNames(textOf(segment), i > 0, i < anchors.length, index === 0));
       if (i < anchors.length) {
         const linked = decodeHtmlEntities(anchors[i][1]).trim();
         if (linked) names.push(linked);
