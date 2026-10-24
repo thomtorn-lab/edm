@@ -96,7 +96,11 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   // or null — see withPublicDescriptions in src/lib/queries.ts); it is used
   // for the About section, JSON-LD and calendar exports alike.
   const description = event.description;
-  const jsonLd = buildEventJsonLd({ ...event, title, description }, canonicalUrl);
+  // Practical-only text (cloakroom, access, contact — src/lib/aboutContent.ts)
+  // is shown under its own label and kept out of the structured-data
+  // description, which should describe the event itself.
+  const practicalOnly = event.aboutKind === "practical";
+  const jsonLd = buildEventJsonLd({ ...event, title, description: practicalOnly ? null : description }, canonicalUrl);
 
   const calendarInput = {
     title,
@@ -292,7 +296,9 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
       {description && (
         <div className="mt-8">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+            {practicalOnly ? "Practical information" : "About"}
+          </h2>
           {/* Structured, link-safe rendering of the stored text — see
               src/components/EventDescription.tsx. Artist names and the title
               are passed only as hints for recognising headings. */}

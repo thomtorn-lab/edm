@@ -22,12 +22,19 @@ import {
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
 import { publicDescriptionFor, type CachedTranslation } from "./translation/englishDescription";
+import { classifyAboutText, type AboutKind } from "./aboutContent";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 import type { EventChangeEntry } from "./dataQuality";
 
 export interface EventWithVenue extends EventRecord {
   venue: Venue;
+  /**
+   * Set by the public queries (withPublicDescriptions): whether the About
+   * text is about the event or only practical venue information — see
+   * src/lib/aboutContent.ts. Classified from the ORIGINAL stored text.
+   */
+  aboutKind?: AboutKind | null;
 }
 
 /**
@@ -146,7 +153,13 @@ async function withPublicDescriptions(list: EventWithVenue[]): Promise<EventWith
       console.error("[queries] description translation lookup failed:", err instanceof Error ? err.message : String(err));
     }
   }
-  return list.map((e) => ({ ...e, description: publicDescriptionFor(e.description, cached.get(e.id) ?? null) }));
+  return list.map((e) => {
+    // Classified from the original text (the practical-vocabulary rule is
+    // Danish + English); "empty" (bare labels only) shows nothing.
+    const aboutKind = classifyAboutText(e.description);
+    const description = aboutKind === "empty" ? null : publicDescriptionFor(e.description, cached.get(e.id) ?? null);
+    return { ...e, description, aboutKind: description ? aboutKind : null };
+  });
 }
 
 /**

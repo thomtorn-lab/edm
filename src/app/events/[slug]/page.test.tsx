@@ -499,6 +499,22 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.queryByText("About")).toBeNull();
   });
 
+  it("labels a practical-only text 'Practical information' and keeps it out of the JSON-LD description", async () => {
+    const text = "In Store and Lille VEGA the cloakroom must always be used for safety reasons. A cloakroom fee is charged.";
+    await renderPage(makeEvent({ description: text, aboutKind: "practical" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Practical information" })).toBeTruthy();
+    expect(screen.queryByText("About")).toBeNull();
+    expect(screen.getByText(text)).toBeTruthy();
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBeUndefined();
+  });
+
+  it("puts the public (English) About text in the JSON-LD description", async () => {
+    await renderPage(makeEvent({ description: "A real English description of the night.", aboutKind: "about" }));
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBe("A real English description of the night.");
+  });
+
   it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {
     await renderPage(
       makeEvent({

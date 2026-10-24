@@ -77,6 +77,16 @@ describe("public event queries: English-only descriptions", () => {
     expect((await getEventBySlugWithVenue("e"))?.description).toBeNull();
   });
 
+  it("bare labels with no value are not shown; practical-only text is shown and marked as such", async () => {
+    const practical = "Doors open at 20:00. Cloakroom is mandatory, tickets at the door, age limit 18+ and contact info@vega.dk.";
+    queue = [[eventRow("empty", "Praktisk info:.\n\nEntré"), eventRow("practical", practical)], [VENUE_ROW], []];
+    const events = await getPublishedEventsWithVenue();
+    expect(events.map((e) => [e.id, e.description, e.aboutKind])).toEqual([
+      ["empty", null, null],
+      ["practical", practical, "practical"],
+    ]);
+  });
+
   it("venue page list gets the same treatment", async () => {
     queue = [[eventRow("e", DA)], [VENUE_ROW], []];
     expect((await getEventsForVenue("v1"))[0].description).toBeNull();
