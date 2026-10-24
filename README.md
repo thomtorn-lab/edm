@@ -21,6 +21,15 @@ npm run db:verify-sync             # end-to-end proof: live-fetches Hangaren + e
 npm run db:verify-bootstrap          # end-to-end proof: empty DB -> migrate -> production bootstrap -> real sync
 ```
 
+`dev`, `db:migrate`, `db:studio`, `db:seed:dev`, `db:verify-sync` and `db:verify-bootstrap` first
+check that `DATABASE_URL` is a local test database (localhost / 127.0.0.1 / ::1 / a Unix socket) and
+refuse a hosted one (`src/db/localDatabaseGuard.ts`). An exported `DATABASE_URL` wins over
+`.env.local`, so a shell that still carries a hosted connection string is stopped instead of
+reaching it. To run one of them against a hosted database on purpose, set
+`ALLOW_HOSTED_DATABASE=<that command>` (e.g. `ALLOW_HOSTED_DATABASE=db:migrate`, which the "Prepare
+Production Database" workflow sets); `db:seed:dev` never runs against a hosted database. `npm run
+build` is not guarded — the Vercel Production build applies migrations itself (`src/db/migrateOnDeploy.ts`).
+
 ## Current phase
 
 Phase 1 (visual/product proof), Phase 2 (taxonomy, venue registry, dedup/normalization, source

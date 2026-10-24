@@ -1,0 +1,151 @@
+import { spawnSync } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { GUARDED_COMMANDS, checkLocalDatabase, classifyDatabaseUrl } from "./localDatabaseGuard";
+
+/**
+ * Local-only guard for developer database commands (2026-10-24): local test
+ * databases pass, hosted ones are refused unless explicitly named, the dev
+ * seed is never allowed against a hosted database, and the Production paths
+ * (Vercel build migrations, the Prepare Production Database workflow) keep
+ * working.
+ */
+
+const ROOT = join(__dirname, "../..");
+const LOCAL = "postgres://edm_app:pw@127.0.0.1:5432/edm_dev";
+const HOSTED = "postgresql://postgres.abc:secret@aws-1-eu-west-3.pooler.supabase.com:6543/postgres";
+
+describe("classifyDatabaseUrl", () => {
+  it.each([
+    "postgres://u:p@localhost:5432/db",
+    "postgres://u:p@127.0.0.1/db",
+    "postgres://u:p@127.0.1.1/db",
+    "postgres://u:p@[::1]:5432/db",
+    "postgresql://u:p@db.localhost/db",
+    "postgres://u@/db?host=/var/run/postgresql",
+    "postgres://u@localhost/db?host=/tmp",
+  ])("local: %s", (url) => {
+    expect(classifyDatabaseUrl(url).kind).toBe("local");
+  });
+
+  it.each([
+    HOSTED,
+    "postgres://u:p@db.example.com/db",
+    "postgres://u:p@10.0.0.5/db",
+    "postgres://u:localhost@db.example.com/db", // "localhost" as the password
+    "postgres://u:p@db.example.com/localhost", // ... as the database name
+    "postgres://u:p@db.example.com/db?application_name=127.0.0.1",
+    "postgres://u:p@localhost/db?host=db.example.com", // the host param wins over the authority
+    "postgres://u:p@localhost.example.com/db",
+    "postgres://u:p@127.0.0.1.nip.io/db",
+  ])("hosted: %s", (url) => {
+    expect(classifyDatabaseUrl(url).kind).toBe("hosted");
+  });
+
+  it.each([undefined, "", "   ", "postgres://u@/db", "not a url", "mysql://u:p@localhost/db", "https://localhost/db"])("invalid: %s", (url) => {
+    expect(classifyDatabaseUrl(url).kind).toBe("invalid");
+  });
+
+  it("never echoes credentials, only the host", () => {
+    expect(classifyDatabaseUrl(HOSTED).host).toBe("aws-1-eu-west-3.pooler.supabase.com");
+    for (const command of GUARDED_COMMANDS) {
+      expect(checkLocalDatabase(command, { DATABASE_URL: HOSTED }).message).not.toContain("secret");
+    }
+  });
+});
+
+describe("checkLocalDatabase", () => {
+  it.each(GUARDED_COMMANDS)("%s: a local test database is accepted", (command) => {
+    expect(checkLocalDatabase(command, { DATABASE_URL: LOCAL }).ok).toBe(true);
+  });
+
+  it.each(GUARDED_COMMANDS)("%s: a hosted database is refused by default", (command) => {
+    const r = checkLocalDatabase(command, { DATABASE_URL: HOSTED });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain("aws-1-eu-west-3.pooler.supabase.com");
+  });
+
+  it.each(GUARDED_COMMANDS)("%s: a missing or malformed DATABASE_URL is refused", (command) => {
+    expect(checkLocalDatabase(command, {}).ok).toBe(false);
+    expect(checkLocalDatabase(command, { DATABASE_URL: "nonsense" }).ok).toBe(false);
+  });
+
+  it("the opt-in must name the exact command — a generic or another command's opt-in is not enough", () => {
+    expect(checkLocalDatabase("db:migrate", { DATABASE_URL: HOSTED, ALLOW_HOSTED_DATABASE: "db:migrate" }).ok).toBe(true);
+    expect(checkLocalDatabase("db:migrate", { DATABASE_URL: HOSTED, ALLOW_HOSTED_DATABASE: "1" }).ok).toBe(false);
+    expect(checkLocalDatabase("db:migrate", { DATABASE_URL: HOSTED, ALLOW_HOSTED_DATABASE: "true" }).ok).toBe(false);
+    expect(checkLocalDatabase("db:studio", { DATABASE_URL: HOSTED, ALLOW_HOSTED_DATABASE: "db:migrate" }).ok).toBe(false);
+  });
+
+  it("db:seed:dev is refused against a hosted database even with the opt-in", () => {
+    expect(checkLocalDatabase("db:seed:dev", { DATABASE_URL: HOSTED, ALLOW_HOSTED_DATABASE: "db:seed:dev" }).ok).toBe(false);
+  });
+});
+
+describe("the CLI stops the npm script before the command runs", () => {
+  const run = (command: string, env: Record<string, string>) =>
+    spawnSync(process.execPath, ["--import", "tsx", "src/db/localDatabaseGuard.ts", command], {
+      cwd: ROOT,
+      env: { ...process.env, DATABASE_URL: undefined, ALLOW_HOSTED_DATABASE: undefined, ...env },
+      encoding: "utf8",
+    });
+
+  it("exits 0 for a local database", () => {
+    const r = run("db:migrate", { DATABASE_URL: LOCAL });
+    expect(r.status).toBe(0);
+  });
+
+  it("exits 1 for a hosted database, without printing the password", () => {
+    const r = run("db:seed:dev", { DATABASE_URL: HOSTED });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing");
+    expect(r.stderr + r.stdout).not.toContain("secret");
+  });
+
+  it("exits non-zero for an unknown command", () => {
+    expect(run("db:nope", { DATABASE_URL: LOCAL }).status).toBe(2);
+  });
+});
+
+describe("wiring", () => {
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { scripts: Record<string, string> };
+
+  it.each(GUARDED_COMMANDS)("npm run %s runs the guard first, for that same command, and stops on failure (&&)", (command) => {
+    expect(pkg.scripts[command]).toMatch(new RegExp(`^node --env-file(-if-exists)?=\\.env\\.local --import tsx src/db/localDatabaseGuard\\.ts ${command} && `));
+  });
+
+  it("the guard reads .env.local the same way as the command it protects", () => {
+    for (const command of GUARDED_COMMANDS.filter((c) => c !== "dev")) {
+      const [guard, rest] = pkg.scripts[command].split(" && ");
+      expect(guard.startsWith("node --env-file=.env.local ")).toBe(true);
+      expect(rest.startsWith("node --env-file=.env.local ")).toBe(true);
+    }
+  });
+
+  it("the Production build is not guarded (Vercel applies migrations in migrateOnDeploy)", () => {
+    expect(pkg.scripts.build).toBe("node --import tsx src/db/migrateOnDeploy.ts && next build");
+    expect(readFileSync(join(ROOT, "src/db/migrateOnDeploy.ts"), "utf8")).not.toContain("localDatabaseGuard");
+  });
+
+  it("Prepare Production Database explicitly allows db:migrate on its migrate step, and nothing else", () => {
+    const wf = readFileSync(join(ROOT, ".github/workflows/prepare-production-db.yml"), "utf8");
+    expect(wf).toMatch(/- name: Apply database migrations\n(?:\s+#.*\n)*\s+env:\n\s+ALLOW_HOSTED_DATABASE: db:migrate\n\s+run: npm run db:migrate\n/);
+    expect(wf.match(/ALLOW_HOSTED_DATABASE/g)).toHaveLength(1);
+  });
+
+  it("no workflow runs a guarded command other than that migrate step", () => {
+    const dir = join(ROOT, ".github/workflows");
+    for (const name of readdirSync(dir)) {
+      const wf = readFileSync(join(dir, name), "utf8")
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("#"))
+        .join("\n");
+      for (const command of GUARDED_COMMANDS) {
+        const runs = wf.match(new RegExp(`npm run ${command.replace(":", "\\:")}(?![\\w:-])`, "g")) ?? [];
+        if (name === "prepare-production-db.yml" && command === "db:migrate") continue;
+        expect(runs, `${name} runs npm run ${command}`).toHaveLength(0);
+      }
+    }
+  });
+});
