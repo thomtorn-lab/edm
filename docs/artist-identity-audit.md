@@ -10,13 +10,19 @@ subscriber or newsletter data.
 - CLI: `src/db/artistIdentityAuditCli.ts`.
 - Run: `inspect-source.yml` with mode `artist-identity-audit`. The JSON report
   is uploaded as the `artist-identity-audit` artifact and kept for 14 days.
+  Mode `artist-identity-audit-check` only proves the connection and role and
+  reads no data row.
 
 ## Connection safety
 
 The mode never receives `DATABASE_URL`. It reads only the secret
-`DATABASE_URL_REPORT_RO`, the dedicated reporting role set up for the YouTube
-risk report (#141). It uses the same guard, `src/db/reportReadOnlyGuard.ts`,
-which is vendored from #141 with one change: the table list is a parameter.
+`DATABASE_URL_REPORT_RO`, the shared reporting role `report_ro`. It uses the
+shared guard `src/db/reportReadOnlyGuard.ts`, a byte-identical copy of #141's
+commit cdc6985. Replace the copy with the shared module once that is on main.
+Setting up the role, including the pre-check for SECURITY DEFINER functions,
+is described in one place: #141's
+`docs/youtube-preview-risk-report-readonly-role.md`. Its GRANT covers all
+twelve shared tables, these eight included.
 
 Before the first data query the CLI:
 

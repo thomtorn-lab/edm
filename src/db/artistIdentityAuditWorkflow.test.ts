@@ -18,13 +18,13 @@ function step(name: string): string {
 
 describe("inspect-source.yml — artist-identity-audit mode", () => {
   it("is a selectable mode", () => {
-    expect(yaml).toMatch(/\n {10}- artist-identity-audit\n/);
+    expect(yaml).toMatch(/\n {10}- artist-identity-audit\n {10}- artist-identity-audit-check\n/);
   });
 
   it("never verifies, writes or receives DATABASE_URL", () => {
-    expect(step("Verify DATABASE_URL secret is configured")).toContain("inputs.mode != 'artist-identity-audit'");
-    expect(step("Write DATABASE_URL for the diagnostic script")).toContain("inputs.mode != 'artist-identity-audit'");
-    expect(step("Run inspection")).toContain("if: ${{ inputs.mode != 'artist-identity-audit' }}");
+    expect(step("Verify DATABASE_URL secret is configured")).toContain("!startsWith(inputs.mode, 'artist-identity-audit')");
+    expect(step("Write DATABASE_URL for the diagnostic script")).toContain("!startsWith(inputs.mode, 'artist-identity-audit')");
+    expect(step("Run inspection")).toContain("if: ${{ !startsWith(inputs.mode, 'artist-identity-audit') }}");
     const audit = step("Run artist identity audit (dedicated read-only role)");
     expect(audit).not.toMatch(/secrets\.DATABASE_URL\b(?!_REPORT_RO)/);
     expect(audit).not.toContain(".env.local");
@@ -32,13 +32,15 @@ describe("inspect-source.yml — artist-identity-audit mode", () => {
 
   it("runs only the audit CLI, only with the dedicated read-only secret, and fails closed without it", () => {
     const audit = step("Run artist identity audit (dedicated read-only role)");
-    expect(audit).toContain("if: ${{ inputs.mode == 'artist-identity-audit' }}");
+    expect(audit).toContain("if: ${{ startsWith(inputs.mode, 'artist-identity-audit') }}");
     expect(audit).toContain("timeout-minutes: 10");
     expect(audit).toContain("DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}");
     expect(audit).toMatch(/if \[ -z "\$\{DATABASE_URL_REPORT_RO:-\}" \]; then[\s\S]*exit 1/);
     expect(audit).toContain("node --import tsx src/db/artistIdentityAuditCli.ts --out=artist-identity-audit.json");
+    expect(audit).toMatch(/if \[ "\$INPUT_MODE" = "artist-identity-audit-check" \]; then\s+node --import tsx src\/db\/artistIdentityAuditCli\.ts --check-only/);
     expect(audit).not.toMatch(/YOUTUBE_API_KEY|BILLETTO_|RESEND|DISCOGS/);
-    expect(audit.match(/\$\{\{/g)?.length).toBe(2); // the if: condition and the one secret
+    expect(audit.match(/\$\{\{/g)?.length).toBe(3); // the if: condition, the one secret, the mode
+    expect(audit.split("run: |")[1]).not.toContain("${{");
   });
 
   it("keeps the workflow's token read-only", () => {

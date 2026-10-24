@@ -5,9 +5,9 @@ import path from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AUDIT_TABLES } from "./artistIdentityAudit";
-import { runArtistIdentityAudit } from "./artistIdentityAuditCli";
+import { checkArtistIdentityAuditConnection, runArtistIdentityAudit } from "./artistIdentityAuditCli";
 import { beginReadOnlyTransaction } from "./readOnlyTransaction";
-import { assertReadOnlyRole, evaluateGuard, readAccessSql, readReportConnectionString, READ_ACCESS_SQL, REPORT_TABLES } from "./reportReadOnlyGuard";
+import { assertReadOnlyRole, evaluateGuard, readAccessSql, readReportConnectionString, READ_ACCESS_SQL, REPORT_TABLES, SHARED_REPORT_RO_TABLES } from "./reportReadOnlyGuard";
 
 /**
  * The Artist Alerts identity audit reuses #141's read-only role guard with
@@ -22,6 +22,11 @@ describe("vendored guard — table list parameter", () => {
   it("keeps #141's default table list and SQL unchanged", () => {
     expect(readAccessSql(REPORT_TABLES)).toBe(READ_ACCESS_SQL);
     expect(REPORT_TABLES.map((t) => t.name)).toContain("artist_youtube_preview_cache");
+  });
+
+  it("asks only for tables the shared report_ro role is granted, and never newsletter tables", () => {
+    for (const t of AUDIT_TABLES) expect(SHARED_REPORT_RO_TABLES).toContain(`${t.schema}.${t.name}`);
+    expect(SHARED_REPORT_RO_TABLES.some((t) => /newsletter|subscriber/.test(t))).toBe(false);
   });
 
   it("checks the audit's own tables when given them", () => {
@@ -198,6 +203,11 @@ describe.runIf(CAN_RUN)("shared guard with the audit's tables, against the repo'
       log.mockRestore();
     }
     expect(await databaseFingerprint()).toBe(before);
+  });
+
+  it("--check-only proves the role without reading data, and refuses a writer", async () => {
+    await expect(checkArtistIdentityAuditConnection(url("report_ro"))).resolves.toMatchObject({ role: "report_ro" });
+    await expect(checkArtistIdentityAuditConnection(url("report_writer"))).rejects.toThrow(/not proven read-only/);
   });
 
   it("stops before any data query when the role can write, and changes nothing", async () => {
