@@ -6,7 +6,7 @@ import {
   validateTranslation,
   type TranslationClient,
 } from "./descriptionTranslation";
-import { descriptionHash, englishDescriptionFor } from "./englishDescription";
+import { descriptionHash, publicDescriptionFor } from "./englishDescription";
 import { MAX_TRANSLATION_ATTEMPTS, needsTranslationWork, nextAttemptCount, selectTranslationWork, type TranslationWorkRow } from "./translationWork";
 
 const DANISH =
@@ -104,17 +104,24 @@ describe("translateDescription", () => {
   });
 });
 
-describe("englishDescriptionFor (what the event page shows)", () => {
+describe("publicDescriptionFor (what the public site may show: English or nothing)", () => {
   const hash = descriptionHash(DANISH);
-  it("shows the translation only when it was made from exactly the current description", () => {
-    expect(englishDescriptionFor(DANISH, { sourceHash: hash, status: "translated", translatedText: "EN" })).toBe("EN");
-    expect(englishDescriptionFor(`${DANISH} (updated)`, { sourceHash: hash, status: "translated", translatedText: "EN" })).toBe(`${DANISH} (updated)`);
+  it("shows a translation only when it was made from exactly the current description", () => {
+    expect(publicDescriptionFor(DANISH, { sourceHash: hash, status: "translated", translatedText: "EN" })).toBe("EN");
+    expect(publicDescriptionFor(`${DANISH} (updated)`, { sourceHash: hash, status: "translated", translatedText: "EN" })).toBeNull();
   });
-  it("falls back to the original on a missing, failed or English row", () => {
-    expect(englishDescriptionFor(DANISH, null)).toBe(DANISH);
-    expect(englishDescriptionFor(DANISH, { sourceHash: hash, status: "failed", translatedText: null })).toBe(DANISH);
-    expect(englishDescriptionFor(ENGLISH, { sourceHash: descriptionHash(ENGLISH), status: "english", translatedText: null })).toBe(ENGLISH);
-    expect(englishDescriptionFor(null, null)).toBeNull();
+  it("never shows a non-English original: missing or failed translation → nothing", () => {
+    expect(publicDescriptionFor(DANISH, null)).toBeNull();
+    expect(publicDescriptionFor(DANISH, { sourceHash: hash, status: "failed", translatedText: null })).toBeNull();
+  });
+  it("shows English originals: confirmed by the job, or clearly English on their own", () => {
+    expect(publicDescriptionFor(ENGLISH, null)).toBe(ENGLISH);
+    expect(publicDescriptionFor("Techno all night", { sourceHash: descriptionHash("Techno all night"), status: "english", translatedText: null })).toBe("Techno all night");
+    expect(publicDescriptionFor("Techno all night", null)).toBeNull(); // too short to be sure until the job confirms it
+  });
+  it("empty → nothing", () => {
+    expect(publicDescriptionFor(null, null)).toBeNull();
+    expect(publicDescriptionFor("  ", null)).toBeNull();
   });
 });
 

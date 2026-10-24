@@ -91,11 +91,11 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const splitActionRow = primaryLink !== null && secondaryLinks.length === 1;
   const hasMusic = artistVideoPreview !== null || soundcloudArtists.length > 0;
   const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
-  // English-only About text (2026-10-15): the cached English version of the
-  // current description when there is one, else the original — used for
-  // the About section, JSON-LD and calendar exports alike, so every public
-  // surface shows the same text. events.description itself is untouched.
-  const description = event.englishDescription ?? event.description;
+  // English-only About text (2026-10-24): the public query already
+  // replaced `description` with the text the public site may show (English
+  // or null — see withPublicDescriptions in src/lib/queries.ts); it is used
+  // for the About section, JSON-LD and calendar exports alike.
+  const description = event.description;
   const jsonLd = buildEventJsonLd({ ...event, title, description }, canonicalUrl);
 
   const calendarInput = {

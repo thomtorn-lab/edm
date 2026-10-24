@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addOverriddenFields, stripOverriddenFields } from "../override";
-import { descriptionHash, englishDescriptionFor, type CachedTranslation } from "./englishDescription";
+import { descriptionHash, publicDescriptionFor, type CachedTranslation } from "./englishDescription";
 import { needsTranslationWork, type TranslationWorkRow } from "./translationWork";
 
 /**
@@ -22,17 +22,19 @@ describe("admin-edited descriptions and translations", () => {
     cached,
   });
 
-  it("an old source translation is never shown for an admin-edited description; the admin text is shown until its own translation exists", () => {
+  it("an old source translation is never shown for an admin-edited description; nothing is shown until the admin text's own translation exists", () => {
     const sourceTranslation = { sourceHash: descriptionHash(SOURCE_DA), status: "translated", translatedText: SOURCE_EN };
     // Before the edit: the translation of the source text is shown.
-    expect(englishDescriptionFor(SOURCE_DA, sourceTranslation)).toBe(SOURCE_EN);
-    // Admin replaces the description: the stale translation no longer matches.
-    expect(englishDescriptionFor(ADMIN_DA, sourceTranslation)).toBe(ADMIN_DA);
+    expect(publicDescriptionFor(SOURCE_DA, sourceTranslation)).toBe(SOURCE_EN);
+    // Admin replaces the description (Danish): the stale translation no
+    // longer matches, and Danish is never shown publicly — the About text is
+    // hidden until the admin text's own translation exists.
+    expect(publicDescriptionFor(ADMIN_DA, sourceTranslation)).toBeNull();
     // …and the translation job picks the admin text up on its next run.
     expect(needsTranslationWork(row(ADMIN_DA, { ...sourceTranslation, attempts: 0 }))).toBe(true);
     // Once translated, the admin text's own translation is shown.
     const adminTranslation = { sourceHash: descriptionHash(ADMIN_DA), status: "translated", translatedText: "WITCHZ plays Pumpehuset on Sunday. Doors open at 19." };
-    expect(englishDescriptionFor(ADMIN_DA, adminTranslation)).toBe(adminTranslation.translatedText);
+    expect(publicDescriptionFor(ADMIN_DA, adminTranslation)).toBe(adminTranslation.translatedText);
     expect(needsTranslationWork(row(ADMIN_DA, { ...adminTranslation, attempts: 0 }))).toBe(false);
   });
 
@@ -44,18 +46,23 @@ describe("admin-edited descriptions and translations", () => {
     // The stored description is still the admin text, so the cached admin
     // translation still matches and nothing is re-sent.
     const adminTranslation = { sourceHash: descriptionHash(ADMIN_DA), status: "translated", translatedText: "EN", attempts: 0 };
-    expect(englishDescriptionFor(ADMIN_DA, adminTranslation)).toBe("EN");
+    expect(publicDescriptionFor(ADMIN_DA, adminTranslation)).toBe("EN");
     expect(needsTranslationWork(row(ADMIN_DA, adminTranslation))).toBe(false);
   });
 
   it("an admin edit back to an earlier text reuses nothing stale: only an exact hash match counts", () => {
     const cached = { sourceHash: descriptionHash(`${ADMIN_DA} `), status: "translated", translatedText: "EN" };
-    expect(englishDescriptionFor(ADMIN_DA, cached)).toBe(ADMIN_DA);
+    expect(publicDescriptionFor(ADMIN_DA, cached)).toBeNull();
+  });
+
+  it("an admin who writes the description in English has it shown right away, before any translation run", () => {
+    const adminEn = "WITCHZ plays Pumpehuset on Sunday with a full live show, and doors open at seven in the evening.";
+    expect(publicDescriptionFor(adminEn, null)).toBe(adminEn);
   });
 
   it("an admin who clears the description gets no About text at all (no orphaned translation)", () => {
     const cached = { sourceHash: descriptionHash(SOURCE_DA), status: "translated", translatedText: SOURCE_EN };
-    expect(englishDescriptionFor("", cached)).toBe("");
-    expect(englishDescriptionFor(null, cached)).toBeNull();
+    expect(publicDescriptionFor("", cached)).toBeNull();
+    expect(publicDescriptionFor(null, cached)).toBeNull();
   });
 });

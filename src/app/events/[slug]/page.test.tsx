@@ -494,10 +494,9 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
-  it("shows the cached English version of the description when the query supplies one (original stays the fallback)", async () => {
-    await renderPage(makeEvent({ description: "En rigtig beskrivelse.", englishDescription: "A real description." }));
-    expect(screen.getByText("A real description.")).toBeTruthy();
-    expect(screen.queryByText("En rigtig beskrivelse.")).toBeNull();
+  it("renders no About section when the public query withholds a not-yet-translated description (description: null)", async () => {
+    await renderPage(makeEvent({ description: null }));
+    expect(screen.queryByText("About")).toBeNull();
   });
 
   it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {
