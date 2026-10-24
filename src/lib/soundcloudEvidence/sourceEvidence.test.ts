@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  handleOf,
   evidenceForCandidate,
   evidenceForStoredEvent,
   extractSourceSoundcloudEvidence,
@@ -12,16 +13,19 @@ import {
 import { parseCultureBoxEventsHtml } from "../adapters/cultureBoxAdapter";
 import { parseHangarenEventsHtml } from "../adapters/hangarenAdapter";
 import { classifyAppearance, splitLineupEntry } from "../artistIdentity/lineupIdentity";
+import { evidenceBacksAppearance } from "../artistIdentity/evidence";
+
+const AT = new Date("2026-10-24T12:00:00.000Z");
 
 const FIX = path.join(__dirname, "..", "adapters", "__fixtures__");
 const read = (f: string) => readFileSync(path.join(FIX, f), "utf-8");
-const pairs = (records: SoundcloudEvidence[]) => records.map((r) => [r.entry, r.handle, r.signal, r.conflict?.kind ?? null]);
+const pairs = (records: SoundcloudEvidence[]) => records.map((r) => [r.entry, handleOf(r.url), r.signal, r.conflict?.kind ?? null]);
 const run = (artists: string[], text: string) =>
-  extractSourceSoundcloudEvidence({ artists, texts: [text], sourceId: "src-x", eventId: "e-x", sourceUrl: null });
+  extractSourceSoundcloudEvidence({ artists, texts: [text], sourceId: "src-x", eventId: "e-x", sourceUrl: null, observedAt: AT });
 
 describe("source_anchor: the adapter's structured lineup links (Culture Box, real recorded listings)", () => {
   const all = ["culture-box-events.html", "culture-box-events-2026-10-13.html"].flatMap((f) =>
-    parseCultureBoxEventsHtml(read(f)).flatMap((e) => evidenceForCandidate(e)),
+    parseCultureBoxEventsHtml(read(f)).flatMap((e) => evidenceForCandidate(e, { eventId: null, observedAt: AT })),
   );
 
   it("one record per linked lineup name, all source_anchor (194 across both listings)", () => {
@@ -62,7 +66,7 @@ describe("source_inline: 'Name … URL' in the source's own text", () => {
     )!;
     expect(night.lineupSourceText).toContain("https://soundcloud.com/aragon");
     expect(night.artists.join(" ")).not.toContain("soundcloud");
-    expect(pairs(evidenceForCandidate(night))).toEqual([
+    expect(pairs(evidenceForCandidate(night, { eventId: null, observedAt: AT }))).toEqual([
       // the stored entry is the adapter's label residue: a label shape, so review only
       ["Fagins Reject – Wild Things Records: - Wild things Records", "fagins_reject", "source_inline", "entry_not_single_artist"],
       ["Kromagon", "aragon", "source_inline", null], // handle differs from the name; the venue says so
@@ -83,7 +87,7 @@ describe("source_inline: 'Name … URL' in the source's own text", () => {
     const night = parseHangarenEventsHtml(read("hangaren-events.html"), "https://www.hangaren.dk/events").find((e) =>
       e.artists.includes("Kromagon"),
     )!;
-    expect(evidenceForCandidate(night).map((r) => r.handle)).not.toContain("arcanumartistcollective");
+    expect(evidenceForCandidate(night, { eventId: null, observedAt: AT }).map((r) => handleOf(r.url))).not.toContain("arcanumartistcollective");
   });
 
   it("Pylonen Payday (stored description, real Production text 2026-10-16, abridged): names before links, Mixcloud ends a label", () => {
@@ -97,7 +101,7 @@ describe("source_inline: 'Name … URL' in the source's own text", () => {
       artists: ["Xulipa", "mirr", "SEID", "L.A.D.J.", "Small Horse", "Fremond", "ちとく", "Pitch B Itch", "Natq"],
       description,
       officialEventUrl: "https://pylonen.horse/pylonen-payday/",
-    });
+    }, AT);
     expect(pairs(records)).toEqual([
       ["mirr", "mirulstrup", "source_inline", null],
       ["SEID", "seid1312", "source_inline", null],
@@ -156,22 +160,23 @@ describe("never invents a link", () => {
         description: "Kromagon: https://soundcloud.com/aragon",
         relevanceText: null,
         artistsGuessedFromTitle: true,
-      }),
+      }, { eventId: null, observedAt: AT }),
     ).toEqual([]);
   });
 });
 
 describe("reuse across events (approved rules: distinctive names only)", () => {
   const rec = (entry: string, handle: string, conflict: SoundcloudEvidence["conflict"] = null): SoundcloudEvidence => ({
+    kind: "soundcloud_profile",
     entry,
     part: entry,
     key: entry.toLowerCase(),
     url: `https://soundcloud.com/${handle}`,
-    handle,
     signal: "source_inline",
     sourceId: "src-x",
     eventId: null,
     sourceUrl: null,
+    observedAt: AT,
     conflict,
   });
 
@@ -191,9 +196,42 @@ describe("reuse across events (approved rules: distinctive names only)", () => {
       artists: ["Small Horse"],
       description: "Small Horse (Fluid Sound Collective) https://soundcloud.com/small-horse",
       officialEventUrl: null,
-    });
+    }, AT);
     expect(reusableProfilesByKey(pylonen).get(pylonen[0].key)).toBe("https://soundcloud.com/small-horse");
     expect(pylonen[0].key).toBe(classifyAppearance({ entry: "SMALL HORSE", part: splitLineupEntry("SMALL HORSE")[0], eventTitle: "x", lineupSize: 5, hasSourceHandle: false, venueKeys: new Set() }).key);
+  });
+});
+
+describe("the shared IdentityEvidence contract", () => {
+  it("every record is kind soundcloud_profile with a source_* signal and the observation time", () => {
+    const [r] = run(["Kromagon"], "Kromagon: https://soundcloud.com/aragon");
+    expect(r).toEqual({
+      kind: "soundcloud_profile",
+      entry: "Kromagon",
+      part: "Kromagon",
+      key: "kromagon",
+      url: "https://soundcloud.com/aragon",
+      signal: "source_inline",
+      sourceId: "src-x",
+      eventId: "e-x",
+      sourceUrl: null,
+      observedAt: AT,
+      conflict: null,
+    });
+  });
+
+  it("evidenceBacksAppearance: a clean record on a known event backs it; conflicts and candidate (eventless) records never do", () => {
+    const [clean] = run(["Kromagon"], "Kromagon: https://soundcloud.com/aragon");
+    const [duo] = run(["Lulla-Li & Nihility"], "Lulla-Li & Nihility: https://soundcloud.com/nihility_forest");
+    expect(evidenceBacksAppearance(clean)).toBe(true);
+    expect(evidenceBacksAppearance(duo)).toBe(false);
+    expect(evidenceBacksAppearance({ ...clean, eventId: null })).toBe(false);
+  });
+
+  it("an admin-created event (no canonical source) yields no evidence until the model defines its attribution", () => {
+    expect(
+      evidenceForStoredEvent({ id: "e-a", canonicalSourceId: null, artists: ["Kromagon"], description: "Kromagon: https://soundcloud.com/aragon", officialEventUrl: null }, AT),
+    ).toEqual([]);
   });
 });
 
@@ -202,7 +240,7 @@ describe("feeds the shared model's appearance classification", () => {
     const records = run(["SEID"], "SEID (Frikvens Syndikatet) https://soundcloud.com/seid1312");
     const classify = (hasSourceHandle: boolean) =>
       classifyAppearance({ entry: "SEID", part: splitLineupEntry("SEID")[0], eventTitle: "Pylonen Payday", lineupSize: 9, hasSourceHandle, venueKeys: new Set() }).confidence;
-    expect(classify(records.some((r) => r.entry === "SEID" && !r.conflict))).toBe("high");
+    expect(classify(records.some((r) => r.entry === "SEID" && evidenceBacksAppearance(r)))).toBe("high");
     expect(classify(false)).toBe("review");
   });
 });

@@ -3,6 +3,7 @@ import { cleanArtistDisplayName, isShortGenericArtistName } from "../enrichment/
 import { decodeHtmlEntities } from "../adapters/htmlExtraction";
 import { soundcloudProfileUrl } from "../adapters/cultureBoxSoundcloudLinks";
 import type { RawCandidateEvent } from "../adapters/types";
+import type { EvidenceSignal, IdentityEvidence } from "../artistIdentity/evidence";
 
 /**
  * Source-provided SoundCloud evidence (2026-10-24), the SoundCloud side of
@@ -36,26 +37,16 @@ import type { RawCandidateEvent } from "../adapters/types";
  *     can never pick one. See findKeyConflicts.
  */
 
-export type SoundcloudSignal = "source_anchor" | "source_inline";
+/**
+ * The shared contract (Artist Alerts owns it): every record this module
+ * produces is an IdentityEvidence of kind "soundcloud_profile" with one of
+ * the two source_* signals. No SoundCloud-specific record type exists.
+ */
+export type SoundcloudEvidence = IdentityEvidence;
 
-export type EvidenceConflictKind = "entry_not_single_artist" | "two_handles_same_event" | "two_handles_same_key";
-
-export interface SoundcloudEvidence {
-  /** The lineup entry exactly as in events.artists / the candidate's artists. */
-  entry: string;
-  /** The performer within `entry` the profile belongs to: the entry itself, or one side of a B2B ("DJ Void" in "Ingvil B2B DJ Void"). */
-  part: string;
-  /** artistIdentityKey(part): what the shared model matches on, never the identity itself. */
-  key: string;
-  /** Normalized profile URL, https://soundcloud.com/<handle>. */
-  url: string;
-  handle: string;
-  signal: SoundcloudSignal;
-  sourceId: string | null;
-  /** Null for a new candidate that has no event row yet. */
-  eventId: string | null;
-  sourceUrl: string | null;
-  conflict: null | { kind: EvidenceConflictKind; otherUrls: string[] };
+/** The handle part of a normalized profile URL (derived, never stored separately). */
+export function handleOf(url: string): string {
+  return url.slice("https://soundcloud.com/".length);
 }
 
 export interface EvidenceInput {
@@ -65,9 +56,10 @@ export interface EvidenceInput {
   texts: readonly (string | null | undefined)[];
   /** Structured name -> profile links the adapter already parsed (Culture Box anchors). */
   anchoredLinks?: readonly { name: string; url: string }[];
-  sourceId: string | null;
+  sourceId: string;
   eventId: string | null;
   sourceUrl: string | null;
+  observedAt: Date;
 }
 
 const URL_RE = /https?:\/\/[^\s<>"'()]+/giu;
@@ -200,7 +192,7 @@ function inlinePairings(text: string, artists: readonly string[]): Pairing[] {
 
 /** All SoundCloud evidence one event's own source data gives, with per-event conflicts flagged. */
 export function extractSourceSoundcloudEvidence(input: EvidenceInput): SoundcloudEvidence[] {
-  const raw: (Pairing & { signal: SoundcloudSignal })[] = [];
+  const raw: (Pairing & { signal: EvidenceSignal })[] = [];
   for (const link of input.anchoredLinks ?? []) {
     const profile = soundcloudProfileUrl(link.url);
     const exact = input.artists.find((a) => a === link.name);
@@ -230,15 +222,16 @@ export function extractSourceSoundcloudEvidence(input: EvidenceInput): Soundclou
     if (!isSingleArtistEntry(r.part)) conflict = { kind: "entry_not_single_artist", otherUrls: [...urls].filter((u) => u !== r.url) };
     else if (urls.size > 1) conflict = { kind: "two_handles_same_event", otherUrls: [...urls].filter((u) => u !== r.url) };
     return {
+      kind: "soundcloud_profile" as const,
       entry: r.entry,
       part: r.part,
       key: artistIdentityKey(r.part),
       url: r.url,
-      handle: r.url.slice("https://soundcloud.com/".length),
       signal: r.signal,
       sourceId: input.sourceId,
       eventId: input.eventId,
       sourceUrl: input.sourceUrl,
+      observedAt: input.observedAt,
       conflict,
     };
   });
@@ -265,7 +258,9 @@ export function findKeyConflicts(records: readonly SoundcloudEvidence[]): Soundc
 }
 
 /**
- * Profiles a verified source link lets other events reuse by name: keys
+ * CANDIDATES only (the shared model decides; reuse across events is its
+ * rule, applied with the accepted evidence it holds). Profiles a source link
+ * would let other events reuse by name: keys
  * with exactly one profile across all records, no conflict anywhere, and a
  * distinctive name (not short/generic, not a duo/collective shape). Short
  * names keep their per-event source evidence but are never reused by name,
@@ -290,7 +285,7 @@ export function evidenceForCandidate(
     RawCandidateEvent,
     "sourceId" | "sourceUrl" | "artists" | "description" | "relevanceText" | "lineupSourceText" | "soundcloudLinkReport" | "artistsGuessedFromTitle"
   >,
-  eventId: string | null = null,
+  options: { eventId: string | null; observedAt: Date },
 ): SoundcloudEvidence[] {
   // Names guessed from the title are not the source's lineup: a profile link
   // in its text can't be credited to one of them.
@@ -300,29 +295,37 @@ export function evidenceForCandidate(
     texts: [raw.lineupSourceText, raw.description, raw.relevanceText],
     anchoredLinks: raw.soundcloudLinkReport?.links ?? [],
     sourceId: raw.sourceId,
-    eventId,
+    eventId: options.eventId,
     sourceUrl: raw.sourceUrl,
+    observedAt: options.observedAt,
   });
 }
 
 /**
  * Evidence for an event already stored: its current lineup and stored
- * description (Pylonen and admin-created events keep the source's profile
- * links there). Only names still in the event's current lineup can get a
- * record, so an admin-edited lineup is respected as it is.
+ * description (Pylonen keeps the source's profile links there). Only names
+ * still in the event's current lineup can get a record, so an admin-edited
+ * lineup is respected as it is. An event without a canonical source
+ * (admin-created) yields nothing until the shared model defines how such
+ * evidence is attributed (IdentityEvidence.sourceId is required).
  */
-export function evidenceForStoredEvent(row: {
-  id: string;
-  canonicalSourceId: string | null;
-  artists: readonly string[];
-  description: string | null;
-  officialEventUrl: string | null;
-}): SoundcloudEvidence[] {
+export function evidenceForStoredEvent(
+  row: {
+    id: string;
+    canonicalSourceId: string | null;
+    artists: readonly string[];
+    description: string | null;
+    officialEventUrl: string | null;
+  },
+  observedAt: Date,
+): SoundcloudEvidence[] {
+  if (!row.canonicalSourceId) return [];
   return extractSourceSoundcloudEvidence({
     artists: row.artists,
     texts: [row.description],
     sourceId: row.canonicalSourceId,
     eventId: row.id,
     sourceUrl: row.officialEventUrl,
+    observedAt,
   });
 }

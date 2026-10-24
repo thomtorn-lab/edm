@@ -1,5 +1,5 @@
 import { artistIdentityKey, splitLineupEntry } from "../artistIdentity/lineupIdentity";
-import { evidenceForStoredEvent, findKeyConflicts, reusableProfilesByKey, type SoundcloudEvidence } from "./sourceEvidence";
+import { extractSourceSoundcloudEvidence, findKeyConflicts, reusableProfilesByKey, type SoundcloudEvidence } from "./sourceEvidence";
 import { soundcloudProfileUrl } from "../adapters/cultureBoxSoundcloudLinks";
 
 /**
@@ -16,6 +16,9 @@ import { soundcloudProfileUrl } from "../adapters/cultureBoxSoundcloudLinks";
  * lineup links are not in stored rows at all (its description is null), so
  * its inline figure is a floor until a sync passes lineupSourceText.
  */
+
+/** Report label for events without a canonical source; matches the shared audit's "(admin)" bucket. */
+const ADMIN = "(admin)";
 
 export interface EvidenceAuditEvent {
   id: string;
@@ -55,11 +58,14 @@ export interface SoundcloudEvidenceAuditSection {
   blockedLinks: number;
 }
 
-export function buildSoundcloudEvidenceAuditSection(input: {
-  events: readonly EvidenceAuditEvent[];
-  links: readonly EvidenceAuditLink[];
-  blockedUrls: readonly string[];
-}): SoundcloudEvidenceAuditSection {
+export function buildSoundcloudEvidenceAuditSection(
+  input: {
+    events: readonly EvidenceAuditEvent[];
+    links: readonly EvidenceAuditLink[];
+    blockedUrls: readonly string[];
+  },
+  now: Date = new Date(),
+): SoundcloudEvidenceAuditSection {
   const blocked = new Set(input.blockedUrls);
   const shown = new Set(input.links.filter((l) => !blocked.has(l.url)).map((l) => `${l.eventId}\u0000${l.artistName}`));
   const eventById = new Map(input.events.map((e) => [e.id, e]));
@@ -73,26 +79,39 @@ export function buildSoundcloudEvidenceAuditSection(input: {
       const e = eventById.get(l.eventId)!;
       return [
         {
+          kind: "soundcloud_profile" as const,
           entry: l.artistName,
           part: l.artistName,
           key: artistIdentityKey(l.artistName),
           url: profile.url,
-          handle: profile.url.slice("https://soundcloud.com/".length),
           signal: "source_anchor" as const,
-          sourceId: e.canonicalSourceId,
+          sourceId: e.canonicalSourceId ?? ADMIN,
           eventId: e.id,
           sourceUrl: e.officialEventUrl,
+          observedAt: now,
           conflict: null,
         },
       ];
     });
-  const inlineRecords = input.events.flatMap((e) => evidenceForStoredEvent(e));
+  // Admin-created events are measured too: these records only feed the
+  // counts below and never leave this function, so the placeholder source
+  // id is never stored or passed to the identity model.
+  const inlineRecords = input.events.flatMap((e) =>
+    extractSourceSoundcloudEvidence({
+      artists: e.artists,
+      texts: [e.description],
+      sourceId: e.canonicalSourceId ?? ADMIN,
+      eventId: e.id,
+      sourceUrl: e.officialEventUrl,
+      observedAt: now,
+    }),
+  );
   const all = findKeyConflicts([...anchorRecords, ...inlineRecords]);
   const reuse = reusableProfilesByKey(all);
 
   const bySourceMap = new Map<string, SourceEvidenceCoverage>();
   for (const e of input.events) {
-    const sourceId = e.canonicalSourceId ?? "(admin)";
+    const sourceId = e.canonicalSourceId ?? ADMIN;
     if (!bySourceMap.has(sourceId)) {
       bySourceMap.set(sourceId, { sourceId, events: 0, performers: 0, shownToday: 0, documentedNotCaptured: 0, reusableByKey: 0, conflicted: 0, none: 0 });
     }
