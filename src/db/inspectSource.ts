@@ -2935,6 +2935,104 @@ async function modeGenreTaxonomyAudit(client: Client, _args: Record<string, stri
     ORDER BY n DESC
   `);
   console.log(JSON.stringify(dqByGenre.rows, null, 2));
+
+  // Genre system revision audit (2026-10-24): full, read-only mapping of
+  // the tags the planned taxonomy change touches (Industrial, Garage,
+  // Ambient / Experimental, the Hardcore/Hard Techno family, the
+  // Electronic / Other fallback), plus text-volume signals for the genres
+  // under consideration. Aggregates and public event fields only — no
+  // subscriber identities.
+  section("events: every genre slug as primary or secondary tag, published, split upcoming/past");
+  const allTags = await client.query(`
+    SELECT tag,
+           count(*) FILTER (WHERE e.start_datetime >= now())::int AS upcoming,
+           count(*) FILTER (WHERE e.start_datetime < now())::int AS past,
+           count(*) FILTER (WHERE tag = e.primary_genre)::int AS as_primary,
+           count(*) FILTER (WHERE tag <> e.primary_genre)::int AS as_secondary_only
+    FROM events e, LATERAL (SELECT DISTINCT unnest(array_append(e.subgenres, e.primary_genre)) AS tag) t
+    WHERE e.published = true
+    GROUP BY tag
+    ORDER BY upcoming DESC, past DESC
+  `);
+  console.log(JSON.stringify(allTags.rows, null, 2));
+
+  section("events: genre pair combinations (primary + secondary), published");
+  const pairs = await client.query(`
+    SELECT primary_genre, subgenres, count(*)::int AS n
+    FROM events
+    WHERE published = true AND array_length(subgenres, 1) > 1
+    GROUP BY primary_genre, subgenres
+    ORDER BY n DESC
+  `);
+  console.log(JSON.stringify(pairs.rows, null, 2));
+
+  const AFFECTED = ["industrial", "garage", "ambient-experimental", "hardcore", "hard-techno", "electronic-other"];
+  section(`events: every event (any publish state) tagged ${AFFECTED.join(", ")} — with override state and description context`);
+  const affected = await client.query(
+    `
+    SELECT e.id, e.slug, e.title, e.start_datetime::date AS date, e.published, e.primary_genre, e.subgenres,
+           e.genre_confidence, e.manual_override, ('primaryGenre' = ANY(e.overridden_fields) OR 'subgenres' = ANY(e.overridden_fields)) AS genre_overridden,
+           e.canonical_source_id,
+           substring(coalesce(e.description, '') from '(?i).{0,80}(industrial|garage|ambient|experimental|hardcore|gabber|hard ?techno|breakbeat|breaks|jungle|hypnotic|ebm).{0,80}') AS genre_context
+    FROM events e
+    WHERE e.primary_genre = ANY($1) OR e.subgenres && $1
+    ORDER BY e.primary_genre, e.start_datetime DESC
+  `,
+    [AFFECTED],
+  );
+  console.log(JSON.stringify(affected.rows, null, 2));
+
+  section("events: text-volume signals for candidate genres (published; title or description mentions the term)");
+  const terms: [string, string][] = [
+    ["industrial techno", "industrial[ -]?techno"],
+    ["industrial (any)", "industrial"],
+    ["ebm", "\\mebm\\M"],
+    ["hypnotic", "hypnotic"],
+    ["breakbeat / breaks", "breakbeat|\\mbreaks\\M"],
+    ["jungle", "\\mjungle\\M"],
+    ["uk garage", "uk ?garage"],
+    ["garage (any)", "garage"],
+    ["ambient", "\\mambient\\M"],
+    ["experimental", "experimental"],
+    ["hardcore techno", "hardcore[ -]?techno"],
+    ["gabber", "gabber"],
+    ["hard techno", "hard[ -]?techno"],
+  ];
+  const volume = [];
+  for (const [label, re] of terms) {
+    const r = await client.query(
+      `SELECT count(*) FILTER (WHERE start_datetime >= now())::int AS upcoming, count(*)::int AS total
+       FROM events WHERE published = true AND (title ~* $1 OR coalesce(description, '') ~* $1)`,
+      [re],
+    );
+    volume.push({ term: label, ...r.rows[0] });
+  }
+  console.log(JSON.stringify(volume, null, 2));
+
+  section("discovery_queue: predicted primary/secondary genre counts for the affected slugs, by status");
+  const dqAffected = await client.query(
+    `
+    SELECT status, predicted_genre, predicted_secondary_genre, count(*)::int AS n
+    FROM discovery_queue
+    WHERE predicted_genre = ANY($1) OR predicted_secondary_genre = ANY($1)
+    GROUP BY status, predicted_genre, predicted_secondary_genre
+    ORDER BY n DESC
+  `,
+    [AFFECTED],
+  );
+  console.log(JSON.stringify(dqAffected.rows, null, 2));
+
+  section("artist_genre_cache: proposed_genre counts (Discogs enrichment cache)");
+  const cache = await client.query(`SELECT proposed_genre, count(*)::int AS n FROM artist_genre_cache GROUP BY proposed_genre ORDER BY n DESC`);
+  console.log(JSON.stringify(cache.rows, null, 2));
+
+  section("newsletter_subscribers: selected genre-group counts (aggregate only, confirmed vs unconfirmed)");
+  const nl = await client.query(`
+    SELECT g AS genre_group, count(*) FILTER (WHERE confirmed)::int AS confirmed, count(*) FILTER (WHERE NOT confirmed)::int AS unconfirmed
+    FROM newsletter_subscribers, unnest(genres) AS g
+    GROUP BY g ORDER BY confirmed DESC
+  `);
+  console.log(JSON.stringify(nl.rows, null, 2));
 }
 
 async function main() {
