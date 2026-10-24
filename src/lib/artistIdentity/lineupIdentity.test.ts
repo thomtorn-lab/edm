@@ -119,6 +119,7 @@ describe("evidenceBacksAppearance", () => {
   const base = {
     kind: "soundcloud_profile" as const,
     entry: "NAT",
+    part: "NAT",
     key: "nat",
     url: "https://soundcloud.com/nat",
     signal: "source_anchor" as const,

@@ -43,7 +43,9 @@ export interface IdentityEvidence {
   kind: EvidenceKind;
   /** The lineup entry exactly as stored in events.artists. */
   entry: string;
-  /** artistIdentityKey() of the performer the evidence is about. */
+  /** The performer within that entry the profile belongs to (an "A B2B B" entry yields one record per part). */
+  part: string;
+  /** artistIdentityKey(part): the identity key of that performer. */
   key: string;
   /** Normalised profile URL, e.g. https://soundcloud.com/<handle>. */
   url: string;
