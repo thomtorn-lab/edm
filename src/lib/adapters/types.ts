@@ -103,6 +103,16 @@ export interface RawCandidateEvent {
    * sync behaves as before.
    */
   artistsGuessedFromTitle?: boolean;
+  /**
+   * The source's own lineup text for this event, links kept (source-provided
+   * SoundCloud evidence, 2026-10-24). For adapters whose lineup lines carry
+   * an artist's profile link that `artists` must not ("Kromagon:
+   * https://soundcloud.com/aragon"). Read only by
+   * src/lib/soundcloudEvidence/sourceEvidence.ts, which pairs a URL with a
+   * lineup entry; never displayed or stored. Omitted means the adapter's
+   * description/relevanceText are the only source text.
+   */
+  lineupSourceText?: string | null;
   startDatetime: string | null;
   endDatetime: string | null;
   venueName: string | null;
