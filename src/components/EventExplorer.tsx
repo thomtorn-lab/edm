@@ -94,18 +94,21 @@ const pillClasses = (active: boolean) =>
 // a separate outer ring rather than one accent treatment). See globals.css.
 // pl-4/pr-7 and h-[31px] reproduce the native control's text position, width
 // and height around the custom chevron. See FilterSelect.
+const selectTextClasses = "pl-4 text-xs font-semibold";
+
 const selectClasses = (active: boolean) =>
-  "accent-select h-[31px] rounded-full border bg-surface-1 pl-4 pr-7 py-1.5 text-xs font-semibold transition-colors " +
+  "accent-select h-[31px] rounded-full border bg-surface-1 pr-7 py-1.5 transition-colors " +
   (active
     ? "border-accent text-accent-strong"
     : "border-border-strong text-text-secondary hover:text-text-primary");
 
-const selectChevronClasses = (active: boolean) =>
+const selectValueClasses = (active: boolean) =>
   active ? "text-accent-strong" : "text-text-secondary peer-hover:text-text-primary";
 
 // pl-[18px]/pr-[30px] and h-12: same native-geometry match. See FilterSelect.
+const sheetSelectTextClasses = "pl-[18px] text-base leading-5";
 const sheetSelectClasses =
-  "h-12 w-full rounded border border-border-strong bg-surface-2 pl-[18px] pr-[30px] py-3 text-base leading-5 text-text-primary";
+  "h-12 w-full rounded border border-border-strong bg-surface-2 pr-[30px] py-3 text-text-primary";
 
 function FilterIcon() {
   return (
@@ -885,7 +888,8 @@ function EventExplorerList({
       value={genre}
       onChange={(e) => changeGenre(e.target.value as GenreFilterValue | "all")}
       className={selectClasses(genre !== "all")}
-      chevronClassName={selectChevronClasses(genre !== "all")}
+      textClassName={selectTextClasses}
+      valueClassName={selectValueClasses(genre !== "all")}
     >
       {genreOptions(genre)}
     </FilterSelect>
@@ -897,7 +901,8 @@ function EventExplorerList({
       value={venueId}
       onChange={(e) => setVenueId(e.target.value)}
       className={selectClasses(venueId !== "all")}
-      chevronClassName={selectChevronClasses(venueId !== "all")}
+      textClassName={selectTextClasses}
+      valueClassName={selectValueClasses(venueId !== "all")}
     >
       <option value="all">All venues</option>
       {venueOptions.map(([optionId, name]) => (
@@ -1115,8 +1120,9 @@ function EventExplorerList({
                     value={draftGenre}
                     onChange={(e) => setDraftGenre(e.target.value as GenreFilterValue | "all")}
                     className={sheetSelectClasses}
+                    textClassName={sheetSelectTextClasses}
+                    valueClassName="text-text-primary"
                     wrapperClassName="w-full"
-                    chevronClassName="text-text-primary"
                   >
                     {genreOptions(draftGenre)}
                   </FilterSelect>
@@ -1131,8 +1137,9 @@ function EventExplorerList({
                     value={draftVenueId}
                     onChange={(e) => setDraftVenueId(e.target.value)}
                     className={sheetSelectClasses}
+                    textClassName={sheetSelectTextClasses}
+                    valueClassName="text-text-primary"
                     wrapperClassName="w-full"
-                    chevronClassName="text-text-primary"
                   >
                     <option value="all">All venues</option>
                     {venueOptions.map(([id, name]) => (
