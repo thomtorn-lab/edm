@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getArtistYoutubePreviewForLineup, getEventBySlugWithVenue, getSoundcloudLinksForLineup } from "@/lib/queries";
+import { getEventBySlugWithVenue, getEventYoutubePreview, getSoundcloudLinksForLineup } from "@/lib/queries";
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks } from "@/lib/links";
@@ -82,7 +82,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
   const [artistVideoPreview, soundcloudArtists] = await Promise.all([
-    getArtistYoutubePreviewForLineup(event.artists),
+    getEventYoutubePreview(event),
     getSoundcloudLinksForLineup(event.id, event.artists),
   ]);
   // Tickets + Official event (or any primary with exactly one other button)
