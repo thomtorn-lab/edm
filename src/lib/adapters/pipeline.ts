@@ -17,7 +17,7 @@ import {
   GENERIC_ELECTRONIC_GENRE,
   type RelevanceLevel,
 } from "../relevance";
-import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
+import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
 import { suggestSecondaryGenre } from "./secondaryGenreSuggestion";
 import { sanitizeExtractedTitle, normalizeExtractedText } from "./htmlExtraction";
 import { isPastEvent } from "../datetime";
@@ -434,13 +434,22 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // for how this decides whether a null genre is authoritative.
   const hasEvidenceText = Boolean(evidenceBodyText.trim());
   const relevanceText = `${raw.title} ${evidenceBodyText}`;
+  // Genre matching only (genre QA, 2026-10-17): a lineup name containing a
+  // genre keyword ("PAB DISCO") is not genre evidence, so it is removed from
+  // the text genres are matched against, but only when the adapter vouches
+  // that `artists` is structured lineup data (lineupNamesAreStructured).
+  // relevanceText itself, and every relevance signal read from it, is
+  // unchanged.
+  const genreEvidenceText = raw.lineupNamesAreStructured
+    ? maskLineupNamesWithGenreKeywords(relevanceText, raw.artists, raw.title)
+    : relevanceText;
 
   // GENRE CLASSIFICATION (evidence order: hint from source metadata/description first,
   // deterministic keyword mapping as fallback, otherwise unresolved).
   let genre: GenreSlug | null = raw.genreHint;
   let genreConfidence: ConfidenceLevel = raw.genreConfidenceHint ?? "low";
   if (!genre) {
-    const fallback = deterministicGenreFromText(relevanceText);
+    const fallback = deterministicGenreFromText(genreEvidenceText);
     if (fallback) {
       genre = fallback;
       genreConfidence = genreConfidenceForEvidence("deterministic-mapping");
@@ -451,7 +460,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // evidence; the event's own first-party text can sharpen it to a more
   // specific sibling (e.g. "psytrance") without changing the evidence tier.
   if (genre) {
-    genre = refineGenreFromText(genre, relevanceText);
+    genre = refineGenreFromText(genre, genreEvidenceText);
   }
 
   // CONSERVATIVE SECONDARY-GENRE SUGGESTION (Discovery secondary-genre V1,
@@ -558,7 +567,7 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
     // codebase already documents (deterministicGenreMapping.ts's
     // INFLUENCE_QUALIFIER_RE) as NOT a direct claim about this event's own
     // sound.
-    hasRichSpecificGenreEvidence: hasRichGenreEvidence(relevanceText),
+    hasRichSpecificGenreEvidence: hasRichGenreEvidence(genreEvidenceText),
   });
   const { decision, holdReason } = computeDecision(
     missingFields,

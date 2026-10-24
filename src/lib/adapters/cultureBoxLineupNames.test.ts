@@ -104,6 +104,8 @@ describe("extractLineupNames — never invents artists (identified false positiv
           "ONE TWO THREE FOUR",
           "A VERY LONG ANNOUNCEMENT NAME OVER LIMIT",
           "1234",
+          "HARD TECHNO",
+          "DISCO DAN",
           a("KEPT"),
         ),
       ),
@@ -190,5 +192,11 @@ describe("linked names are kept whole, exactly as before", () => {
 describe("unlinked duos and collabs are never split into invented artists", () => {
   it.each(["BONGO &amp; PUSK", "AB x CD", "MNSTR X LINUS", "SHK &amp; GEORGEOUS B2B KAREN"])("%s is left out", (line) => {
     expect(extractLineupNames(p(line, a("KEPT")))).toEqual(["KEPT"]);
+  });
+});
+
+describe("genre words", () => {
+  it("an unlinked token with a genre keyword is left out; a linked one is kept as before", () => {
+    expect(extractLineupNames(p("HOUSE OF X", "TECHNO", a("PAB DISCO")))).toEqual(["PAB DISCO"]);
   });
 });

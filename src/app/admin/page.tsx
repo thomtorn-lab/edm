@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
-import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getSources, getVenues } from "@/lib/queries";
+import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getRecentSyncIdentityChanges, getSources, getVenues } from "@/lib/queries";
+import { buildDataQualityReport } from "@/lib/dataQuality";
+import DataQualityPanel from "@/components/admin/DataQualityPanel";
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
 import { buildPublishedQueueRows, deriveAdminUnpublishedRows, groupAdminQueueRows } from "@/lib/adminQueue";
+import { buildReviewPriorityList, groupReviewList, prioritizeNotInSource, splitPastStale } from "@/lib/reviewPriority";
+import { buildSeriesIndex } from "@/lib/seriesMemory";
 import AddEventFromUrl from "@/components/admin/AddEventFromUrl";
 import AdminQueueTabs from "@/components/admin/AdminQueueTabs";
 import EventManager from "@/components/admin/EventManager";
@@ -32,11 +36,12 @@ const HEALTH_COLOR: Record<string, string> = {
 
 export default async function AdminPage() {
   const now = new Date();
-  const [sources, discoveryQueueRows, venues, allEvents] = await Promise.all([
+  const [sources, discoveryQueueRows, venues, allEvents, recentIdentityChanges] = await Promise.all([
     getSources(),
     getDiscoveryQueueForAdmin(),
     getVenues(),
     getAllEventsAdmin(),
+    getRecentSyncIdentityChanges(),
   ]);
 
   const pendingItems = discoveryQueueRows.filter((item) => item.status === "pending");
@@ -45,9 +50,18 @@ export default async function AdminPage() {
   const venuesById = new Map(venues.map((v) => [v.id, v]));
   const sourcesById = new Map(sources.map((s) => [s.id, s]));
 
+  const dataQualityReports = buildDataQualityReport(allEvents, recentIdentityChanges, now);
+
   const adminQueueGroups = groupAdminQueueRows(pendingItems, sourceLastCompleteSync, now);
   const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
   const adminUnpublishedRows = deriveAdminUnpublishedRows(allEvents, venuesById, sourcesById);
+  // Series memory reads the events already loaded for "All events" — no extra query.
+  const seriesIndex = buildSeriesIndex(allEvents, venues);
+  const priorityContext = { venues, sourceTrust: new Map(sources.map((s) => [s.id, s.trustLevel])), now, seriesIndex };
+  // One entry per event: the same night listed by two sources is grouped for display only.
+  const priorityList = groupReviewList(buildReviewPriorityList(adminQueueGroups.insufficient, priorityContext), venues);
+  const pastStaleSplit = splitPastStale(adminQueueGroups.past_stale, now);
+  const notInSource = prioritizeNotInSource(pastStaleSplit.upcomingNotInSource, priorityContext);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -77,7 +91,28 @@ export default async function AdminPage() {
           (admin Discovery Queue cleanup, 2026-09-06).
         </p>
         <div className="mt-3">
-          <AdminQueueTabs groups={adminQueueGroups} published={publishedRows} adminUnpublished={adminUnpublishedRows} venues={venues} />
+          <AdminQueueTabs
+            groups={adminQueueGroups}
+            published={publishedRows}
+            adminUnpublished={adminUnpublishedRows}
+            venues={venues}
+            priorityList={priorityList}
+            pastStaleSplit={pastStaleSplit}
+            notInSource={notInSource}
+          />
+        </div>
+      </section>
+
+      <section id="data-quality" className="mt-12">
+        <h2 className="text-sm font-semibold text-text-primary">
+          Data quality <span className="tabular-nums text-text-tertiary">{dataQualityReports.length}</span>
+        </h2>
+        <p className="mt-1 text-xs text-text-secondary">
+          Upcoming events with an end time that cannot be right or may make them leave the site early, or whose date,
+          venue or official URL a sync keeps changing. Nothing is changed automatically — open the event below to correct it.
+        </p>
+        <div className="mt-3">
+          <DataQualityPanel reports={dataQualityReports} />
         </div>
       </section>
 

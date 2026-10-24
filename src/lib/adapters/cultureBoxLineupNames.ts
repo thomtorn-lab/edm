@@ -1,4 +1,5 @@
 import { decodeHtmlEntities } from "./htmlExtraction";
+import { deterministicGenreFromText } from "./deterministicGenreMapping";
 
 /**
  * Lineup names of one Culture Box room paragraph (2026-10-14): every linked
@@ -28,8 +29,10 @@ import { decodeHtmlEntities } from "./htmlExtraction";
  *     segment is dropped.
  *   - A plain token is accepted only if it is written in capitals like the
  *     venue's names, has a letter, is at most 30 characters and 3 words, has
- *     no ":", ",", ";" or "/", and has none of the words that mark
- *     non-artist text (TBA, GUESTS, LINEUP, DOORS…).
+ *     no ":", ",", ";" or "/", has none of the words that mark
+ *     non-artist text (TBA, GUESTS, LINEUP, DOORS…), and has no genre
+ *     keyword (likely a showcase; it would also be masked from genre
+ *     matching, see RawCandidateEvent.lineupNamesAreStructured).
  */
 
 const CONNECTOR = String.raw`(?:B2B|&|x|X|vs\.?|VS\.?)`;
@@ -54,7 +57,11 @@ export function isAcceptablePlainName(token: string): boolean {
   if (/[:,;/]/.test(token)) return false;
   const words = token.split(" ");
   if (words.length > 3) return false;
-  return !words.some((w) => NON_ARTIST_WORDS.has(w));
+  if (words.some((w) => NON_ARTIST_WORDS.has(w))) return false;
+  // A genre word ("TECHNO", "HARD TECHNO NIGHT") is more likely a showcase
+  // than an artist, and the pipeline would mask it from genre matching
+  // (lineupNamesAreStructured), so an unlinked one is left out.
+  return deterministicGenreFromText(token) === null;
 }
 
 /** Plain names in one text segment between links; [] when anything about it is doubtful. */

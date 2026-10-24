@@ -152,6 +152,13 @@ vi.mock("@/lib/discoveryNotification", () => ({
   notifyDiscoveryQueueInsertBatch: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Discogs enrichment never reaches the network in tests: "found nothing",
+// exactly what a failed or not-found lookup returns. Lets the KultuNaut test
+// below see which names a sync asks about.
+vi.mock("./enrichment", () => ({
+  enrichEventGenre: vi.fn().mockResolvedValue({ genre: null, genreConfidence: null, perArtist: [] }),
+}));
+
 vi.mock("./soundcloudLinks", () => ({
   reconcileSourceSoundcloudLinks: vi.fn().mockResolvedValue({ upserts: [], deletes: [], suppressedDeletes: 0 }),
 }));
@@ -170,6 +177,7 @@ const {
 } = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 const { reconcileSourceSoundcloudLinks } = await import("./soundcloudLinks");
+const { enrichEventGenre } = await import("./enrichment");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
   return { sourceId: "src-culture-box", fetchCandidates };
@@ -712,6 +720,26 @@ describe("Pylonen DQ identity stability across the bare -> detail-page lifecycle
     await runSourceSync("src-pylonen", "Pylonen", adapter);
 
     expect(insertDiscoveryItem).not.toHaveBeenCalled();
+  });
+
+  it("RA link integrity (2026-10-17): a candidate's RA reference reaches the new DQ row as probableResidentAdvisorUrl, never as a ticket link", async () => {
+    mockThreeSelects([], [], []);
+    const RA = "https://ra.co/events/2521204";
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ residentAdvisorUrl: RA, ticketUrl: null })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    const inserted = vi.mocked(insertDiscoveryItem).mock.calls[0][0];
+    expect(inserted.probableResidentAdvisorUrl).toBe(RA);
+    expect(inserted.probableTicketUrl).toBeNull();
+  });
+
+  it("RA link integrity (2026-10-17): an already-pending row with no RA reference is filled from the next sync", async () => {
+    const RA = "https://ra.co/events/2521204";
+    mockThreeSelects([], [pendingRow({ probableResidentAdvisorUrl: null })], []);
+    const adapter = fakeAdapter(() => Promise.resolve([bareMyrk({ residentAdvisorUrl: RA })]));
+    await runSourceSync("src-pylonen", "Pylonen", adapter);
+
+    expect(applyDiscoveryClassificationUpdate).toHaveBeenCalledWith("dq-myrk", expect.objectContaining({ probableResidentAdvisorUrl: RA }));
   });
 
   it("6. an ignored item remains ignored after gaining officialEventUrl — identity stays stable, so ignore persistence's dedupKey lookup still matches", async () => {
@@ -2300,5 +2328,68 @@ describe("Venue-provided SoundCloud links (Culture Box, 2026-10-13) — reconcil
     const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: { links: LINKS, absenceDocumented: true } })])));
     expect(result.outcome).toBe("ok");
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe("KultuNaut title-guessed artists and Discogs (2026-10-23)", () => {
+  const kultunaut = (overrides: Partial<RawCandidateEvent>): RawCandidateEvent => ({
+    ...rawCandidate,
+    sourceId: "src-kultunaut",
+    sourceUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+    officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1",
+    venueName: "Rust",
+    artistsGuessedFromTitle: true,
+    ...overrides,
+  });
+  const run = (candidate: RawCandidateEvent) =>
+    runSourceSync("src-kultunaut", "KultuNaut", { sourceId: "src-kultunaut", fetchCandidates: () => Promise.resolve([candidate]) });
+
+  it("sends Discogs only the names the parser identified, never the whole title", async () => {
+    await run(kultunaut({ title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE)", "Europa (DE)"] }));
+    expect(enrichEventGenre).toHaveBeenCalledWith(["Woesum (SE)", "Europa (DE)"]);
+    expect(enrichEventGenre).not.toHaveBeenCalledWith(["Woesum (SE) + Europa (DE)"]);
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ detectedLineup: ["Woesum (SE)", "Europa (DE)"] }));
+  });
+
+  it("a generic title with no identified artist sends Discogs no names", async () => {
+    await run(kultunaut({ title: "Halloween party - haunted warehouse", artists: [] }));
+    expect(enrichEventGenre).toHaveBeenCalledTimes(1);
+    expect(enrichEventGenre).toHaveBeenCalledWith([]);
+  });
+
+  it("a confirmed electronic Discogs identity still gives a new Discovery Queue row its genre", async () => {
+    vi.mocked(enrichEventGenre).mockResolvedValueOnce({ genre: "house", genreConfidence: "medium", perArtist: [] });
+    await run(kultunaut({ title: "Notion", artists: ["Notion"] }));
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ predictedGenre: "house" }));
+  });
+
+  it("never changes an existing event's genre or artists through title-guessed names", async () => {
+    vi.mocked(enrichEventGenre).mockResolvedValueOnce({ genre: "house", genreConfidence: "medium", perArtist: [] });
+    const url = "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1";
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({ id: "e-notion", title: "Notion (old title)", artists: ["Notion (UK)"], primaryGenre: "techno", officialEventUrl: url, canonicalSourceId: "src-kultunaut" }),
+    ]);
+    mockMatchedByUrl("e-notion", url);
+    await run(kultunaut({ title: "Notion", artists: ["Notion"] }));
+    // The sync did patch the event (its title changed), just not genre or artists.
+    expect(applySourceSyncPatch).toHaveBeenCalledWith("e-notion", "src-kultunaut", expect.objectContaining({ title: "Notion" }));
+    for (const [, , patch] of vi.mocked(applySourceSyncPatch).mock.calls) {
+      expect(patch).not.toHaveProperty("primaryGenre");
+      expect(patch).not.toHaveProperty("subgenres");
+      expect(patch).not.toHaveProperty("artists");
+    }
+  });
+
+  it("a source with a structured lineup still sends its own artists, as before", async () => {
+    const unclear: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      artists: ["Some Artist"],
+      lineupNamesAreStructured: true,
+      officialEventUrl: "https://billetto.dk/e/melting-monday-1",
+    };
+    await runSourceSync("src-billetto", "Billetto", fakeAdapter(() => Promise.resolve([unclear])));
+    expect(enrichEventGenre).toHaveBeenCalledWith(["Some Artist"]);
   });
 });

@@ -486,6 +486,41 @@ export const artistYoutubePreviewCache = pgTable("artist_youtube_preview_cache",
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
+/**
+ * Admin-chosen YouTube video for ONE event (2026-10-23), set only by the
+ * event-youtube-override workflow (src/db/eventYoutubeOverride.ts). It wins
+ * over the automated per-artist match (artist_youtube_preview_cache) on this
+ * event only, and is never read or written by the matcher, so later automatic
+ * matching can neither overwrite it nor be locked by it. Display rules live in
+ * src/lib/eventYoutubeOverride.ts:
+ *   - mode "video" + available      -> show video_id
+ *   - mode "video" + not available  -> no video at all (no artist fallback)
+ *   - mode "hidden"                 -> no video at all
+ *   - no row                        -> normal automated artist matching
+ * `available` is maintained by the weekly verify run (videos.list only); a
+ * video that comes back is shown again after it re-verifies. The video's
+ * id/title are kept in every mode, so an override that went unavailable or
+ * was hidden still records what was chosen.
+ */
+export const eventYoutubePreviewOverrides = pgTable("event_youtube_preview_overrides", {
+  eventId: text("event_id")
+    .primaryKey()
+    .references(() => events.id, { onDelete: "cascade" }),
+  /** "video" | "hidden". */
+  mode: text("mode").notNull(),
+  videoId: text("video_id"),
+  videoTitle: text("video_title"),
+  channelId: text("channel_id"),
+  channelTitle: text("channel_title"),
+  /** Lineup name the video was chosen for (display/audit only; never matched on). */
+  artistName: text("artist_name"),
+  available: boolean("available").notNull().default(true),
+  lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+  unavailableSince: timestamp("unavailable_since", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const sourceEventLinks = pgTable(
   "source_event_links",
   {

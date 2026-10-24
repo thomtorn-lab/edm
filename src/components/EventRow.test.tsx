@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import EventRow from "./EventRow";
 import type { EventWithVenue } from "@/lib/queries";
-import type { GenreSlug } from "@/lib/taxonomy";
+import { GENRES, genrePagePath, type GenreSlug } from "@/lib/taxonomy";
 
 const VENUE = {
   id: "v-test",
@@ -172,6 +172,21 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     render(<EventRow event={makeEvent({ primaryGenre: "hard-techno", subgenres: ["hard-techno", "house"] as GenreSlug[] })} />);
     expect(screen.queryByRole("link", { name: /Hard Techno|House/ })).toBeNull();
     expect(document.querySelector('a[href^="/genres/"]')).toBeNull();
+  });
+
+  it("links a Techno badge in the secondary position too, and only to the exact-Techno page", () => {
+    render(<EventRow event={makeEvent({ primaryGenre: "house", subgenres: ["house", "techno"] as GenreSlug[] })} />);
+    expect(screen.getByRole("link", { name: "Techno" }).getAttribute("href")).toBe("/genres/techno");
+    expect(screen.queryByRole("link", { name: "House" })).toBeNull();
+  });
+
+  it("for every one of the 22 genres, the badge links only when that exact genre has a page", () => {
+    for (const g of GENRES) {
+      render(<EventRow event={makeEvent({ primaryGenre: g.slug, subgenres: [g.slug] })} />);
+      const link = document.querySelector('a[href^="/genres/"]');
+      expect(link?.getAttribute("href") ?? null, g.slug).toBe(genrePagePath(g.slug));
+      cleanup();
+    }
   });
 
   it("long two-genre combinations sit in the same flex-wrap metadata row and never force extra markup", () => {

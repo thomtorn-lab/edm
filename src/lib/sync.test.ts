@@ -15,8 +15,12 @@ import {
   type DiscoveryQueueTarget,
   type SyncTargetEvent,
 } from "./sync";
-import { stripOverriddenFields } from "./override";
+import { stripLockedSyncFields, stripOverriddenFields } from "./override";
 import type { RawCandidateEvent } from "./adapters/types";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { parseKultunautDetailHtml } from "./adapters/kultunautAdapter";
+import { scoreReviewPriority } from "./reviewPriority";
 
 function raw(overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
   return {
@@ -463,6 +467,96 @@ describe("buildSyncPatch", () => {
     });
   });
 
+  describe("locked start holds back its derived status flags (editorial screening, Gap B — 2026-10-23)", () => {
+    const otherDate = raw({ startDatetime: "2026-09-22T18:00:00.000Z" });
+    const laterDoors = raw({ startDatetime: "2026-08-15T20:00:00.000Z" }); // same night, +2h
+
+    function syncWith(source: RawCandidateEvent, existing: SyncTargetEvent) {
+      const { patch } = buildSyncPatch(source, resolved, existing);
+      return { patch, ...stripLockedSyncFields(patch, existing.overriddenFields) };
+    }
+
+    it("locked start, different date: neither the start nor dateChanged is written", () => {
+      const { patch, safePatch, heldBack } = syncWith(otherDate, target({ overriddenFields: ["startDatetime"] }));
+      expect(patch.dateChanged).toBe(true); // proposed...
+      expect(safePatch).not.toHaveProperty("startDatetime");
+      expect(safePatch).not.toHaveProperty("dateChanged"); // ...but no Rescheduled badge on an unchanged date
+      expect(heldBack).toEqual(["dateChanged"]);
+    });
+
+    it("locked start, same-night time change: timeChanged is held back too", () => {
+      const { safePatch, heldBack } = syncWith(laterDoors, target({ overriddenFields: ["startDatetime"] }));
+      expect(safePatch).not.toHaveProperty("timeChanged");
+      expect(heldBack).toEqual(["timeChanged"]);
+    });
+
+    it("locked start on a postponed event: postponed stays true, since the new date was never applied", () => {
+      const { patch, safePatch, heldBack } = syncWith(otherDate, target({ postponed: true, overriddenFields: ["startDatetime"] }));
+      expect(patch.postponed).toBe(false);
+      expect(safePatch).not.toHaveProperty("postponed");
+      expect(heldBack).toEqual(["dateChanged", "postponed"]);
+    });
+
+    it("unlocked start: start and its derived flags are all written, as before", () => {
+      const { safePatch, heldBack } = syncWith(otherDate, target({ postponed: true }));
+      expect(safePatch.startDatetime).toEqual(new Date("2026-09-22T18:00:00.000Z"));
+      expect(safePatch.dateChanged).toBe(true);
+      expect(safePatch.postponed).toBe(false);
+      expect(heldBack).toEqual([]);
+    });
+
+    it("unlocked start, same-night time change: timeChanged and postponed=false are written, as before", () => {
+      const { safePatch, heldBack } = syncWith(laterDoors, target({ postponed: true }));
+      expect(safePatch.timeChanged).toBe(true);
+      expect(safePatch.postponed).toBe(false);
+      expect(heldBack).toEqual([]);
+    });
+
+    it("locked start does not hide independent signals: a cancellation, sold-out and end-time change still apply", () => {
+      const source = raw({ startDatetime: "2026-09-22T18:00:00.000Z", endDatetime: "2026-09-23T04:00:00.000Z", cancelledHint: true, soldOutHint: true });
+      const { safePatch, heldBack } = syncWith(source, target({ postponed: true, overriddenFields: ["startDatetime"] }));
+      expect(safePatch.cancelled).toBe(true);
+      expect(safePatch.soldOut).toBe(true);
+      expect(safePatch.endDatetime).toEqual(new Date("2026-09-23T04:00:00.000Z"));
+      expect(heldBack).toEqual(["dateChanged", "postponed"]);
+    });
+
+    it("locked start does not hide a reversed cancellation or tickets back on sale", () => {
+      const source = raw({ startDatetime: "2026-09-22T18:00:00.000Z", cancelledHint: false, soldOutHint: false });
+      const { safePatch } = syncWith(source, target({ cancelled: true, soldOut: true, overriddenFields: ["startDatetime"] }));
+      expect(safePatch.cancelled).toBe(false);
+      expect(safePatch.soldOut).toBe(false);
+    });
+
+    it("locked start with no start change proposed: nothing is held back and other fields apply", () => {
+      const { safePatch, heldBack } = syncWith(raw({ title: "Kander (Live)" }), target({ postponed: true, overriddenFields: ["startDatetime"] }));
+      expect(safePatch).toEqual({ title: "Kander (Live)" });
+      expect(heldBack).toEqual([]);
+    });
+
+    it("locked start and locked postponed together: the lock list explains both, nothing is reported as held back twice", () => {
+      const { safePatch, heldBack } = syncWith(otherDate, target({ postponed: true, overriddenFields: ["startDatetime", "postponed"] }));
+      expect(safePatch).not.toHaveProperty("postponed");
+      expect(safePatch).not.toHaveProperty("dateChanged");
+      expect(heldBack).toEqual(["dateChanged"]);
+    });
+
+    it("a locked field other than the start leaves the derived flags alone", () => {
+      const { safePatch, heldBack } = syncWith(otherDate, target({ overriddenFields: ["title", "endDatetime"] }));
+      expect(safePatch.dateChanged).toBe(true);
+      expect(heldBack).toEqual([]);
+    });
+
+    it("a proposed postponed=true is not start-derived and is never held back", () => {
+      const { safePatch, heldBack } = stripLockedSyncFields(
+        { startDatetime: new Date("2026-09-22T18:00:00.000Z"), postponed: true },
+        ["startDatetime"],
+      );
+      expect(safePatch).toEqual({ postponed: true });
+      expect(heldBack).toEqual([]);
+    });
+  });
+
   describe("subVenue self-heal (generalized sub-venue model, 2026-09-06)", () => {
     it("proposes a subVenue patch when venue resolution succeeded and the room changed", () => {
       const withRoom = { ...resolved, resolvedSubVenue: "Store VEGA" };
@@ -507,6 +601,172 @@ function pendingDiscoveryTarget(overrides: Partial<DiscoveryQueueTarget> = {}): 
     ...overrides,
   };
 }
+
+describe("buildDiscoveryQueueClassificationPatch — RA-REFERENCE FILL (RA link integrity, 2026-10-17)", () => {
+  const RA = "https://ra.co/events/2521204";
+  const sameGenre = { genre: "psytrance", genreConfidence: "medium", decision: "review_queue" } as const;
+  const settled = { predictedGenre: "psytrance" as const, genreConfidence: "medium" as const, overallConfidence: "medium" as const };
+
+  it("fills an empty probableResidentAdvisorUrl from this run's adapter (e.g. HvadErPå offers.url)", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, residentAdvisorUrl: RA },
+      pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: null }),
+    );
+    expect(patch).toEqual({ probableResidentAdvisorUrl: RA });
+    expect(patch).not.toHaveProperty("probableTicketUrl"); // a reference, never a ticket link
+  });
+
+  it("never replaces a stored value (may be admin-entered), never clears one", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: RA },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: "https://ra.co/events/1" }),
+      ),
+    ).toEqual({});
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: null },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: "https://ra.co/events/1" }),
+      ),
+    ).toEqual({});
+  });
+
+  it("respects an admin override even when the column is empty (admin deliberately cleared it)", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch(
+        { ...sameGenre, residentAdvisorUrl: RA },
+        pendingDiscoveryTarget({ ...settled, probableResidentAdvisorUrl: null, overriddenFields: ["probableResidentAdvisorUrl"] }),
+      ),
+    ).toEqual({});
+  });
+
+  it("call sites that pass no stored value (undefined) never fill", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, residentAdvisorUrl: RA }, pendingDiscoveryTarget(settled))).toEqual({});
+  });
+});
+
+describe("buildSyncPatch — artists guessed from the title (2026-10-23)", () => {
+  it("never rewrites an existing event's artists from title-guessed names", () => {
+    const existing = target({ title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE) + Europa (DE)"] });
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-kultunaut", title: "Woesum (SE) + Europa (DE)", artists: ["Woesum (SE)", "Europa (DE)"], artistsGuessedFromTitle: true }),
+      { ...resolved, normalizedArtists: ["Woesum (SE)", "Europa (DE)"] },
+      existing,
+    );
+    expect(patch).not.toHaveProperty("artists");
+  });
+
+  it("never writes a genre that came from Discogs via title-guessed names onto an existing event", () => {
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-kultunaut", artistsGuessedFromTitle: true }),
+      { ...resolved, genre: "house", genreFromTitleGuessedArtists: true },
+      target({ primaryGenre: "techno" }),
+    );
+    expect(patch).not.toHaveProperty("primaryGenre");
+    expect(patch).not.toHaveProperty("subgenres");
+  });
+
+  it("still updates the genre from other evidence, e.g. the event's own text", () => {
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-kultunaut", artistsGuessedFromTitle: true }), { ...resolved, genre: "house" }, target({ primaryGenre: "techno" }));
+    expect(patch.primaryGenre).toBe("house");
+  });
+
+  it("still updates artists from a source whose lineup is not guessed from the title", () => {
+    const { patch } = buildSyncPatch(raw({ artists: ["Kander", "Ruby My Dear"] }), { ...resolved, normalizedArtists: ["Kander", "Ruby My Dear"] }, target());
+    expect(patch.artists).toEqual(["Kander", "Ruby My Dear"]);
+  });
+});
+
+describe("buildDiscoveryQueueClassificationPatch — DESCRIPTION FILL (2026-10-23)", () => {
+  const fixture = (arrNr: string) =>
+    parseKultunautDetailHtml(readFileSync(path.join(__dirname, "adapters", "__fixtures__", `kultunaut-detail-${arrNr}.html`), "utf-8"), arrNr);
+  const NYX = fixture("20035096").description!;
+  const AMAGER_BIO_BOILERPLATE = fixture("19456289").description!;
+  const sameGenre = { genre: null, genreConfidence: "low", decision: "hold", holdReason: "no_genre_evidence" } as const;
+  const settled = { holdReason: "no_genre_evidence" as const };
+
+  it("fills an empty description from this run's adapter text, and nothing else", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, description: null }))).toEqual({
+      description: NYX,
+    });
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, description: "  " }))).toEqual({
+      description: NYX,
+    });
+  });
+
+  it("never overwrites an existing description", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, description: "Stored text" })),
+    ).toEqual({});
+  });
+
+  it("never fills a description an admin edited or deliberately cleared", () => {
+    for (const description of [null, "Admin's own text"]) {
+      expect(
+        buildDiscoveryQueueClassificationPatch(
+          { ...sameGenre, description: NYX },
+          pendingDiscoveryTarget({ ...settled, description, overriddenFields: ["description"] }),
+        ),
+      ).toEqual({});
+    }
+  });
+
+  it("never stores the venue's practical boilerplate alone (Gloryhammer at Amager Bio)", () => {
+    expect(
+      buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: AMAGER_BIO_BOILERPLATE }, pendingDiscoveryTarget({ ...settled, description: null })),
+    ).toEqual({});
+  });
+
+  it("an empty fresh description, or a call site that passes no stored value, never fills", () => {
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: null }, pendingDiscoveryTarget({ ...settled, description: null }))).toEqual({});
+    expect(buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget(settled))).toEqual({});
+  });
+
+  it("never touches genre, confidence or hold reason, and never fills a resolved (non-pending) row", () => {
+    const patch = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, description: NYX },
+      pendingDiscoveryTarget({ ...settled, predictedGenre: "techno", genreConfidence: "medium", overriddenFields: ["predictedGenre"], description: null }),
+    );
+    // An admin-chosen genre freezes the classification refresh entirely; the fill rides along with it.
+    expect(patch).toEqual({});
+    expect(
+      buildDiscoveryQueueClassificationPatch({ ...sameGenre, description: NYX }, pendingDiscoveryTarget({ ...settled, status: "ignored", description: null })),
+    ).toEqual({});
+  });
+
+  it("a filled description reaches the review-priority signals that read it", () => {
+    const slayyyter = fixture("19768459").description!;
+    const { description } = buildDiscoveryQueueClassificationPatch(
+      { ...sameGenre, description: slayyyter },
+      pendingDiscoveryTarget({ ...settled, description: null }),
+    );
+    const row = {
+      id: "dq-x",
+      probableTitle: "Slayyyter - wor$t girl in the world tour",
+      probableStart: "2026-10-22T19:00:00+02:00",
+      probableEnd: null,
+      probableVenueName: "VEGA",
+      sourceId: "src-kultunaut",
+      detectedLineup: [],
+      predictedGenre: null,
+    };
+    const ctx = { venues: [], sourceTrust: new Map(), now: new Date("2026-10-01T12:00:00+02:00") };
+    expect(scoreReviewPriority({ ...row, description: null }, ctx).relevanceState).toBe("missing_genre_info");
+    expect(scoreReviewPriority({ ...row, description: description ?? null }, ctx).relevanceState).toBe("uncertain_relevance");
+  });
+});
+
+describe("genre QA (2026-10-17): no automatic change to an already-published genre", () => {
+  it("a re-sync whose genre no longer resolves (artist-name keyword removed) leaves the published genre untouched", () => {
+    // e-3699a789 (Culture Box, 5 Dec) is published as disco from "PAB DISCO".
+    // After the fix the night resolves to no genre; sync only ever patches a
+    // genre it actually resolved, so the editorial correction stays manual.
+    const existing = target({ canonicalSourceId: "src-culture-box", primaryGenre: "disco" });
+    const { patch } = buildSyncPatch(raw({ sourceId: "src-culture-box" }), { ...resolved, genre: null }, existing);
+    expect(patch).not.toHaveProperty("primaryGenre");
+    expect(patch).not.toHaveProperty("subgenres");
+  });
+});
 
 describe("buildDiscoveryQueueClassificationPatch", () => {
   // Real production cases (verified against the live Preview database): both
