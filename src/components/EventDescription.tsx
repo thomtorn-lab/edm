@@ -1,4 +1,5 @@
-import { formatDescription, type DescriptionBlock, type DescriptionInline } from "@/lib/descriptionFormat";
+import { formatDescription, previewBlockCount, type DescriptionBlock, type DescriptionInline } from "@/lib/descriptionFormat";
+import ShowMore from "./ShowMore";
 
 /**
  * The event page's About text (About-text formatting work package,
@@ -17,11 +18,14 @@ import { formatDescription, type DescriptionBlock, type DescriptionInline } from
 export default function EventDescription({ text, headingHints }: { text: string; headingHints?: readonly string[] }) {
   const blocks = formatDescription(text, { headingHints });
   if (blocks.length === 0) return null;
+  const render = (from: number, to: number) =>
+    blocks.slice(from, to).map((block, i) => <Block key={from + i} block={block} previous={blocks[from + i - 1]} isFirst={from + i === 0} />);
+  // Long texts fold behind "Show more" (src/components/ShowMore.tsx); the
+  // folded part is still rendered into the HTML. Short texts show in full.
+  const split = previewBlockCount(blocks);
   return (
     <div className="mt-2 max-w-prose text-sm leading-relaxed text-text-secondary [overflow-wrap:anywhere]">
-      {blocks.map((block, i) => (
-        <Block key={i} block={block} previous={blocks[i - 1]} isFirst={i === 0} />
-      ))}
+      {split === null ? render(0, blocks.length) : <ShowMore preview={render(0, split)} rest={render(split, blocks.length)} />}
     </div>
   );
 }

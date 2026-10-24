@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDescription, formattedDescriptionToText, type DescriptionBlock, type DescriptionInline } from "./descriptionFormat";
+import { formatDescription, formattedDescriptionToText, previewBlockCount, type DescriptionBlock, type DescriptionInline } from "./descriptionFormat";
 
 /** Compact, readable rendering of the block list for assertions. */
 function render(blocks: DescriptionBlock[]): string[] {
@@ -232,5 +232,26 @@ describe("formatDescription — a repeated 'Name-' section convention (real Kult
 describe("formatDescription — Markdown bold markers (real KultuNaut fixture 20158318)", () => {
   it("drops paired ** markers, keeps the words and any lone asterisk", () => {
     expect(render(formatDescription("**PLEASE READ**\n5* rated night, entry 100 DKK"))).toEqual(["PLEASE READ | 5* rated night, entry 100 DKK"]);
+  });
+});
+
+describe("previewBlockCount — where 'Show more' folds a long text", () => {
+  const para = (n: number, ch = "a") => `${ch.repeat(n - 1)}.`;
+  it("short texts are never folded", () => {
+    expect(previewBlockCount(formatDescription("A short description of the night."))).toBeNull();
+    expect(previewBlockCount(formatDescription([para(300), para(300), para(290)].join("\n\n")))).toBeNull();
+  });
+  it("folds a long text between whole paragraphs, after roughly 500 characters", () => {
+    const blocks = formatDescription([para(300, "a"), para(300, "b"), para(300, "c"), para(300, "d")].join("\n\n"));
+    expect(previewBlockCount(blocks)).toBe(2);
+  });
+  it("never leaves a heading as the last visible block", () => {
+    const text = [para(520, "a"), "LINEUP", `${"Long body text about the artists of the night. ".repeat(12)}`].join("\n\n");
+    const blocks = formatDescription(text);
+    expect(blocks[1]).toMatchObject({ type: "heading" });
+    expect(previewBlockCount(blocks)).toBe(1);
+  });
+  it("does not fold away a small tail", () => {
+    expect(previewBlockCount(formatDescription([para(700, "a"), para(220, "b")].join("\n\n")))).toBeNull();
   });
 });

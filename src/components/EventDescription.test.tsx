@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import EventDescription from "./EventDescription";
 
 afterEach(cleanup);
@@ -38,5 +39,35 @@ describe("EventDescription", () => {
   it("renders nothing for an empty description", () => {
     const { container } = render(<EventDescription text="   " />);
     expect(container.innerHTML).toBe("");
+  });
+});
+
+describe("EventDescription — Show more / Show less", () => {
+  const LONG = Array.from({ length: 6 }, (_, i) => `Paragraph ${i + 1}: ${"the night continues with more music and more dancing. ".repeat(4)}`).join("\n\n");
+
+  it("short texts render in full with no toggle", () => {
+    const { container } = render(<EventDescription text="Doors 23:00. A short description." />);
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("long texts: everything is in the server-rendered HTML; the folded part is only hidden", () => {
+    const html = renderToString(<EventDescription text={LONG} />);
+    for (let i = 1; i <= 6; i++) expect(html).toContain(`Paragraph ${i}:`);
+    expect(html).toMatch(/<div id="[^"]+" hidden="">/);
+    expect(html).toContain("Show more");
+  });
+
+  it("toggles visibility and aria-expanded, and folds back", () => {
+    const { container, getByRole } = render(<EventDescription text={LONG} />);
+    const button = getByRole("button", { name: "Show more" });
+    const folded = container.querySelector(`#${CSS.escape(button.getAttribute("aria-controls")!)}`)!;
+    expect(folded.hasAttribute("hidden")).toBe(true);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(folded.hasAttribute("hidden")).toBe(false);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.textContent).toBe("Show less");
+    fireEvent.click(button);
+    expect(folded.hasAttribute("hidden")).toBe(true);
   });
 });

@@ -540,3 +540,33 @@ export function formattedDescriptionToText(blocks: DescriptionBlock[]): string {
     .map((b) => (b.type === "heading" ? inline(b.content) : b.lines.map(inline).join("\n")))
     .join("\n\n");
 }
+
+function blockTextLength(block: DescriptionBlock): number {
+  const inline = (tokens: DescriptionInline[]) => tokens.reduce((n, t) => n + (t.type === "text" ? t.text.length : t.label.length), 0);
+  return block.type === "heading" ? inline(block.content) : block.lines.reduce((n, l) => n + inline(l), 0);
+}
+
+/** Descriptions up to this many characters are always shown in full. */
+export const PREVIEW_MIN_TOTAL = 900;
+const PREVIEW_TARGET = 500;
+const PREVIEW_MIN_REST = 250;
+
+/**
+ * Where a long About text is folded behind "Show more" (2026-10-24): the
+ * number of leading blocks shown up front, or null to show everything. Only
+ * ever splits between whole blocks (never mid-paragraph), never leaves a
+ * heading as the last visible block, and never folds away a small tail —
+ * short descriptions are always shown in full. Presentation only: every
+ * block is still rendered into the page's HTML.
+ */
+export function previewBlockCount(blocks: DescriptionBlock[]): number | null {
+  const lengths = blocks.map(blockTextLength);
+  const total = lengths.reduce((a, b) => a + b, 0);
+  if (total <= PREVIEW_MIN_TOTAL) return null;
+  let shown = 0;
+  let count = 0;
+  while (count < blocks.length && shown < PREVIEW_TARGET) shown += lengths[count++];
+  while (count > 1 && blocks[count - 1].type === "heading") shown -= lengths[--count];
+  if (count === 0 || count >= blocks.length) return null;
+  return total - shown >= PREVIEW_MIN_REST ? count : null;
+}
