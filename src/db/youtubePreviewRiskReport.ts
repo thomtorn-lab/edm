@@ -1,6 +1,7 @@
 import { classifyArtistName, type NameRule, type NameVerdict } from "@/lib/enrichment/artistNameClassification";
 import { fold, identifyHeadliners, type HeadlinerResult } from "@/lib/enrichment/eventHeadliners";
 import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
+import { resolveEventOverride, type EventOverrideDecision } from "@/lib/eventYoutubeOverride";
 import {
   billedPartners,
   PROPOSED_RULES,
@@ -21,6 +22,11 @@ import {
  *    discovery_queue — lists what each narrow non-artist rule would flag,
  *    and which flagged names currently hold an accepted match (each one a
  *    potential false positive to review before any rule is enforced).
+ * 3. Headliner priority per upcoming event, against what the event page
+ *    shows today (src/lib/queries.ts::getEventYoutubePreview, including the
+ *    event overrides from migration 0023) — a simulation, nothing is changed.
+ * 0. Production state of every manual choice (migration 0023, event
+ *    overrides, artist pins, artist blocks), read as it is.
  *
  * Never calls YouTube. Runs inside BEGIN READ ONLY (verified with SHOW
  * transaction_read_only before any query; refuses to continue otherwise),
@@ -39,7 +45,7 @@ export const READ_ONLY_TX_STATEMENTS = {
   rollback: "ROLLBACK",
 } as const;
 
-export const CACHE_SQL = `SELECT artist_name_normalized, status, match_rule, video_id, video_title, channel_title, manual_block, evidence
+export const CACHE_SQL = `SELECT artist_name_normalized, status, match_rule, video_id, video_title, channel_title, manual_block, expires_at, evidence
 FROM artist_youtube_preview_cache
 ORDER BY artist_name_normalized`;
 
@@ -57,21 +63,50 @@ FROM discovery_queue d CROSS JOIN LATERAL unnest(d.detected_lineup) AS l(name)
 GROUP BY l.name`;
 
 /**
- * Event-level manual video choices (draft PR #166's event_youtube_preview_overrides,
- * migration 0023 — not in Production yet). Read defensively: the table is
- * looked up with to_regclass first and only then selected from. Any override
+ * Drizzle's migration bookkeeping (src/db/deployMigrations.ts): whether
+ * migration 0023 is recorded as applied is read from here, never inferred
+ * from the merge.
+ */
+export const MIGRATIONS_TABLE_SQL = "SELECT to_regclass('drizzle.__drizzle_migrations') AS t";
+export const MIGRATIONS_SQL = "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1";
+
+/**
+ * Event-level manual video choices (event_youtube_preview_overrides,
+ * migration 0023, #166). Looked up with to_regclass first and only then
+ * selected from. Each row is interpreted with #166's own resolveEventOverride,
+ * so the report and the event page cannot disagree about what it means. Any
  * row, whatever its mode, means "a person decided": the event is kept out of
- * the headliner simulation. resolveEventOverride (#166) is deliberately NOT
- * re-implemented here.
+ * the headliner simulation.
  */
 export const OVERRIDES_TABLE_SQL = "SELECT to_regclass('public.event_youtube_preview_overrides') AS t";
-export const OVERRIDES_SQL = "SELECT event_id, mode, video_id, available FROM event_youtube_preview_overrides";
+export const OVERRIDES_SQL = `SELECT o.event_id, e.slug, o.mode, o.video_id, o.video_title, o.channel_title, o.artist_name, o.available, o.updated_at
+FROM event_youtube_preview_overrides o LEFT JOIN events e ON e.id = o.event_id
+ORDER BY o.event_id`;
 
 export interface OverrideRow {
   event_id: string;
+  slug?: string | null;
   mode: string;
   video_id: string | null;
+  video_title?: string | null;
+  channel_title?: string | null;
+  artist_name?: string | null;
   available: boolean;
+  updated_at?: Date | string | null;
+}
+
+function decisionOf(o: OverrideRow | undefined): EventOverrideDecision {
+  return resolveEventOverride(
+    o && {
+      eventId: o.event_id,
+      mode: o.mode,
+      videoId: o.video_id,
+      videoTitle: o.video_title ?? null,
+      channelTitle: o.channel_title ?? null,
+      artistName: o.artist_name ?? null,
+      available: o.available,
+    },
+  );
 }
 
 /** Upcoming published events (same "visible" approximation as EVENT_NAMES_SQL), with every source that links to them. */
@@ -90,6 +125,7 @@ export interface CacheRow {
   video_title: string | null;
   channel_title: string | null;
   manual_block: boolean;
+  expires_at?: Date | string | null;
   evidence: unknown;
 }
 
@@ -205,10 +241,16 @@ export interface EventEntry {
   sourceIds: string[];
   lineup: string[];
   headliner: Pick<HeadlinerResult, "headliners" | "confidence" | "signals" | "candidates" | "flags">;
-  /** What the event page shows today: first lineup artist with an accepted, unblocked match. */
-  shownToday: (VideoView & { isHeadliner: boolean; manualPin: boolean }) | null;
-  /** Set when the event has an override row (#166): the page shows that manual choice, not shownToday. */
-  manualOverride: { mode: string; videoId: string | null; available: boolean } | null;
+  /**
+   * What the event page shows today — src/lib/queries.ts::getEventYoutubePreview:
+   * the event override's video when it has one, nothing when the override
+   * says none (or the override table is missing: the page fails closed),
+   * otherwise the first lineup artist with an accepted, unblocked match.
+   */
+  shownToday: (VideoView & { isHeadliner: boolean; manualPin: boolean; source: "event_override" | "artist_cache" }) | null;
+  shownTodayBasis: ShownBasis;
+  /** Set when the event has an override row: the page shows that manual choice (or none). */
+  manualOverride: { mode: string; videoId: string | null; available: boolean; decision: EventOverrideDecision["kind"] } | null;
   headliners: HeadlinerView[];
   /** Other performers with a strong, verified match (passes today's and the proposed rules; solo or partners in the lineup). */
   strongFallbacks: string[];
@@ -226,10 +268,46 @@ export interface EventEntry {
   shownVideoFailsProposedRules: boolean;
 }
 
+/** Why shownToday is what it is (getEventYoutubePreview's branches). */
+export type ShownBasis = "event_override_video" | "event_override_none" | "override_table_missing" | "artist_cache" | "no_cached_match";
+
+/** Owner decision basis (2026-10-24): the questions the report must answer, counted over every visible event. */
+export interface DecisionSummary {
+  visibleEvents: number;
+  eventsShowingVideo: number;
+  /** Events whose headliner is documented or supported_prioritized. */
+  prioritizedEvents: number;
+  shownIsHeadliner: number;
+  shownIsOtherArtist: number;
+  shownNothing: number;
+  /** Another artist is shown although a headliner's own cached match is usable (passes today's rules). */
+  otherShownWhileHeadlinerHasCachedVideo: string[];
+  /** The shown video bills a partner who is not in this event's lineup. */
+  b2bShownWithNonPerformer: string[];
+  /** Changes the simulation would make using only videos already verified — no YouTube call. */
+  solvableWithVerifiedVideos: { fromCacheRow: number; fromStoredEvidenceOnly: number; otherPerformerFallback: number };
+  /** No suitable video after simulation (manual choices excluded). */
+  missingSuitableVideo: { prioritizedHeadlinerWithoutMatch: number; noPrioritizedHeadliner: number; total: number };
+  /** How the headliner was inferred: strong signal, or which independent groups support it. */
+  headlinerBasis: Record<string, number>;
+  /** Events kept out of every change because a person decided (event override or artist pin). */
+  manualChoicesKept: number;
+  /** Every change the simulation would make, from → to. Manual choices never appear here. */
+  changes: {
+    slug: string;
+    from: { artist: string; videoId: string } | null;
+    to: { artist: string; videoId: string } | null;
+    reason: SimulatedReason;
+    requiresVisibleArtistName: boolean;
+  }[];
+}
+
 export interface EventSection {
   skipped?: false;
-  /** Whether #166's override table exists in this database, and how many rows it holds. */
+  /** Whether the override table exists in this database, and how many rows it holds. */
   eventOverrides: "table_not_present" | { rows: number };
+  /** True when the override table is missing: Production then shows NO video on any event page (fail closed). */
+  productionFailsClosed: boolean;
   visibleEvents: number;
   outcomeCounts: Record<EventOutcome, number>;
   confidenceCounts: Record<HeadlinerResult["confidence"], number>;
@@ -246,6 +324,7 @@ export interface EventSection {
   proseOrderAgreement: { eventsWithProse: number; proseFirstEqualsLineupFirst: number };
   /** Documented only because the title was copied into the lineup as its first entry (e.g. a series name) — review by hand. */
   titleCopyNeedsReview: string[];
+  decision: DecisionSummary;
   events: EventEntry[];
 }
 
@@ -255,8 +334,122 @@ export interface EventSectionSkipped {
   reason: string;
 }
 
+/** One entry of src/db/migrations/meta/_journal.json. */
+export interface JournalEntry {
+  tag: string;
+  when: number;
+}
+
+/**
+ * The manual choices the owner asked to have confirmed (2026-10-24), as
+ * they stand in the database: #163's plan moves Steamboi's pin to an event
+ * override and keeps LMN blocked. Read only — this report never makes it so.
+ */
+export const OWNER_CHECKS = {
+  overridesMigrationTag: "0023_event_youtube_preview_overrides",
+  steamboiEventId: "e-a2b5cf47",
+  steamboiArtistKey: "steamboi",
+  lmnArtistKey: "lmn",
+} as const;
+
+export type CheckStatus = "confirmed" | "not_done" | "unknown";
+
+export interface ManualChoicesSection {
+  migrations: {
+    trackingTablePresent: boolean;
+    /** created_at of the newest recorded migration (Drizzle stores the journal's "when"). */
+    latestAppliedMillis: number | null;
+    /** Journal entries in this checkout that the database has not recorded. */
+    pendingInRepo: string[];
+  };
+  overrideTable: "present" | "table_not_present" | "unreadable";
+  eventOverrides: {
+    eventId: string;
+    slug: string | null;
+    mode: string;
+    videoId: string | null;
+    videoTitle: string | null;
+    artistName: string | null;
+    available: boolean;
+    decision: EventOverrideDecision["kind"];
+    updatedAt: string | null;
+  }[];
+  /** match_rule "manual" cache rows — hand-picked artist videos shown on EVERY event of that artist. */
+  artistPins: { artist: string; videoId: string | null; videoTitle: string | null; expiresAt: string | null; manualBlock: boolean }[];
+  artistBlocks: { artist: string; status: string; matchRule: string | null; videoId: string | null }[];
+  ownerChecks: { check: string; status: CheckStatus; detail: string }[];
+}
+
+function iso(v: Date | string | null | undefined): string | null {
+  return v == null ? null : new Date(v).toISOString();
+}
+
+export function buildManualChoicesSection(
+  cacheRows: CacheRow[],
+  latestAppliedMillis: number | null | "no_tracking_table",
+  journal: JournalEntry[],
+  overrides: OverrideRow[] | "table_not_present" | "unreadable",
+): ManualChoicesSection {
+  const tracked = latestAppliedMillis !== "no_tracking_table";
+  const latest = tracked ? latestAppliedMillis : null;
+  const pendingInRepo = journal.filter((j) => latest === null || latest < j.when).map((j) => j.tag);
+  const overrideTable = overrides === "table_not_present" || overrides === "unreadable" ? overrides : "present";
+  const rows = Array.isArray(overrides) ? overrides : [];
+  const eventOverrides = rows.map((o) => ({
+    eventId: o.event_id,
+    slug: o.slug ?? null,
+    mode: o.mode,
+    videoId: o.video_id,
+    videoTitle: o.video_title ?? null,
+    artistName: o.artist_name ?? null,
+    available: o.available,
+    decision: decisionOf(o).kind,
+    updatedAt: iso(o.updated_at),
+  }));
+  const artistPins = cacheRows
+    .filter((r) => r.match_rule === "manual")
+    .map((r) => ({ artist: r.artist_name_normalized, videoId: r.video_id, videoTitle: r.video_title, expiresAt: iso(r.expires_at), manualBlock: r.manual_block }));
+  const artistBlocks = cacheRows
+    .filter((r) => r.manual_block)
+    .map((r) => ({ artist: r.artist_name_normalized, status: r.status, matchRule: r.match_rule ?? null, videoId: r.video_id }));
+
+  const inJournal = journal.some((j) => j.tag === OWNER_CHECKS.overridesMigrationTag);
+  const migrationRecorded = inJournal && tracked && !pendingInRepo.includes(OWNER_CHECKS.overridesMigrationTag);
+  const ownerChecks: ManualChoicesSection["ownerChecks"] = [];
+  ownerChecks.push({
+    check: `migration ${OWNER_CHECKS.overridesMigrationTag} applied`,
+    status: !inJournal ? "unknown" : migrationRecorded && overrideTable === "present" ? "confirmed" : overrideTable === "unreadable" ? "unknown" : "not_done",
+    detail: `recorded in drizzle.__drizzle_migrations: ${!tracked ? "no tracking table" : migrationRecorded ? "yes" : "no"}; table: ${overrideTable}`,
+  });
+  const steamOverride = eventOverrides.find((o) => o.eventId === OWNER_CHECKS.steamboiEventId);
+  ownerChecks.push({
+    check: `Steamboi event override on ${OWNER_CHECKS.steamboiEventId}`,
+    status: overrideTable === "unreadable" ? "unknown" : steamOverride?.decision === "video" ? "confirmed" : "not_done",
+    detail: steamOverride
+      ? `mode ${steamOverride.mode}, video ${steamOverride.videoId ?? "—"}, available ${steamOverride.available} → page shows ${steamOverride.decision}`
+      : overrideTable === "present" ? "no override row for this event" : `override table ${overrideTable}`,
+  });
+  const steamRow = cacheRows.find((r) => r.artist_name_normalized === OWNER_CHECKS.steamboiArtistKey);
+  ownerChecks.push({
+    check: `Steamboi artist pin released (${OWNER_CHECKS.steamboiArtistKey} no longer match_rule "manual")`,
+    status: steamRow?.match_rule === "manual" ? "not_done" : "confirmed",
+    detail: steamRow
+      ? `cache row: status ${steamRow.status}, match_rule ${steamRow.match_rule ?? "null"}, video ${steamRow.video_id ?? "—"}, expires ${iso(steamRow.expires_at) ?? "?"}`
+      : "no cache row",
+  });
+  const lmnRow = cacheRows.find((r) => r.artist_name_normalized === OWNER_CHECKS.lmnArtistKey);
+  ownerChecks.push({
+    check: `LMN still manually blocked (${OWNER_CHECKS.lmnArtistKey})`,
+    status: lmnRow?.manual_block ? "confirmed" : "not_done",
+    detail: lmnRow ? `cache row: status ${lmnRow.status}, manual_block ${lmnRow.manual_block}` : "no cache row",
+  });
+
+  return { migrations: { trackingTablePresent: tracked, latestAppliedMillis: latest, pendingInRepo }, overrideTable, eventOverrides, artistPins, artistBlocks, ownerChecks };
+}
+
 export interface RiskReport {
   generatedAt: string;
+  manualChoices: ManualChoicesSection;
   rules: RuleReplaySection;
   names: NameSection;
   events: EventSection | EventSectionSkipped;
@@ -380,8 +573,9 @@ function inLineup(name: string, lineup: string[]): boolean {
   return lineup.some((a) => fold(cleanArtistDisplayName(a)) === f);
 }
 
-export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], overrides: OverrideRow[] | "table_not_present" = "table_not_present"): EventSection {
-  const overrideByEvent = new Map(overrides === "table_not_present" ? [] : overrides.map((o) => [o.event_id, o]));
+export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], overrides: OverrideRow[] | "table_not_present" = []): EventSection {
+  const tableMissing = overrides === "table_not_present";
+  const overrideByEvent = new Map(tableMissing ? [] : overrides.map((o) => [o.event_id, o]));
   const cacheByKey = new Map(cacheRows.map((r) => [r.artist_name_normalized, r]));
   const replayByKey = new Map<string, AcceptedReplay>();
   const replayOf = (row: CacheRow): AcceptedReplay => {
@@ -443,14 +637,47 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
       titleCopyNeedsReview.push(`${e.slug} — "${e.title}"`);
     }
 
-    const shown = shownPreviewArtist(lineup, cacheByKey);
     const headlinerKeys = new Set(result.headliners.map(keyOf));
     const override = overrideByEvent.get(e.id) ?? null;
-    const manualOverride = override ? { mode: override.mode, videoId: override.video_id, available: override.available } : null;
-    const shownToday =
-      shown && !override
-        ? { ...videoView(shown.artist, shown.row, lineup), isHeadliner: headlinerKeys.has(keyOf(shown.artist)), manualPin: shown.row.match_rule === "manual" }
-        : null;
+    const decision = decisionOf(override ?? undefined);
+    const manualOverride = override ? { mode: override.mode, videoId: override.video_id, available: override.available, decision: decision.kind } : null;
+    // Same branches, in the same order, as getEventYoutubePreview.
+    let shownToday: EventEntry["shownToday"] = null;
+    let shownTodayBasis: ShownBasis;
+    if (tableMissing) {
+      shownTodayBasis = "override_table_missing";
+    } else if (decision.kind === "none") {
+      shownTodayBasis = "event_override_none";
+    } else if (decision.kind === "video") {
+      shownTodayBasis = "event_override_video";
+      const artist = decision.artistName ?? lineup[0] ?? "Artist";
+      const { solo, partners } = billedPartners(decision.videoTitle ?? "", cleanArtistDisplayName(artist), decision.channelTitle ?? "");
+      shownToday = {
+        artist,
+        videoId: decision.videoId,
+        videoTitle: decision.videoTitle,
+        channelTitle: decision.channelTitle,
+        solo,
+        partners,
+        outsiders: partners.filter((p) => !inLineup(p, lineup)),
+        // A person chose it: never judged by a rule.
+        proposedFailures: [],
+        isHeadliner: headlinerKeys.has(keyOf(artist)),
+        manualPin: false,
+        source: "event_override",
+      };
+    } else {
+      const shown = shownPreviewArtist(lineup, cacheByKey);
+      shownTodayBasis = shown ? "artist_cache" : "no_cached_match";
+      if (shown) {
+        shownToday = {
+          ...videoView(shown.artist, shown.row, lineup),
+          isHeadliner: headlinerKeys.has(keyOf(shown.artist)),
+          manualPin: shown.row.match_rule === "manual",
+          source: "artist_cache",
+        };
+      }
+    }
 
     const headliners: HeadlinerView[] = result.headliners.map((artist) => {
       const row = cacheByKey.get(keyOf(artist));
@@ -552,6 +779,7 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
       lineup,
       headliner: { headliners: result.headliners, confidence: result.confidence, signals: result.signals, candidates: result.candidates, flags: result.flags },
       shownToday,
+      shownTodayBasis,
       manualOverride,
       headliners,
       strongFallbacks,
@@ -563,7 +791,8 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
   }
 
   return {
-    eventOverrides: overrides === "table_not_present" ? "table_not_present" : { rows: overrides.length },
+    eventOverrides: tableMissing ? "table_not_present" : { rows: overrides.length },
+    productionFailsClosed: tableMissing,
     visibleEvents: eventRows.length,
     outcomeCounts,
     confidenceCounts,
@@ -574,12 +803,66 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
     },
     proseOrderAgreement,
     titleCopyNeedsReview,
+    decision: summarizeDecision(events),
     events,
   };
 }
 
+function headlinerBasisOf(e: EventEntry): string {
+  const { confidence, candidates, headliners } = e.headliner;
+  if (confidence === "none") return "none";
+  if (confidence === "documented") return "documented (strong signal)";
+  // supported_insufficient names no headliner: show what its best candidate had.
+  const pool = headliners.length > 0 ? candidates.filter((c) => headliners.includes(c.artist)) : [...candidates].sort((a, b) => b.independentGroups.length - a.independentGroups.length).slice(0, 1);
+  const groups = new Set(pool.flatMap((c) => c.independentGroups));
+  return `${confidence}: ${[...groups].sort().join("+") || "—"}`;
+}
+
+export function summarizeDecision(events: EventEntry[]): DecisionSummary {
+  const prioritized = events.filter((e) => e.headliner.confidence === "documented" || e.headliner.confidence === "supported_prioritized");
+  const isManual = (e: EventEntry) => e.simulated.reason === "manual_choice_kept";
+  const headlinerBasis: Record<string, number> = {};
+  for (const e of events) {
+    const k = headlinerBasisOf(e);
+    headlinerBasis[k] = (headlinerBasis[k] ?? 0) + 1;
+  }
+  const changed = events.filter((e) => e.simulated.changesFromToday && !isManual(e));
+  const missing = events.filter((e) => !isManual(e) && e.simulated.videoId === null);
+  return {
+    visibleEvents: events.length,
+    eventsShowingVideo: events.filter((e) => e.shownToday).length,
+    prioritizedEvents: prioritized.length,
+    shownIsHeadliner: prioritized.filter((e) => e.shownToday?.isHeadliner).length,
+    shownIsOtherArtist: prioritized.filter((e) => e.shownToday && !e.shownToday.isHeadliner).length,
+    shownNothing: prioritized.filter((e) => !e.shownToday).length,
+    otherShownWhileHeadlinerHasCachedVideo: prioritized
+      .filter((e) => !isManual(e) && e.shownToday && !e.shownToday.isHeadliner && e.headliners.some((h) => h.video))
+      .map((e) => e.slug),
+    b2bShownWithNonPerformer: events.filter((e) => (e.shownToday?.outsiders.length ?? 0) > 0).map((e) => e.slug),
+    solvableWithVerifiedVideos: {
+      fromCacheRow: changed.filter((e) => ["headliner_solo", "headliner_b2b_in_lineup", "headliner_b2b_outsider_no_alt"].includes(e.simulated.reason)).length,
+      fromStoredEvidenceOnly: changed.filter((e) => e.simulated.reason === "headliner_solo_from_evidence").length,
+      otherPerformerFallback: changed.filter((e) => e.simulated.reason === "fallback_strong").length,
+    },
+    missingSuitableVideo: {
+      prioritizedHeadlinerWithoutMatch: missing.filter((e) => e.simulated.reason === "none").length,
+      noPrioritizedHeadliner: missing.filter((e) => e.simulated.reason === "no_prioritized_headliner").length,
+      total: missing.length,
+    },
+    headlinerBasis,
+    manualChoicesKept: events.filter(isManual).length,
+    changes: changed.map((e) => ({
+      slug: e.slug,
+      from: e.shownToday ? { artist: e.shownToday.artist, videoId: e.shownToday.videoId } : null,
+      to: e.simulated.videoId ? { artist: e.simulated.artist ?? "?", videoId: e.simulated.videoId } : null,
+      reason: e.simulated.reason,
+      requiresVisibleArtistName: e.simulated.requiresVisibleArtistName,
+    })),
+  };
+}
+
 /** Runs every query inside a verified read-only transaction that is ALWAYS rolled back. */
-export async function runYoutubePreviewRiskReport(client: QueryClient, now: Date = new Date()): Promise<RiskReport> {
+export async function runYoutubePreviewRiskReport(client: QueryClient, now: Date = new Date(), journal: JournalEntry[] = []): Promise<RiskReport> {
   await client.query(READ_ONLY_TX_STATEMENTS.begin);
   try {
     await client.query(READ_ONLY_TX_STATEMENTS.timeout);
@@ -591,19 +874,25 @@ export async function runYoutubePreviewRiskReport(client: QueryClient, now: Date
     const eventNames = (await client.query(EVENT_NAMES_SQL)).rows as EventNameRow[];
     const discoveryNames = (await client.query(DISCOVERY_NAMES_SQL)).rows as DiscoveryNameRow[];
     const eventRows = (await client.query(EVENTS_SQL)).rows as EventRow[];
+    const tracking = (await client.query(MIGRATIONS_TABLE_SQL)).rows[0] as { t: string | null } | undefined;
+    const latestRow = tracking?.t ? ((await client.query(MIGRATIONS_SQL)).rows[0] as { created_at: string | number } | undefined) : undefined;
+    const latestApplied = !tracking?.t ? "no_tracking_table" : latestRow ? Number(latestRow.created_at) : null;
     // Last, so a failure here cannot lose the sections already read: an
     // unreadable override table skips the event section (fail closed) —
     // events are never simulated as if no manual choice existed.
     let events: EventSection | EventSectionSkipped;
+    let overrides: OverrideRow[] | "table_not_present" | "unreadable";
     try {
       const table = (await client.query(OVERRIDES_TABLE_SQL)).rows[0] as { t: string | null } | undefined;
-      const overrides = table?.t ? ((await client.query(OVERRIDES_SQL)).rows as OverrideRow[]) : "table_not_present";
+      overrides = table?.t ? ((await client.query(OVERRIDES_SQL)).rows as OverrideRow[]) : "table_not_present";
       events = buildEventSection(eventRows, cacheRows, overrides);
     } catch (err) {
+      overrides = "unreadable";
       events = { skipped: true, reason: `event_youtube_preview_overrides could not be read: ${err instanceof Error ? err.message : String(err)}` };
     }
     return {
       generatedAt: now.toISOString(),
+      manualChoices: buildManualChoicesSection(cacheRows, latestApplied, journal, overrides),
       rules: buildRuleReplaySection(cacheRows),
       names: buildNameSection(eventNames, discoveryNames, cacheRows),
       events,

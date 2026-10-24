@@ -8,9 +8,10 @@
  * Reads DATABASE_URL from the environment and never prints it. Never calls
  * YouTube. The optional --out file is written on the runner only.
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { Client } from "pg";
-import { runYoutubePreviewRiskReport, type EventEntry, type NameEntry, type RiskReport } from "./youtubePreviewRiskReport";
+import { runYoutubePreviewRiskReport, type EventEntry, type JournalEntry, type NameEntry, type RiskReport } from "./youtubePreviewRiskReport";
 import type { AcceptedReplay } from "@/lib/enrichment/youtubePreviewRuleReplay";
 
 function readOptionalArg(name: string): string | null {
@@ -48,11 +49,11 @@ function formatEvent(e: EventEntry): string {
     lines.push(`      evidence for ${c.artist}: ${sig.join(" | ")}`);
   }
   const shown = e.shownToday;
-  if (e.manualOverride) lines.push(`    shown today: manual (override, mode ${e.manualOverride.mode}${e.manualOverride.videoId ? `, video ${e.manualOverride.videoId}` : ""})`);
-  else lines.push(
+  if (e.manualOverride) lines.push(`    event override: mode ${e.manualOverride.mode}${e.manualOverride.videoId ? `, video ${e.manualOverride.videoId}` : ""}, available ${e.manualOverride.available} → ${e.manualOverride.decision}`);
+  lines.push(
     shown
-      ? `    shown today: ${shown.manualPin ? "[manual pin] " : ""}${shown.artist} — "${shown.videoTitle ?? ""}" (${shown.channelTitle ?? "?"})${shown.isHeadliner ? " [headliner]" : ""}${shown.solo ? "" : ` B2B with ${shown.partners.join(", ")}${shown.outsiders.length > 0 ? ` (not performing: ${shown.outsiders.join(", ")})` : ""}`}${shown.proposedFailures.length > 0 ? ` — fails proposed: ${shown.proposedFailures.join(", ")}` : ""}`
-      : "    shown today: no video",
+      ? `    shown today (${e.shownTodayBasis}): ${shown.manualPin ? "[manual pin] " : ""}${shown.artist} — "${shown.videoTitle ?? ""}" (${shown.channelTitle ?? "?"})${shown.isHeadliner ? " [headliner]" : ""}${shown.solo ? "" : ` B2B with ${shown.partners.join(", ")}${shown.outsiders.length > 0 ? ` (not performing: ${shown.outsiders.join(", ")})` : ""}`}${shown.proposedFailures.length > 0 ? ` — fails proposed: ${shown.proposedFailures.join(", ")}` : ""}`
+      : `    shown today: no video (${e.shownTodayBasis})`,
   );
   for (const v of e.headliners) {
     const alts = v.verifiedAlternatives.map((a) => `${a.videoId} "${a.title}"${a.solo ? " [solo]" : ` [B2B ${a.partners.join(", ")}]`}`);
@@ -69,6 +70,20 @@ function formatEvent(e: EventEntry): string {
 export function printReport(report: RiskReport): void {
   const { rules, names } = report;
   console.log(`== YouTube preview risk report (read-only), generated ${report.generatedAt} ==`);
+
+  const mc = report.manualChoices;
+  console.log("\n== 0. Manual choices as they stand in this database (read only — nothing is changed) ==");
+  for (const c of mc.ownerChecks) console.log(`  [${c.status}] ${c.check} — ${c.detail}`);
+  console.log(
+    `Migrations: tracking table ${mc.migrations.trackingTablePresent ? "present" : "MISSING"}, newest recorded ${mc.migrations.latestAppliedMillis ?? "—"}, ` +
+      `not recorded from this checkout: ${mc.migrations.pendingInRepo.length > 0 ? mc.migrations.pendingInRepo.join(", ") : "none"}`,
+  );
+  console.log(`Event overrides (${mc.overrideTable}, ${mc.eventOverrides.length} row(s)):`);
+  for (const o of mc.eventOverrides) console.log(`  - ${o.eventId} ${o.slug ?? "(event not found)"}: mode ${o.mode}, video ${o.videoId ?? "—"} "${o.videoTitle ?? ""}", artist ${o.artistName ?? "—"}, available ${o.available} → ${o.decision}, updated ${o.updatedAt ?? "?"}`);
+  console.log(`Artist pins, match_rule "manual" (${mc.artistPins.length}):`);
+  for (const p of mc.artistPins) console.log(`  - ${p.artist}: video ${p.videoId ?? "—"} "${p.videoTitle ?? ""}", expires ${p.expiresAt ?? "?"}${p.manualBlock ? " [also blocked]" : ""}`);
+  console.log(`Artist blocks, manual_block (${mc.artistBlocks.length}):`);
+  for (const b of mc.artistBlocks) console.log(`  - ${b.artist}: status ${b.status}, match_rule ${b.matchRule ?? "null"}, video ${b.videoId ?? "—"}`);
 
   console.log("\n== 1. Offline replay of proposed identity rules ==");
   for (const [rule, text] of Object.entries(rules.proposedRules)) console.log(`  ${rule}: ${text}`);
@@ -100,7 +115,11 @@ export function printReport(report: RiskReport): void {
     process.exitCode = 1;
     return;
   }
-  console.log(`Event overrides (draft PR #166): ${ev.eventOverrides === "table_not_present" ? "table not present in this database" : `${ev.eventOverrides.rows} row(s) — those events are left out of the simulation`}`);
+  console.log(`Event overrides: ${ev.eventOverrides === "table_not_present" ? "table not present in this database" : `${ev.eventOverrides.rows} row(s) — those events are left out of the simulation`}`);
+  if (ev.productionFailsClosed) {
+    console.log("WARNING: the override table is missing, so getEventYoutubePreview fails closed — Production shows NO video on any event page. \"Shown today\" below is therefore empty everywhere.");
+    console.error("::warning::event_youtube_preview_overrides is missing — event pages show no video (fail closed).");
+  }
   console.log(`Visible published events: ${ev.visibleEvents}`);
   console.log(`Headliner confidence: ${JSON.stringify(ev.confidenceCounts)}`);
   console.log(`Outcomes: ${JSON.stringify(ev.outcomeCounts)}`);
@@ -115,6 +134,24 @@ export function printReport(report: RiskReport): void {
   );
   console.log(`\nDocumented only via a title copied into the lineup — review by hand (${ev.titleCopyNeedsReview.length}):`);
   for (const t of ev.titleCopyNeedsReview) console.log(`  - ${t}`);
+  const d = ev.decision;
+  console.log("\n== 4. Decision basis (simulation only — nothing is changed) ==");
+  console.log(`Visible events ${d.visibleEvents}; showing a video today ${d.eventsShowingVideo}`);
+  console.log(`Prioritized headliner (documented or supported_prioritized): ${d.prioritizedEvents} — shown video is the headliner ${d.shownIsHeadliner}, another artist ${d.shownIsOtherArtist}, no video ${d.shownNothing}`);
+  console.log(`Another artist shown although a headliner has a usable cached video (${d.otherShownWhileHeadlinerHasCachedVideo.length}): ${d.otherShownWhileHeadlinerHasCachedVideo.join(", ") || "—"}`);
+  console.log(`Shown video bills a partner not performing at the event (${d.b2bShownWithNonPerformer.length}): ${d.b2bShownWithNonPerformer.join(", ") || "—"}`);
+  console.log(
+    `Solvable with already-verified videos (no YouTube call): from the cache row ${d.solvableWithVerifiedVideos.fromCacheRow}, ` +
+      `only from stored evidence ${d.solvableWithVerifiedVideos.fromStoredEvidenceOnly}, other performer (artist name must be shown) ${d.solvableWithVerifiedVideos.otherPerformerFallback}`,
+  );
+  console.log(`Missing a suitable video: ${d.missingSuitableVideo.total} (prioritized headliner without match ${d.missingSuitableVideo.prioritizedHeadlinerWithoutMatch}, no prioritized headliner ${d.missingSuitableVideo.noPrioritizedHeadliner})`);
+  console.log(`How the headliner was inferred (independent signal groups): ${JSON.stringify(d.headlinerBasis)}`);
+  console.log(`Manual choices kept untouched: ${d.manualChoicesKept}`);
+  console.log(`\nChanges the simulation would make (${d.changes.length}) — proposals for review, never applied:`);
+  for (const c of d.changes) {
+    console.log(`  - ${c.slug}: ${c.from ? `${c.from.artist} ${c.from.videoId}` : "no video"} → ${c.to ? `${c.to.artist} ${c.to.videoId}` : "no video"} (${c.reason})${c.requiresVisibleArtistName ? " — artist name must be shown" : ""}`);
+  }
+
   const notOk = ev.events.filter((e) => e.outcome !== "ok_headliner_shown");
   console.log(`\nEvents not already showing their headliner (${notOk.length} of ${ev.events.length}; full detail for every event in the JSON):`);
   for (const e of notOk) console.log(formatEvent(e));
@@ -126,7 +163,8 @@ async function main() {
   const client = new Client({ connectionString });
   await client.connect();
   try {
-    const report = await runYoutubePreviewRiskReport(client);
+    const journal = (JSON.parse(readFileSync(path.join(process.cwd(), "src/db/migrations/meta/_journal.json"), "utf8")) as { entries: JournalEntry[] }).entries;
+    const report = await runYoutubePreviewRiskReport(client, new Date(), journal.map((j) => ({ tag: j.tag, when: j.when })));
     printReport(report);
     const out = readOptionalArg("out");
     if (out) {

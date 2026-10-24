@@ -210,10 +210,40 @@ describe("buildEventSection — manual choices are always respected", () => {
     expect(s.events[0].outcome).toBe("manual_event_override");
   });
 
-  it("without the override table, the report says so and simulates normally", () => {
-    const s = buildEventSection([night], cache);
+  it("an available override video is what the page shows today, exactly as getEventYoutubePreview does", () => {
+    const s = buildEventSection([night], cache, [
+      { event_id: "e-a2b5cf47", mode: "video", video_id: "Pbb0KmuwYSA", video_title: "steamboi | REX Radio (10.11.25)", channel_title: "REX Radio", artist_name: "Big Name", available: true },
+    ]);
+    expect(s.events[0]).toMatchObject({
+      outcome: "manual_event_override",
+      shownTodayBasis: "event_override_video",
+      shownToday: { artist: "Big Name", videoId: "Pbb0KmuwYSA", source: "event_override", isHeadliner: true, proposedFailures: [] },
+      manualOverride: { decision: "video" },
+      simulated: { videoId: "Pbb0KmuwYSA", reason: "manual_choice_kept", changesFromToday: false },
+    });
+  });
+
+  it("an unavailable override video shows nothing and never falls back to the artist match", () => {
+    const s = buildEventSection([night], cache, [{ event_id: "e-a2b5cf47", mode: "video", video_id: "Pbb0KmuwYSA", available: false }]);
+    expect(s.events[0]).toMatchObject({ shownToday: null, shownTodayBasis: "event_override_none", manualOverride: { decision: "none" } });
+  });
+
+  it("an override without artist name is credited to the first lineup entry, like the page", () => {
+    const s = buildEventSection([night], cache, [{ event_id: "e-a2b5cf47", mode: "video", video_id: "Pbb0KmuwYSA", available: true }]);
+    expect(s.events[0].shownToday).toMatchObject({ artist: "Opener Act", isHeadliner: false });
+  });
+
+  it("without the override table Production fails closed: no video is shown today anywhere", () => {
+    const s = buildEventSection([night], cache, "table_not_present");
     expect(s.eventOverrides).toBe("table_not_present");
-    expect(s.events[0].outcome).toBe("headliner_has_video_not_shown");
+    expect(s.productionFailsClosed).toBe(true);
+    expect(s.events[0]).toMatchObject({ shownToday: null, shownTodayBasis: "override_table_missing" });
+  });
+
+  it("an event without an override row shows the automated artist match", () => {
+    const s = buildEventSection([night], cache, []);
+    expect(s.productionFailsClosed).toBe(false);
+    expect(s.events[0]).toMatchObject({ shownTodayBasis: "artist_cache", shownToday: { artist: "Opener Act", source: "artist_cache" }, outcome: "headliner_has_video_not_shown" });
   });
 
   it("a video shown today from a manual artist pin (#163) is never replaced", () => {
@@ -258,5 +288,39 @@ describe("buildEventSection — prose/order dependency is measured, not assumed"
       [],
     );
     expect(s.proseOrderAgreement).toEqual({ eventsWithProse: 2, proseFirstEqualsLineupFirst: 1 });
+  });
+});
+
+describe("summarizeDecision — the owner's decision basis", () => {
+  const headlined = event({ id: "h1", artists: ["Opener Act", "Big Name"], description: "Big Name headlines the night." });
+  const kept = event({ id: "e-a2b5cf47", artists: ["Opener Act", "Big Name"], description: "Big Name headlines the night." });
+  const b2b = event({ id: "b1", artists: ["Luke Slater"], description: "Luke Slater headlines." });
+  const cache = [
+    accepted("opener act", "Opener Act", { videoId: "op", title: "Opener Act - Live", channelTitle: "Opener Act" }),
+    accepted("big name", "Big Name", { videoId: "big", title: "Big Name - Live", channelTitle: "Big Name" }),
+    accepted("luke slater", "Luke Slater", { videoId: "ls", title: "Luke Slater b2b Chris Liebing - Live", channelTitle: "Luke Slater" }),
+  ];
+  const d = buildEventSection([headlined, kept, b2b], cache, [{ event_id: "e-a2b5cf47", mode: "hidden", video_id: null, available: true }]).decision;
+
+  it("counts who is shown against the prioritized headliner", () => {
+    expect(d).toMatchObject({ visibleEvents: 3, eventsShowingVideo: 2, prioritizedEvents: 3, shownIsHeadliner: 1, shownIsOtherArtist: 1, shownNothing: 1 });
+  });
+
+  it("lists another artist shown while the headliner has a usable cached video, never a manual choice", () => {
+    expect(d.otherShownWhileHeadlinerHasCachedVideo).toEqual(["h1"]);
+  });
+
+  it("lists a B2B with a partner who does not perform", () => {
+    expect(d.b2bShownWithNonPerformer).toEqual(["b1"]);
+  });
+
+  it("lists every change from → to, with manual choices left out", () => {
+    expect(d.manualChoicesKept).toBe(1);
+    expect(d.changes).toEqual([{ slug: "h1", from: { artist: "Opener Act", videoId: "op" }, to: { artist: "Big Name", videoId: "big" }, reason: "headliner_solo", requiresVisibleArtistName: false }]);
+    expect(d.solvableWithVerifiedVideos).toEqual({ fromCacheRow: 1, fromStoredEvidenceOnly: 0, otherPerformerFallback: 0 });
+  });
+
+  it("names how each headliner was inferred", () => {
+    expect(Object.values(d.headlinerBasis).reduce((a, b) => a + b, 0)).toBe(3);
   });
 });

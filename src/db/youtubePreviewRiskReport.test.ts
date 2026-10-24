@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildManualChoicesSection,
   buildNameSection,
   buildRuleReplaySection,
   CACHE_SQL,
   DISCOVERY_NAMES_SQL,
   EVENT_NAMES_SQL,
   EVENTS_SQL,
+  MIGRATIONS_SQL,
+  MIGRATIONS_TABLE_SQL,
   OVERRIDES_SQL,
   OVERRIDES_TABLE_SQL,
   READ_ONLY_TX_STATEMENTS,
@@ -131,12 +134,15 @@ class FakeClient implements QueryClient {
     private readonly readOnly: string = "on",
     private readonly failOn: string | null = null,
     private readonly overrideTable: string | null = null,
+    private readonly migrationsTable: string | null = "drizzle.__drizzle_migrations",
   ) {}
   async query(sql: string): Promise<{ rows: unknown[] }> {
     this.statements.push(sql);
     if (this.failOn && sql === this.failOn) throw new Error("boom");
     if (sql === READ_ONLY_TX_STATEMENTS.verify) return { rows: [{ transaction_read_only: this.readOnly }] };
     if (sql === CACHE_SQL) return { rows: CACHE };
+    if (sql === MIGRATIONS_TABLE_SQL) return { rows: [{ t: this.migrationsTable }] };
+    if (sql === MIGRATIONS_SQL) return { rows: [{ created_at: "1792778571190" }] };
     if (sql === OVERRIDES_TABLE_SQL) return { rows: [{ t: this.overrideTable }] };
     if (sql === OVERRIDES_SQL) return { rows: [{ event_id: "e1", mode: "hidden", video_id: null, available: true }] };
     return { rows: [] };
@@ -155,9 +161,18 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
       EVENT_NAMES_SQL,
       DISCOVERY_NAMES_SQL,
       EVENTS_SQL,
+      MIGRATIONS_TABLE_SQL,
+      MIGRATIONS_SQL,
       OVERRIDES_TABLE_SQL,
       READ_ONLY_TX_STATEMENTS.rollback,
     ]);
+  });
+
+  it("does not read the migrations table when it does not exist", async () => {
+    const client = new FakeClient("on", null, null, null);
+    const report = await runYoutubePreviewRiskReport(client, new Date(), [{ tag: "0023_event_youtube_preview_overrides", when: 1792778571190 }]);
+    expect(client.statements).not.toContain(MIGRATIONS_SQL);
+    expect(report.manualChoices.migrations).toMatchObject({ trackingTablePresent: false, pendingInRepo: ["0023_event_youtube_preview_overrides"] });
   });
 
   it("refuses to query anything when the transaction is not read-only, and still rolls back", async () => {
@@ -196,10 +211,49 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
   });
 
   it("every data query is a plain SELECT", () => {
-    for (const sql of [CACHE_SQL, EVENT_NAMES_SQL, DISCOVERY_NAMES_SQL, EVENTS_SQL, OVERRIDES_TABLE_SQL, OVERRIDES_SQL]) {
+    for (const sql of [CACHE_SQL, EVENT_NAMES_SQL, DISCOVERY_NAMES_SQL, EVENTS_SQL, MIGRATIONS_TABLE_SQL, MIGRATIONS_SQL, OVERRIDES_TABLE_SQL, OVERRIDES_SQL]) {
       expect(sql.trimStart().startsWith("SELECT ")).toBe(true);
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT)\b/i);
     }
+  });
+});
+
+describe("buildManualChoicesSection — reports the manual choices as they are", () => {
+  const JOURNAL = [
+    { tag: "0022_soundcloud_artist_links", when: 1792000000000 },
+    { tag: "0023_event_youtube_preview_overrides", when: 1792778571190 },
+  ];
+  const pin: CacheRow = { ...accepted("steamboi", "Pbb0KmuwYSA", "steamboi | REX Radio (10.11.25)", "REX Radio", "trusted"), match_rule: "manual", expires_at: "2100-01-01T00:00:00Z" };
+  const lmn: CacheRow = { ...accepted("lmn", "lmnvid", "LMN live", "LMN", "own", true), match_rule: "A" };
+  const steamOverride = { event_id: "e-a2b5cf47", slug: "steamboi-night", mode: "video", video_id: "Pbb0KmuwYSA", available: true };
+
+  it("before the move: 0023 missing, pin still in place, LMN blocked", () => {
+    const s = buildManualChoicesSection([pin, lmn], 1792000000000, JOURNAL, "table_not_present");
+    expect(s.migrations.pendingInRepo).toEqual(["0023_event_youtube_preview_overrides"]);
+    expect(s.ownerChecks.map((c) => c.status)).toEqual(["not_done", "not_done", "not_done", "confirmed"]);
+    expect(s.artistPins).toEqual([{ artist: "steamboi", videoId: "Pbb0KmuwYSA", videoTitle: "steamboi | REX Radio (10.11.25)", expiresAt: "2100-01-01T00:00:00.000Z", manualBlock: false }]);
+    expect(s.artistBlocks.map((b) => b.artist)).toEqual(["lmn"]);
+  });
+
+  it("0023 applied but nothing moved yet: the override is reported missing, the pin still in place", () => {
+    const s = buildManualChoicesSection([pin, lmn], 1792778571190, JOURNAL, []);
+    expect(s.ownerChecks.map((c) => c.status)).toEqual(["confirmed", "not_done", "not_done", "confirmed"]);
+  });
+
+  it("after the move: event override shown, pin released, LMN still blocked", () => {
+    const released = { ...pin, match_rule: "A" };
+    const s = buildManualChoicesSection([released, lmn], 1792778571190, JOURNAL, [steamOverride]);
+    expect(s.ownerChecks.map((c) => c.status)).toEqual(["confirmed", "confirmed", "confirmed", "confirmed"]);
+    expect(s.eventOverrides[0]).toMatchObject({ eventId: "e-a2b5cf47", slug: "steamboi-night", decision: "video" });
+  });
+
+  it("an unavailable override is reported as not shown, and an unreadable table as unknown", () => {
+    expect(buildManualChoicesSection([pin, lmn], 1792778571190, JOURNAL, [{ ...steamOverride, available: false }]).ownerChecks[1].status).toBe("not_done");
+    expect(buildManualChoicesSection([pin, lmn], 1792778571190, JOURNAL, "unreadable").ownerChecks.slice(0, 2).map((c) => c.status)).toEqual(["unknown", "unknown"]);
+  });
+
+  it("LMN no longer blocked is reported as not_done", () => {
+    expect(buildManualChoicesSection([pin, { ...lmn, manual_block: false }], 1792778571190, JOURNAL, []).ownerChecks[3].status).toBe("not_done");
   });
 });
 
@@ -212,9 +266,17 @@ describe("youtube-preview-risk-report-readonly.yml", () => {
     .filter((line) => !line.trimStart().startsWith("#"))
     .join("\n");
 
-  it("only runs on manual dispatch", () => {
-    expect(yaml).toMatch(/^on:\n {2}workflow_dispatch:\n\n/m);
-    expect(yaml).not.toMatch(/^\s*(schedule|push|pull_request):/m);
+  it("only runs on manual dispatch, or once on the exact label on PR #141 from this repository", () => {
+    expect(yaml).toMatch(/^on:\n {2}workflow_dispatch:\n {2}pull_request:\n {4}types: \[labeled\]\n\n/m);
+    expect(yaml).not.toMatch(/^\s*(schedule|push|pull_request_target|workflow_run):/m);
+    expect(yaml).toContain("github.event_name == 'workflow_dispatch' ||");
+    expect(yaml).toContain("github.event.label.name == 'run-youtube-risk-report' &&");
+    expect(yaml).toContain("github.event.pull_request.number == 141 &&");
+    expect(yaml).toContain("github.event.pull_request.head.repo.full_name == github.repository)");
+  });
+
+  it("passes DATABASE_URL only to the secret check and the report step", () => {
+    expect([...yaml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1])).toEqual(["DATABASE_URL", "DATABASE_URL"]);
   });
 
   it("never receives the YouTube API key", () => {
