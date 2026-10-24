@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sl
 
   const ics = buildIcsFile({
     title: cleanEventTitle(event.title, event.venue.name),
-    description: event.description,
+    description: event.englishDescription ?? event.description,
     startDatetime: event.startDatetime,
     endDatetime: event.endDatetime,
     venue: event.venue,

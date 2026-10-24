@@ -20,6 +20,7 @@ import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
 import ArtistVideoPreview from "@/components/ArtistVideoPreview";
 import SoundcloudLinks from "@/components/SoundcloudLinks";
+import EventDescription from "@/components/EventDescription";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -92,11 +93,16 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
     getSoundcloudLinksForLineup(event.id, event.artists),
   ]);
   const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
-  const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
+  // English-only About text (2026-10-15): the cached English version of the
+  // current description when there is one, else the original — used for
+  // the About section, JSON-LD and calendar exports alike, so every public
+  // surface shows the same text. events.description itself is untouched.
+  const description = event.englishDescription ?? event.description;
+  const jsonLd = buildEventJsonLd({ ...event, title, description }, canonicalUrl);
 
   const calendarInput = {
     title,
-    description: event.description,
+    description,
     startDatetime: event.startDatetime,
     endDatetime: event.endDatetime,
     venue: event.venue,
@@ -275,10 +281,13 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
       {soundcloudArtists.length > 0 && <SoundcloudLinks artists={soundcloudArtists} />}
 
-      {event.description && (
+      {description && (
         <div className="mt-8">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
+          {/* Structured, link-safe rendering of the stored text — see
+              src/components/EventDescription.tsx. Artist names and the title
+              are passed only as hints for recognising headings. */}
+          <EventDescription text={description} headingHints={[...event.artists, title]} />
         </div>
       )}
 

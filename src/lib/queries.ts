@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import {
   artistYoutubePreviewCache,
   discoveryQueue,
+  eventDescriptionTranslations,
   eventSoundcloudLinks,
   events,
   soundcloudLinkBlocks,
@@ -18,10 +19,18 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
+import { englishDescriptionFor } from "./translation/englishDescription";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 
 export interface EventWithVenue extends EventRecord {
   venue: Venue;
+  /**
+   * The About text to show publicly: the cached English version when one
+   * exists for the CURRENT description, else the original description.
+   * Only set by getEventBySlugWithVenue (the event page) — never by list
+   * queries, which don't show descriptions.
+   */
+  englishDescription?: string | null;
 }
 
 /**
@@ -124,7 +133,20 @@ export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVe
     .where(and(eq(events.slug, slug), eq(events.published, true)))
     .limit(1);
   const withVenue = await attachVenue(rows);
-  return withVenue[0];
+  const event = withVenue[0];
+  if (!event) return undefined;
+  const [translation] = event.description
+    ? await db
+        .select({
+          sourceHash: eventDescriptionTranslations.sourceHash,
+          status: eventDescriptionTranslations.status,
+          translatedText: eventDescriptionTranslations.translatedText,
+        })
+        .from(eventDescriptionTranslations)
+        .where(eq(eventDescriptionTranslations.eventId, event.id))
+        .limit(1)
+    : [];
+  return { ...event, englishDescription: englishDescriptionFor(event.description, translation ?? null) };
 }
 
 /**

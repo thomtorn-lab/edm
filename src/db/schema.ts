@@ -661,3 +661,37 @@ export const newsletterSends = pgTable(
   },
   (table) => [unique().on(table.isoWeek, table.subscriberId)],
 );
+
+/**
+ * Cached English version of an event's About description (English-only
+ * About descriptions work package, 2026-10-15). One row per event, written
+ * only by src/db/translateDescriptions.ts; `events.description` itself is
+ * never modified — it always keeps the source's original text.
+ *
+ * `sourceHash` is the SHA-256 of the exact `events.description` the row was
+ * produced from (src/lib/translation/descriptionTranslation.ts's
+ * descriptionHash). The event page uses `translatedText` only while that
+ * hash still matches the current description, so a source edit can never
+ * show a stale translation — the original text is shown until the next
+ * translation run catches up, and an unchanged description is never sent
+ * for translation again.
+ *
+ * `status`: "english" — already English, nothing to translate (shown as
+ * is); "translated" — `translatedText` holds the English version; "failed"
+ * — the last attempt failed validation or errored (`attempts` caps retries;
+ * the original text keeps being shown).
+ */
+export const eventDescriptionTranslations = pgTable("event_description_translations", {
+  eventId: text("event_id")
+    .primaryKey()
+    .references(() => events.id, { onDelete: "cascade" }),
+  sourceHash: text("source_hash").notNull(),
+  status: text("status").notNull(),
+  /** Language(s) detected in the source, e.g. "da", "en", "da+en". */
+  sourceLanguage: text("source_language"),
+  translatedText: text("translated_text"),
+  model: text("model"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
