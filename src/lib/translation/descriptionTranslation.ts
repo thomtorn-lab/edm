@@ -18,12 +18,15 @@ import type Anthropic from "@anthropic-ai/sdk";
  */
 
 /**
- * Default model (2026-10-24 evaluation on real fixture descriptions — see
- * the status notes in the PR): the cheapest current model that kept every
- * name, number, link and line on the samples. Override per run with
- * DESCRIPTION_TRANSLATION_MODEL.
+ * Default model, from the 2026-10-24 evaluation on 8 real fixture
+ * descriptions (Danish, mixed Danish/English, short with emoji, already
+ * English): Claude Sonnet 5.5 and Claude Opus 5.5 passed every check on all
+ * six that needed translating; Claude Haiku 5.5 translated a band name in
+ * the event title ("Kresten Osgood Kvintet" → "Quintet"), which
+ * validateTranslation now rejects. Sonnet costs about half of Opus.
+ * Override per run with DESCRIPTION_TRANSLATION_MODEL.
  */
-export const DEFAULT_TRANSLATION_MODEL = "claude-haiku-5-5";
+export const DEFAULT_TRANSLATION_MODEL = "claude-sonnet-5-5";
 
 export { descriptionHash } from "./englishDescription";
 
@@ -117,6 +120,21 @@ const GENRE_TERMS = [
   "tech house", "phonk", "trap", "hip hop", "hiphop", "grime", "punk", "pop",
 ];
 
+/**
+ * The separately-named parts of an event title ("ILK x KU.BE no. 6: Kresten
+ * Osgood Kvintet" → "ILK x KU.BE no. 6", "Kresten Osgood Kvintet"), since a
+ * description usually repeats one part, not the whole title. Real case
+ * (2026-10-24 model evaluation): a model translated the band name
+ * "Kresten Osgood Kvintet" to "Quintet" — the whole-title check missed it.
+ */
+function titleParts(title: string | null | undefined): string[] {
+  if (!title) return [];
+  return title
+    .split(/\s*[:|–—]\s*|\s+-\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 3 && p !== title.trim());
+}
+
 function nonEmptyLineCount(text: string): number {
   return text.split("\n").filter((l) => l.trim()).length;
 }
@@ -150,7 +168,9 @@ export function validateTranslation(source: string, translation: string, context
   for (const n of new Set(source.match(NUMBER_RE) ?? [])) {
     if (!translatedNumbers.has(n)) return `number missing from translation: ${n}`;
   }
-  const names = [context.title, context.venueName, ...(context.artists ?? [])].filter((n): n is string => Boolean(n && n.trim().length >= 2));
+  const names = [context.title, ...titleParts(context.title), context.venueName, ...(context.artists ?? [])].filter(
+    (n): n is string => Boolean(n && n.trim().length >= 2),
+  );
   for (const name of new Set(names.map((n) => n.trim()))) {
     if (source.includes(name) && !translation.includes(name)) return `name missing or changed in translation: ${name}`;
   }

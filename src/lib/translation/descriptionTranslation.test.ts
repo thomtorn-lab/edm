@@ -55,6 +55,12 @@ describe("validateTranslation", () => {
     expect(validateTranslation(src, "The American artist Witchz plays at Pumpehuset on Sunday.", ctx)).toMatch(/name/);
     expect(validateTranslation(src, "The American artist WITCHZ plays at the Pump House on Sunday.", ctx)).toMatch(/name/);
   });
+  it("checks each named part of the title, not only the whole title (real Billetto fixture, 2026-10-24 evaluation)", () => {
+    const ctx = { title: "ILK x KU.BE no. 6: Kresten Osgood Kvintet", venueName: "KU.BE", artists: [] };
+    const src = "(scroll down for English)\nKresten Osgood Kvintet\nI de sidste 25 år har Kresten Osgood været centralt placeret i dansk musikliv.";
+    expect(validateTranslation(src, "(scroll down for English)\nKresten Osgood Quintet\nFor the past 25 years, Kresten Osgood has been central to Danish music life.", ctx)).toMatch(/Kresten Osgood Kvintet/);
+    expect(validateTranslation(src, "(scroll down for English)\nKresten Osgood Kvintet\nFor the past 25 years, Kresten Osgood has been central to Danish music life.", ctx)).toBeNull();
+  });
   it("rejects a translation that dropped a genre name or a hashtag", () => {
     expect(validateTranslation("En lyd mellem alternativ pop og mørk electronica.", "A sound between alternative pop and dark electronic music.")).toMatch(/genre/);
     expect(validateTranslation("Fest i aften #cphnightlife hele natten", "Party tonight all night long")).toMatch(/hashtag/);

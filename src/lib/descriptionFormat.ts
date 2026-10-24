@@ -84,6 +84,9 @@ function normalize(text: string): string {
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/[\u00A0\u202F]/g, " ")
     .split("\n")
+    // Paired Markdown bold markers ("**PLEASE READ**") are markup, not
+    // content: the markers go, the words stay. An unpaired "*" is kept.
+    .map((l) => l.replace(/\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*/g, "$1"))
     .map((l) => l.replace(/[ \t]+/g, " ").trim())
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -191,14 +194,26 @@ function wordCount(line: string): number {
 type LineContext = {
   upperCaseHeadingsAllowed: boolean;
   hints: Set<string>;
+  /** How many lines in this description are short labels closed by a dash ("Cold Connection-"). */
+  dashLabelCount: number;
 };
+
+// A short name/label closed by a dash ("Cold Connection-", "ee:man -") —
+// some sources (real case: KultuNaut 20265870, Electro Werkz) open every
+// artist section this way. Only trusted when the description repeats it.
+const DASH_LABEL_RE = /^[^.!?,;]{2,40}?\s?[-–]$/u;
 
 type HeadingLevel = "section" | "entry";
 
 /** The heading level of a line that stands on its own and reads unambiguously as a heading, else null. */
 function headingLevel(line: string, nextLine: string | null, ctx: LineContext): HeadingLevel | null {
   if (line.startsWith(HEADING_MARK)) return "section";
-  if (/^#{1,6}\s+\S/.test(line)) return "section";
+  // A Markdown "## " heading counts only when the line is heading-shaped:
+  // one short phrase, not a run of sentences a source happened to prefix.
+  if (/^#{1,6}\s+\S/.test(line)) {
+    const text = line.replace(/^#{1,6}\s+/, "");
+    return text.length <= 80 && !/[.!?]\s+\S/.test(text) && !HAS_URL_RE.test(text) ? "section" : null;
+  }
   if (line.length > 80 || HAS_URL_RE.test(line)) return null;
   const bare = line.replace(/:$/, "").trim();
   if (!bare) return null;
@@ -221,6 +236,10 @@ function headingLevel(line: string, nextLine: string | null, ctx: LineContext): 
   if (NAME_ROLE_LINE_RE.test(line) && !SECTION_WORD_RE.test(line.split(":")[0].trim())) return "entry";
   // "Lineup", "Practical information:", "CODE OF CONDUCT".
   if (SECTION_TITLES.has(bare.toLowerCase())) return "section";
+  // "Cold Connection-" over body text, a convention used at least twice here.
+  if (ctx.dashLabelCount >= 2 && DASH_LABEL_RE.test(line) && nextLine !== null && nextLine.length >= 40 && !DASH_LABEL_RE.test(nextLine)) {
+    return "entry";
+  }
 
   // Everything below needs body text right after it to count as a heading.
   if (!nextLine || nextLine.startsWith(HEADING_MARK)) return null;
@@ -480,6 +499,7 @@ export function formatDescription(text: string | null | undefined, options: Form
   const ctx: LineContext = {
     upperCaseHeadingsAllowed: allLines.length > 0 && upperCount / allLines.length < 0.4,
     hints: new Set((options.headingHints ?? []).map((h) => h.trim().toLowerCase()).filter((h) => h.length >= 2)),
+    dashLabelCount: allLines.filter((l) => DASH_LABEL_RE.test(l)).length,
   };
 
   const splitBlocks = rawBlocks.map((b) => splitMergedSections(b, normalized));
@@ -500,7 +520,9 @@ export function formatDescription(text: string | null | undefined, options: Form
         flush();
         blocks.push({ type: "heading", level, content: tokenizeInline(cleanHeadingText(line)) });
       } else {
-        pending.push(line);
+        // A Markdown heading marker on a line that isn't a heading is markup,
+        // not content — dropped like an HTML tag, the words are kept.
+        pending.push(line.replace(/^#{1,6}\s+(?=\S)/, ""));
       }
     });
     flush();

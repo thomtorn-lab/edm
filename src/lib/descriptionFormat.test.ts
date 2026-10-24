@@ -202,3 +202,35 @@ describe("formatDescription — link safety", () => {
     expect(link?.type === "link" && link.label.length).toBeLessThanOrEqual(40);
   });
 });
+
+describe("formatDescription — Markdown heading markers (real KultuNaut fixture 20147167)", () => {
+  it("a '## ' prefix on two full sentences is not a heading; the marker is dropped, the words kept", () => {
+    const text =
+      "## Nico Moreno is coming to Poolen 16 October. Nico Moreno is one of the leading acts in the global hard techno scene.\n\nKnown for his relentless energy, industrial sound, and explosive performances.";
+    expect(render(formatDescription(text))).toEqual([
+      "Nico Moreno is coming to Poolen 16 October. Nico Moreno is one of the leading acts in the global hard techno scene.",
+      "Known for his relentless energy, industrial sound, and explosive performances.",
+    ]);
+  });
+  it("a short '## ' phrase over body text is a heading", () => {
+    expect(render(formatDescription("## Event information\nDoors open at ten and the night runs until four in the morning."))[0]).toBe("## Event information");
+  });
+});
+
+describe("formatDescription — a repeated 'Name-' section convention (real KultuNaut fixture 20265870, Electro Werkz)", () => {
+  const text =
+    "Cold Connection-\nCold Connection is a Swedish synthpop/electropop band, formed in 2011 and consisting of Pontus Olsson and Daniel Billqvist.\n\nee:man-\nee:man is a dark synth project that emerged in 2021 with the debut album Echoes of Life.";
+  it("becomes artist headings, with the line text unchanged", () => {
+    expect(render(formatDescription(text)).filter((l) => l.startsWith("#"))).toEqual(["### Cold Connection-", "### ee:man-"]);
+  });
+  it("a single dash-closed line is not a convention and stays plain", () => {
+    const single = "Doors open soon -\nWe start the night with a long warm-up set and keep going until the early morning.";
+    expect(render(formatDescription(single)).some((l) => l.startsWith("#"))).toBe(false);
+  });
+});
+
+describe("formatDescription — Markdown bold markers (real KultuNaut fixture 20158318)", () => {
+  it("drops paired ** markers, keeps the words and any lone asterisk", () => {
+    expect(render(formatDescription("**PLEASE READ**\n5* rated night, entry 100 DKK"))).toEqual(["PLEASE READ | 5* rated night, entry 100 DKK"]);
+  });
+});

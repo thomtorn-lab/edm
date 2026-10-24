@@ -8,18 +8,21 @@ name: Translate Event Descriptions
 # An unchanged description that already has a result is never re-sent, and
 # a clearly-English description is recorded without any API call.
 #
-# Hourly schedule so new/changed descriptions get their English version
-# within about an hour and the existing backlog is worked through in
-# batches. Until the ANTHROPIC_API_KEY secret exists, runs still succeed:
-# clearly-English descriptions are recorded, everything else stays pending
-# and the site keeps showing the original text.
+# NOT ACTIVATED YET (2026-10-24): manual-only (`workflow_dispatch`) until
+# translation is explicitly approved for Production. Activation is two
+# small steps: add the ANTHROPIC_API_KEY secret, then add
+#   schedule:
+#     - cron: "23 * * * *"
+# under `on:` so new/changed descriptions get their English version within
+# about an hour and the existing backlog is worked through in batches. A
+# scheduled run would use mode "apply" (see INPUT_MODE below). Without the
+# secret, runs still succeed: clearly-English descriptions are recorded,
+# everything else stays pending and the site keeps showing the original.
 #
 # Secrets used: DATABASE_URL, ANTHROPIC_API_KEY (optional). Optional
 # repository variable DESCRIPTION_TRANSLATION_MODEL overrides the model.
 
 on:
-  schedule:
-    - cron: "23 * * * *"
   workflow_dispatch:
     inputs:
       mode:
