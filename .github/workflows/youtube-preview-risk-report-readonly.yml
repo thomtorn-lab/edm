@@ -27,8 +27,12 @@ name: YouTube Preview Risk Report (Read-Only)
 # add a label; the job is skipped for every other label, PR, or a fork.
 # This trigger is removed again after that one run.
 #
-# Safety: no inputs. Uses DATABASE_URL only — no
-# YOUTUBE_API_KEY, so it cannot call YouTube. BEGIN READ ONLY (verified with
+# Safety: no inputs. Uses DATABASE_URL_REPORT_RO only — a dedicated Postgres
+# role with SELECT on the report's tables and nothing else (setup:
+# docs/youtube-preview-risk-report-readonly-role.md). Not DATABASE_URL, and no
+# YOUTUBE_API_KEY, so it cannot call YouTube. Before reading any data the
+# report proves from the catalogs that the role cannot write and stops
+# otherwise (src/db/reportReadOnlyGuard.ts). BEGIN READ ONLY (verified with
 # SHOW transaction_read_only before any query; the run aborts otherwise),
 # SELECT-only queries, ROLLBACK. The JSON report is uploaded as a run
 # artifact; nothing else leaves the runner.
@@ -64,12 +68,12 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify DATABASE_URL secret is configured
+      - name: Verify DATABASE_URL_REPORT_RO secret is configured
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
         run: |
-          if [ -z "${DATABASE_URL:-}" ]; then
-            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+          if [ -z "${DATABASE_URL_REPORT_RO:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL_REPORT_RO is not set (Settings > Secrets and variables > Actions > Secrets). See docs/youtube-preview-risk-report-readonly-role.md."
             exit 1
           fi
 
@@ -78,7 +82,7 @@ jobs:
 
       - name: Run YouTube preview risk report
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
         run: node --import tsx src/db/youtubePreviewRiskReportCli.ts --out=youtube-preview-risk-report.json
 
       - name: Upload JSON report

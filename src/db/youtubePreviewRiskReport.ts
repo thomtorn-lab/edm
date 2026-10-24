@@ -2,6 +2,7 @@ import { classifyArtistName, type NameRule, type NameVerdict } from "@/lib/enric
 import { fold, identifyHeadliners, type HeadlinerResult } from "@/lib/enrichment/eventHeadliners";
 import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
 import { resolveEventOverride, type EventOverrideDecision } from "@/lib/eventYoutubeOverride";
+import { assertReadOnlyRole, type GuardResult } from "./reportReadOnlyGuard";
 import {
   billedPartners,
   parseEvidence,
@@ -31,6 +32,8 @@ import {
  *
  * Never calls YouTube. Runs inside BEGIN READ ONLY (verified with SHOW
  * transaction_read_only before any query; refuses to continue otherwise),
+ * then proves from the catalogs that the login role itself cannot write
+ * (src/db/reportReadOnlyGuard.ts — fail closed, before any data query),
  * issues only SELECTs, and always ROLLBACKs — same discipline as
  * src/db/auditEventsWindow.ts.
  */
@@ -457,6 +460,8 @@ export function buildManualChoicesSection(
 
 export interface RiskReport {
   generatedAt: string;
+  /** The login role, proven read-only before any data was read. */
+  connection: Pick<GuardResult, "role" | "warnings">;
   manualChoices: ManualChoicesSection;
   rules: RuleReplaySection;
   names: NameSection;
@@ -882,6 +887,7 @@ export async function runYoutubePreviewRiskReport(client: QueryClient, now: Date
     if (ro?.transaction_read_only !== "on") {
       throw new Error(`Refusing to run: transaction_read_only is "${ro?.transaction_read_only}", expected "on".`);
     }
+    const guard = await assertReadOnlyRole(client);
     const cacheRows = (await client.query(CACHE_SQL)).rows as CacheRow[];
     const eventNames = (await client.query(EVENT_NAMES_SQL)).rows as EventNameRow[];
     const discoveryNames = (await client.query(DISCOVERY_NAMES_SQL)).rows as DiscoveryNameRow[];
@@ -904,6 +910,7 @@ export async function runYoutubePreviewRiskReport(client: QueryClient, now: Date
     }
     return {
       generatedAt: now.toISOString(),
+      connection: { role: guard.role, warnings: guard.warnings },
       manualChoices: buildManualChoicesSection(cacheRows, latestApplied, journal, overrides),
       rules: buildRuleReplaySection(cacheRows),
       names: buildNameSection(eventNames, discoveryNames, cacheRows),

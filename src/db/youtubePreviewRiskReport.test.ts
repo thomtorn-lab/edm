@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { GUARD_STATEMENTS, READ_ACCESS_SQL, REPORT_TABLES, ROLE_SQL } from "./reportReadOnlyGuard";
 import {
   buildManualChoicesSection,
   buildNameSection,
@@ -135,11 +136,18 @@ class FakeClient implements QueryClient {
     private readonly failOn: string | null = null,
     private readonly overrideTable: string | null = null,
     private readonly migrationsTable: string | null = "drizzle.__drizzle_migrations",
+    private readonly roleWritable = false,
   ) {}
   async query(sql: string): Promise<{ rows: unknown[] }> {
     this.statements.push(sql);
     if (this.failOn && sql === this.failOn) throw new Error("boom");
     if (sql === READ_ONLY_TX_STATEMENTS.verify) return { rows: [{ transaction_read_only: this.readOnly }] };
+    if (sql === ROLE_SQL) {
+      const clean = { rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false, member_of: [], db_create: false, db_temp: false, db_owner: false, default_read_only: "on" };
+      return { rows: [{ ...clean, rolname: "report_ro", rolcreaterole: this.roleWritable }] };
+    }
+    if (sql === READ_ACCESS_SQL) return { rows: REPORT_TABLES.map((t) => ({ schema: t.schema, name: t.name, can_select: true, rls: false, open_policy: false, restrictive_policy: false })) };
+    if ((GUARD_STATEMENTS as readonly string[]).includes(sql)) return { rows: [] };
     if (sql === CACHE_SQL) return { rows: CACHE };
     if (sql === MIGRATIONS_TABLE_SQL) return { rows: [{ t: this.migrationsTable }] };
     if (sql === MIGRATIONS_SQL) return { rows: [{ created_at: "1792778571190" }] };
@@ -157,6 +165,7 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
       READ_ONLY_TX_STATEMENTS.begin,
       READ_ONLY_TX_STATEMENTS.timeout,
       READ_ONLY_TX_STATEMENTS.verify,
+      ...GUARD_STATEMENTS,
       CACHE_SQL,
       EVENT_NAMES_SQL,
       DISCOVERY_NAMES_SQL,
@@ -180,6 +189,19 @@ describe("runYoutubePreviewRiskReport — read-only discipline", () => {
     await expect(runYoutubePreviewRiskReport(client)).rejects.toThrow(/expected "on"/);
     expect(client.statements).not.toContain(CACHE_SQL);
     expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
+  });
+
+  it("refuses to read any data when the login role can write, and still rolls back", async () => {
+    const client = new FakeClient("on", null, null, "drizzle.__drizzle_migrations", true);
+    await expect(runYoutubePreviewRiskReport(client)).rejects.toThrow(/not proven read-only[\s\S]*CREATEROLE/);
+    expect(client.statements).not.toContain(CACHE_SQL);
+    expect(client.statements.at(-1)).toBe(READ_ONLY_TX_STATEMENTS.rollback);
+  });
+
+  it("checks the role only after the READ ONLY transaction is verified", async () => {
+    const client = new FakeClient("off");
+    await expect(runYoutubePreviewRiskReport(client)).rejects.toThrow(/expected "on"/);
+    expect(client.statements).not.toContain(ROLE_SQL);
   });
 
   it("rolls back when a query fails", async () => {
@@ -275,8 +297,14 @@ describe("youtube-preview-risk-report-readonly.yml", () => {
     expect(yaml).toContain("github.event.pull_request.head.repo.full_name == github.repository)");
   });
 
-  it("passes DATABASE_URL only to the secret check and the report step", () => {
-    expect([...yaml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1])).toEqual(["DATABASE_URL", "DATABASE_URL"]);
+  it("passes only DATABASE_URL_REPORT_RO, and only to the secret check and the report step — never DATABASE_URL", () => {
+    expect([...yaml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1])).toEqual(["DATABASE_URL_REPORT_RO", "DATABASE_URL_REPORT_RO"]);
+    expect(yaml).not.toMatch(/\bDATABASE_URL\b(?!_REPORT_RO)/);
+  });
+
+  it("stops before installing anything when the secret is missing", () => {
+    expect(yaml.indexOf("Verify DATABASE_URL_REPORT_RO secret is configured")).toBeLessThan(yaml.indexOf("npm ci"));
+    expect(yaml).toMatch(/if \[ -z "\$\{DATABASE_URL_REPORT_RO:-\}" \]; then[\s\S]*?exit 1/);
   });
 
   it("never receives the YouTube API key", () => {

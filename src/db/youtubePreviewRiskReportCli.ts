@@ -5,12 +5,15 @@
  *
  *   node --import tsx src/db/youtubePreviewRiskReportCli.ts --out=youtube-preview-risk-report.json
  *
- * Reads DATABASE_URL from the environment and never prints it. Never calls
+ * Reads DATABASE_URL_REPORT_RO (a dedicated read-only role — never
+ * DATABASE_URL) from the environment and never prints it; the report refuses
+ * to run unless that role is proven unable to write (reportReadOnlyGuard.ts). Never calls
  * YouTube. The optional --out file is written on the runner only.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
+import { readReportConnectionString } from "./reportReadOnlyGuard";
 import { runYoutubePreviewRiskReport, type EventEntry, type JournalEntry, type NameEntry, type RiskReport } from "./youtubePreviewRiskReport";
 import type { AcceptedReplay } from "@/lib/enrichment/youtubePreviewRuleReplay";
 
@@ -70,6 +73,8 @@ function formatEvent(e: EventEntry): string {
 export function printReport(report: RiskReport): void {
   const { rules, names } = report;
   console.log(`== YouTube preview risk report (read-only), generated ${report.generatedAt} ==`);
+  console.log(`Database role ${report.connection.role} proven read-only (no write, create, ownership, role membership or owner-rights function access).`);
+  for (const w of report.connection.warnings) console.log(`::warning::${w}`);
 
   const mc = report.manualChoices;
   console.log("\n== 0. Manual choices as they stand in this database (read only — nothing is changed) ==");
@@ -158,8 +163,7 @@ export function printReport(report: RiskReport): void {
 }
 
 async function main() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is not set.");
+  const connectionString = readReportConnectionString(process.env);
   const client = new Client({ connectionString });
   await client.connect();
   try {
