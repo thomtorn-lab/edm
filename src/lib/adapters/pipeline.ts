@@ -403,7 +403,10 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // "musik på&nbsp;KU.BE"). Description/relevanceText keep meaningful line
   // breaks (singleLine omitted); venueName and each artist are display
   // labels, not paragraphs, so line breaks collapse to spaces there.
-  if (raw.description) raw.description = normalizeExtractedText(raw.description);
+  // Descriptions keep their paragraph breaks (About-text formatting,
+  // 2026-10-15) — the event page's formatter needs them to tell paragraphs
+  // from line breaks; every other field keeps the flat shape.
+  if (raw.description) raw.description = normalizeExtractedText(raw.description, { keepParagraphs: true });
   if (raw.relevanceText) raw.relevanceText = normalizeExtractedText(raw.relevanceText);
   if (raw.structuredGenreField) raw.structuredGenreField = normalizeExtractedText(raw.structuredGenreField, { singleLine: true });
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });

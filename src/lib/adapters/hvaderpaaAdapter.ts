@@ -1,6 +1,6 @@
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText, hasRichGenreEvidence, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, htmlToParagraphText, truncateAtBoundary, STORED_DESCRIPTION_MAX_LENGTH } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -321,7 +321,10 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
   // (relevanceText) — the shorter, display-truncated `description` is
   // derived from it, same split as every other adapter.
   const fullDescriptionText = description ? htmlToText(description) : "";
-  const truncatedDescription = fullDescriptionText ? truncateAtBoundary(fullDescriptionText, 800) : null;
+  // Stored text keeps paragraph breaks (About-text formatting, 2026-10-15).
+  const truncatedDescription = description
+    ? truncateAtBoundary(htmlToParagraphText(description), STORED_DESCRIPTION_MAX_LENGTH) || null
+    : null;
 
   const performers = Array.isArray(event.performer) ? event.performer : [];
   const artists: string[] = [];

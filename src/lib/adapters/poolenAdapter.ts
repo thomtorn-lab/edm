@@ -1,7 +1,14 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, truncateAtBoundary, isLikelyDanish } from "./htmlExtraction";
+import {
+  decodeHtmlEntities,
+  htmlToText,
+  htmlToParagraphText,
+  truncateAtBoundary,
+  isLikelyDanish,
+  STORED_DESCRIPTION_MAX_LENGTH,
+} from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -234,7 +241,7 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     ? null
     : isLikelyDanish(fullDescriptionText)
       ? null
-      : truncateAtBoundary(fullDescriptionText, 600);
+      : truncateAtBoundary(htmlToParagraphText(descriptionHtml), STORED_DESCRIPTION_MAX_LENGTH);
 
   // Support-artist names live in their own `.pc-concert__band` sections,
   // each with a `.pc-concert__band-name` heading — a distinct class from

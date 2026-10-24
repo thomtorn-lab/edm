@@ -1,7 +1,14 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText, hasRichGenreEvidence } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, isSameHost, truncateAtBoundary } from "./htmlExtraction";
+import {
+  decodeHtmlEntities,
+  htmlToText,
+  htmlToParagraphText,
+  isSameHost,
+  truncateAtBoundary,
+  STORED_DESCRIPTION_MAX_LENGTH,
+} from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -312,7 +319,19 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
   // this was a bare .slice(0, 800) before, the same mid-word-cut bug
   // truncateAtBoundary was originally built to fix on Hangaren/ALICE/
   // Gravity/Poolen.
-  const description = fullDescriptionText ? truncateAtBoundary(fullDescriptionText, 800) : null;
+  //
+  // The stored description keeps the article's paragraphs (About-text
+  // formatting, 2026-10-15) and drops the same ticket-button line;
+  // fullDescriptionText above stays flat for genre/relevance evidence.
+  const structuredDescription = articleMatch
+    ? htmlToParagraphText(articleMatch[1])
+        .split("\n")
+        .filter((line) => !/^K\S+\/bestil billet$/.test(line.trim()))
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    : "";
+  const description = structuredDescription ? truncateAtBoundary(structuredDescription, STORED_DESCRIPTION_MAX_LENGTH) : null;
 
   const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
   const imageUrl = imageMatch ? decodeHtmlEntities(imageMatch[1]) : null;

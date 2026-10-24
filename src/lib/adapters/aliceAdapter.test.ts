@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { STORED_DESCRIPTION_MAX_LENGTH } from "./htmlExtraction";
 import {
   parseAliceProgramHtml,
   parseAliceEventDetailHtml,
@@ -201,15 +202,21 @@ describe("parseAliceEventDetailHtml — relevanceText carries evidence past the 
   };
   const event = parseAliceEventDetailHtml(BRUNO_BERLE_HTML, entry);
 
-  it("truncates description to 800 chars, cutting it off before the bio's own genre self-identification", () => {
-    expect(event.description!.length).toBeLessThan(700);
-    expect(event.description).not.toContain("Música Popular Brasileira");
+  // The stored-description cap was raised from 800 to
+  // STORED_DESCRIPTION_MAX_LENGTH and now keeps the page's paragraphs
+  // (About-text formatting, 2026-10-15), so this bio is no longer cut. What
+  // this block guards is unchanged: relevanceText is always the full, flat
+  // text, whatever the display description keeps.
+  it("keeps the whole bio in the stored description, with its paragraph breaks, within the stored-description cap", () => {
+    expect(event.description!.length).toBeLessThanOrEqual(STORED_DESCRIPTION_MAX_LENGTH);
+    expect(event.description).toContain("Música Popular Brasileira");
+    expect(event.description).toContain("\n\n");
   });
 
-  it("still carries the FULL untruncated bio in relevanceText, including the genre self-identification the truncated description drops", () => {
+  it("carries the FULL untruncated bio in relevanceText as flat text, including the genre self-identification", () => {
     expect(event.relevanceText).toContain("Música Popular Brasileira");
     expect(event.relevanceText).toContain("subtle electronic textures");
-    expect(event.relevanceText!.length).toBeGreaterThan(event.description!.length);
+    expect(event.relevanceText).not.toContain("\n");
   });
 });
 
