@@ -5,6 +5,7 @@ import {
   discoveryQueue,
   eventChangeLog,
   eventSoundcloudLinks,
+  eventYoutubePreviewOverrides,
   events,
   soundcloudLinkBlocks,
   sourceEventLinks,
@@ -19,6 +20,7 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
+import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 import type { EventChangeEntry } from "./dataQuality";
 
@@ -288,6 +290,81 @@ export async function getArtistPreviewAvailabilityForLineups(lineups: string[][]
   return lineups.map((artists) =>
     artists.some((name) => isAcceptedPreviewRow(byNormalized.get(normalizeArtistName(cleanArtistDisplayName(name))))),
   );
+}
+
+/**
+ * Admin per-event video overrides (2026-10-23, event_youtube_preview_overrides
+ * — rules in src/lib/eventYoutubeOverride.ts). Reads only the columns the
+ * display rule needs. A failed read returns null, NOT an empty map: callers
+ * then show no video at all (fail closed) rather than treating "couldn't read"
+ * as "no override" and letting the automated match replace a video an admin
+ * deliberately chose or hid. The page itself still renders, like the
+ * artist-cache reads above. (Production applies migration 0023 before build,
+ * so a missing table only happens on a database without it, e.g. Preview.)
+ */
+async function readEventOverrides(eventIds: string[]): Promise<Map<string, EventOverrideRow> | null> {
+  if (eventIds.length === 0) return new Map();
+  try {
+    const rows = await db
+      .select({
+        eventId: eventYoutubePreviewOverrides.eventId,
+        mode: eventYoutubePreviewOverrides.mode,
+        videoId: eventYoutubePreviewOverrides.videoId,
+        videoTitle: eventYoutubePreviewOverrides.videoTitle,
+        channelTitle: eventYoutubePreviewOverrides.channelTitle,
+        artistName: eventYoutubePreviewOverrides.artistName,
+        available: eventYoutubePreviewOverrides.available,
+      })
+      .from(eventYoutubePreviewOverrides)
+      .where(inArray(eventYoutubePreviewOverrides.eventId, eventIds));
+    return new Map(rows.map((r) => [r.eventId, r]));
+  } catch (err) {
+    console.error(`[youtube-preview] event override lookup failed (showing no video): ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * The event page's video: the event's own override when it has one (a chosen
+ * video, or deliberately none — hidden, or the chosen video is unavailable),
+ * otherwise the automated lineup match (getArtistYoutubePreviewForLineup,
+ * unchanged). The artist cache is not even read when an override decides, or
+ * when the override read failed (no video then — see readEventOverrides).
+ */
+export async function getEventYoutubePreview(event: { id: string; artists: string[] }): Promise<ArtistYoutubePreview | null> {
+  const overrides = await readEventOverrides([event.id]);
+  if (!overrides) return null;
+  const decision = resolveEventOverride(overrides.get(event.id));
+  if (decision.kind === "none") return null;
+  if (decision.kind === "video") {
+    return {
+      artistName: decision.artistName ?? event.artists[0] ?? "Artist",
+      videoId: decision.videoId,
+      videoTitle: decision.videoTitle,
+      channelTitle: decision.channelTitle,
+    };
+  }
+  return getArtistYoutubePreviewForLineup(event.artists);
+}
+
+/**
+ * Batched VIDEO-indicator availability per event — the same rule as
+ * getEventYoutubePreview: an override decides on its own; only events without
+ * one fall through to getArtistPreviewAvailabilityForLineups (unchanged, one
+ * query). Two queries total for the whole list, never per event. A failed
+ * override read means no indicator anywhere, matching the event page.
+ */
+export async function getPreviewAvailabilityForEvents(list: { id: string; artists: string[] }[]): Promise<boolean[]> {
+  const overrides = await readEventOverrides(list.map((e) => e.id));
+  if (!overrides) return list.map(() => false);
+  const decisions = list.map((e) => resolveEventOverride(overrides.get(e.id)));
+  const autoIndexes = decisions.flatMap((d, i) => (d.kind === "auto" ? [i] : []));
+  const auto = await getArtistPreviewAvailabilityForLineups(autoIndexes.map((i) => list[i].artists));
+  const result = decisions.map((d) => d.kind === "video");
+  autoIndexes.forEach((listIndex, j) => {
+    result[listIndex] = auto[j];
+  });
+  return result;
 }
 
 /** Excludes link rows whose profile URL is manually blocked (soundcloud_link_blocks). */

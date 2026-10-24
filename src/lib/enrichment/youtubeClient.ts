@@ -251,3 +251,38 @@ export async function getVideoDetails(videoIds: string[]): Promise<YoutubeVideoD
     privacyStatus: item.status?.privacyStatus ?? "unknown",
   }));
 }
+
+export interface YoutubeVideoSnippet {
+  videoId: string;
+  title: string;
+  channelId: string;
+  channelTitle: string;
+  embeddable: boolean;
+  privacyStatus: string;
+}
+
+/**
+ * videos.list for ONE video with its snippet — used only by the per-event
+ * override admin CLI (src/db/eventYoutubeOverride.ts) to record the chosen
+ * video's real title/channel and refuse a private/non-embeddable one. 1 quota
+ * unit; never search.list. Returns null when YouTube doesn't return the id.
+ */
+export async function getVideoSnippet(videoId: string): Promise<YoutubeVideoSnippet | null> {
+  const data = (await youtubeGet("/videos", { part: "snippet,status", id: videoId })) as {
+    items?: {
+      id?: string;
+      snippet?: { title?: string; channelId?: string; channelTitle?: string };
+      status?: { embeddable?: boolean; privacyStatus?: string };
+    }[];
+  };
+  const item = data.items?.find((i) => i.id === videoId);
+  if (!item) return null;
+  return {
+    videoId,
+    title: item.snippet?.title ?? "",
+    channelId: item.snippet?.channelId ?? "",
+    channelTitle: item.snippet?.channelTitle ?? "",
+    embeddable: item.status?.embeddable ?? false,
+    privacyStatus: item.status?.privacyStatus ?? "unknown",
+  };
+}
