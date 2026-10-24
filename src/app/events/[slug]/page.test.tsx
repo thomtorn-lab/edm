@@ -494,6 +494,23 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
+  it("shows the cached English version of the description when the query supplies one (original stays the fallback)", async () => {
+    await renderPage(makeEvent({ description: "En rigtig beskrivelse.", englishDescription: "A real description." }));
+    expect(screen.getByText("A real description.")).toBeTruthy();
+    expect(screen.queryByText("En rigtig beskrivelse.")).toBeNull();
+  });
+
+  it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {
+    await renderPage(
+      makeEvent({
+        description:
+          "PRACTICAL INFORMATION\nDoors open at 23:00 and the night runs until five in the morning, with a cloakroom.\n\nListen: https://soundcloud.com/pinkmonkey",
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "PRACTICAL INFORMATION" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /SoundCloud/ }).getAttribute("href")).toBe("https://soundcloud.com/pinkmonkey");
+  });
+
   it("a maximally sparse event (title + date/time + venue only, no genre/description/links/artists) renders its core fields with no empty optional sections", async () => {
     await renderPage(
       makeEvent({
