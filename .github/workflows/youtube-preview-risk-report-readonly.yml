@@ -9,13 +9,25 @@ name: YouTube Preview Risk Report (Read-Only)
 # 2. Report-only classification of every lineup name (events +
 #    discovery_queue) with the narrow non-artist rules — lists what each
 #    rule would flag and which flagged names hold an accepted match.
+# 3./4. Headliner priority per upcoming event against what the event page
+#    shows today (getEventYoutubePreview, event overrides included), and
+#    the owner's decision basis. 0. The manual choices as they stand
+#    (migration 0023, event overrides, artist pins and blocks).
 #
 # Nothing is enforced, blocked, replaced or written. Logic and tests:
 # src/lib/enrichment/youtubePreviewRuleReplay.ts,
 # src/lib/enrichment/artistNameClassification.ts,
 # src/db/youtubePreviewRiskReport.ts (+ .test.ts files).
 #
-# Safety: workflow_dispatch only, no inputs. Uses DATABASE_URL only — no
+# One-off run before merge (owner request 2026-10-24): workflow_dispatch
+# only works once this file is on the default branch, so while PR #141 is
+# open the job can also be started by adding the label
+# "run-youtube-risk-report" to PR #141 — the "pull_request: labeled" event
+# runs this file from the PR's merge ref. Only someone with write access can
+# add a label; the job is skipped for every other label, PR, or a fork.
+# This trigger is removed again after that one run.
+#
+# Safety: no inputs. Uses DATABASE_URL only — no
 # YOUTUBE_API_KEY, so it cannot call YouTube. BEGIN READ ONLY (verified with
 # SHOW transaction_read_only before any query; the run aborts otherwise),
 # SELECT-only queries, ROLLBACK. The JSON report is uploaded as a run
@@ -23,6 +35,8 @@ name: YouTube Preview Risk Report (Read-Only)
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
@@ -33,6 +47,11 @@ concurrency:
 
 jobs:
   report:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'run-youtube-risk-report' &&
+      github.event.pull_request.number == 141 &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
