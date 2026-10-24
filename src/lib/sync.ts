@@ -6,6 +6,7 @@ import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
 import { resolveByCanonicalPriority, type PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
+import { ticketUrlsEquivalent } from "./ticketUrlEquivalence";
 import { usableDiscoveryDescription } from "./descriptionQuality";
 
 /**
@@ -139,7 +140,12 @@ export function buildSyncPatch(
     }
     if (keepIncoming) patch.officialEventUrl = raw.officialEventUrl;
   }
-  if (raw.ticketUrl && raw.ticketUrl !== existing.ticketUrl) patch.ticketUrl = raw.ticketUrl;
+  // A functionally identical spelling (host case, default port, whitespace)
+  // never rewrites the stored link; any other difference, including tracking
+  // parameters, still does — see ticketUrlsEquivalent for exactly why.
+  if (raw.ticketUrl && raw.ticketUrl !== existing.ticketUrl && !ticketUrlsEquivalent(raw.ticketUrl, existing.ticketUrl)) {
+    patch.ticketUrl = raw.ticketUrl;
+  }
   if (raw.facebookUrl && raw.facebookUrl !== existing.facebookUrl) patch.facebookUrl = raw.facebookUrl;
   if (raw.residentAdvisorUrl && raw.residentAdvisorUrl !== existing.residentAdvisorUrl) {
     patch.residentAdvisorUrl = raw.residentAdvisorUrl;
