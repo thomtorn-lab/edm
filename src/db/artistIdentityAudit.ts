@@ -414,6 +414,16 @@ export function buildArtistIdentityAudit(data: AuditData, now: Date) {
   return {
     generatedAt: now.toISOString(),
     rulesVersion: "artist-identity-rules@2026-10-24",
+    rowsRead: {
+      events: data.events.length,
+      venues: data.venues.length,
+      sources: data.sources.length,
+      eventSoundcloudLinks: data.soundcloudLinks.length,
+      soundcloudLinkBlocks: data.blockedSoundcloudUrls.length,
+      artistGenreCache: data.genreCache.length,
+      eventChangeLog: data.changeLog.length,
+      pendingDiscoveryRows: data.pendingDiscoveryLineups.length,
+    },
     definitions: {
       upcomingPublicEvent: "published, not cancelled, not admin- or source-unpublished, effective end (end, or start + 1 day) after the report time",
       historyWindowDays: HISTORY_DAYS,

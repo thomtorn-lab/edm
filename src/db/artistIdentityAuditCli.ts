@@ -8,6 +8,7 @@ import { assertReadOnlyRole, readReportConnectionString } from "./reportReadOnly
  * One-off, read-only Artist Alerts identity audit (Phase A, step 1).
  *
  *   node --import tsx src/db/artistIdentityAuditCli.ts --out=artist-identity-audit.json
+ *   node --import tsx src/db/artistIdentityAuditCli.ts --check-only   # prove the role, read no data
  *
  * Connects ONLY via DATABASE_URL_REPORT_RO (never DATABASE_URL), verifies a
  * read-only transaction AND a role proven unable to write before the first
@@ -15,6 +16,12 @@ import { assertReadOnlyRole, readReportConnectionString } from "./reportReadOnly
  * only, and always ROLLBACKs. Prints a short summary; the full report goes
  * to the --out JSON file. Never prints the connection string.
  */
+
+export const AUDIT_SESSION_LIMITS = [
+  "SET LOCAL statement_timeout = '60s'",
+  "SET LOCAL lock_timeout = '5s'",
+  "SET LOCAL idle_in_transaction_session_timeout = '120s'",
+] as const;
 
 function parseOut(argv: string[]): string | null {
   const arg = argv.find((a) => a.startsWith("--out="));
@@ -24,6 +31,7 @@ function parseOut(argv: string[]): string | null {
 export function summarize(report: ArtistIdentityAudit): string[] {
   const s = report.alertSupport;
   return [
+    `Rows read: ${JSON.stringify(report.rowsRead)}`,
     `Upcoming public events: ${report.coverage.upcomingPublicEvents}`,
     `  with a high-confidence appearance: ${s.eventsWithAHighAppearance} (+${s.eventsAlsoWithPendingDecision - s.eventsWithAHighAppearance} if titles-as-artists are accepted)`,
     `  without sufficient lineup data: ${report.insufficientLineup.total} ${JSON.stringify(report.insufficientLineup.byReason)}`,
@@ -37,15 +45,33 @@ export function summarize(report: ArtistIdentityAudit): string[] {
   ];
 }
 
+/** Proves the connection (read-only transaction + role) and rolls back without reading any data row. */
+export async function checkArtistIdentityAuditConnection(connectionString: string): Promise<{ role: string | null; warnings: string[] }> {
+  const client = new Client({ connectionString, application_name: "artist-identity-audit-check" });
+  await client.connect();
+  try {
+    await beginReadOnlyTransaction(client);
+    for (const sql of AUDIT_SESSION_LIMITS) await client.query(sql);
+    const guard = await assertReadOnlyRole(client, AUDIT_TABLES);
+    return { role: guard.role, warnings: guard.warnings };
+  } finally {
+    await client.query("ROLLBACK").catch(() => {});
+    await client.end();
+  }
+}
+
 export async function runArtistIdentityAudit(connectionString: string, now = new Date()): Promise<ArtistIdentityAudit> {
   const client = new Client({ connectionString, application_name: "artist-identity-audit" });
   await client.connect();
   try {
     await beginReadOnlyTransaction(client);
+    // Bounded before the first catalog query: a slow query aborts instead of
+    // running on, a lock wait (e.g. behind a migration) gives up instead of
+    // queueing other sessions behind this one, and an idle transaction ends.
+    for (const sql of AUDIT_SESSION_LIMITS) await client.query(sql);
     const guard = await assertReadOnlyRole(client, AUDIT_TABLES);
     console.log(`Verified: read-only transaction; role "${guard.role}" proven unable to write; ${AUDIT_TABLES.length} report tables readable.`);
     for (const w of guard.warnings) console.log(`  warning: ${w}`);
-    await client.query("SET LOCAL statement_timeout = '60s'");
     const data = await loadArtistIdentityAuditData(client);
     await client.query("ROLLBACK");
     return buildArtistIdentityAudit(data, now);
@@ -58,7 +84,14 @@ export async function runArtistIdentityAudit(connectionString: string, now = new
 }
 
 async function main() {
-  const out = parseOut(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.includes("--check-only")) {
+    const check = await checkArtistIdentityAuditConnection(readReportConnectionString(process.env));
+    console.log(`Connection check passed: read-only transaction; role "${check.role}" proven unable to write; ${AUDIT_TABLES.length} report tables readable. No data was read.`);
+    for (const w of check.warnings) console.log(`  warning: ${w}`);
+    return;
+  }
+  const out = parseOut(argv);
   const report = await runArtistIdentityAudit(readReportConnectionString(process.env));
   for (const line of summarize(report)) console.log(line);
   if (out) {

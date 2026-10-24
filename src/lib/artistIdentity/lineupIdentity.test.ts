@@ -114,3 +114,29 @@ describe("classifyAppearance", () => {
     }
   });
 });
+
+describe("evidenceBacksAppearance", () => {
+  const base = {
+    kind: "soundcloud_profile" as const,
+    entry: "NAT",
+    part: "NAT",
+    key: "nat",
+    url: "https://soundcloud.com/nat",
+    signal: "source_anchor" as const,
+    sourceId: "src-culture-box",
+    eventId: "e-1",
+    sourceUrl: null,
+    observedAt: new Date("2026-10-24T00:00:00Z"),
+    conflict: null,
+  };
+
+  it("accepts only conflict-free source evidence tied to an event", async () => {
+    const { evidenceBacksAppearance } = await import("./evidence");
+    expect(evidenceBacksAppearance(base)).toBe(true);
+    expect(evidenceBacksAppearance({ ...base, signal: "source_inline" })).toBe(true);
+    expect(evidenceBacksAppearance({ ...base, signal: "ra_chain" })).toBe(false);
+    expect(evidenceBacksAppearance({ ...base, signal: "discogs_url" })).toBe(false);
+    expect(evidenceBacksAppearance({ ...base, eventId: null })).toBe(false);
+    expect(evidenceBacksAppearance({ ...base, conflict: { kind: "two_handles_same_key", otherUrls: ["https://soundcloud.com/other"] } })).toBe(false);
+  });
+});

@@ -1,10 +1,4 @@
 /**
- * VENDORED from #141 (claude/brave-dijkstra-jnn932 @ 11f1abb) for the Artist
- * Alerts identity audit, with ONE change: the table list is a parameter
- * (defaulting to #141's REPORT_TABLES), exactly as proposed for a shared
- * standalone PR. Replace this copy with that shared module once it lands;
- * do not edit the rules here.
- *
  * Fail-closed proof that the report's database login cannot write
  * (owner requirement 2026-10-24). `transaction_read_only = on` alone is not
  * enough — any role, including one that can write, can open a READ ONLY
@@ -28,6 +22,11 @@
  * Every check is a catalog SELECT, run inside the report's verified READ ONLY
  * transaction (kept as a second layer). Any violation — or any check that
  * cannot be evaluated — stops the report before its first data query.
+ *
+ * Shared by every read-only audit that logs in as the shared role report_ro
+ * (owner decision 2026-10-24: YouTube, Artist Alerts, SoundCloud and later
+ * audits). Each audit passes its own table list; the rules are the same for
+ * all. Vendored copies on other branches are replaced by this module.
  */
 
 export type QueryClient = {
@@ -75,7 +74,9 @@ WHERE ${SYSTEM_SCHEMA_FILTER}
 ORDER BY 1, 2
 LIMIT 50`;
 
-/** The tables the report reads. The override table is optional: before migration 0023 it does not exist. */
+export type ReportTable = { schema: string; name: string; optional: boolean };
+
+/** The tables the YouTube preview risk report reads. The override table is optional: before migration 0023 it does not exist. */
 export const REPORT_TABLES: ReportTable[] = [
   { schema: "public", name: "artist_youtube_preview_cache", optional: false },
   { schema: "public", name: "events", optional: false },
@@ -85,7 +86,28 @@ export const REPORT_TABLES: ReportTable[] = [
   { schema: "drizzle", name: "__drizzle_migrations", optional: false },
 ];
 
-export type ReportTable = { schema: string; name: string; optional: boolean };
+/**
+ * Every table the shared report_ro role is granted SELECT on — the union of
+ * the audits' table lists. docs/youtube-preview-risk-report-readonly-role.md
+ * grants exactly these (tested). Adding an audit that needs another table
+ * means adding it here and to that GRANT, in the same PR, SELECT only.
+ */
+export const SHARED_REPORT_RO_TABLES: readonly string[] = [
+  // YouTube preview risk report (#141)
+  "public.artist_youtube_preview_cache",
+  "public.events",
+  "public.discovery_queue",
+  "public.source_event_links",
+  "public.event_youtube_preview_overrides",
+  "drizzle.__drizzle_migrations",
+  // Artist Alerts identity audit (also reads events and discovery_queue)
+  "public.venues",
+  "public.sources",
+  "public.event_soundcloud_links",
+  "public.soundcloud_link_blocks",
+  "public.artist_genre_cache",
+  "public.event_change_log",
+];
 
 export function readAccessSql(tables: readonly ReportTable[]): string {
   for (const t of tables) {

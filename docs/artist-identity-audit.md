@@ -10,13 +10,19 @@ subscriber or newsletter data.
 - CLI: `src/db/artistIdentityAuditCli.ts`.
 - Run: `inspect-source.yml` with mode `artist-identity-audit`. The JSON report
   is uploaded as the `artist-identity-audit` artifact and kept for 14 days.
+  Mode `artist-identity-audit-check` only proves the connection and role and
+  reads no data row.
 
 ## Connection safety
 
 The mode never receives `DATABASE_URL`. It reads only the secret
-`DATABASE_URL_REPORT_RO`, the dedicated reporting role set up for the YouTube
-risk report (#141). It uses the same guard, `src/db/reportReadOnlyGuard.ts`,
-which is vendored from #141 with one change: the table list is a parameter.
+`DATABASE_URL_REPORT_RO`, the shared reporting role `report_ro`. It uses the
+shared guard `src/db/reportReadOnlyGuard.ts`, a byte-identical copy of #141's
+commit cdc6985. Replace the copy with the shared module once that is on main.
+Setting up the role, including the pre-check for SECURITY DEFINER functions,
+is described in one place: #141's
+`docs/youtube-preview-risk-report-readonly-role.md`. Its GRANT covers all
+twelve shared tables, these eight included.
 
 Before the first data query the CLI:
 
@@ -28,7 +34,19 @@ Before the first data query the CLI:
 3. proves SELECT on each of its eight tables, with no row-level security that
    could hide rows.
 
-Any failure stops the run. It always ends with `ROLLBACK`.
+Any failure stops the run. It always ends with `ROLLBACK`. The session is
+also bounded before the first catalog query: `statement_timeout` 60s,
+`lock_timeout` 5s (so it never queues behind a migration's lock), and
+`idle_in_transaction_session_timeout` 120s. The workflow step has a
+10-minute limit, and the workflow token is `contents: read`.
+
+## One shared reporting role (owner decision 2026-10-24)
+
+Every read-only audit uses the same credential, `DATABASE_URL_REPORT_RO`,
+and the same role, `report_ro`. The role holds SELECT on the union of tables
+the approved audits read, and nothing else: no write, schema or ownership
+rights, and no newsletter tables. Each audit passes its own table list to
+the guard, so a report can rely only on the tables it declares.
 
 ## Grants the reporting role needs
 
@@ -50,6 +68,13 @@ GRANT SELECT ON public.venues, public.sources, public.event_soundcloud_links,
 
 None of these tables holds personal data. Never grant the reporting role
 access to `newsletter_subscribers` or `newsletter_sends`.
+
+Known limit: the guard refuses (fail-closed) if the role can execute a
+SECURITY DEFINER function in any schema it can use. Supabase ships such
+functions in its own schemas (for example `extensions`, `graphql`). If one is
+usable through a PUBLIC grant, the first run stops at the guard before any
+data query. That is safe, but the owner then has to decide how to narrow the
+role's schema access.
 
 ## Reading the report
 
