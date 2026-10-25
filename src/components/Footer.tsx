@@ -24,11 +24,11 @@ function FacebookIcon() {
 }
 
 // Electronic CPH's official social profiles, as provided by the site owner
-// (2026-10-25). Kept free of tracking parameters: the Facebook link is the
-// owner's share link with the app-only `mibextid` parameter stripped.
+// (2026-10-25). Permanent profile URLs without tracking parameters — the
+// Facebook page has no vanity username, so its numeric profile.php URL is used.
 export const SOCIAL_LINKS = [
   { name: "Instagram", href: "https://www.instagram.com/electronic_cph/", Icon: InstagramIcon },
-  { name: "Facebook", href: "https://www.facebook.com/share/1CC7MrZVEQ/", Icon: FacebookIcon },
+  { name: "Facebook", href: "https://www.facebook.com/profile.php?id=61593650797017", Icon: FacebookIcon },
 ] as const;
 
 export default function Footer() {

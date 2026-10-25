@@ -14,11 +14,11 @@ describe("Footer social links", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  it("links to Electronic CPH's official Facebook page in a new tab, with the mibextid parameter stripped", () => {
+  it("links to Electronic CPH's official Facebook page by its permanent profile URL, in a new tab", () => {
     render(<Footer />);
     const link = screen.getByRole("link", { name: "Electronic CPH on Facebook (opens in a new tab)" });
-    expect(link.getAttribute("href")).toBe("https://www.facebook.com/share/1CC7MrZVEQ/");
-    expect(link.getAttribute("href")).not.toContain("mibextid");
+    expect(link.getAttribute("href")).toBe("https://www.facebook.com/profile.php?id=61593650797017");
+    expect(link.getAttribute("href")).not.toMatch(/\/share\/|mibextid/);
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
