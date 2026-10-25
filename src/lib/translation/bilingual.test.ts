@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { removeDuplicateLines, translateDescription, validateTranslation, type TranslationClient } from "./descriptionTranslation";
+import { judgeDuplicateLines, removeDuplicateLines, translateDescription, validateTranslation, type TranslationClient } from "./descriptionTranslation";
 
 /**
  * Bilingual descriptions (2026-10-24). Fixtures: the real KultuNaut
@@ -30,14 +30,40 @@ describe("removeDuplicateLines", () => {
     for (const fact of ["29", "2027", "100 DKK", "Eckotrigger UK", "Cold Connection SE", "ee:man DK", "Råhuset"]) expect(out.text).toContain(fact);
   });
 
-  it("never removes a line with information found nowhere else — flags review and keeps everything instead", () => {
+  it("never removes a line with information found nowhere else — keeps that line, removes the safe ones, flags review", () => {
     // Line 20 (translated Danish ee:man bio) names Recoil/Alan Wilder, which the
     // venue's own English bio (cut off mid-sentence at the source) never mentions.
     expect(lines[19]).toMatch(/Recoil/);
     const out = removeDuplicateLines(FULL, [3, 4, 5, 20]);
-    expect(out.removed).toBe(0);
-    expect(out.text).toBe(FULL);
-    expect(out.reviewReason).toMatch(/line 20 may hold unique information/);
+    expect(out.removed).toBe(3);
+    expect(out.text).toContain("Recoil (Alan Wilder");
+    expect(out.reviewReason).toMatch(/kept 1 of 4 marked line\(s\).*line 20: "Recoil" appears nowhere else/);
+  });
+
+  it("real Danish/English duplicates with different wording: every unique detail survives, clear duplicates go", () => {
+    // What an ideal model would mark: the whole translated Danish half, including
+    // its ee:man lines 20–22 that the venue's own (truncated) English bio lacks.
+    const marked = [1, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+    const verdicts = judgeDuplicateLines(FULL, marked);
+    const removed = verdicts.filter((v) => v.remove).map((v) => v.line);
+    expect(removed).toEqual(expect.arrayContaining([1, 3, 4, 5, 11, 12, 14, 15, 16, 17, 18]));
+    for (const unique of [20, 21, 22]) expect(removed).not.toContain(unique);
+    const out = removeDuplicateLines(FULL, marked);
+    for (const fact of ["Recoil", "Alan Wilder", "Nine Inch Nails", "Front Line Assembly", "new beginning", "100 kr", "January 29, 2027"]) {
+      expect(out.text).toContain(fact);
+    }
+    expect(out.text.match(/Cold Connection is a Swedish synthpop/g)).toHaveLength(1); // the bio now appears once
+    expect(out.reviewReason).toBeTruthy(); // borderline lines stayed, so a person should look
+  });
+
+  it("a negation the matching passage doesn't share is never treated as a duplicate", () => {
+    const text = "Entry is free for everyone under 18 at the door tonight.\n\nEntry is not free for anyone under 18 at the door tonight.";
+    expect(judgeDuplicateLines(text, [3])[0]).toMatchObject({ remove: false, keepReason: expect.stringMatching(/"not"/) });
+  });
+
+  it("names match regardless of case, apostrophe style, possessive or trailing colon", () => {
+    const text = "ILK’s network presents the Wild Man, says Information.\n\nILK's network presents the wild man, says Information:";
+    expect(judgeDuplicateLines(text, [3])[0].remove).toBe(true);
   });
 
   it("removes a pure language pointer line", () => {

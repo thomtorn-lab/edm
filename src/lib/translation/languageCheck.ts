@@ -43,3 +43,20 @@ export function isClearlyEnglish(text: string): boolean {
   }
   return english / words.length >= 0.12 && other / words.length <= 0.01;
 }
+
+/**
+ * True when a line still reads as non-English: at least 8 words, at least
+ * two of them other-language function words, making up 15% or more of the
+ * line. Ordinary English lines — even ones naming "Die Antwoord" or "Den
+ * Anden Side" — stay well below that; an untranslated Danish sentence is
+ * typically far above it.
+ */
+export function looksUntranslated(line: string): boolean {
+  const words = line
+    .toLowerCase()
+    .replace(/https?:\/\/\S+|www\.\S+/g, " ")
+    .match(/\p{L}+/gu);
+  if (!words || words.length < 8) return false;
+  const other = words.filter((w) => OTHER_WORDS.has(w) && !ENGLISH_WORDS.has(w)).length;
+  return other >= 2 && other / words.length >= 0.15;
+}

@@ -61,6 +61,15 @@ describe("validateTranslation", () => {
     expect(validateTranslation(src, "(scroll down for English)\nKresten Osgood Quintet\nFor the past 25 years, Kresten Osgood has been central to Danish music life.", ctx)).toMatch(/Kresten Osgood Kvintet/);
     expect(validateTranslation(src, "(scroll down for English)\nKresten Osgood Kvintet\nFor the past 25 years, Kresten Osgood has been central to Danish music life.", ctx)).toBeNull();
   });
+  it("rejects a translation that left a line in Danish (real case: a model's output for the Electro Werkz bios)", () => {
+    const src = "Eckotrigger er et elektronisk band med elementer af rock, og de leverer et show i stadionklassen.";
+    expect(validateTranslation(src, "Eckotrigger er et elektronisk band med elementer af rock, og de leverer et show i stadionklassen.")).toMatch(/untranslated/);
+    expect(validateTranslation(src, "Eckotrigger is an electronic band with elements of rock, and they deliver a stadium-class show.")).toBeNull();
+  });
+  it("does not mistake English lines naming Danish/German acts for untranslated text", () => {
+    const src = "Die Antwoord og Den Anden Side spiller i aften på Vega med et stort show.";
+    expect(validateTranslation(src, "Die Antwoord and Den Anden Side play tonight at Vega with a big show.")).toBeNull();
+  });
   it("rejects a translation that dropped a genre name or a hashtag", () => {
     expect(validateTranslation("En lyd mellem alternativ pop og mørk electronica.", "A sound between alternative pop and dark electronic music.")).toMatch(/genre/);
     expect(validateTranslation("Fest i aften #cphnightlife hele natten", "Party tonight all night long")).toMatch(/hashtag/);

@@ -7,6 +7,9 @@ import {
   MODEL_PRICES_USD_PER_MTOK,
   TRANSLATION_SYSTEM_PROMPT,
   estimateCostUsd,
+  isClearlyEnglish,
+  outputTokenCap,
+  roughTokenEstimate,
   translateDescription,
   type TranslationContext,
   type TranslationResult,
@@ -33,7 +36,15 @@ import { classifyAboutText } from "@/lib/aboutContent";
  *
  * Usage:
  *   node --import tsx src/db/translationIntegrationCheck.ts                      # plan only, free
- *   node --import tsx src/db/translationIntegrationCheck.ts --confirm-paid [--model=claude-sonnet-5-5] [--out=report.md]
+ *   node --import tsx src/db/translationIntegrationCheck.ts --confirm-paid [--model=claude-sonnet-5-5] [--max-cost-usd=0.10] [--out=report.md]
+ *
+ * Hard budget: every call gets an output-token cap sized to its text
+ * (outputTokenCap), samples run shortest first, and before each call the
+ * script checks that the money already spent (from the API's own usage
+ * numbers) plus that call's WORST case — generously estimated input at the
+ * full input price plus the whole output cap at the output price — stays
+ * within --max-cost-usd (default $0.10). If not, it stops before calling and
+ * says so. Total spend can therefore never exceed the budget.
  */
 
 type Sample = { id: string; kind: string; fromFixture: string | null; context: TranslationContext };
@@ -49,10 +60,7 @@ function parseArgs(argv: string[]): Record<string, string | true> {
   return out;
 }
 
-/** Rough offline token estimate (no API call): ~3.2 characters per token for Danish/English prose. */
-function roughTokens(chars: number): number {
-  return Math.ceil(chars / 3.2);
-}
+const roughTokens = roughTokenEstimate;
 
 function clip(text: string, max = 600): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
@@ -86,14 +94,33 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const client = new Anthropic({ apiKey });
+  const budget = typeof args["max-cost-usd"] === "string" ? Number(args["max-cost-usd"]) : 0.1;
+  if (!price || !(budget > 0)) {
+    console.error(`::error::need a known model price and a positive --max-cost-usd (model ${model}).`);
+    process.exit(1);
+  }
+  /** Worst-case cost of one call: input over-estimated by 25%, the whole output cap billed. */
+  const worstCase = (t: string, s: Sample) =>
+    ((promptTokens + roughTokens(t.length) + roughTokens(JSON.stringify(s.context).length)) * 1.25 * price.input + outputTokenCap(t) * price.output) / 1e6;
+  // Clearly-English samples make no call; the rest run shortest first so the
+  // budget check has the most room for the longest texts.
+  const ordered = [...samples].sort((a, b) => texts.get(a.id)!.length - texts.get(b.id)!.length);
+  let stoppedAt: string | null = null;
 
   const rows: string[] = [];
   let totalIn = 0;
   let totalOut = 0;
   let totalCost = 0;
   const counts: Record<string, number> = {};
-  for (const s of samples) {
+  for (const s of ordered) {
     const source = texts.get(s.id)!;
+    if (!isClearlyEnglish(source) && totalCost + worstCase(source, s) > budget) {
+      stoppedAt = s.id;
+      console.log(
+        `::warning::Budget guard: ${s.id} could cost up to $${worstCase(source, s).toFixed(4)}; with $${totalCost.toFixed(4)} spent that could exceed the $${budget.toFixed(2)} budget. Stopping before calling the API.`,
+      );
+      break;
+    }
     const started = Date.now();
     const result: TranslationResult = await translateDescription(client, source, model, s.context);
     const ms = Date.now() - started;
@@ -133,7 +160,7 @@ async function main(): Promise<void> {
       ].join("\n"),
     );
   }
-  const summary = `Model ${model}: ${Object.entries(counts)
+  const summary = `${stoppedAt ? `STOPPED by the budget guard before "${stoppedAt}". ` : ""}Budget $${budget.toFixed(2)}. Model ${model}: ${Object.entries(counts)
     .map(([k, v]) => `${v} ${k}`)
     .join(", ")}. Total ${totalIn} input + ${totalOut} output tokens = $${totalCost.toFixed(4)}.`;
   console.log(summary);

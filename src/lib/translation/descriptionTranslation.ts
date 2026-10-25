@@ -32,7 +32,7 @@ export const DEFAULT_TRANSLATION_MODEL = "claude-sonnet-5-5";
 export { descriptionHash } from "./englishDescription";
 
 export { isClearlyEnglish } from "./languageCheck";
-import { isClearlyEnglish } from "./languageCheck";
+import { isClearlyEnglish, looksUntranslated } from "./languageCheck";
 
 export const TRANSLATION_SYSTEM_PROMPT = `You translate event descriptions for ElectronicCPH, a listings site for electronic music events in Copenhagen, into English.
 
@@ -169,6 +169,11 @@ export function validateTranslation(source: string, translation: string, context
   for (const term of GENRE_TERMS) {
     if (containsTerm(source, term) && !containsTerm(translation, term)) return `genre name missing from translation: ${term}`;
   }
+  // Real case (2026-10-24 evaluation): a model returned the artist bios of
+  // a bilingual description still in Danish — every fact "survived", so only
+  // a language check catches it.
+  const untranslated = translation.split("\n").findIndex((l) => looksUntranslated(l));
+  if (untranslated !== -1) return `line ${untranslated + 1} still appears to be untranslated`;
   const sourceLines = nonEmptyLineCount(source);
   const translatedLines = nonEmptyLineCount(translation);
   if (Math.abs(sourceLines - translatedLines) > Math.max(1, Math.round(sourceLines * 0.1))) {
@@ -200,51 +205,135 @@ function namedTokens(line: string): string[] {
   return out;
 }
 
+function normalizeForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[’`´]/g, "'")
+    .replace(/'s\b/g, "")
+    .replace(/[:'\-–]+(?=\s|$)/g, "");
+}
+
+const NEGATION_RE = /(?<![\p{L}])(not|no|never|without|nobody|nothing|none|ikke|aldrig|uden|ingen|n't)(?![\p{L}])/giu;
+function negations(text: string): Set<string> {
+  return new Set([...text.matchAll(NEGATION_RE)].map((m) => m[1].toLowerCase()));
+}
+
+/** Share of a line's content words that the most similar kept passage (one line, or two adjacent lines) also contains. */
+export const DUPLICATE_WORDING_THRESHOLD = 0.65;
+
+export type DuplicateLineVerdict = {
+  /** 1-based line number in the full translation. */
+  line: number;
+  remove: boolean;
+  /** Why the line must stay (unique fact or too little shared wording); null when it can go. */
+  keepReason: string | null;
+  /** Best wording overlap with a single kept passage, 0–1. */
+  coverage: number;
+};
+
 /**
- * Removes repeated-language lines from a full translation only when that is
- * certain to lose nothing (bilingual descriptions, 2026-10-24). A line is
- * removed only if it is a pure language pointer ("(scroll down for
+ * Judges each line the model marked as a repeated-language duplicate, one by
+ * one, against the text that would remain (bilingual descriptions,
+ * 2026-10-24). Lines the model marked are never used to vouch for each
+ * other, so two copies of the same information can't both be removed. A
+ * line may go only if it is a pure language pointer ("(scroll down for
  * English)"), or every number, URL, email, hashtag, capitalised name and
- * genre name in it also appears in the remaining text AND at least 65% of
- * its content words do. If any requested line fails, nothing is removed and
- * the result is flagged for review instead — content is never lost to
- * de-duplication.
+ * genre name in it appears in the remaining text AND at least
+ * DUPLICATE_WORDING_THRESHOLD of its content words appear in ONE kept
+ * passage (a single line, or two adjacent lines when the other language
+ * version splits or joins paragraphs) — not merely somewhere in a long text.
+ */
+export function judgeDuplicateLines(translation: string, duplicateLines: readonly number[]): DuplicateLineVerdict[] {
+  const lines = translation.split("\n");
+  const requested = [...new Set(duplicateLines)]
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= lines.length && lines[n - 1].trim())
+    .sort((a, b) => a - b);
+  const requestedIdx = new Set(requested.map((n) => n - 1));
+  const keptLines = lines.filter((l, i) => !requestedIdx.has(i) && l.trim());
+  const kept = keptLines.join("\n");
+  const keptNormalized = normalizeForMatch(kept);
+  const keptNumbers = new Set(kept.match(NUMBER_RE) ?? []);
+  const passageTexts = [...keptLines, ...keptLines.slice(1).map((l, i) => `${keptLines[i]} ${l}`)];
+  const passages = passageTexts.map((t) => new Set(contentWords(t)));
+  return requested.map((n) => {
+    const line = lines[n - 1].trim();
+    if (LANGUAGE_POINTER_RE.test(line)) return { line: n, remove: true, keepReason: null, coverage: 1 };
+    const facts = [...(line.match(URL_IN_TEXT_RE) ?? []), ...(line.match(EMAIL_RE) ?? []), ...(line.match(HASHTAG_RE) ?? []), ...namedTokens(line)];
+    // Names are compared ignoring case, apostrophe style, a possessive "'s"
+    // and trailing punctuation ("ILK's" = "ILK’s", "Information:" = "Information").
+    const missingFact = facts.find((f) => !keptNormalized.includes(normalizeForMatch(f)));
+    const missingNumber = (line.match(NUMBER_RE) ?? []).find((num) => !keptNumbers.has(num));
+    const missingGenre = GENRE_TERMS.find((t) => containsTerm(line, t) && !containsTerm(kept, t));
+    const words = contentWords(line);
+    const coverages = passages.map((p) => (words.length === 0 ? 1 : words.filter((w) => p.has(w)).length / words.length));
+    const best = coverages.length === 0 ? -1 : coverages.indexOf(Math.max(...coverages));
+    const coverage = best === -1 ? (words.length === 0 ? 1 : 0) : coverages[best];
+    // A negation the matching passage doesn't share ("no entry under 18"
+    // vs "entry under 18") changes the meaning: never treat as a duplicate.
+    const lineNegations = negations(line);
+    const bestNegations = best === -1 ? new Set<string>() : negations(passageTexts[best]);
+    const missingNegation = [...lineNegations].find((n) => !bestNegations.has(n));
+    const keepReason = missingFact
+      ? `"${missingFact}" appears nowhere else`
+      : missingNumber
+        ? `number ${missingNumber} appears nowhere else`
+        : missingGenre
+          ? `genre "${missingGenre}" appears nowhere else`
+          : missingNegation
+            ? `its "${missingNegation}" is not in the matching passage`
+            : coverage < DUPLICATE_WORDING_THRESHOLD
+              ? `only ${Math.round(coverage * 100)}% of its wording matches a kept passage`
+              : null;
+    return { line: n, remove: keepReason === null, keepReason, coverage };
+  });
+}
+
+/**
+ * Removes the marked repeated-language lines that judgeDuplicateLines clears,
+ * keeps every other line — content is never lost to de-duplication — and
+ * flags the result for review when a marked line had to stay (the text may
+ * then still repeat some information).
  */
 export function removeDuplicateLines(
   translation: string,
   duplicateLines: readonly number[],
 ): { text: string; removed: number; reviewReason: string | null } {
-  const lines = translation.split("\n");
-  const requested = [...new Set(duplicateLines)].filter((n) => Number.isInteger(n) && n >= 1 && n <= lines.length && lines[n - 1].trim());
-  if (requested.length === 0) return { text: translation, removed: 0, reviewReason: null };
-  const removeSet = new Set(requested.map((n) => n - 1));
-  const kept = lines.filter((_, i) => !removeSet.has(i)).join("\n");
-  const keptWords = new Set(contentWords(kept));
-  for (const i of removeSet) {
-    const line = lines[i].trim();
-    if (LANGUAGE_POINTER_RE.test(line)) continue;
-    const facts = [
-      ...(line.match(URL_IN_TEXT_RE) ?? []),
-      ...(line.match(EMAIL_RE) ?? []),
-      ...(line.match(HASHTAG_RE) ?? []),
-      ...namedTokens(line),
-    ];
-    const missingFact = facts.find((f) => !kept.includes(f));
-    const keptNumbers = new Set(kept.match(NUMBER_RE) ?? []);
-    const missingNumber = (line.match(NUMBER_RE) ?? []).find((n) => !keptNumbers.has(n));
-    const missingGenre = GENRE_TERMS.find((t) => containsTerm(line, t) && !containsTerm(kept, t));
-    const words = contentWords(line);
-    const coverage = words.length === 0 ? 1 : words.filter((w) => keptWords.has(w)).length / words.length;
-    if (missingFact || missingNumber || missingGenre || coverage < 0.65) {
-      const why = missingFact ?? missingNumber ?? missingGenre ?? `only ${Math.round(coverage * 100)}% of its wording found elsewhere`;
-      return {
-        text: translation,
-        removed: 0,
-        reviewReason: `bilingual description not merged automatically: line ${i + 1} may hold unique information (${why})`,
-      };
-    }
-  }
-  return { text: kept.replace(/\n{3,}/g, "\n\n").trim(), removed: removeSet.size, reviewReason: null };
+  const verdicts = judgeDuplicateLines(translation, duplicateLines);
+  if (verdicts.length === 0) return { text: translation, removed: 0, reviewReason: null };
+  const drop = new Set(verdicts.filter((v) => v.remove).map((v) => v.line - 1));
+  const kept = verdicts.filter((v) => !v.remove);
+  const text =
+    drop.size === 0
+      ? translation
+      : translation
+          .split("\n")
+          .filter((_, i) => !drop.has(i))
+          .join("\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+  const reviewReason =
+    kept.length === 0
+      ? null
+      : `bilingual description only partly merged: kept ${kept.length} of ${verdicts.length} marked line(s) that may hold unique information (${kept
+          .slice(0, 3)
+          .map((v) => `line ${v.line}: ${v.keepReason}`)
+          .join("; ")})`;
+  return { text, removed: drop.size, reviewReason };
+}
+
+/** Rough offline token estimate: ~3.2 characters per token for Danish/English prose. */
+export function roughTokenEstimate(chars: number): number {
+  return Math.ceil(chars / 3.2);
+}
+
+/**
+ * Output-token ceiling for one description: room for the translation (about
+ * as long as the source, plus JSON escaping), the duplicate-line list and a
+ * little reasoning — roughly twice what a normal response needs — so a
+ * runaway response can never cost more than a small multiple of a normal one.
+ */
+export function outputTokenCap(text: string): number {
+  return Math.min(16000, Math.ceil(roughTokenEstimate(text.length) * 2.2) + 800);
 }
 
 /** Minimal client surface used here, so tests can pass a stub. */
@@ -269,13 +358,14 @@ export async function translateDescription(
   text: string,
   model: string = DEFAULT_TRANSLATION_MODEL,
   context: TranslationContext = {},
+  options: { maxTokens?: number } = {},
 ): Promise<TranslationResult> {
   if (isClearlyEnglish(text)) return { status: "english", sourceLanguage: "en" };
   let response: Anthropic.Message;
   try {
     response = await client.messages.create({
       model,
-      max_tokens: 16000,
+      max_tokens: options.maxTokens ?? outputTokenCap(text),
       system: TRANSLATION_SYSTEM_PROMPT,
       output_config: { effort: "low", format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
       messages: [{ role: "user", content: `${eventContextBlock(context)}<description>\n${text}\n</description>` }],
