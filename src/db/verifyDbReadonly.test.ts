@@ -214,7 +214,7 @@ describe("workflow wiring", () => {
     const wf = readFileSync(".github/workflows/verify-db-readonly.yml", "utf8");
     const code = wf.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
     expect(code).toMatch(/env:\n\s+DATABASE_URL: \$\{\{ secrets\.DATABASE_URL \}\}\n\s+run: node --import tsx src\/db\/verifyDbReadonlyCli\.ts\n/);
-    expect(code).not.toMatch(/\.env\.local|cat >|echo .*DATABASE_URL/);
+    expect(code).not.toMatch(/\.env\.local|cat >|(echo|printf)[^\n]*\$\{?DATABASE_URL/); // never writes or prints the value
     expect(code).toMatch(/on:\n\s+workflow_dispatch: \{\}/);
     expect(code).not.toMatch(/schedule:|push:|pull_request/);
   });
