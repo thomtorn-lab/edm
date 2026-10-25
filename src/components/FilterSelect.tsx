@@ -14,6 +14,11 @@ import { Children, isValidElement, type ComponentProps, type ReactNode } from "r
 // ending 12px before the chevron and truncated with an ellipsis only when it
 // doesn't fit. Doing the truncation in a plain span rather than relying on
 // `text-overflow` on the <select> itself behaves identically in every engine.
+// The default (first) option is never truncated: an invisible copy of it, laid
+// out with the overlay's padding, shares the select's grid cell, so the
+// control widens just enough for it where the select's own width is short
+// (today only Festivals' "All months"); everywhere else the select is wider
+// and nothing changes.
 // The <select> stays the real, focusable control, so assistive tech still
 // announces its label and the full selected value; `title` exposes the full
 // value to mouse users when the visible one is cut short.
@@ -39,19 +44,29 @@ export function FilterSelect({
   valueClassName?: string;
   wrapperClassName?: string;
 }) {
-  const label = selectedLabel(children, props.value ?? props.defaultValue);
+  const options = optionsOf(children);
+  const wanted = props.value ?? props.defaultValue;
+  const label =
+    (options.find((o) => o.value === String(wanted)) ?? options[0])?.label ?? "";
   return (
-    <span className={`relative inline-flex ${wrapperClassName}`}>
+    <span className={`relative inline-grid ${wrapperClassName}`}>
       <select
         {...props}
         title={label}
-        className={`peer appearance-none [-webkit-text-fill-color:transparent] [&_*]:[-webkit-text-fill-color:currentColor] ${textClassName} ${className}`}
+        className={`peer col-start-1 row-start-1 appearance-none [-webkit-text-fill-color:transparent] [&_*]:[-webkit-text-fill-color:currentColor] ${textClassName} ${className}`}
       >
         {children}
       </select>
       {/* border-transparent mirrors the select's 1px border so the padding
           in textClassName lands on the same x. pr-9 = chevron inset (16px)
-          + chevron (9px) + 12px gap - 1px border. */}
+          + chevron (9px) + 12px gap - 1px border. The sizer below uses the
+          same box, so the default label always fits the overlay. */}
+      <span
+        aria-hidden="true"
+        className={`invisible col-start-1 row-start-1 h-0 overflow-hidden whitespace-nowrap border-x border-transparent pr-9 ${textClassName}`}
+      >
+        {options[0]?.label}
+      </span>
       <span
         aria-hidden="true"
         className={`pointer-events-none absolute inset-0 flex items-center border border-transparent pr-9 ${textClassName} ${valueClassName}`}
@@ -72,10 +87,10 @@ export function FilterSelect({
   );
 }
 
-// Label of the <option> matching `value`, found by walking the children
-// (fragments and <optgroup>s included) so it's available during SSR too.
-// Falls back to the first option, as a <select> does with no match.
-function selectedLabel(children: ReactNode, value: unknown): string {
+// Every <option> (fragments and <optgroup>s included), read from the children
+// so labels are available during SSR too. A <select> with no matching value
+// shows its first option, hence the fallback above.
+function optionsOf(children: ReactNode): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = [];
   const walk = (nodes: ReactNode) =>
     Children.forEach(nodes, (node) => {
@@ -88,8 +103,7 @@ function selectedLabel(children: ReactNode, value: unknown): string {
       }
     });
   walk(children);
-  const wanted = value === undefined ? undefined : String(value);
-  return (options.find((o) => o.value === wanted) ?? options[0])?.label ?? "";
+  return options;
 }
 
 function textOf(nodes: ReactNode): string {

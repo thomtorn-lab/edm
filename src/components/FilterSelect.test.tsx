@@ -47,6 +47,23 @@ describe("FilterSelect", () => {
     expect(visibleValue(container).closest("[aria-hidden='true']")).not.toBeNull();
   });
 
+  it("reserves room for the default (first) option so it's never truncated: an invisible, aria-hidden sizer with the overlay's padding shares the select's grid cell", () => {
+    const { container } = render(<Controlled initial="ambient" />);
+    const select = screen.getByRole("combobox");
+    const wrapper = select.parentElement as HTMLElement;
+    expect(wrapper.className.split(/\s+/)).toContain("inline-grid");
+    const sizer = Array.from(wrapper.children).find(
+      (el) => el !== select && el.className.includes("invisible"),
+    ) as HTMLElement;
+    expect(sizer.textContent).toBe("All genres");
+    expect(sizer.getAttribute("aria-hidden")).toBe("true");
+    const classes = sizer.className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(["col-start-1", "row-start-1", "h-0", "whitespace-nowrap", "pr-9"]));
+    expect(select.className.split(/\s+/)).toEqual(expect.arrayContaining(["col-start-1", "row-start-1"]));
+    // Same right padding as the overlay, so "fits the sizer" means "fits the overlay".
+    expect((visibleValue(container).parentElement as HTMLElement).className.split(/\s+/)).toContain("pr-9");
+  });
+
   it("truncates only via the overlay span (ellipsis when it doesn't fit) and keeps the 12px gap before the chevron (pr-9)", () => {
     const { container } = render(<Controlled initial="ambient" />);
     const value = visibleValue(container);
