@@ -9,6 +9,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
+// The edit view's YouTube panel loads its own state with fetch; it has its
+// own tests (EventYoutubePanel.test.tsx) and is stubbed here so the fetch
+// assertions below only see the event form's own requests.
+vi.mock("./EventYoutubePanel", () => ({ default: () => null }));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

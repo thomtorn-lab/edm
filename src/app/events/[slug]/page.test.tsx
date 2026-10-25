@@ -1192,7 +1192,21 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(screen.queryByText(/video preview/i)).toBeNull();
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
     // The iframe keeps its own accessible title (the video's title).
-    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("Live at Culture Box");
+    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("YouTube video: Live at Culture Box");
+  });
+
+  it("an admin-chosen video with no title and no artist name is named after the event, never after a lineup name", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({ ...VIDEO, artistName: null, videoTitle: "  " });
+    await renderPage(makeEvent({ title: "Warehouse Night", artists: ARTISTS }));
+    const title = document.querySelector("iframe")!.getAttribute("title");
+    expect(title).toBe("YouTube video for Warehouse Night");
+    expect(title).not.toContain("TIM ANDRESEN");
+  });
+
+  it("with no video title, an automated match is named after its artist", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({ ...VIDEO, videoTitle: null });
+    await renderPage(makeEvent({ artists: ARTISTS }));
+    expect(document.querySelector("iframe")!.getAttribute("title")).toBe("YouTube video: TIM ANDRESEN");
   });
 
   it("SoundCloud only: 'Get a taste' then 'Listen on SoundCloud', no #video anchor, links right under the heading", async () => {

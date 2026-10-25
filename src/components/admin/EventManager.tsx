@@ -7,6 +7,7 @@ import type { AdminUnpublishReason, Venue } from "@/lib/types";
 import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
+import EventYoutubePanel from "./EventYoutubePanel";
 
 /** UNPUBLISH reasons offered in the admin UI (admin unpublish/cancellation
  *  safety, 2026-09-06) — must stay in sync with AdminUnpublishReason. */
@@ -424,6 +425,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               Save (marks edited fields as manually overridden)
             </button>
           </div>
+          <EventYoutubePanel eventId={event.id} />
         </div>
       )}
       {error && <p className="mt-2 text-xs text-status-bad">{error}</p>}
