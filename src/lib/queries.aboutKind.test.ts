@@ -64,23 +64,24 @@ describe("public event queries: About kind", () => {
   });
 });
 
-describe("public event queries: Poolen/Pumpehuset withheld Danish originals (2026-10-25)", () => {
+describe("public event queries: Danish Poolen/Pumpehuset descriptions stay as they are (2026-10-25)", () => {
+  // Production check 2026-10-25: 20 published Poolen/Pumpehuset events show a
+  // Danish description stored before the import guard existed. Deploying the
+  // About-text work must not hide them.
   const EN_PLACE = "The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.";
-  it("hides only the import guard's Danish texts; admin edits, other sources and English with æ/ø/å stay visible", async () => {
+  it("shows every stored description, whatever its source or language", async () => {
     queue = [[
       eventRow("pump-da", DANISH, { canonicalSourceId: "src-pumpehuset" }),
       eventRow("pool-da", DANISH, { canonicalSourceId: "src-poolen" }),
       eventRow("pump-da-admin", DANISH, { canonicalSourceId: "src-pumpehuset", overriddenFields: ["description"] }),
-      eventRow("kult-da", DANISH, { canonicalSourceId: "src-kultunaut" }),
       eventRow("pool-en", EN_PLACE, { canonicalSourceId: "src-poolen" }),
     ], [VENUE_ROW]];
     const events = await getPublishedEventsWithVenue();
-    expect(events.map((e) => [e.id, e.description])).toEqual([
-      ["pump-da", null],
-      ["pool-da", null],
-      ["pump-da-admin", DANISH],
-      ["kult-da", DANISH],
-      ["pool-en", EN_PLACE],
+    expect(events.map((e) => [e.id, e.description, e.aboutKind])).toEqual([
+      ["pump-da", DANISH, "about"],
+      ["pool-da", DANISH, "about"],
+      ["pump-da-admin", DANISH, "about"],
+      ["pool-en", EN_PLACE, "about"],
     ]);
   });
 });

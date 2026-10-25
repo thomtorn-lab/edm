@@ -7,7 +7,6 @@ import { resolveByCanonicalPriority, type PublishDecision } from "./classificati
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
 import { usableDiscoveryDescription } from "./descriptionQuality";
-import { isLikelyDanish } from "./languageDetection";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -82,24 +81,6 @@ function sameArtists(a: string[], b: string[]): boolean {
  * (src/lib/override.ts via src/db/writes.ts::applySourceSyncPatch); this
  * only decides what the source currently says each field should be.
  */
-/**
- * Where a source's withheld (not publicly shown) description may be stored
- * on an existing event (2026-10-25, see RawCandidateEvent.withheldDescription):
- * only on an event that source itself owns, whose public About text then
- * stays hidden exactly as before (src/lib/aboutContent.ts), and never over a
- * description the public site shows today — only into an empty one, or over
- * an earlier withheld text. So what the public site shows can't change;
- * admin and the editorial audit simply get to see the source's text.
- */
-export function mayStoreWithheldDescription(
-  raw: Pick<RawCandidateEvent, "sourceId" | "withheldDescription">,
-  existing: Pick<SyncTargetEvent, "canonicalSourceId" | "description">,
-): boolean {
-  if (!raw.withheldDescription || raw.withheldDescription === existing.description) return false;
-  if (existing.canonicalSourceId !== raw.sourceId) return false;
-  return !existing.description?.trim() || isLikelyDanish(existing.description);
-}
-
 export function buildSyncPatch(
   raw: RawCandidateEvent,
   resolved: ResolvedCandidate,
@@ -109,9 +90,6 @@ export function buildSyncPatch(
 
   if (raw.title.trim() && raw.title !== existing.title) patch.title = raw.title;
   if (raw.description && raw.description !== existing.description) patch.description = raw.description;
-  else if (!raw.description && raw.withheldDescription && mayStoreWithheldDescription(raw, existing)) {
-    patch.description = raw.withheldDescription;
-  }
   // Names guessed from the title (RawCandidateEvent.artistsGuessedFromTitle)
   // never rewrite an existing event's artists.
   if (!raw.artistsGuessedFromTitle && resolved.normalizedArtists.length > 0 && !sameArtists(resolved.normalizedArtists, existing.artists)) {

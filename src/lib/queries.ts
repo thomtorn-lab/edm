@@ -20,10 +20,11 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
-import { classifyAboutText, isWithheldSourceDescription, type AboutKind } from "./aboutContent";
+import { classifyAboutText, type AboutKind } from "./aboutContent";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 import type { EventChangeEntry } from "./dataQuality";
+import { latestWithheldByEvent, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "./withheldDescriptions";
 
 export interface EventWithVenue extends EventRecord {
   venue: Venue;
@@ -122,16 +123,12 @@ async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<E
  * 2026-10-25): marks each event's description as about the event or only
  * practical venue information, and drops a description that is nothing but
  * bare labels with no value ("Praktisk info:.", "Entré") — see
- * src/lib/aboutContent.ts. Also keeps hiding a Poolen/Pumpehuset Danish
- * description, which those sources' import guard used to drop before it was
- * stored (isWithheldSourceDescription) — so the public site shows exactly
- * what it did. Pure and deterministic: the stored description is never
- * changed, and any other description is passed through as is, in whatever
- * language the source wrote it. Admin queries never call this.
+ * src/lib/aboutContent.ts. Pure and deterministic: the stored description
+ * is never changed, and every other description is passed through as is, in
+ * whatever language the source wrote it. Admin queries never call this.
  */
 function withAboutKind(list: EventWithVenue[]): EventWithVenue[] {
   return list.map((e) => {
-    if (isWithheldSourceDescription(e)) return { ...e, description: null, aboutKind: null };
     const aboutKind = classifyAboutText(e.description);
     return aboutKind === "empty" ? { ...e, description: null, aboutKind: null } : { ...e, aboutKind };
   });
@@ -490,6 +487,20 @@ export async function getRecentSyncIdentityChanges(days = 14): Promise<EventChan
       ),
     );
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+}
+
+/**
+ * Admin only: each event's latest withheld source description (a Danish
+ * Poolen/Pumpehuset text the public site does not show) — see
+ * src/lib/withheldDescriptions.ts. Never used by a public page.
+ */
+export async function getWithheldDescriptionsAdmin(): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ eventId: eventChangeLog.eventId, note: eventChangeLog.note })
+    .from(eventChangeLog)
+    .where(eq(eventChangeLog.changeType, WITHHELD_DESCRIPTION_CHANGE_TYPE))
+    .orderBy(desc(eventChangeLog.createdAt));
+  return latestWithheldByEvent(rows);
 }
 
 export async function getAllEventsAdmin(): Promise<EventWithVenue[]> {

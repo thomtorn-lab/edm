@@ -14,6 +14,7 @@ import {
   resolveDiscoveryItemAsPublished,
   touchSourceSyncStats,
   updateSourceLinkUrl,
+  recordWithheldDescription,
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
@@ -369,6 +370,11 @@ async function runSourceSyncLocked(
         if (Object.keys(patch).length > 0) {
           await applySourceSyncPatch(match.eventId, sourceId, patch);
         }
+        // A Danish description this source does not publish is kept for
+        // admin/QA in the change log only (src/lib/withheldDescriptions.ts).
+        if (raw.withheldDescription) {
+          await recordWithheldDescription(match.eventId, sourceId, raw.withheldDescription, existing.description);
+        }
 
         // Existing-published-event safety (data-quality Workstream A
         // follow-up — existing published events that now resolve to HOLD):
@@ -510,9 +516,7 @@ async function runSourceSyncLocked(
             id: eventId,
             title: raw.title,
             slug,
-            // A withheld (Danish) description is stored for admin/QA; the
-            // public queries keep hiding it for this source (aboutContent.ts).
-            description: raw.description ?? raw.withheldDescription ?? null,
+            description: raw.description,
             artists: result.normalizedArtists,
             startDatetime: new Date(raw.startDatetime),
             endDatetime: raw.endDatetime ? new Date(raw.endDatetime) : null,
@@ -543,6 +547,9 @@ async function runSourceSyncLocked(
         );
         created++;
         if (raw.soundcloudLinkReport) soundcloudObservations.set(eventId, raw.soundcloudLinkReport);
+        if (raw.withheldDescription) {
+          await recordWithheldDescription(eventId, sourceId, raw.withheldDescription, raw.description);
+        }
 
         // A candidate that already had a pending discovery_queue row from an
         // earlier, lower-confidence sync (see src/lib/sync.ts's
@@ -602,9 +609,8 @@ async function runSourceSyncLocked(
             // buildDiscoveryQueueClassificationPatch.
             residentAdvisorUrl: raw.residentAdvisorUrl,
             // Description fill, 2026-10-23 — see the DESCRIPTION FILL in
-            // buildDiscoveryQueueClassificationPatch. Discovery Queue rows are
-            // admin-only, so a withheld description is shown to the reviewer.
-            description: raw.description ?? raw.withheldDescription ?? null,
+            // buildDiscoveryQueueClassificationPatch.
+            description: raw.description,
           },
           {
             status: existingPending.status,
@@ -684,7 +690,7 @@ async function runSourceSyncLocked(
         // own edit to this field.
         // The venue's practical boilerplate alone (tickets, doors, seating)
         // is not stored as a description — see usableDiscoveryDescription.
-        description: usableDiscoveryDescription(raw.description ?? raw.withheldDescription ?? null),
+        description: usableDiscoveryDescription(raw.description),
         probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
         // Carried straight from the adapter's own extraction — real data
         // honestly found this run must never be silently dropped just

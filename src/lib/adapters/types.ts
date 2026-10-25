@@ -64,11 +64,10 @@ export interface RawCandidateEvent {
    * display (`description` is then null) — Poolen's and Pumpehuset's
    * English-language guard (2026-10-25). Kept so admin and the read-only
    * editorial audit (daily QA) can see the original text instead of it
-   * being dropped. Only the places that STORE a description read this
-   * (new event, same-source update, Discovery Queue row); classification,
-   * relevance and moved-event detection never do, so they behave exactly as
-   * before. Where it is stored, the public queries keep hiding it — see
-   * src/lib/aboutContent.ts's isWithheldSourceDescription.
+   * being dropped. Recorded only in event_change_log by the sync (see
+   * src/lib/withheldDescriptions.ts) — never in events.description, never
+   * in a Discovery Queue row, and never read by classification, relevance or
+   * moved-event detection, so what is stored and shown is exactly as before.
    */
   withheldDescription?: string | null;
   /**
