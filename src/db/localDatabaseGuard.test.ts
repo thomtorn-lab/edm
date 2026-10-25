@@ -16,7 +16,7 @@ import { GUARDED_COMMANDS, checkLocalDatabase, classifyDatabaseUrl } from "./loc
 
 const ROOT = join(__dirname, "../..");
 const LOCAL = "postgres://edm_app:pw@127.0.0.1:5432/edm_dev";
-const HOSTED = "postgresql://postgres.abc:secret@aws-1-eu-west-3.pooler.supabase.com:6543/postgres";
+const HOSTED = "postgresql://postgres.abc:secret@pooler.example.com:6543/postgres";
 
 describe("classifyDatabaseUrl", () => {
   it.each([
@@ -50,7 +50,7 @@ describe("classifyDatabaseUrl", () => {
   });
 
   it("never echoes credentials, only the host", () => {
-    expect(classifyDatabaseUrl(HOSTED).host).toBe("aws-1-eu-west-3.pooler.supabase.com");
+    expect(classifyDatabaseUrl(HOSTED).host).toBe("pooler.example.com");
     for (const command of GUARDED_COMMANDS) {
       expect(checkLocalDatabase(command, { DATABASE_URL: HOSTED }).message).not.toContain("secret");
     }
@@ -65,7 +65,7 @@ describe("checkLocalDatabase", () => {
   it.each(GUARDED_COMMANDS)("%s: a hosted database is refused by default", (command) => {
     const r = checkLocalDatabase(command, { DATABASE_URL: HOSTED });
     expect(r.ok).toBe(false);
-    expect(r.message).toContain("aws-1-eu-west-3.pooler.supabase.com");
+    expect(r.message).toContain("pooler.example.com");
   });
 
   it.each(GUARDED_COMMANDS)("%s: a missing or malformed DATABASE_URL is refused", (command) => {

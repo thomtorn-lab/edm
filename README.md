@@ -21,6 +21,7 @@ npm run db:verify-sync             # end-to-end proof: live-fetches Hangaren + e
 npm run db:verify-bootstrap          # end-to-end proof: empty DB -> migrate -> production bootstrap -> real sync
 ```
 
+**Local database guard — a safety net for local development only.**
 `dev`, `db:migrate`, `db:studio`, `db:seed:dev`, `db:verify-sync` and `db:verify-bootstrap` first
 check that `DATABASE_URL` is a local test database (localhost / 127.0.0.1 / ::1 / a Unix socket) and
 refuse a hosted one (`src/db/localDatabaseGuard.ts`). An exported `DATABASE_URL` wins over
@@ -32,6 +33,14 @@ into an env file is ignored. `db:seed:dev` never runs against a hosted database.
 the guard checks every env file Next loads (`.env.development.local`, `.env.local`,
 `.env.development`, `.env`). `npm run
 build` is not guarded — the Vercel Production build applies migrations itself (`src/db/migrateOnDeploy.ts`).
+
+The guard does **not** protect Production workflows and is not their access control. The GitHub
+Actions workflows and the Vercel build run their scripts directly with the repository's
+`DATABASE_URL` secret, outside these six commands: Production writes are gated by
+`workflow_dispatch` plus a typed confirmation, and the "read-only" audits/inspections by their own
+code opening a `BEGIN READ ONLY` transaction — they currently still use the privileged credential,
+not a read-only one. `npm test` never sees a `DATABASE_URL` or `ALLOW_HOSTED_DATABASE`
+(`vitest.setup.ts` removes both); unit tests mock the database.
 
 ## Current phase
 
