@@ -22,7 +22,8 @@ import { isPracticalInfoOnly } from "./descriptionQuality";
  */
 export type AboutKind = "about" | "practical" | "empty";
 
-const BARE_LABEL_RE = /^(?:praktisk info(?:rmation)?|practical info(?:rmation)?|info(?:rmation)?|entr[ée]e?|admission|billetter|tickets?|pris(?:er)?|prices?)\s*[:.\-–]*\s*$/iu;
+/** A label line with no value ("Entré", "Praktisk info:."). */
+export const BARE_LABEL_RE = /^(?:praktisk info(?:rmation)?|practical info(?:rmation)?|info(?:rmation)?|entr[ée]e?|admission|billetter|tickets?|pris(?:er)?|prices?)\s*[:.\-–]*\s*$/iu;
 
 export function classifyAboutText(text: string | null | undefined): AboutKind | null {
   if (!text || !text.trim()) return null;

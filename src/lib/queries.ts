@@ -3,7 +3,6 @@ import { db } from "@/db/client";
 import {
   artistYoutubePreviewCache,
   discoveryQueue,
-  eventDescriptionTranslations,
   eventChangeLog,
   eventSoundcloudLinks,
   eventYoutubePreviewOverrides,
@@ -21,9 +20,7 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
-import { publicDescriptionFor, type CachedTranslation } from "./translation/englishDescription";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
-import { isEnglishOnlyAboutEnabled } from "./translation/featureFlag";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 import type { EventChangeEntry } from "./dataQuality";
@@ -31,7 +28,7 @@ import type { EventChangeEntry } from "./dataQuality";
 export interface EventWithVenue extends EventRecord {
   venue: Venue;
   /**
-   * Set by the public queries (withPublicDescriptions): whether the About
+   * Set by the public queries (withAboutKind): whether the About
    * text is about the event or only practical venue information — see
    * src/lib/aboutContent.ts. Classified from the ORIGINAL stored text.
    */
@@ -121,49 +118,18 @@ async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<E
 }
 
 /**
- * English-only About texts on every public surface (2026-10-24): replaces
- * each event's `description` with the text the public site may show — the
- * cached English version of exactly the current description, the
- * description itself when it is (confirmed or clearly) English, or null.
- * See publicDescriptionFor. Until ENGLISH_ONLY_ABOUT_TEXTS=true
- * (translation/featureFlag.ts), a description without a translation is
- * shown as before instead of null. Applied by every PUBLIC event query (event page,
- * homepage, venue and genre pages, calendar exports, JSON-LD), so no
- * consumer can show an original non-English text by accident. Admin queries
- * never call this: admin always sees and edits the original description.
- * One batched lookup per call, only for events that have a description.
+ * About-text presentation for the public queries (About-text formatting,
+ * 2026-10-25): marks each event's description as about the event or only
+ * practical venue information, and drops a description that is nothing but
+ * bare labels with no value ("Praktisk info:.", "Entré") — see
+ * src/lib/aboutContent.ts. Pure and deterministic: the stored description
+ * is never changed, and any other description is passed through as is, in
+ * whatever language the source wrote it. Admin queries never call this.
  */
-async function withPublicDescriptions(list: EventWithVenue[]): Promise<EventWithVenue[]> {
-  const ids = list.filter((e) => e.description).map((e) => e.id);
-  const cached = new Map<string, CachedTranslation>();
-  if (ids.length > 0) {
-    try {
-      const rows = await db
-        .select({
-          eventId: eventDescriptionTranslations.eventId,
-          sourceHash: eventDescriptionTranslations.sourceHash,
-          status: eventDescriptionTranslations.status,
-          translatedText: eventDescriptionTranslations.translatedText,
-        })
-        .from(eventDescriptionTranslations)
-        .where(inArray(eventDescriptionTranslations.eventId, ids));
-      for (const r of rows) cached.set(r.eventId, r);
-    } catch (err) {
-      // Deploy-ordering safety (same rule as getArtistYoutubePreviewForLineup):
-      // a failed lookup — e.g. the table not existing yet — must never take a
-      // public page down. With no cached rows, clearly-English descriptions
-      // still show and everything else stays hidden: still English-only.
-      console.error("[queries] description translation lookup failed:", err instanceof Error ? err.message : String(err));
-    }
-  }
-  const englishOnly = isEnglishOnlyAboutEnabled();
+function withAboutKind(list: EventWithVenue[]): EventWithVenue[] {
   return list.map((e) => {
-    // Classified from the original text (the practical-vocabulary rule is
-    // Danish + English); "empty" (bare labels only) shows nothing.
     const aboutKind = classifyAboutText(e.description);
-    const description =
-      aboutKind === "empty" ? null : publicDescriptionFor(e.description, cached.get(e.id) ?? null, { englishOnly });
-    return { ...e, description, aboutKind: description ? aboutKind : null };
+    return aboutKind === "empty" ? { ...e, description: null, aboutKind: null } : { ...e, aboutKind };
   });
 }
 
@@ -175,7 +141,7 @@ async function withPublicDescriptions(list: EventWithVenue[]): Promise<EventWith
  */
 export async function getPublishedEventsWithVenue(): Promise<EventWithVenue[]> {
   const rows = await db.select().from(events).where(eq(events.published, true));
-  return withPublicDescriptions(await attachVenue(rows));
+  return withAboutKind(await attachVenue(rows));
 }
 
 export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVenue | undefined> {
@@ -184,7 +150,7 @@ export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVe
     .from(events)
     .where(and(eq(events.slug, slug), eq(events.published, true)))
     .limit(1);
-  const withVenue = await withPublicDescriptions(await attachVenue(rows));
+  const withVenue = withAboutKind(await attachVenue(rows));
   return withVenue[0];
 }
 
@@ -487,7 +453,7 @@ export async function getEventsForVenue(venueId: string): Promise<EventWithVenue
     .select()
     .from(events)
     .where(and(eq(events.venueId, venueId), eq(events.published, true)));
-  return withPublicDescriptions(await attachVenue(rows));
+  return withAboutKind(await attachVenue(rows));
 }
 
 /** Includes unpublished/hidden events — used by the admin tools, never by public pages. */

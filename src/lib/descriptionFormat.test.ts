@@ -255,3 +255,23 @@ describe("previewBlockCount — where 'Show more' folds a long text", () => {
     expect(previewBlockCount(formatDescription([para(700, "a"), para(220, "b")].join("\n\n")))).toBeNull();
   });
 });
+
+describe("formatDescription — deterministic tidying (real KultuNaut fixtures)", () => {
+  it("drops a value-less label left at the very end ('Entré'), keeps everything before it", () => {
+    const text = "Find øvrig praktisk info på\n\nwww.vega.dk\n\nEntré";
+    expect(render(formatDescription(text))).toEqual(["Find øvrig praktisk info på", "[vega.dk](https://www.vega.dk/)"]);
+  });
+  it("keeps a label that has content after it (a real 'Practical information' heading)", () => {
+    const text = "Dance by the water.\n\nPractical Information\nDates: 26–30 August 2026. Location: under the open sky in front of the Opera.";
+    expect(render(formatDescription(text))).toContain("## Practical Information");
+  });
+  it("keeps a label with a value", () => {
+    expect(render(formatDescription("Praktisk info: Aldersgrænse: 18+.\n\nEntré"))).toEqual(["Praktisk info: Aldersgrænse: 18+."]);
+  });
+  it("shows a paragraph repeated word for word only once; short repeats and near-repeats stay", () => {
+    const para = "Doors open at ten and the music runs until five in the morning.";
+    expect(render(formatDescription(`${para}\n\nA second paragraph.\n\n${para.toUpperCase()}`))).toEqual([para, "A second paragraph."]);
+    expect(render(formatDescription("Sold out\n\nSold out"))).toEqual(["Sold out", "Sold out"]);
+    expect(render(formatDescription(`${para}\n\n${para.replace("five", "six")}`))).toHaveLength(2);
+  });
+});

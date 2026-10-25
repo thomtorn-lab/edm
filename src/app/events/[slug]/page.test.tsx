@@ -494,11 +494,6 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
-  it("renders no About section when the public query withholds a not-yet-translated description (description: null)", async () => {
-    await renderPage(makeEvent({ description: null }));
-    expect(screen.queryByText("About")).toBeNull();
-  });
-
   it("labels a practical-only text 'Practical information' and keeps it out of the JSON-LD description", async () => {
     const text = "In Store and Lille VEGA the cloakroom must always be used for safety reasons. A cloakroom fee is charged.";
     await renderPage(makeEvent({ description: text, aboutKind: "practical" }));
@@ -509,10 +504,10 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(jsonLd.description).toBeUndefined();
   });
 
-  it("puts the public (English) About text in the JSON-LD description", async () => {
-    await renderPage(makeEvent({ description: "A real English description of the night.", aboutKind: "about" }));
+  it("puts an About text (in its own language, unchanged) in the JSON-LD description", async () => {
+    await renderPage(makeEvent({ description: "En rigtig beskrivelse af aftenen.", aboutKind: "about" }));
     const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
-    expect(jsonLd.description).toBe("A real English description of the night.");
+    expect(jsonLd.description).toBe("En rigtig beskrivelse af aftenen.");
   });
 
   it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {

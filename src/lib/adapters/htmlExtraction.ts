@@ -131,11 +131,10 @@ export function htmlToParagraphText(html: string): string {
  * Safety ceiling for a stored event description — NOT a display cut
  * (About-text formatting, 2026-10-24). Adapters store the full description;
  * long texts are handled by the page layout, never by dropping stored
- * information. This only exists for two concrete technical reasons: a
- * broken extractor (a selector that stops matching its end marker) could
- * otherwise store an entire web page as "description", and the English
- * translation of one description must fit in a single API response. Real
- * descriptions are far below it (the longest fixture description is about
+ * information (Show more / Show less folds long texts on the page). The
+ * ceiling exists for one concrete technical reason: a broken extractor (a
+ * selector that stops matching its end marker) could otherwise store an
+ * entire web page as "description". Real descriptions are far below it (the longest fixture description is about
  * 5,000 characters). Applied once, at the shared pipeline choke point.
  */
 export const DESCRIPTION_SAFETY_MAX_LENGTH = 20_000;

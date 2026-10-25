@@ -1,11 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import {
-  decodeHtmlEntities,
-  htmlToText,
-  htmlToParagraphText,
-} from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, htmlToParagraphText, isLikelyDanish } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -228,12 +224,18 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     descriptionHtml = html.slice(proseIdx + proseMarker.length, proseEnd);
   }
   const fullDescriptionText = htmlToText(descriptionHtml).replace(/\n/g, " ").trim();
-  // The stored description keeps the prose's paragraphs and is kept in
-  // Danish too (2026-10-24): the former English-language guard nulled
-  // Danish copy, but every About text is now shown in English via the
-  // cached translation, with the original stored unchanged. Genre
-  // resolution below still uses the flat fullDescriptionText, as before.
-  const description = fullDescriptionText ? htmlToParagraphText(descriptionHtml) || null : null;
+  // English-language guard (pre-launch QA audit, 2026-08-29 — Poolen's own
+  // body text used to sometimes be Danish; the site is now English-first
+  // post-relaunch, but the guard is harmless to keep and still protects
+  // against any residual Danish copy). Genre resolution below still uses
+  // the real, untruncated fullDescriptionText as evidence regardless — this
+  // only decides what's shown. A shown description is stored in full with
+  // its paragraphs (About-text formatting, 2026-10-25).
+  const description = !fullDescriptionText
+    ? null
+    : isLikelyDanish(fullDescriptionText)
+      ? null
+      : htmlToParagraphText(descriptionHtml) || null;
 
   // Support-artist names live in their own `.pc-concert__band` sections,
   // each with a `.pc-concert__band-name` heading — a distinct class from

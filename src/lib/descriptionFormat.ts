@@ -1,4 +1,5 @@
 import { decodeHtmlEntities } from "./adapters/htmlExtraction";
+import { BARE_LABEL_RE } from "./aboutContent";
 
 /**
  * Presentation-only structuring of an event's About description (About-text
@@ -488,12 +489,39 @@ function linesToParagraphs(lines: string[]): string[][] {
 
 // ------------------------------------------------------------------ public
 
+/**
+ * Deterministic tidying that can't lose information (2026-10-25):
+ * - label lines with no value left at the very end ("Entré", "Praktisk
+ *   info:." — KultuNaut keeps the price itself elsewhere on the page) are
+ *   dropped; a label followed by content (a real "Practical information"
+ *   heading) is kept;
+ * - a paragraph repeated word for word (whitespace/case aside, at least 40
+ *   characters) is shown once.
+ */
+function tidyBlocks(blocks: string[][]): string[][] {
+  const out = blocks.map((b) => [...b]);
+  while (out.length > 0) {
+    const last = out[out.length - 1];
+    if (last.length > 0 && BARE_LABEL_RE.test(last[last.length - 1])) last.pop();
+    else if (last.length === 0) out.pop();
+    else break;
+  }
+  const seen = new Set<string>();
+  return out.filter((block) => {
+    const key = block.join(" ").toLowerCase().replace(/\s+/g, " ").trim();
+    if (key.length < 40) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function formatDescription(text: string | null | undefined, options: FormatDescriptionOptions = {}): DescriptionBlock[] {
   if (!text) return [];
   const normalized = normalize(text);
   if (!normalized) return [];
 
-  const rawBlocks = normalized.split(/\n\n/).map((b) => b.split("\n").filter(Boolean));
+  const rawBlocks = tidyBlocks(normalized.split(/\n\n/).map((b) => b.split("\n").filter(Boolean)));
   const allLines = rawBlocks.flat();
   const upperCount = allLines.filter(isUpperCaseLine).length;
   const ctx: LineContext = {
