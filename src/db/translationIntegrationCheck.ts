@@ -167,6 +167,9 @@ async function main(): Promise<void> {
   const out = typeof args.out === "string" ? args.out : "translation-integration-report.md";
   writeFileSync(out, `# Translation integration check\n\n${new Date().toISOString()}\n\n${summary}\n\n${rows.join("\n")}`);
   console.log(`Report written to ${out}`);
+  // A run the budget guard cut short is not a complete check: fail visibly
+  // (the report is still written and uploaded).
+  if (stoppedAt) process.exit(2);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
