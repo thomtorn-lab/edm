@@ -25,7 +25,7 @@ const { getPublishedEventsWithVenue, getEventBySlugWithVenue, getEventsForVenue 
 const DANISH = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer.";
 const PRACTICAL = "Doors open at 20:00. Cloakroom is mandatory, tickets at the door, age limit 18+ and contact info@vega.dk.";
 
-function eventRow(id: string, description: string | null) {
+function eventRow(id: string, description: string | null, extra: Record<string, unknown> = {}) {
   const d = new Date("2026-11-13T19:00:00.000Z");
   return {
     id, title: id, slug: id, description, artists: [], startDatetime: d, endDatetime: null, venueId: "v1", subVenue: null,
@@ -35,6 +35,7 @@ function eventRow(id: string, description: string | null) {
     adminUnpublishReason: null, adminUnpublishNote: null, adminUnpublishedAt: null, sourceCancelledAt: null,
     sourceCancelledBySourceId: null, sourceCancellationEvidence: null, manualOverride: false, overriddenFields: [],
     confidence: "high", canonicalSourceId: null, createdAt: d, updatedAt: d, lastSourceCheck: null, lastChanged: null,
+    ...extra,
   };
 }
 const VENUE_ROW = { id: "v1", slug: "v1", name: "Pumpehuset", aliases: [], rooms: [], address: "x", city: "Copenhagen", postalCode: "1", websiteUrl: null, description: null, shortDescription: null, venueProfile: null };
@@ -60,5 +61,26 @@ describe("public event queries: About kind", () => {
     expect((await getEventBySlugWithVenue("e"))?.aboutKind).toBe("practical");
     queue = [[eventRow("e", DANISH)], [VENUE_ROW]];
     expect((await getEventsForVenue("v1"))[0].description).toBe(DANISH);
+  });
+});
+
+describe("public event queries: Poolen/Pumpehuset withheld Danish originals (2026-10-25)", () => {
+  const EN_PLACE = "The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.";
+  it("hides only the import guard's Danish texts; admin edits, other sources and English with æ/ø/å stay visible", async () => {
+    queue = [[
+      eventRow("pump-da", DANISH, { canonicalSourceId: "src-pumpehuset" }),
+      eventRow("pool-da", DANISH, { canonicalSourceId: "src-poolen" }),
+      eventRow("pump-da-admin", DANISH, { canonicalSourceId: "src-pumpehuset", overriddenFields: ["description"] }),
+      eventRow("kult-da", DANISH, { canonicalSourceId: "src-kultunaut" }),
+      eventRow("pool-en", EN_PLACE, { canonicalSourceId: "src-poolen" }),
+    ], [VENUE_ROW]];
+    const events = await getPublishedEventsWithVenue();
+    expect(events.map((e) => [e.id, e.description])).toEqual([
+      ["pump-da", null],
+      ["pool-da", null],
+      ["pump-da-admin", DANISH],
+      ["kult-da", DANISH],
+      ["pool-en", EN_PLACE],
+    ]);
   });
 });

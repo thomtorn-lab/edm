@@ -11,6 +11,7 @@ import {
   findSyncMatch,
   isDiscoveryRowCurrent,
   isIgnoredCandidate,
+  mayStoreWithheldDescription,
   summarizeWriteErrors,
   type DiscoveryQueueTarget,
   type SyncTargetEvent,
@@ -1882,5 +1883,33 @@ describe("classifyVenueBlock (venue-block visibility precision fix, follow-up to
 
   it("6. null/negative-relevance counterfactual is never ACTIVE (mirrors pipeline.test.ts's venueResolvedCounterfactual case 5)", () => {
     expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "hold" })).toBe("other_blockers");
+  });
+});
+
+describe("withheld descriptions (Poolen/Pumpehuset Danish texts kept for admin/QA, 2026-10-25)", () => {
+  const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer.";
+  const DA_OLD = "Pumpehuset præsenterer en aften med elektronisk musik.";
+  const EN = "An American artist bringing deep basslines and dark techno to Copenhagen for one night.";
+  const withheld = raw({ sourceId: "src-pumpehuset", description: null, withheldDescription: DA });
+  const owned = (description: string | null) => target({ canonicalSourceId: "src-pumpehuset", description });
+
+  it("stores the withheld original only on the same source's event, into an empty or Danish description", () => {
+    expect(mayStoreWithheldDescription(withheld, owned(null))).toBe(true);
+    expect(mayStoreWithheldDescription(withheld, owned("  "))).toBe(true);
+    expect(mayStoreWithheldDescription(withheld, owned(DA_OLD))).toBe(true);
+    expect(buildSyncPatch(withheld, resolved, owned(null)).patch.description).toBe(DA);
+  });
+
+  it("never replaces a description the public site shows, never crosses sources, no-ops when unchanged", () => {
+    expect(mayStoreWithheldDescription(withheld, owned(EN))).toBe(false);
+    expect(mayStoreWithheldDescription(withheld, target({ canonicalSourceId: "src-kultunaut", description: null }))).toBe(false);
+    expect(mayStoreWithheldDescription(withheld, owned(DA))).toBe(false);
+    expect(mayStoreWithheldDescription(raw({ sourceId: "src-pumpehuset", description: null }), owned(null))).toBe(false);
+    expect(buildSyncPatch(withheld, resolved, owned(EN)).patch.description).toBeUndefined();
+  });
+
+  it("a public description still wins over a withheld one", () => {
+    const both = raw({ sourceId: "src-pumpehuset", description: EN, withheldDescription: DA });
+    expect(buildSyncPatch(both, resolved, owned(null)).patch.description).toBe(EN);
   });
 });

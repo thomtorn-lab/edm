@@ -113,11 +113,14 @@ describe("SQL — completeness and minimal output", () => {
       expect(sql).not.toMatch(
         /admin_unpublish|manual_override|event_change_log|discovery_queue|source_cancellation_evidence/,
       );
-      // overridden_fields is only ever read through the two genre membership
-      // checks (genre QA, 2026-10-17), never selected as a column.
+      // overridden_fields is only ever read through membership checks — the
+      // two genre ones (genre QA, 2026-10-17) and the description one
+      // (language reporting, 2026-10-25) — never selected as a column.
       const overrideUses = sql.match(/[^\n]*overridden_fields[^\n]*/g) ?? [];
       for (const use of overrideUses) {
-        expect(use.trim()).toMatch(/^\('(primaryGenre|subgenres)' = ANY\(e\.overridden_fields\)\) AS (primary_genre|subgenres)_overridden,?$/);
+        expect(use.trim()).toMatch(
+          /^\('(primaryGenre|subgenres|description)' = ANY\(e\.overridden_fields\)\) AS (primary_genre|subgenres|description)_overridden,?$/,
+        );
       }
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
     }
@@ -160,6 +163,20 @@ describe("toScreeningEvent", () => {
     // overridden_fields NULL/absent in the DB yields NULL from ANY(): treated as not overridden.
     expect(ev({ primary_genre_overridden: null, subgenres_overridden: null }).genreManuallySet).toEqual([]);
     expect(Object.keys(ev({}))).not.toContain("overriddenFields");
+  });
+
+  it("Danish-description QA (2026-10-25): flags Danish text and whether the public site hides it", () => {
+    expect(WINDOW_EVENTS_SQL).toContain("('description' = ANY(e.overridden_fields)) AS description_overridden");
+    const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer og det bliver vildt.";
+    const EN = "The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.";
+    const ev = (o: Partial<WindowEventRow>) => toScreeningEvent(row({ id: "e-d", start: "2026-10-17T22:00:00Z", ...o }), w);
+    expect(ev({ description: DA, canonical_source_id: "src-pumpehuset" })).toMatchObject({ descriptionReadsDanish: true, descriptionHiddenPublicly: true });
+    // An admin edit is always shown; another source's Danish text is shown too — both still reported as Danish.
+    expect(ev({ description: DA, canonical_source_id: "src-pumpehuset", description_overridden: true })).toMatchObject({ descriptionReadsDanish: true, descriptionHiddenPublicly: false });
+    expect(ev({ description: DA, canonical_source_id: "src-kultunaut" })).toMatchObject({ descriptionReadsDanish: true, descriptionHiddenPublicly: false });
+    // English naming a Danish place: neither Danish nor hidden.
+    expect(ev({ description: EN, canonical_source_id: "src-poolen" })).toMatchObject({ descriptionReadsDanish: false, descriptionHiddenPublicly: false });
+    expect(ev({})).toMatchObject({ descriptionReadsDanish: false, descriptionHiddenPublicly: false });
   });
 
   it("shortens and whitespace-collapses descriptions", () => {

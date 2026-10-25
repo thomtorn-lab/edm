@@ -738,7 +738,9 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
     // or the bare presenter-line fallback) — genre resolution above already
     // used the real text as evidence; this only decides what's shown.
     if (next.description && isLikelyDanish(next.description)) {
-      next = { ...next, description: null };
+      // Kept for admin/QA instead of dropped; still never shown publicly
+      // (RawCandidateEvent.withheldDescription).
+      next = { ...next, description: null, withheldDescription: structuredDescription ?? next.description };
     } else if (structuredDescription) {
       // Stored with the body text's own line breaks (About-text formatting).
       next = { ...next, description: structuredDescription };

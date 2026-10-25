@@ -35,6 +35,8 @@
  * default for later transactions), so it is deliberately not relied on here.
  * See runEventsWindowAudit.
  */
+import { readsAsDanish } from "@/lib/languageDetection";
+import { isWithheldSourceDescription } from "@/lib/aboutContent";
 import {
   addDaysToDateKey,
   copenhagenWallClockToUtc,
@@ -108,7 +110,8 @@ export const WINDOW_EVENTS_SQL = `SELECT e.id, e.slug, e.title, e.artists, e.des
        e.canonical_source_id, e.official_event_url, e.ticket_url, e.resident_advisor_url,
        e.facebook_url, e.other_source_urls,
        ('primaryGenre' = ANY(e.overridden_fields)) AS primary_genre_overridden,
-       ('subgenres' = ANY(e.overridden_fields)) AS subgenres_overridden
+       ('subgenres' = ANY(e.overridden_fields)) AS subgenres_overridden,
+       ('description' = ANY(e.overridden_fields)) AS description_overridden
 FROM events e LEFT JOIN venues v ON v.id = e.venue_id
 WHERE ${WINDOW_PREDICATE_SQL}
 ORDER BY e.start_datetime, e.id`;
@@ -149,6 +152,8 @@ export interface WindowEventRow {
   primary_genre_overridden: boolean | null;
   /** subgenres is in overridden_fields (computed in SQL; the list itself is never selected). */
   subgenres_overridden: boolean | null;
+  /** description is in overridden_fields (computed in SQL; the list itself is never selected). Optional for older callers. */
+  description_overridden?: boolean | null;
 }
 
 export type EdgeFlag = "previous_night_early_start" | "after_midnight_last_night" | "started_before_window";
@@ -185,6 +190,18 @@ export interface ScreeningEvent {
   publicUrl: string;
   sourceUrls: string[];
   description: string | null;
+  /**
+   * Language reporting for the daily QA (2026-10-25). Computed from the
+   * FULL stored description, not the shortened one above.
+   * - descriptionReadsDanish: the text reads as Danish by its grammar
+   *   (src/lib/languageDetection.ts readsAsDanish) — any source, shown
+   *   publicly or not. A report signal only; it hides nothing.
+   * - descriptionHiddenPublicly: the public site does not show this
+   *   description — a Poolen/Pumpehuset Danish text (same rule as the public
+   *   queries, isWithheldSourceDescription). Admin still sees it.
+   */
+  descriptionReadsDanish: boolean;
+  descriptionHiddenPublicly: boolean;
   edgeFlags: EdgeFlag[];
 }
 
@@ -252,6 +269,12 @@ export function toScreeningEvent(row: WindowEventRow, window: AuditWindow): Scre
     publicUrl: `${SITE_URL}/events/${row.slug}`,
     sourceUrls: Array.from(new Set(urls)),
     description: shortenDescription(row.description),
+    descriptionReadsDanish: row.description ? readsAsDanish(row.description) : false,
+    descriptionHiddenPublicly: isWithheldSourceDescription({
+      canonicalSourceId: row.canonical_source_id,
+      description: row.description,
+      overriddenFields: row.description_overridden === true ? ["description"] : [],
+    }),
     edgeFlags: edgeFlagsFor(start, window),
   };
 }

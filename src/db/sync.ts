@@ -510,7 +510,9 @@ async function runSourceSyncLocked(
             id: eventId,
             title: raw.title,
             slug,
-            description: raw.description,
+            // A withheld (Danish) description is stored for admin/QA; the
+            // public queries keep hiding it for this source (aboutContent.ts).
+            description: raw.description ?? raw.withheldDescription ?? null,
             artists: result.normalizedArtists,
             startDatetime: new Date(raw.startDatetime),
             endDatetime: raw.endDatetime ? new Date(raw.endDatetime) : null,
@@ -600,8 +602,9 @@ async function runSourceSyncLocked(
             // buildDiscoveryQueueClassificationPatch.
             residentAdvisorUrl: raw.residentAdvisorUrl,
             // Description fill, 2026-10-23 — see the DESCRIPTION FILL in
-            // buildDiscoveryQueueClassificationPatch.
-            description: raw.description,
+            // buildDiscoveryQueueClassificationPatch. Discovery Queue rows are
+            // admin-only, so a withheld description is shown to the reviewer.
+            description: raw.description ?? raw.withheldDescription ?? null,
           },
           {
             status: existingPending.status,
@@ -681,7 +684,7 @@ async function runSourceSyncLocked(
         // own edit to this field.
         // The venue's practical boilerplate alone (tickets, doors, seating)
         // is not stored as a description — see usableDiscoveryDescription.
-        description: usableDiscoveryDescription(raw.description),
+        description: usableDiscoveryDescription(raw.description ?? raw.withheldDescription ?? null),
         probableStart: raw.startDatetime ? new Date(raw.startDatetime) : null,
         // Carried straight from the adapter's own extraction — real data
         // honestly found this run must never be silently dropped just

@@ -407,6 +407,12 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // 2026-10-15) — the event page's formatter needs them to tell paragraphs
   // from line breaks; every other field keeps the flat shape.
   if (raw.description) raw.description = normalizeExtractedText(raw.description, { keepParagraphs: true });
+  if (raw.withheldDescription) {
+    raw.withheldDescription = truncateAtBoundary(
+      normalizeExtractedText(raw.withheldDescription, { keepParagraphs: true }),
+      DESCRIPTION_SAFETY_MAX_LENGTH,
+    );
+  }
   if (raw.description && raw.description.length > DESCRIPTION_SAFETY_MAX_LENGTH) {
     console.warn(
       `[pipeline] ${raw.sourceId}: description of ${raw.description.length} characters exceeds the ${DESCRIPTION_SAFETY_MAX_LENGTH}-character safety ceiling (likely a broken extractor) — cut at a boundary: ${raw.title}`,

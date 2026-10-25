@@ -250,11 +250,10 @@ export function sanitizeExtractedTitle(title: string, maxLength = 200): string {
 // reliable rule, not a robust classifier. Reused by any adapter with the
 // same risk (pre-launch QA audit, 2026-08-29, found Poolen had no such
 // guard despite the same Danish-source-text risk as Pumpehuset).
-const DANISH_LETTERS = /[æøåÆØÅ]/;
-
-export function isLikelyDanish(text: string): boolean {
-  return DANISH_LETTERS.test(text);
-}
+// Implementation lives in src/lib/languageDetection.ts (2026-10-25: an
+// English text is no longer treated as Danish just for naming a Danish
+// place); re-exported here so existing imports keep working.
+export { isLikelyDanish } from "../languageDetection";
 
 /**
  * True when `url` resolves to the same host as `baseUrl` (www.-insensitive).

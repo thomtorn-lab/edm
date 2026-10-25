@@ -231,11 +231,9 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
   // the real, untruncated fullDescriptionText as evidence regardless — this
   // only decides what's shown. A shown description is stored in full with
   // its paragraphs (About-text formatting, 2026-10-25).
-  const description = !fullDescriptionText
-    ? null
-    : isLikelyDanish(fullDescriptionText)
-      ? null
-      : htmlToParagraphText(descriptionHtml) || null;
+  const structuredDescription = fullDescriptionText ? htmlToParagraphText(descriptionHtml) || null : null;
+  const withheld = structuredDescription !== null && isLikelyDanish(fullDescriptionText);
+  const description = withheld ? null : structuredDescription;
 
   // Support-artist names live in their own `.pc-concert__band` sections,
   // each with a `.pc-concert__band-name` heading — a distinct class from
@@ -285,6 +283,9 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     // whose `description` above is null (relevance-architecture audit,
     // 2026-08-30 — see RawCandidateEvent.relevanceText's doc comment).
     relevanceText: fullDescriptionText || null,
+    // Kept for admin/QA instead of dropped; still never shown publicly
+    // (RawCandidateEvent.withheldDescription).
+    withheldDescription: withheld ? structuredDescription : null,
     soldOutHint,
     cancelledHint,
     cancellationEvidence: cancelledHint ? 'Poolen status badge "Cancelled"' : null,
