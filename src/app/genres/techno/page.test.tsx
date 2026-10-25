@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { EventWithVenue } from "@/lib/queries";
-import { GENRES, matchesGenreFilter, type GenreSlug } from "@/lib/taxonomy";
+import { GENRES, matchesGenreSelection, parentOf, type GenreSlug } from "@/lib/taxonomy";
 import type { Venue } from "@/lib/types";
 
 const VENUE: Venue = {
@@ -109,30 +109,44 @@ describe("/genres/techno — page", () => {
     expect(screen.getByLabelText("Go to audio links for Event with-audio")).toBeTruthy();
   });
 
-  it("renders the H1 and a short intro naming only Techno — no subgenres", async () => {
+  // Genre system revision (2026-10-24, intended change from #161): Techno is
+  // a main genre, so its page includes every techno subgenre — but never the
+  // standalone Industrial genre.
+  it("renders the H1 and an intro naming Techno and its subgenres, straight from the taxonomy — not Industrial", async () => {
     await renderPage([]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Techno Events in Copenhagen");
-    expect(screen.getByText(/every published event tagged Techno\./)).toBeTruthy();
-    expect(screen.queryByText(/Melodic Techno|Minimal Techno|Industrial/)).toBeNull();
-    expect(metadata.description).not.toMatch(/industrial|melodic|minimal/i);
+    expect(
+      screen.getByText(/every published event tagged Techno, Hard Techno, Industrial Techno, Hypnotic Techno, Melodic Techno or Minimal Techno\./),
+    ).toBeTruthy();
+    expect(metadata.description).toMatch(/techno subgenre/);
   });
 
-  it("lists only upcoming events with Techno as one of their genres, in date order — no subgenres", async () => {
+  it("lists upcoming events tagged Techno or a techno subgenre, each once, in date order — not Industrial-only events", async () => {
     await renderPage([
       makeEvent("later-techno", ["techno"], "2099-02-01T20:00:00.000Z"),
       makeEvent("techno-industrial", ["techno", "industrial"], "2099-01-15T20:00:00.000Z"),
+      makeEvent("two-subgenres", ["hard-techno", "hypnotic-techno"], "2099-01-10T20:00:00.000Z"),
       makeEvent("house-techno", ["house", "techno"], FUTURE),
       makeEvent("melodic", ["house", "melodic-techno"], FUTURE),
       makeEvent("minimal", ["minimal-techno"], FUTURE),
+      makeEvent("industrial-techno", ["industrial-techno"], FUTURE),
       makeEvent("industrial", ["industrial"], FUTURE),
-      makeEvent("hard", ["hard-techno"], FUTURE),
+      makeEvent("hardcore", ["hardcore"], FUTURE),
       makeEvent("house", ["house"], FUTURE),
       makeEvent("none", [], FUTURE),
       makeEvent("past", ["techno"], "2020-01-01T20:00:00.000Z"),
     ]);
     const titles = screen.getAllByRole("listitem").map((li) => within(li).getAllByRole("link")[0].textContent?.replace(/→$/, "").trim());
-    expect(titles).toEqual(["Event house-techno", "Event techno-industrial", "Event later-techno"]);
-    for (const hidden of ["melodic", "minimal", "industrial", "hard", "house", "none", "past"]) {
+    expect(titles).toEqual([
+      "Event house-techno",
+      "Event melodic",
+      "Event minimal",
+      "Event industrial-techno",
+      "Event two-subgenres",
+      "Event techno-industrial",
+      "Event later-techno",
+    ]);
+    for (const hidden of ["industrial", "hardcore", "house", "none", "past"]) {
       expect(screen.queryByText(`Event ${hidden}`), hidden).toBeNull();
     }
   });
@@ -141,8 +155,8 @@ describe("/genres/techno — page", () => {
     const all = GENRES.flatMap((a, i) => GENRES.slice(i).map((b) => makeEvent(`${a.slug}+${b.slug}`, a.slug === b.slug ? [a.slug] : [a.slug, b.slug], FUTURE)));
     await renderPage(all);
     const listed = screen.getAllByRole("listitem").length;
-    expect(listed).toBe(all.filter((e) => matchesGenreFilter(e.subgenres, "techno")).length);
-    expect(listed).toBe(all.filter((e) => e.subgenres.includes("techno")).length);
+    expect(listed).toBe(all.filter((e) => matchesGenreSelection(e.subgenres, "techno")).length);
+    expect(listed).toBe(all.filter((e) => e.subgenres.some((g) => g === "techno" || parentOf(g) === "techno")).length);
   });
 
   it("uses the existing event row (event-detail and venue links per event)", async () => {

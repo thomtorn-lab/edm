@@ -1,13 +1,41 @@
 /**
- * Controlled subgenre taxonomy. Editable in one place — the rest of the app
- * (filters, event rows, admin classification) reads from here rather than
- * hardcoding genre strings.
+ * Controlled genre taxonomy — the single source of truth for every genre
+ * surface (admin editors, homepage filter, genre pages, badges, search,
+ * newsletter preferences, classification). Nothing else hardcodes genre
+ * strings or hierarchy rules.
+ *
+ * Genre system revision (2026-10-24, approved model):
+ *   - An event carries at most two DIRECT genre tags (`primaryGenre` +
+ *     `subgenres`). Parent genres are derived from the hierarchy below and
+ *     never stored or counted as a tag.
+ *   - A genre has a stable internal id (`slug`, the value stored in the
+ *     database — never renamed), a display `label`, and a public `urlSlug`
+ *     (plus optional `urlAliases`). Renaming a genre is a label/urlSlug
+ *     change in this file, never a data migration — "Garage" became
+ *     "UK Garage" (/?genre=uk-garage) while every stored value stays
+ *     "garage".
+ *   - Hierarchy is one level deep: a MAIN genre (Techno, House, Trance,
+ *     Drum & Bass, Hardstyle) has subgenres; every other genre is
+ *     standalone. Selecting a main genre matches the main genre and all its
+ *     subgenres; selecting any other genre is an exact match
+ *     (matchesGenreSelection).
+ *   - Visual groups ("Bass & Breaks", "Hard Dance", ...) are headings in
+ *     option lists only: never selectable, never a URL, never stored.
+ *   - Industrial (the industrial/EBM line) and Industrial Techno (a techno
+ *     subgenre) are different genres; Industrial is standalone and is NOT
+ *     part of the Techno filter. Hardcore (gabber lineage, also covering
+ *     "hardcore techno") is standalone, not a Hardstyle subgenre.
+ *   - "ambient-experimental" is a LEGACY stored value (split into Ambient
+ *     and Experimental): still displayable and filterable so existing
+ *     admin-locked events keep working until reviewed, but no longer
+ *     selectable.
  */
 
 export type GenreSlug =
   | "techno"
   | "hard-techno"
-  | "industrial"
+  | "industrial-techno"
+  | "hypnotic-techno"
   | "melodic-techno"
   | "minimal-techno"
   | "house"
@@ -15,253 +43,308 @@ export type GenreSlug =
   | "tech-house"
   | "progressive-house"
   | "afro-house"
+  | "disco"
   | "trance"
   | "psytrance"
   | "drum-and-bass"
-  | "dubstep"
+  | "jungle"
+  | "breakbeat"
   | "garage"
+  | "dubstep"
   | "hardstyle"
   | "rawstyle"
   | "hardcore"
   | "electro"
-  | "disco"
-  | "ambient-experimental"
-  | "electronic-other";
+  | "industrial"
+  | "ambient"
+  | "experimental"
+  | "electronic-other"
+  | "ambient-experimental";
+
+export type VisualGroupSlug = "techno" | "house-disco" | "trance" | "bass-breaks" | "hard-dance" | "electro-experimental" | "other";
+
+export interface VisualGroupDef {
+  slug: VisualGroupSlug;
+  label: string;
+}
+
+/** Option-list headings, in display order. Presentation only — see the module comment. */
+export const VISUAL_GROUPS: VisualGroupDef[] = [
+  { slug: "techno", label: "Techno" },
+  { slug: "house-disco", label: "House & Disco" },
+  { slug: "trance", label: "Trance" },
+  { slug: "bass-breaks", label: "Bass & Breaks" },
+  { slug: "hard-dance", label: "Hard Dance" },
+  { slug: "electro-experimental", label: "Electro & Experimental" },
+  { slug: "other", label: "Other" },
+];
 
 export interface GenreDef {
+  /** Internal id — the value stored in the database. Never renamed. */
   slug: GenreSlug;
   label: string;
   /** Short label used in dense UI (event rows, filter chips). */
   shortLabel: string;
-  group: GenreGroupSlug;
+  /** Public URL value (`?genre=`, `/genres/[urlSlug]`). */
+  urlSlug: string;
+  /** Older URL values that still resolve to this genre. */
+  urlAliases?: readonly string[];
+  /** The main genre this is a subgenre of; absent for main and standalone genres. */
+  parent?: GenreSlug;
+  visualGroup: VisualGroupSlug;
+  /** Stored value kept for backward compatibility only — not selectable anywhere. */
+  legacy?: true;
 }
 
-export type GenreGroupSlug = "techno" | "house" | "trance" | "bass" | "hard-dance" | "other";
+const GENRE_CATALOG: GenreDef[] = [
+  { slug: "techno", label: "Techno", shortLabel: "Techno", urlSlug: "techno", visualGroup: "techno" },
+  { slug: "hard-techno", label: "Hard Techno", shortLabel: "Hard Techno", urlSlug: "hard-techno", parent: "techno", visualGroup: "techno" },
+  { slug: "industrial-techno", label: "Industrial Techno", shortLabel: "Industrial Techno", urlSlug: "industrial-techno", parent: "techno", visualGroup: "techno" },
+  { slug: "hypnotic-techno", label: "Hypnotic Techno", shortLabel: "Hypnotic Techno", urlSlug: "hypnotic-techno", parent: "techno", visualGroup: "techno" },
+  { slug: "melodic-techno", label: "Melodic Techno", shortLabel: "Melodic Techno", urlSlug: "melodic-techno", parent: "techno", visualGroup: "techno" },
+  { slug: "minimal-techno", label: "Minimal Techno", shortLabel: "Minimal Techno", urlSlug: "minimal-techno", parent: "techno", visualGroup: "techno" },
 
-export const GENRES: GenreDef[] = [
-  { slug: "techno", label: "Techno", shortLabel: "Techno", group: "techno" },
-  { slug: "hard-techno", label: "Hard Techno", shortLabel: "Hard Techno", group: "techno" },
-  { slug: "industrial", label: "Industrial", shortLabel: "Industrial", group: "techno" },
-  { slug: "melodic-techno", label: "Melodic Techno", shortLabel: "Melodic Techno", group: "techno" },
-  { slug: "minimal-techno", label: "Minimal Techno", shortLabel: "Minimal Techno", group: "techno" },
+  { slug: "house", label: "House", shortLabel: "House", urlSlug: "house", visualGroup: "house-disco" },
+  { slug: "deep-house", label: "Deep House", shortLabel: "Deep House", urlSlug: "deep-house", parent: "house", visualGroup: "house-disco" },
+  { slug: "tech-house", label: "Tech House", shortLabel: "Tech House", urlSlug: "tech-house", parent: "house", visualGroup: "house-disco" },
+  { slug: "progressive-house", label: "Progressive House", shortLabel: "Progressive House", urlSlug: "progressive-house", parent: "house", visualGroup: "house-disco" },
+  { slug: "afro-house", label: "Afro House", shortLabel: "Afro House", urlSlug: "afro-house", parent: "house", visualGroup: "house-disco" },
+  { slug: "disco", label: "Disco", shortLabel: "Disco", urlSlug: "disco", visualGroup: "house-disco" },
 
-  { slug: "house", label: "House", shortLabel: "House", group: "house" },
-  { slug: "deep-house", label: "Deep House", shortLabel: "Deep House", group: "house" },
-  { slug: "tech-house", label: "Tech House", shortLabel: "Tech House", group: "house" },
-  { slug: "progressive-house", label: "Progressive House", shortLabel: "Progressive House", group: "house" },
-  { slug: "afro-house", label: "Afro House", shortLabel: "Afro House", group: "house" },
+  { slug: "trance", label: "Trance", shortLabel: "Trance", urlSlug: "trance", visualGroup: "trance" },
+  { slug: "psytrance", label: "Psytrance", shortLabel: "Psytrance", urlSlug: "psytrance", parent: "trance", visualGroup: "trance" },
 
-  { slug: "trance", label: "Trance", shortLabel: "Trance", group: "trance" },
-  { slug: "psytrance", label: "Psytrance", shortLabel: "Psytrance", group: "trance" },
+  { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "Drum & Bass", urlSlug: "drum-and-bass", visualGroup: "bass-breaks" },
+  { slug: "jungle", label: "Jungle", shortLabel: "Jungle", urlSlug: "jungle", parent: "drum-and-bass", visualGroup: "bass-breaks" },
+  { slug: "breakbeat", label: "Breakbeat", shortLabel: "Breakbeat", urlSlug: "breakbeat", visualGroup: "bass-breaks" },
+  { slug: "garage", label: "UK Garage", shortLabel: "UK Garage", urlSlug: "uk-garage", urlAliases: ["garage"], visualGroup: "bass-breaks" },
+  { slug: "dubstep", label: "Dubstep", shortLabel: "Dubstep", urlSlug: "dubstep", visualGroup: "bass-breaks" },
 
-  { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "Drum & Bass", group: "bass" },
-  { slug: "dubstep", label: "Dubstep", shortLabel: "Dubstep", group: "bass" },
-  { slug: "garage", label: "Garage", shortLabel: "Garage", group: "bass" },
+  { slug: "hardstyle", label: "Hardstyle", shortLabel: "Hardstyle", urlSlug: "hardstyle", visualGroup: "hard-dance" },
+  { slug: "rawstyle", label: "Rawstyle", shortLabel: "Rawstyle", urlSlug: "rawstyle", parent: "hardstyle", visualGroup: "hard-dance" },
+  { slug: "hardcore", label: "Hardcore", shortLabel: "Hardcore", urlSlug: "hardcore", visualGroup: "hard-dance" },
 
-  { slug: "hardstyle", label: "Hardstyle", shortLabel: "Hardstyle", group: "hard-dance" },
-  { slug: "rawstyle", label: "Rawstyle", shortLabel: "Rawstyle", group: "hard-dance" },
-  { slug: "hardcore", label: "Hardcore", shortLabel: "Hardcore", group: "hard-dance" },
+  { slug: "electro", label: "Electro", shortLabel: "Electro", urlSlug: "electro", visualGroup: "electro-experimental" },
+  { slug: "industrial", label: "Industrial", shortLabel: "Industrial", urlSlug: "industrial", visualGroup: "electro-experimental" },
+  { slug: "ambient", label: "Ambient", shortLabel: "Ambient", urlSlug: "ambient", visualGroup: "electro-experimental" },
+  { slug: "experimental", label: "Experimental", shortLabel: "Experimental", urlSlug: "experimental", visualGroup: "electro-experimental" },
 
-  { slug: "electro", label: "Electro", shortLabel: "Electro", group: "other" },
-  { slug: "disco", label: "Disco", shortLabel: "Disco", group: "other" },
-  { slug: "ambient-experimental", label: "Ambient / Experimental", shortLabel: "Ambient", group: "other" },
-  { slug: "electronic-other", label: "Electronic / Other", shortLabel: "Electronic", group: "other" },
+  // Fallback: only on its own, only when nothing more precise can be
+  // documented (see validateGenreTags).
+  { slug: "electronic-other", label: "Electronic / Other", shortLabel: "Electronic", urlSlug: "electronic-other", visualGroup: "other" },
+
+  { slug: "ambient-experimental", label: "Ambient / Experimental", shortLabel: "Ambient", urlSlug: "ambient-experimental", visualGroup: "electro-experimental", legacy: true },
 ];
 
-const GENRE_BY_SLUG = new Map(GENRES.map((g) => [g.slug, g]));
+/** Every selectable genre, in admin/filter display order (legacy values excluded). */
+export const GENRES: GenreDef[] = GENRE_CATALOG.filter((g) => !g.legacy);
 
+const GENRE_BY_SLUG = new Map(GENRE_CATALOG.map((g) => [g.slug, g]));
+
+/** Any stored genre, including legacy values (display, filtering). */
 export function getGenre(slug: GenreSlug): GenreDef {
   const g = GENRE_BY_SLUG.get(slug);
   if (!g) throw new Error(`Unknown genre slug: ${slug}`);
   return g;
 }
 
-/**
- * Approved public genre GROUPING taxonomy (Electronic CPH data-quality work
- * package, Workstream B): a fixed set of 12 broad categories, used for
- * newsletter genre preferences and the two legacy homepage filter links
- * (the homepage filter and genre pages use GENRES with exact matching — see
- * matchesGenreFilter) — a specific
- * subgenre like "melodic-techno" is discoverable both under its own exact
- * label (search — see search.ts) and under its broader group ("Techno" in
- * the filter dropdown), via mainGenreOf/GENRE_TO_MAIN below.
- *
- * Every slug here MUST appear as a value in GENRE_TO_MAIN (enforced by
- * taxonomy.test.ts) — a filter group with no GenreSlug that ever maps to it
- * is a dead option that permanently returns zero events. "breaks" was
- * removed for exactly this reason (genre taxonomy audit, 2026-09-14): no
- * GenreSlug for it was ever added, no adapter or admin surface could ever
- * produce one, and Production/Discovery Queue data confirmed zero events
- * used it.
- *
- * This grouping is NOT used for the public-facing genre badge (see
- * displayGenres below) — that always shows the precise admin-selected/
- * classified genre (e.g. "Melodic Techno", "Deep House", "Industrial")
- * verbatim, never its broader umbrella (genre/subgenre taxonomy + display
- * integrity audit, 2026-09-11: an earlier version of this file rolled the
- * public badge up into these 13 groups too, which silently overwrote a more
- * precise admin selection — "Deep House" displayed as "House", "Melodic
- * Techno" and "Industrial" both displayed as "Techno" — the broader group
- * must never overwrite the more specific one for DISPLAY, only inform
- * filtering).
- */
-export type MainGenreSlug =
-  | "techno"
-  | "hard-techno"
-  | "house"
-  | "trance"
-  | "psytrance"
-  | "drum-and-bass"
-  | "garage-bass"
-  | "hardstyle-hardcore"
-  | "disco"
-  | "electro"
-  | "ambient-experimental"
-  | "electronic-other";
-
-export interface MainGenreDef {
-  slug: MainGenreSlug;
-  label: string;
-  /** Short label used in dense UI (event rows, filter chips). */
-  shortLabel: string;
-}
-
-export const MAIN_GENRES: MainGenreDef[] = [
-  { slug: "techno", label: "Techno", shortLabel: "Techno" },
-  { slug: "hard-techno", label: "Hard Techno", shortLabel: "Hard Techno" },
-  { slug: "house", label: "House", shortLabel: "House" },
-  { slug: "trance", label: "Trance", shortLabel: "Trance" },
-  { slug: "psytrance", label: "Psytrance", shortLabel: "Psytrance" },
-  { slug: "drum-and-bass", label: "Drum & Bass", shortLabel: "Drum & Bass" },
-  { slug: "garage-bass", label: "UK Garage / Bass Music", shortLabel: "Garage / Bass" },
-  { slug: "hardstyle-hardcore", label: "Hardstyle / Hardcore", shortLabel: "Hardstyle / Hardcore" },
-  { slug: "disco", label: "Disco", shortLabel: "Disco" },
-  { slug: "electro", label: "Electro", shortLabel: "Electro" },
-  { slug: "ambient-experimental", label: "Ambient / Experimental", shortLabel: "Ambient" },
-  // Label deliberately matches the public badge's own wording ("Electronic /
-  // Other" — see GENRES' electronic-other entry and displayGenres) rather
-  // than "Other" alone: an event badge reading "Electronic" had no
-  // discoverable match in this filter, since the two surfaces used different
-  // words for the same slug (Production bug report, 2026-09-12). Not
-  // shortened to plain "Electronic" — that would misleadingly suggest this
-  // bucket covers every electronic subgenre (Techno, House, Trance, etc.)
-  // rather than only the electronic-other catch-all.
-  { slug: "electronic-other", label: "Electronic / Other", shortLabel: "Other" },
-];
-
-const MAIN_GENRE_BY_SLUG = new Map(MAIN_GENRES.map((g) => [g.slug, g]));
-
-export function getMainGenre(slug: MainGenreSlug): MainGenreDef {
-  const g = MAIN_GENRE_BY_SLUG.get(slug);
-  if (!g) throw new Error(`Unknown main genre slug: ${slug}`);
-  return g;
-}
-
-/**
- * Every classification-level GenreSlug rolls up into exactly one
- * MainGenreSlug — the single source of truth for the genre FILTER's parent
- * grouping (EventExplorer.tsx: selecting "Techno" also matches events tagged
- * "melodic-techno", "industrial", etc). This mapping no longer feeds the
- * public genre badge — see displayGenres below, which shows the precise
- * slug's own label instead.
- *
- * `industrial` groups under "techno", not "hard-techno" (data-quality fix,
- * Workstream B): Techno is the meaningful FILTER umbrella for
- * industrial-techno-leaning events (e.g. Intercell) — Industrial is not
- * itself one of the 13 approved filter groups, and grouping it under the
- * narrower "Hard Techno" bucket overstated a harder/harsher sound than the
- * event's own evidence supports. Hard Techno remains its own bucket for
- * events explicitly classified "hard-techno". (This only affects which
- * broad filter an Industrial event surfaces under — its own display badge
- * always reads "Industrial", never "Techno" or "Hard Techno".)
- */
-const GENRE_TO_MAIN: Record<GenreSlug, MainGenreSlug> = {
-  techno: "techno",
-  "melodic-techno": "techno",
-  "minimal-techno": "techno",
-  "hard-techno": "hard-techno",
-  industrial: "techno",
-  house: "house",
-  "deep-house": "house",
-  "tech-house": "house",
-  "progressive-house": "house",
-  "afro-house": "house",
-  trance: "trance",
-  psytrance: "psytrance",
-  "drum-and-bass": "drum-and-bass",
-  dubstep: "garage-bass",
-  garage: "garage-bass",
-  hardstyle: "hardstyle-hardcore",
-  rawstyle: "hardstyle-hardcore",
-  hardcore: "hardstyle-hardcore",
-  disco: "disco",
-  electro: "electro",
-  "ambient-experimental": "ambient-experimental",
-  "electronic-other": "electronic-other",
-};
-
-export function mainGenreOf(slug: GenreSlug): MainGenreSlug {
-  return GENRE_TO_MAIN[slug];
-}
-
-/**
- * Whether an event belongs under a broad group. Only the two legacy
- * homepage links ("garage-bass", "hardstyle-hardcore" — see
- * matchesGenreFilter) still filter by group; every genre option and genre
- * page matches exactly.
- */
-export function matchesMainGenre(subgenres: readonly GenreSlug[], genre: MainGenreSlug): boolean {
-  return subgenres.some((slug) => mainGenreOf(slug) === genre);
-}
-
-/**
- * The site-wide genre rule. The homepage genre FILTER (EventExplorer.tsx)
- * offers exactly the genres the admin can pick (GENRES), in the same order,
- * and genre pages (/genres/techno) use the same predicate; each genre is an
- * EXACT match: "Techno" finds only events tagged Techno, never Melodic
- * Techno or Industrial — an event tagged with two genres shows under both.
- *
- * Two broad groups from the earlier filter have no genre of their own
- * ("garage-bass", "hardstyle-hardcore"); old links carrying them keep
- * their original group meaning, but they are not offered as options.
- */
-export const LEGACY_GENRE_FILTERS = ["garage-bass", "hardstyle-hardcore"] as const satisfies readonly MainGenreSlug[];
-export type LegacyGenreFilter = (typeof LEGACY_GENRE_FILTERS)[number];
-export type GenreFilterValue = GenreSlug | LegacyGenreFilter;
-
+/** A known stored value — selectable or legacy. */
 export function isGenreSlug(value: unknown): value is GenreSlug {
   return typeof value === "string" && GENRE_BY_SLUG.has(value as GenreSlug);
 }
 
+/** A value an admin (or the classifier) may newly assign. */
+export function isSelectableGenre(value: unknown): value is GenreSlug {
+  return isGenreSlug(value) && !getGenre(value).legacy;
+}
+
+export function isLegacyGenre(slug: GenreSlug): boolean {
+  return getGenre(slug).legacy === true;
+}
+
+export function parentOf(slug: GenreSlug): GenreSlug | null {
+  return getGenre(slug).parent ?? null;
+}
+
+export function subgenresOf(slug: GenreSlug): GenreSlug[] {
+  return GENRES.filter((g) => g.parent === slug).map((g) => g.slug);
+}
+
+export function isMainGenre(slug: GenreSlug): boolean {
+  return GENRES.some((g) => g.parent === slug);
+}
+
+/** Selectable genres grouped under their visual heading, in display order (empty groups omitted). */
+export function genresByVisualGroup(): { group: VisualGroupDef; genres: GenreDef[] }[] {
+  return VISUAL_GROUPS.map((group) => ({ group, genres: GENRES.filter((g) => g.visualGroup === group.slug) })).filter((x) => x.genres.length > 0);
+}
+
+/**
+ * An event's direct tags plus every parent derived from them, each once —
+ * "Hard Techno" yields ["hard-techno", "techno"]. Parents are derived here,
+ * never stored.
+ */
+export function withDerivedParents(tags: readonly GenreSlug[]): GenreSlug[] {
+  const out: GenreSlug[] = [];
+  for (const tag of tags) {
+    for (const slug of [tag, parentOf(tag)]) {
+      if (slug && !out.includes(slug)) out.push(slug);
+    }
+  }
+  return out;
+}
+
+/**
+ * Old public filter values that name a SET of genres rather than one
+ * genre. Each keeps exactly the meaning it had before the genre revision;
+ * none is offered as a filter option (an active one shows as a hidden
+ * option only). "ambient-experimental" also covers the legacy stored value.
+ */
+export const LEGACY_GENRE_FILTERS = {
+  "garage-bass": { label: "UK Garage & Dubstep", genres: ["garage", "dubstep"] },
+  "hardstyle-hardcore": { label: "Hardstyle & Hardcore", genres: ["hardstyle", "rawstyle", "hardcore"] },
+  "ambient-experimental": { label: "Ambient & Experimental", genres: ["ambient", "experimental", "ambient-experimental"] },
+} as const satisfies Record<string, { label: string; genres: readonly GenreSlug[] }>;
+
+export type LegacyGenreFilter = keyof typeof LEGACY_GENRE_FILTERS;
+
+/** What a genre filter can select: one selectable genre (by id) or a legacy set. */
+export type GenreFilterValue = GenreSlug | LegacyGenreFilter;
+
 export function isLegacyGenreFilter(value: unknown): value is LegacyGenreFilter {
-  return (LEGACY_GENRE_FILTERS as readonly unknown[]).includes(value);
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(LEGACY_GENRE_FILTERS, value);
 }
 
 export function isGenreFilterValue(value: unknown): value is GenreFilterValue {
-  return isGenreSlug(value) || isLegacyGenreFilter(value);
+  return isLegacyGenreFilter(value) || isSelectableGenre(value);
 }
 
 export function genreFilterLabel(value: GenreFilterValue): string {
-  return isLegacyGenreFilter(value) ? getMainGenre(value).label : getGenre(value).label;
+  return isLegacyGenreFilter(value) ? LEGACY_GENRE_FILTERS[value].label : getGenre(value).label;
 }
 
-export function matchesGenreFilter(subgenres: readonly GenreSlug[], genre: GenreFilterValue): boolean {
-  return isLegacyGenreFilter(genre) ? matchesMainGenre(subgenres, genre) : subgenres.includes(genre);
+/**
+ * THE genre-matching rule, shared by every surface (homepage filter,
+ * genre pages, search, newsletter):
+ *   - a main genre matches itself and each of its subgenres;
+ *   - any other genre matches only itself (exact);
+ *   - a legacy set matches any genre in the set.
+ * Returns a boolean per event, so an event tagged with two matching genres
+ * still appears once in a filtered list.
+ */
+export function matchesGenreSelection(tags: readonly GenreSlug[], selection: GenreFilterValue): boolean {
+  if (isLegacyGenreFilter(selection)) {
+    const set: readonly GenreSlug[] = LEGACY_GENRE_FILTERS[selection].genres;
+    return tags.some((t) => set.includes(t));
+  }
+  return tags.some((t) => t === selection || parentOf(t) === selection);
+}
+
+/** Every genre a selection matches — the expanded set for e.g. SQL or docs. */
+export function genresMatchedBy(selection: GenreFilterValue): GenreSlug[] {
+  return GENRE_CATALOG.map((g) => g.slug).filter((slug) => matchesGenreSelection([slug], selection));
+}
+
+/** The URL value for a filter selection. */
+export function genreFilterUrlValue(value: GenreFilterValue): string {
+  return isLegacyGenreFilter(value) ? value : getGenre(value).urlSlug;
+}
+
+/**
+ * Resolves a `?genre=` value: a selectable genre's urlSlug or alias, or a
+ * legacy set. Legacy sets win over a same-named legacy stored genre
+ * ("ambient-experimental"). Unknown values return null.
+ */
+export function parseGenreFilterUrlValue(raw: string | null | undefined): GenreFilterValue | null {
+  if (!raw) return null;
+  if (isLegacyGenreFilter(raw)) return raw;
+  const genre = GENRES.find((g) => g.urlSlug === raw || g.urlAliases?.includes(raw));
+  return genre ? genre.slug : null;
+}
+
+export type GenreTagProblem =
+  | { kind: "too-many" }
+  | { kind: "duplicate"; genre: GenreSlug }
+  | { kind: "unknown"; value: string }
+  | { kind: "legacy"; genre: GenreSlug }
+  | { kind: "parent-and-subgenre"; parent: GenreSlug; subgenre: GenreSlug }
+  | { kind: "fallback-combined" };
+
+/**
+ * Classification rules for an event's direct tags (approved model):
+ *   - at most two tags, no duplicates, only known selectable genres;
+ *   - never a main genre together with one of its own subgenres (the
+ *     subgenre already carries that musical dimension) — two subgenres of
+ *     the same main genre are fine;
+ *   - Electronic / Other only ever on its own.
+ * Legacy values are allowed only when `allowLegacy` lists them (an
+ * existing stored value the edit left untouched).
+ */
+export function validateGenreTags(tags: readonly string[], allowLegacy: readonly string[] = []): GenreTagProblem[] {
+  const problems: GenreTagProblem[] = [];
+  if (tags.length > 2) problems.push({ kind: "too-many" });
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    if (seen.has(tag)) problems.push({ kind: "duplicate", genre: tag as GenreSlug });
+    seen.add(tag);
+    if (!isGenreSlug(tag)) problems.push({ kind: "unknown", value: tag });
+    else if (isLegacyGenre(tag) && !allowLegacy.includes(tag)) problems.push({ kind: "legacy", genre: tag });
+  }
+  const known = tags.filter(isGenreSlug);
+  for (const tag of known) {
+    const parent = parentOf(tag);
+    if (parent && known.includes(parent)) problems.push({ kind: "parent-and-subgenre", parent, subgenre: tag });
+  }
+  if (known.includes("electronic-other") && new Set(tags).size > 1) problems.push({ kind: "fallback-combined" });
+  return problems;
+}
+
+export function describeGenreTagProblem(p: GenreTagProblem): string {
+  switch (p.kind) {
+    case "too-many":
+      return "An event can have at most two genres.";
+    case "duplicate":
+      return `${getGenre(p.genre).label} is selected twice.`;
+    case "unknown":
+      return `Unknown genre "${p.value}".`;
+    case "legacy":
+      return `${getGenre(p.genre).label} can no longer be selected — choose a current genre.`;
+    case "parent-and-subgenre":
+      return `${getGenre(p.subgenre).label} already belongs to ${getGenre(p.parent).label} — pick the subgenre alone or with a genre from another family.`;
+    case "fallback-combined":
+      return "Electronic / Other is a fallback and can't be combined with another genre.";
+  }
+}
+
+/**
+ * Server-side check for an admin genre edit: the tags the save would store,
+ * validated with the event's CURRENT tags allowed as legacy (an untouched
+ * legacy value may stay; it just can't be newly chosen). Returns a
+ * human-readable error, or null when the edit is valid. Callers run this
+ * only when the save actually changes a genre field, so an existing
+ * admin-locked combination never blocks an unrelated edit.
+ */
+export function genreEditError(nextTags: readonly string[], currentTags: readonly string[]): string | null {
+  const problems = validateGenreTags(nextTags, currentTags);
+  return problems.length > 0 ? problems.map(describeGenreTagProblem).join(" ") : null;
+}
+
+/** Whether `candidate` may be added as the second tag next to `primary`. */
+export function isValidSecondaryGenre(primary: GenreSlug, candidate: GenreSlug): boolean {
+  return candidate !== primary && validateGenreTags([primary, candidate], [primary]).length === 0;
 }
 
 /**
  * Genres that have their own crawlable landing page (SEO pilot,
- * 2026-10-09: Techno only). Keyed by the precise genre, not a broad group:
- * a genre page lists exactly the events the homepage filter shows for that
- * genre (matchesGenreFilter) — "Techno" means Techno everywhere on the site,
- * never Techno plus its subgenres.
+ * 2026-10-09: Techno only). New indexable pages need explicit approval —
+ * adding a genre here is that decision. A main genre's page lists the
+ * genre and its subgenres (matchesGenreSelection), exactly like the
+ * homepage filter.
  */
-const GENRE_PAGE_PATHS: Partial<Record<GenreSlug, string>> = {
-  techno: "/genres/techno",
-};
+const GENRES_WITH_PAGES: ReadonlySet<GenreSlug> = new Set<GenreSlug>(["techno"]);
 
 export function genrePagePath(slug: GenreSlug): string | null {
-  return GENRE_PAGE_PATHS[slug] ?? null;
+  return GENRES_WITH_PAGES.has(slug) ? `/genres/${getGenre(slug).urlSlug}` : null;
 }
 
 /**
@@ -275,22 +358,12 @@ export function genreLabelPagePath(slug: GenreSlug): string | null {
 }
 
 /**
- * Public-facing genre badge(s) for an event (genre/subgenre taxonomy +
- * display integrity audit, 2026-09-11). Shows the exact genre(s) an admin
- * selected or the classification pipeline resolved, verbatim — "Deep
- * House" displays as "Deep House", "Melodic Techno" as "Melodic Techno",
- * "Industrial" as "Industrial". The broader filter grouping (mainGenreOf/
- * GENRE_TO_MAIN/MAIN_GENRES) is deliberately NOT applied here; that mapping
- * exists only so the genre FILTER can match a specific subgenre under its
- * broader category (see EventExplorer.tsx) — it must never overwrite the
- * more precise genre for display. (This function previously rolled every
- * subgenre up to one of 13 approved umbrella categories for display —
- * "Workstream B" — which silently discarded a more specific admin
- * selection; that rollup now happens only for the filter, not the badge.)
- * Deduplicates by the underlying slug, so a `subgenres` array containing
- * the same slug twice is never shown twice; caps at `max` entries.
+ * Public-facing genre badge(s) for an event: the exact stored genre(s),
+ * verbatim ("Deep House", never its parent "House") — parents are derived
+ * for filtering only, never shown in place of the more precise tag.
+ * Deduplicates by slug and caps at `max` entries.
  */
-export function displayGenres(subgenres: GenreSlug[], max = 2): GenreDef[] {
+export function displayGenres(subgenres: readonly GenreSlug[], max = 2): GenreDef[] {
   const seen = new Set<GenreSlug>();
   const result: GenreDef[] = [];
 
@@ -302,4 +375,43 @@ export function displayGenres(subgenres: GenreSlug[], max = 2): GenreDef[] {
   }
 
   return result;
+}
+
+/**
+ * Newsletter genre preferences (genre system revision): a short list of
+ * broad choices built on the same model and the same matching rule
+ * (matchesGenreSelection) — main genres include their subgenres, the three
+ * legacy sets keep their meaning. Stored values from the earlier 12-group
+ * model stay valid: every one of them is a GenreFilterValue, so existing
+ * preferences need no migration ("hard-techno" and "psytrance" are still
+ * accepted and shown when stored, but no longer offered — Techno and
+ * Trance now include them).
+ */
+export const NEWSLETTER_GENRE_OPTIONS: readonly GenreFilterValue[] = [
+  "techno",
+  "house",
+  "disco",
+  "trance",
+  "drum-and-bass",
+  "breakbeat",
+  "garage-bass",
+  "hardstyle-hardcore",
+  "electro",
+  "industrial",
+  "ambient-experimental",
+  "electronic-other",
+];
+
+/** Values from the earlier 12-group newsletter model that are no longer offered but stay valid. */
+const NEWSLETTER_LEGACY_VALUES: readonly GenreFilterValue[] = ["hard-techno", "psytrance"];
+
+export function isNewsletterGenreValue(value: unknown): value is GenreFilterValue {
+  return (
+    typeof value === "string" &&
+    ((NEWSLETTER_GENRE_OPTIONS as readonly string[]).includes(value) || (NEWSLETTER_LEGACY_VALUES as readonly string[]).includes(value))
+  );
+}
+
+export function newsletterGenreLabel(value: GenreFilterValue): string {
+  return genreFilterLabel(value);
 }

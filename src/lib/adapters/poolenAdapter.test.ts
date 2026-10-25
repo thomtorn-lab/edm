@@ -321,9 +321,9 @@ describe("parsePoolenEventDetailHtml — genre resolution tiers (real page, bio 
     expect(event.genreConfidenceHint).toBeNull();
   });
 
-  it("resolves ambient-experimental when the bio explicitly ties 'experimental' to electronic music", () => {
+  it("resolves experimental when the bio explicitly ties 'experimental' to electronic music", () => {
     const event = parsePoolenEventDetailHtml(withProse("<p>Deep, forward-leaning experimental electronic soundscapes.</p>"), entry);
-    expect(event.genreHint).toBe("ambient-experimental");
+    expect(event.genreHint).toBe("experimental");
     expect(event.genreConfidenceHint).toBe("high");
   });
 

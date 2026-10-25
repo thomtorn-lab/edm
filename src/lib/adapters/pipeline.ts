@@ -1,5 +1,6 @@
 import type { ConfidenceLevel } from "../types";
 import type { GenreSlug } from "../taxonomy";
+import { isSelectableGenre } from "../taxonomy";
 import type { Venue } from "../types";
 import { resolveVenue, dedupeArtistList } from "../normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
@@ -461,6 +462,18 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // specific sibling (e.g. "psytrance") without changing the evidence tier.
   if (genre) {
     genre = refineGenreFromText(genre, genreEvidenceText);
+  }
+  // Legacy stored values (e.g. "ambient-experimental" from an older hint)
+  // are never newly assigned (genre system revision, 2026-10-24): the
+  // event's own text decides between the current genres instead.
+  if (genre && !isSelectableGenre(genre)) {
+    genre = deterministicGenreFromText(genreEvidenceText) ?? GENERIC_ELECTRONIC_GENRE;
+  }
+  // A bare "industrial" (the standalone industrial/EBM genre) is easily
+  // confused with industrial techno in event copy, so it never auto-
+  // publishes on its own: capped at "medium", it always gets a human look.
+  if (genre === "industrial" && genreConfidence === "high") {
+    genreConfidence = "medium";
   }
 
   // CONSERVATIVE SECONDARY-GENRE SUGGESTION (Discovery secondary-genre V1,

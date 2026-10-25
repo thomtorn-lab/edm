@@ -1,22 +1,132 @@
 import { describe, expect, it } from "vitest";
 import {
   GENRES,
-  MAIN_GENRES,
+  LEGACY_GENRE_FILTERS,
+  NEWSLETTER_GENRE_OPTIONS,
+  VISUAL_GROUPS,
   displayGenres,
+  genreEditError,
+  genreFilterUrlValue,
   genreLabelPagePath,
-  getGenre,
-  mainGenreOf,
   genrePagePath,
-  genreFilterLabel,
+  genresByVisualGroup,
+  genresMatchedBy,
+  getGenre,
   isGenreFilterValue,
-  matchesGenreFilter,
-  matchesMainGenre,
   isGenreSlug,
+  isMainGenre,
+  isNewsletterGenreValue,
+  isSelectableGenre,
+  isValidSecondaryGenre,
+  matchesGenreSelection,
+  parentOf,
+  parseGenreFilterUrlValue,
+  subgenresOf,
+  validateGenreTags,
+  withDerivedParents,
+  type GenreFilterValue,
   type GenreSlug,
-  type MainGenreSlug,
 } from "./taxonomy";
 
-describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
+/**
+ * Genre system revision (2026-10-24) — the approved taxonomy and its test
+ * contract (T = taxonomy, F = filtering, K = classification rules, N =
+ * newsletter). The same contract is exercised through the UI in
+ * EventExplorer*.test.tsx and the genre page/badge tests.
+ */
+
+const EXPECTED_ORDER: [GenreSlug, string, string | null, string][] = [
+  // [id, label, parent, visual group]
+  ["techno", "Techno", null, "techno"],
+  ["hard-techno", "Hard Techno", "techno", "techno"],
+  ["industrial-techno", "Industrial Techno", "techno", "techno"],
+  ["hypnotic-techno", "Hypnotic Techno", "techno", "techno"],
+  ["melodic-techno", "Melodic Techno", "techno", "techno"],
+  ["minimal-techno", "Minimal Techno", "techno", "techno"],
+  ["house", "House", null, "house-disco"],
+  ["deep-house", "Deep House", "house", "house-disco"],
+  ["tech-house", "Tech House", "house", "house-disco"],
+  ["progressive-house", "Progressive House", "house", "house-disco"],
+  ["afro-house", "Afro House", "house", "house-disco"],
+  ["disco", "Disco", null, "house-disco"],
+  ["trance", "Trance", null, "trance"],
+  ["psytrance", "Psytrance", "trance", "trance"],
+  ["drum-and-bass", "Drum & Bass", null, "bass-breaks"],
+  ["jungle", "Jungle", "drum-and-bass", "bass-breaks"],
+  ["breakbeat", "Breakbeat", null, "bass-breaks"],
+  ["garage", "UK Garage", null, "bass-breaks"],
+  ["dubstep", "Dubstep", null, "bass-breaks"],
+  ["hardstyle", "Hardstyle", null, "hard-dance"],
+  ["rawstyle", "Rawstyle", "hardstyle", "hard-dance"],
+  ["hardcore", "Hardcore", null, "hard-dance"],
+  ["electro", "Electro", null, "electro-experimental"],
+  ["industrial", "Industrial", null, "electro-experimental"],
+  ["ambient", "Ambient", null, "electro-experimental"],
+  ["experimental", "Experimental", null, "electro-experimental"],
+  ["electronic-other", "Electronic / Other", null, "other"],
+];
+
+const ALL_STORED: GenreSlug[] = [...GENRES.map((g) => g.slug), "ambient-experimental"];
+
+describe("taxonomy (T1–T7)", () => {
+  it("T1: exactly 27 selectable genres, in the approved order, with unique ids, labels and URL slugs", () => {
+    expect(GENRES).toHaveLength(27);
+    expect(GENRES.map((g) => [g.slug, g.label, g.parent ?? null, g.visualGroup])).toEqual(EXPECTED_ORDER);
+    for (const key of ["slug", "label", "urlSlug"] as const) {
+      expect(new Set(GENRES.map((g) => g[key])).size, key).toBe(GENRES.length);
+    }
+  });
+
+  it("T2: every subgenre's parent is a main genre; the hierarchy is one level deep", () => {
+    for (const g of GENRES) {
+      if (!g.parent) continue;
+      expect(isSelectableGenre(g.parent), g.slug).toBe(true);
+      expect(parentOf(g.parent), `${g.slug} -> ${g.parent}`).toBeNull();
+      expect(isMainGenre(g.parent)).toBe(true);
+    }
+    expect(GENRES.filter((g) => isMainGenre(g.slug)).map((g) => g.slug)).toEqual(["techno", "house", "trance", "drum-and-bass", "hardstyle"]);
+  });
+
+  it("T3/T4: approved parents — and the genres that must stay standalone", () => {
+    expect(parentOf("industrial-techno")).toBe("techno");
+    expect(parentOf("hypnotic-techno")).toBe("techno");
+    expect(parentOf("psytrance")).toBe("trance");
+    expect(parentOf("jungle")).toBe("drum-and-bass");
+    expect(parentOf("rawstyle")).toBe("hardstyle");
+    for (const slug of ["industrial", "garage", "dubstep", "breakbeat", "electro", "disco", "hardcore", "ambient", "experimental", "electronic-other"] as GenreSlug[]) {
+      expect(parentOf(slug), slug).toBeNull();
+      expect(isMainGenre(slug), slug).toBe(false);
+    }
+  });
+
+  it("T5: UK Garage keeps its stored id 'garage', with URL slug 'uk-garage' and alias 'garage'", () => {
+    const g = getGenre("garage");
+    expect(g.label).toBe("UK Garage");
+    expect(g.urlSlug).toBe("uk-garage");
+    expect(g.urlAliases).toEqual(["garage"]);
+  });
+
+  it("T6: 'ambient-experimental' is a legacy stored value — displayable, not selectable", () => {
+    expect(isGenreSlug("ambient-experimental")).toBe(true);
+    expect(isSelectableGenre("ambient-experimental")).toBe(false);
+    expect(GENRES.some((g) => g.slug === "ambient-experimental")).toBe(false);
+    expect(getGenre("ambient-experimental").label).toBe("Ambient / Experimental");
+  });
+
+  it("T7: visual groups are headings over exactly the approved genres, in display order", () => {
+    expect(VISUAL_GROUPS.map((g) => g.label)).toEqual(["Techno", "House & Disco", "Trance", "Bass & Breaks", "Hard Dance", "Electro & Experimental", "Other"]);
+    const grouped = genresByVisualGroup();
+    expect(grouped.flatMap((x) => x.genres.map((g) => g.slug))).toEqual(GENRES.map((g) => g.slug));
+    expect(grouped.find((x) => x.group.slug === "bass-breaks")!.genres.map((g) => g.label)).toEqual(["Drum & Bass", "Jungle", "Breakbeat", "UK Garage", "Dubstep"]);
+    expect(grouped.find((x) => x.group.slug === "hard-dance")!.genres.map((g) => g.label)).toEqual(["Hardstyle", "Rawstyle", "Hardcore"]);
+    // A visual group is never a filter value or URL.
+    for (const group of VISUAL_GROUPS) {
+      if (isSelectableGenre(group.slug)) continue; // "techno"/"trance" share a name with their main genre
+      expect(isGenreFilterValue(group.slug), group.slug).toBe(false);
+      expect(parseGenreFilterUrlValue(group.slug), group.slug).toBeNull();
+    }
+  });
+
   it("never exposes 'D&B' anywhere — Drum & Bass is always spelled out, including in dense/short labels", () => {
     for (const g of GENRES) {
       expect(g.label).not.toMatch(/D&B/i);
@@ -27,43 +137,6 @@ describe("user-facing genre taxonomy (partner-ready polish pass)", () => {
     expect(drumAndBass.shortLabel).toBe("Drum & Bass");
   });
 
-  it("matches the exact final user-facing primary genre taxonomy and labels", () => {
-    const labels = MAIN_GENRES.map((g) => g.label);
-    expect(labels).toEqual([
-      "Techno",
-      "Hard Techno",
-      "House",
-      "Trance",
-      "Psytrance",
-      "Drum & Bass",
-      "UK Garage / Bass Music",
-      "Hardstyle / Hardcore",
-      "Disco",
-      "Electro",
-      "Ambient / Experimental",
-      "Electronic / Other",
-    ]);
-  });
-
-  it("every MainGenreSlug exposed by the public filter is reachable from at least one GenreSlug (genre taxonomy audit, 2026-09-14) — a filter option with no GenreSlug ever mapping to it permanently returns zero events; this is exactly how 'Breaks' went dead", () => {
-    const reachable = new Set<MainGenreSlug>(GENRES.map((g) => mainGenreOf(g.slug)));
-    for (const main of MAIN_GENRES) {
-      expect(reachable.has(main.slug)).toBe(true);
-    }
-  });
-
-  it("electronic-other's filter label matches the public badge's own wording (Production bug fix, 2026-09-12) — an event badged 'Electronic' must be discoverable under this same filter bucket", () => {
-    const bucket = MAIN_GENRES.find((g) => g.slug === "electronic-other")!;
-    expect(bucket.label).toBe("Electronic / Other");
-    // Deliberately not just "Electronic" — that would wrongly imply the
-    // bucket covers every electronic subgenre (Techno, House, Trance, etc.)
-    // rather than only the electronic-other catch-all.
-    expect(bucket.label).not.toBe("Electronic");
-  });
-
-  it("introduces no new primary user-facing genre labels beyond the fixed 12", () => {
-    expect(MAIN_GENRES).toHaveLength(12);
-  });
 });
 
 describe("genre display integrity — the admin-selected/classified genre is shown verbatim, never its broader filter group (2026-09-11 audit)", () => {
@@ -116,33 +189,128 @@ describe("genre display integrity — the admin-selected/classified genre is sho
   });
 });
 
-describe("genre filter inheritance — mainGenreOf still groups a precise subgenre under its broader filter category (unchanged by the display fix)", () => {
-  it("Deep House inherits the House filter group", () => {
-    expect(mainGenreOf("deep-house")).toBe("house");
+describe("filtering (F1–F11) — matchesGenreSelection", () => {
+  const matched = (selection: GenreFilterValue) => ALL_STORED.filter((slug) => matchesGenreSelection([slug], selection)).sort();
+
+  it("F1: Techno = Techno + its five subgenres — never Industrial or Hardcore", () => {
+    expect(matched("techno")).toEqual(["hard-techno", "hypnotic-techno", "industrial-techno", "melodic-techno", "minimal-techno", "techno"]);
   });
 
-  it("Melodic Techno inherits the Techno filter group", () => {
-    expect(mainGenreOf("melodic-techno")).toBe("techno");
+  it("F2/F3: House, Trance, Drum & Bass and Hardstyle include exactly their subgenres", () => {
+    expect(matched("house")).toEqual(["afro-house", "deep-house", "house", "progressive-house", "tech-house"]);
+    expect(matched("trance")).toEqual(["psytrance", "trance"]);
+    expect(matched("drum-and-bass")).toEqual(["drum-and-bass", "jungle"]);
+    expect(matched("hardstyle")).toEqual(["hardstyle", "rawstyle"]);
   });
 
-  it("Industrial inherits the Techno filter group, not Hard Techno (Intercell regression case)", () => {
-    expect(mainGenreOf("industrial")).toBe("techno");
+  it("F4: every subgenre and standalone genre matches only itself", () => {
+    for (const g of GENRES.filter((x) => !isMainGenre(x.slug))) {
+      expect(matched(g.slug), g.slug).toEqual([g.slug]);
+    }
   });
 
-  it("hard-techno stays its own filter group, distinct from techno", () => {
-    expect(mainGenreOf("hard-techno")).toBe("hard-techno");
+  it("F5: two subgenres of one main genre — matched once by the main genre and by each subgenre", () => {
+    const tags: GenreSlug[] = ["hard-techno", "hypnotic-techno"];
+    for (const sel of ["techno", "hard-techno", "hypnotic-techno"] as const) expect(matchesGenreSelection(tags, sel)).toBe(true);
+    expect(matchesGenreSelection(tags, "melodic-techno")).toBe(false);
+  });
+
+  it("F6: Techno + Industrial shows under both; Industrial alone never under Techno", () => {
+    expect(matchesGenreSelection(["techno", "industrial"], "techno")).toBe(true);
+    expect(matchesGenreSelection(["techno", "industrial"], "industrial")).toBe(true);
+    expect(matchesGenreSelection(["industrial"], "techno")).toBe(false);
+    expect(matchesGenreSelection(["industrial-techno"], "industrial")).toBe(false);
+  });
+
+  it("F7: House + Disco shows under House and under Disco", () => {
+    expect(matchesGenreSelection(["house", "disco"], "house")).toBe(true);
+    expect(matchesGenreSelection(["house", "disco"], "disco")).toBe(true);
+    expect(matchesGenreSelection(["disco"], "house")).toBe(false);
+  });
+
+  it("F9–F11: legacy sets keep their original meaning", () => {
+    expect(matched("garage-bass")).toEqual(["dubstep", "garage"]);
+    expect(matched("hardstyle-hardcore")).toEqual(["hardcore", "hardstyle", "rawstyle"]);
+    expect(matched("ambient-experimental")).toEqual(["ambient", "ambient-experimental", "experimental"]);
+    expect(genresMatchedBy("garage-bass")).not.toContain("breakbeat");
+    expect(genresMatchedBy("garage-bass")).not.toContain("drum-and-bass");
+    expect(Object.keys(LEGACY_GENRE_FILTERS)).toEqual(["garage-bass", "hardstyle-hardcore", "ambient-experimental"]);
+  });
+
+  it("parents are derived, never stored: withDerivedParents adds each parent once", () => {
+    expect(withDerivedParents(["hard-techno", "hypnotic-techno"])).toEqual(["hard-techno", "techno", "hypnotic-techno"]);
+    expect(withDerivedParents(["industrial"])).toEqual(["industrial"]);
+    expect(subgenresOf("drum-and-bass")).toEqual(["jungle"]);
+  });
+});
+
+describe("URL values (F12–F13)", () => {
+  it("F12: ?genre=garage and ?genre=uk-garage both select UK Garage, written back as uk-garage", () => {
+    expect(parseGenreFilterUrlValue("garage")).toBe("garage");
+    expect(parseGenreFilterUrlValue("uk-garage")).toBe("garage");
+    expect(genreFilterUrlValue("garage")).toBe("uk-garage");
+  });
+
+  it("every selectable genre round-trips through its URL value; legacy sets map to themselves", () => {
+    for (const g of GENRES) expect(parseGenreFilterUrlValue(genreFilterUrlValue(g.slug))).toBe(g.slug);
+    for (const key of Object.keys(LEGACY_GENRE_FILTERS) as (keyof typeof LEGACY_GENRE_FILTERS)[]) {
+      expect(parseGenreFilterUrlValue(key)).toBe(key);
+      expect(genreFilterUrlValue(key)).toBe(key);
+    }
+  });
+
+  it("F13: unknown values resolve to nothing", () => {
+    for (const raw of ["polka", "breaks", "bass-breaks", "hard-dance", "", null]) expect(parseGenreFilterUrlValue(raw)).toBeNull();
+  });
+});
+
+describe("classification rules (K3) — validateGenreTags", () => {
+  const ok = (tags: string[]) => expect(validateGenreTags(tags), tags.join("+")).toEqual([]);
+  const bad = (tags: string[], kind: string) => expect(validateGenreTags(tags).map((p) => p.kind), tags.join("+")).toContain(kind);
+
+  it("accepts one genre, two from different families, and two subgenres of one main genre", () => {
+    ok(["techno"]);
+    ok(["house", "disco"]);
+    ok(["hard-techno", "hypnotic-techno"]);
+    ok(["techno", "industrial"]);
+    ok(["garage", "dubstep"]);
+    ok(["hardstyle", "hardcore"]);
+    ok(["electronic-other"]);
+  });
+
+  it("rejects a main genre with its own subgenre, in either order", () => {
+    for (const [parent, child] of [["techno", "hard-techno"], ["house", "deep-house"], ["trance", "psytrance"], ["drum-and-bass", "jungle"], ["hardstyle", "rawstyle"]]) {
+      bad([parent, child], "parent-and-subgenre");
+      bad([child, parent], "parent-and-subgenre");
+    }
+  });
+
+  it("rejects more than two tags, duplicates, unknown values, and Electronic / Other in a pair", () => {
+    bad(["techno", "house", "trance"], "too-many");
+    bad(["techno", "techno"], "duplicate");
+    bad(["polka"], "unknown");
+    bad(["electronic-other", "house"], "fallback-combined");
+    bad(["afro-house", "electronic-other"], "fallback-combined");
+  });
+
+  it("rejects a newly chosen legacy value, but lets an untouched stored one stay", () => {
+    bad(["ambient-experimental"], "legacy");
+    expect(validateGenreTags(["ambient-experimental"], ["ambient-experimental"])).toEqual([]);
+    expect(genreEditError(["ambient-experimental", "industrial"], ["industrial", "ambient-experimental"])).toBeNull();
+    expect(genreEditError(["house", "deep-house"], [])).toMatch(/Deep House already belongs to House/);
+  });
+
+  it("isValidSecondaryGenre offers only valid pairs", () => {
+    expect(isValidSecondaryGenre("hard-techno", "hypnotic-techno")).toBe(true);
+    expect(isValidSecondaryGenre("techno", "hard-techno")).toBe(false);
+    expect(isValidSecondaryGenre("house", "electronic-other")).toBe(false);
+    expect(isValidSecondaryGenre("electronic-other", "house")).toBe(false);
+    expect(isValidSecondaryGenre("house", "house")).toBe(false);
+    expect(isValidSecondaryGenre("house", "ambient-experimental")).toBe(false);
   });
 });
 
 describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
-  it("matchesMainGenre: Techno covers exactly techno, melodic-techno, minimal-techno and industrial — not hard-techno", () => {
-    const technoMembers = GENRES.map((g) => g.slug).filter((slug) => matchesMainGenre([slug], "techno"));
-    expect(technoMembers.sort()).toEqual(["industrial", "melodic-techno", "minimal-techno", "techno"]);
-    expect(matchesMainGenre(["hard-techno"], "techno")).toBe(false);
-    expect(matchesMainGenre(["house", "industrial"] as GenreSlug[], "techno")).toBe(true);
-    expect(matchesMainGenre([], "techno")).toBe(false);
-  });
-
   it("only Techno has a landing page so far", () => {
     expect(genrePagePath("techno")).toBe("/genres/techno");
     for (const g of GENRES.filter((m) => m.slug !== "techno")) expect(genrePagePath(g.slug), g.slug).toBeNull();
@@ -163,54 +331,20 @@ describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
   });
 });
 
-describe("homepage genre filter matches the admin genre list", () => {
-  it("matches exactly: a genre never pulls in its subgenres", () => {
-    expect(matchesGenreFilter(["melodic-techno"], "techno")).toBe(false);
-    expect(matchesGenreFilter(["industrial"], "techno")).toBe(false);
-    expect(matchesGenreFilter(["deep-house"], "house")).toBe(false);
-    expect(matchesGenreFilter(["house"], "deep-house")).toBe(false);
-    expect(matchesGenreFilter(["hardcore"], "hardstyle")).toBe(false);
-    expect(matchesGenreFilter([], "techno")).toBe(false);
+describe("newsletter genre values (N)", () => {
+  it("offers a short list of broad choices built on the shared model", () => {
+    expect(NEWSLETTER_GENRE_OPTIONS).toHaveLength(12);
+    for (const v of NEWSLETTER_GENRE_OPTIONS) expect(isGenreFilterValue(v), v).toBe(true);
   });
 
-  it("a two-genre event matches either of its genres", () => {
-    const both = ["techno", "industrial"] as GenreSlug[];
-    expect(matchesGenreFilter(both, "techno")).toBe(true);
-    expect(matchesGenreFilter(both, "industrial")).toBe(true);
-    expect(matchesGenreFilter(both, "melodic-techno")).toBe(false);
+  it("keeps every value from the earlier 12-group model valid (backward compatibility, no migration)", () => {
+    const OLD_VALUES = ["techno", "hard-techno", "house", "trance", "psytrance", "drum-and-bass", "garage-bass", "hardstyle-hardcore", "disco", "electro", "ambient-experimental", "electronic-other"];
+    for (const v of OLD_VALUES) expect(isNewsletterGenreValue(v), v).toBe(true);
+    expect(isNewsletterGenreValue("polka")).toBe(false);
   });
 
-  it("each of the 22 genres matches only itself", () => {
-    expect(GENRES).toHaveLength(22);
-    for (const g of GENRES) {
-      for (const other of GENRES) expect(matchesGenreFilter([other.slug], g.slug), `${g.slug}/${other.slug}`).toBe(g.slug === other.slug);
-    }
-  });
-
-  it("legacy group links keep their original meaning", () => {
-    const garageBass = GENRES.map((g) => g.slug).filter((slug) => matchesGenreFilter([slug], "garage-bass"));
-    expect(garageBass.sort()).toEqual(["dubstep", "garage"]);
-    const hardDance = GENRES.map((g) => g.slug).filter((slug) => matchesGenreFilter([slug], "hardstyle-hardcore"));
-    expect(hardDance.sort()).toEqual(["hardcore", "hardstyle", "rawstyle"]);
-    expect(genreFilterLabel("garage-bass")).toBe("UK Garage / Bass Music");
-    expect(genreFilterLabel("hardstyle-hardcore")).toBe("Hardstyle / Hardcore");
-  });
-
-  it("isGenreFilterValue accepts the 22 genres and the two legacy groups, nothing else", () => {
-    for (const g of GENRES) expect(isGenreFilterValue(g.slug)).toBe(true);
-    expect(isGenreFilterValue("garage-bass")).toBe(true);
-    expect(isGenreFilterValue("hardstyle-hardcore")).toBe(true);
-    expect(isGenreFilterValue("polka")).toBe(false);
-    expect(isGenreFilterValue("breaks")).toBe(false);
-  });
-
-  it("every admin genre finds at least the events tagged with it", () => {
-    for (const g of GENRES) expect(matchesGenreFilter([g.slug], g.slug), g.slug).toBe(true);
-  });
-
-  it("isGenreSlug accepts admin genres only", () => {
-    expect(isGenreSlug("deep-house")).toBe(true);
-    expect(isGenreSlug("garage-bass")).toBe(false);
-    expect(isGenreSlug(null)).toBe(false);
+  it("old values keep their meaning: Techno still covers Melodic and Minimal Techno; Garage / Bass still covers UK Garage and Dubstep", () => {
+    expect(matchesGenreSelection(["melodic-techno"], "techno")).toBe(true);
+    expect(matchesGenreSelection(["dubstep"], "garage-bass")).toBe(true);
   });
 });

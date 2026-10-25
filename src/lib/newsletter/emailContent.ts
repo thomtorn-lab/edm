@@ -1,6 +1,6 @@
 import type { EventWithVenue } from "../queries";
 import { formatRowDateLabel, formatTimeLabel } from "../format";
-import { displayGenres, getMainGenre, type GenreSlug, type MainGenreSlug } from "../taxonomy";
+import { displayGenres, newsletterGenreLabel, type GenreFilterValue, type GenreSlug } from "../taxonomy";
 import { SITE_URL } from "../siteUrl";
 
 export interface NewsletterEmailContent {
@@ -38,14 +38,14 @@ function escapeHtml(value: string): string {
  * reproduction of it.
  */
 export function buildNewsletterEmail(input: {
-  genres: MainGenreSlug[];
+  genres: GenreFilterValue[];
   events: EventWithVenue[];
   manageToken: string;
 }): NewsletterEmailContent {
   const { genres, events, manageToken } = input;
   const manageUrl = buildManageUrl(manageToken);
   const unsubscribeUrl = buildUnsubscribeUrl(manageToken);
-  const scopeLabel = genres.length === 0 ? "All genres" : genres.map((g) => getMainGenre(g).label).join(", ");
+  const scopeLabel = genres.length === 0 ? "All genres" : genres.map((g) => newsletterGenreLabel(g)).join(", ");
   const subject = "This week in Copenhagen electronic music";
 
   const rows = events.map((event) => ({

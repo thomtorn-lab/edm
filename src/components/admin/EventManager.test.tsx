@@ -961,3 +961,76 @@ describe("EventManager — rescheduled-status correction (2026-10-06)", () => {
     expect(screen.getByRole("button", { name: "Clear Rescheduled status" })).toBeTruthy();
   });
 });
+
+describe("EventManager — genre system revision (2026-10-24): grouped genre options, pair rules, legacy values", () => {
+  afterEach(cleanup);
+
+  const openEditor = (overrides: Partial<EventWithVenue>) => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[makeEvent(overrides)]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  };
+  const optionValues = (label: string) => Array.from((screen.getByLabelText(label) as HTMLSelectElement).options).map((o) => o.value);
+
+  it("the primary Genre select lists the 27 current genres under the visual group headings — no legacy value", () => {
+    openEditor({ primaryGenre: "techno", subgenres: ["techno"] });
+    const select = screen.getByLabelText("Genre") as HTMLSelectElement;
+    expect(Array.from(select.querySelectorAll("optgroup")).map((g) => g.label)).toEqual([
+      "Techno",
+      "House & Disco",
+      "Trance",
+      "Bass & Breaks",
+      "Hard Dance",
+      "Electro & Experimental",
+      "Other",
+    ]);
+    expect(optionValues("Genre")).toHaveLength(27);
+    expect(optionValues("Genre")).not.toContain("ambient-experimental");
+  });
+
+  it("the secondary select offers only valid pairs: no own subgenre/parent, no Electronic / Other", () => {
+    openEditor({ primaryGenre: "techno", subgenres: ["techno"] });
+    const values = optionValues("Secondary genre (optional)");
+    expect(values).not.toContain("hard-techno");
+    expect(values).not.toContain("electronic-other");
+    expect(values).toContain("industrial");
+    expect(values).toContain("house");
+  });
+
+  it("two subgenres of the same main genre can be paired", () => {
+    openEditor({ primaryGenre: "hard-techno", subgenres: ["hard-techno"] });
+    expect(optionValues("Secondary genre (optional)")).toContain("hypnotic-techno");
+    expect(optionValues("Secondary genre (optional)")).not.toContain("techno");
+  });
+
+  it("Electronic / Other as primary offers no secondary genre at all", () => {
+    openEditor({ primaryGenre: "electronic-other", subgenres: ["electronic-other"] });
+    expect(optionValues("Secondary genre (optional)")).toEqual([""]);
+  });
+
+  it("an existing admin-locked invalid pair is shown as stored, with a warning — never silently changed", () => {
+    openEditor({ primaryGenre: "house", subgenres: ["house", "deep-house"] });
+    expect((screen.getByLabelText("Secondary genre (optional)") as HTMLSelectElement).value).toBe("deep-house");
+    expect(screen.getByText(/Deep House already belongs to House/)).toBeTruthy();
+  });
+
+  it("a stored legacy Ambient / Experimental genre is displayed as itself, marked legacy", () => {
+    openEditor({ primaryGenre: "ambient-experimental", subgenres: ["ambient-experimental"] });
+    const select = screen.getByLabelText("Genre") as HTMLSelectElement;
+    expect(select.value).toBe("ambient-experimental");
+    expect(select.selectedOptions[0].textContent).toMatch(/Ambient \/ Experimental \(legacy/);
+  });
+
+  it("saving an unrelated field on a legacy-genre event does not send any genre field", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ primaryGenre: "ambient-experimental", subgenres: ["ambient-experimental"] })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "New title" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.patch).not.toHaveProperty("primaryGenre");
+    expect(body.patch).not.toHaveProperty("subgenres");
+  });
+});

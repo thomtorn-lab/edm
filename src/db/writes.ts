@@ -10,7 +10,7 @@ import { isResidentAdvisorUrl } from "../lib/links";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types";
-import type { GenreSlug } from "../lib/taxonomy";
+import { genreEditError, type GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
 import { classifyAdminQueueRow } from "../lib/adminQueue";
@@ -217,6 +217,16 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // their own write paths.
   const derivedSubgenres =
     effectivePatch.primaryGenre != null && !("subgenres" in patch) ? { subgenres: [effectivePatch.primaryGenre] } : {};
+
+  // Genre classification rules (taxonomy.ts validateGenreTags) — checked
+  // only when this save really changes a genre field, on the tags that
+  // will actually be stored, so an existing admin-locked combination never
+  // blocks an unrelated edit.
+  if ("primaryGenre" in effectivePatch || "subgenres" in effectivePatch) {
+    const nextTags = (derivedSubgenres.subgenres ?? effectivePatch.subgenres ?? existing.subgenres ?? []) as string[];
+    const error = genreEditError(nextTags, [existing.primaryGenre, ...(existing.subgenres ?? [])]);
+    if (error) throw new Error(error);
+  }
 
   await db
     .update(events)
@@ -1103,6 +1113,18 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
       throw new Error(END_BEFORE_START_ERROR);
     }
+  }
+
+  // Same genre rules as a published-event edit (applyAdminEventEdit),
+  // checked only when this save changes a genre field.
+  if ("predictedGenre" in effectivePatch || "predictedSecondaryGenre" in effectivePatch) {
+    const nextPrimary = "predictedGenre" in effectivePatch ? effectivePatch.predictedGenre : existing.predictedGenre;
+    const nextSecondary = "predictedSecondaryGenre" in effectivePatch ? effectivePatch.predictedSecondaryGenre : existing.predictedSecondaryGenre;
+    const nextTags = [nextPrimary, nextSecondary].filter((g): g is string => Boolean(g));
+    const currentTags = [existing.predictedGenre, existing.predictedSecondaryGenre].filter((g): g is string => Boolean(g));
+    if (!nextPrimary && nextSecondary) throw new Error("Choose a primary genre before a secondary genre.");
+    const error = genreEditError(nextTags, currentTags);
+    if (error) throw new Error(error);
   }
 
   const missingFields = existing.missingFields.filter((f) => {
