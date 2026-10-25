@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { GUARDED_COMMANDS, checkLocalDatabase, classifyDatabaseUrl } from "./localDatabaseGuard";
 
@@ -84,16 +86,21 @@ describe("checkLocalDatabase", () => {
 });
 
 describe("the CLI stops the npm script before the command runs", () => {
-  const run = (command: string, env: Record<string, string>) =>
-    spawnSync(process.execPath, ["--import", "tsx", "src/db/localDatabaseGuard.ts", command], {
-      cwd: ROOT,
-      env: { ...process.env, DATABASE_URL: undefined, ALLOW_HOSTED_DATABASE: undefined, ...env },
-      encoding: "utf8",
-    });
+  const GUARD = join(ROOT, "src/db/localDatabaseGuard.ts");
+  const TSX = pathToFileURL(join(ROOT, "node_modules/tsx/dist/loader.mjs")).href;
+
+  /** Runs the guard as `npm run <command>` would, in a scratch project dir holding `files`, with exactly `env` set for the run. */
+  function run(command: string, env: Record<string, string>, files: Record<string, string> = {}) {
+    const cwd = mkdtempSync(join(tmpdir(), "db-guard-"));
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(cwd, name), content);
+    // The container/CI env may export its own DATABASE_URL; NODE_ENV=test would make Next skip .env.local.
+    const childEnv: Record<string, string | undefined> = { ...process.env, ...env };
+    for (const key of ["DATABASE_URL", "ALLOW_HOSTED_DATABASE", "NODE_ENV"]) if (!(key in env)) delete childEnv[key];
+    return spawnSync(process.execPath, ["--import", TSX, GUARD, command], { cwd, env: childEnv as NodeJS.ProcessEnv, encoding: "utf8" });
+  }
 
   it("exits 0 for a local database", () => {
-    const r = run("db:migrate", { DATABASE_URL: LOCAL });
-    expect(r.status).toBe(0);
+    expect(run("db:migrate", { DATABASE_URL: LOCAL }).status).toBe(0);
   });
 
   it("exits 1 for a hosted database, without printing the password", () => {
@@ -106,20 +113,54 @@ describe("the CLI stops the npm script before the command runs", () => {
   it("exits non-zero for an unknown command", () => {
     expect(run("db:nope", { DATABASE_URL: LOCAL }).status).toBe(2);
   });
+
+  it("reads DATABASE_URL from .env.local like the db: scripts do, and an exported one wins over it", () => {
+    expect(run("db:migrate", {}, { ".env.local": `DATABASE_URL=${HOSTED}\n` }).status).toBe(1);
+    expect(run("db:migrate", {}, { ".env.local": `DATABASE_URL=${LOCAL}\n` }).status).toBe(0);
+    expect(run("db:migrate", { DATABASE_URL: HOSTED }, { ".env.local": `DATABASE_URL=${LOCAL}\n` }).status).toBe(1);
+  });
+
+  it("dev: sees every env file Next loads — a hosted URL in .env.development.local beats a local one in .env.local", () => {
+    expect(run("dev", {}, { ".env.local": `DATABASE_URL=${LOCAL}\n`, ".env.development.local": `DATABASE_URL=${HOSTED}\n` }).status).toBe(1);
+    expect(run("dev", {}, { ".env": `DATABASE_URL=${HOSTED}\n` }).status).toBe(1);
+    expect(run("dev", {}, { ".env.local": `DATABASE_URL=${LOCAL}\n`, ".env": `DATABASE_URL=${HOSTED}\n` }).status).toBe(0);
+    expect(run("dev", { DATABASE_URL: HOSTED }, { ".env.local": `DATABASE_URL=${LOCAL}\n` }).status).toBe(1);
+  });
+
+  it("ALLOW_HOSTED_DATABASE in an env file is ignored (and said so) — only a per-run opt-in counts", () => {
+    for (const command of ["db:migrate", "dev"]) {
+      const r = run(command, {}, { ".env.local": `DATABASE_URL=${HOSTED}\nALLOW_HOSTED_DATABASE=${command}\n` });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("in an env file is ignored");
+    }
+    expect(run("db:migrate", { ALLOW_HOSTED_DATABASE: "db:migrate" }, { ".env.local": `DATABASE_URL=${HOSTED}\n` }).status).toBe(0);
+  });
+
+  it("the Prepare Production Database migrate step passes: hosted URL in .env.local, opt-in in the step env", () => {
+    const r = run("db:migrate", { ALLOW_HOSTED_DATABASE: "db:migrate" }, { ".env.local": `DATABASE_URL=${HOSTED}\n` });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("explicitly allowed");
+  });
+
+  it("db:seed:dev never passes against a hosted database, whatever the opt-in", () => {
+    for (const env of [{}, { ALLOW_HOSTED_DATABASE: "db:seed:dev" }, { ALLOW_HOSTED_DATABASE: "db:migrate" }] as Record<string, string>[]) {
+      expect(run("db:seed:dev", env, { ".env.local": `DATABASE_URL=${HOSTED}\n` }).status).toBe(1);
+    }
+  });
 });
 
 describe("wiring", () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { scripts: Record<string, string> };
 
   it.each(GUARDED_COMMANDS)("npm run %s runs the guard first, for that same command, and stops on failure (&&)", (command) => {
-    expect(pkg.scripts[command]).toMatch(new RegExp(`^node --env-file(-if-exists)?=\\.env\\.local --import tsx src/db/localDatabaseGuard\\.ts ${command} && `));
+    expect(pkg.scripts[command]).toMatch(new RegExp(`^node --import tsx src/db/localDatabaseGuard\\.ts ${command} && `));
   });
 
-  it("the guard reads .env.local the same way as the command it protects", () => {
-    for (const command of GUARDED_COMMANDS.filter((c) => c !== "dev")) {
+  it("the guard loads no env file itself via node flags (it resolves them in resolveGuardEnv, so an opt-in in a file can't count); the commands keep --env-file=.env.local", () => {
+    for (const command of GUARDED_COMMANDS) {
       const [guard, rest] = pkg.scripts[command].split(" && ");
-      expect(guard.startsWith("node --env-file=.env.local ")).toBe(true);
-      expect(rest.startsWith("node --env-file=.env.local ")).toBe(true);
+      expect(guard).not.toContain("--env-file");
+      if (command !== "dev") expect(rest.startsWith("node --env-file=.env.local ")).toBe(true);
     }
   });
 

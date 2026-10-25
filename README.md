@@ -26,8 +26,11 @@ check that `DATABASE_URL` is a local test database (localhost / 127.0.0.1 / ::1 
 refuse a hosted one (`src/db/localDatabaseGuard.ts`). An exported `DATABASE_URL` wins over
 `.env.local`, so a shell that still carries a hosted connection string is stopped instead of
 reaching it. To run one of them against a hosted database on purpose, set
-`ALLOW_HOSTED_DATABASE=<that command>` (e.g. `ALLOW_HOSTED_DATABASE=db:migrate`, which the "Prepare
-Production Database" workflow sets); `db:seed:dev` never runs against a hosted database. `npm run
+`ALLOW_HOSTED_DATABASE=<that command>` for that one run (e.g. `ALLOW_HOSTED_DATABASE=db:migrate npm run
+db:migrate`, as the "Prepare Production Database" workflow's migrate step does) — an opt-in written
+into an env file is ignored. `db:seed:dev` never runs against a hosted database. For `npm run dev`
+the guard checks every env file Next loads (`.env.development.local`, `.env.local`,
+`.env.development`, `.env`). `npm run
 build` is not guarded — the Vercel Production build applies migrations itself (`src/db/migrateOnDeploy.ts`).
 
 ## Current phase
