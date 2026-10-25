@@ -20,6 +20,7 @@ import { seedVenues, seedSourcesProduction } from "./referenceData";
 import { runSourceSync } from "./sync";
 import { createHangarenAdapter, HANGAREN_SOURCE_ID } from "@/lib/adapters/hangarenAdapter";
 import { VENUES } from "@/lib/data/venues";
+import { classifyDatabaseUrl } from "./localDatabaseGuard";
 import { SOURCES } from "@/lib/data/sources";
 
 let pass = 0;
@@ -35,8 +36,8 @@ function check(label: string, condition: boolean, detail?: string) {
 }
 
 function assertSafeToDestroy() {
-  const url = process.env.DATABASE_URL ?? "";
-  const looksLocal = /localhost|127\.0\.0\.1|::1/.test(url);
+  // Parsed hostname, not a text match: "localhost" in a password or query string no longer counts as local.
+  const looksLocal = classifyDatabaseUrl(process.env.DATABASE_URL).kind === "local";
   if (!looksLocal && process.env.ALLOW_DESTRUCTIVE_RESET !== "1") {
     console.error(
       "Refusing to run: this script DROPS the entire schema before starting.\n" +
