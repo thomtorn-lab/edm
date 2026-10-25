@@ -123,6 +123,7 @@ vi.mock("./writes", () => ({
   applySourceCancellationUnpublish: vi.fn(),
   applySourceCancellationRestore: vi.fn(),
   createEvent: vi.fn(),
+  recordWithheldDescription: vi.fn().mockResolvedValue(true),
   insertDiscoveryItem: vi.fn().mockImplementation((item) =>
     Promise.resolve({
       id: item.id,
@@ -2391,5 +2392,85 @@ describe("KultuNaut title-guessed artists and Discogs (2026-10-23)", () => {
     };
     await runSourceSync("src-billetto", "Billetto", fakeAdapter(() => Promise.resolve([unclear])));
     expect(enrichEventGenre).toHaveBeenCalledWith(["Some Artist"]);
+  });
+});
+
+/**
+ * Withheld descriptions (2026-10-25): a Danish Poolen/Pumpehuset text is
+ * kept for admin/QA in the change log only — never written to the new
+ * event's description or to a Discovery Queue row, which an admin publish
+ * would carry onto the public site.
+ */
+describe("Withheld descriptions stay out of every stored description (2026-10-25)", () => {
+  const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer.";
+  function mockThreeSelects() {
+    const once = () =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select).mockImplementationOnce(once).mockImplementationOnce(once).mockImplementationOnce(once);
+  }
+
+  it("on an already-published event the stored description is left as is and the text is recorded", async () => {
+    const URL = "https://poolen.dk/concerts/kind-mod-kind/";
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({ id: "e-kind", officialEventUrl: URL, canonicalSourceId: "src-poolen", description: "Ældre dansk tekst." }),
+    ]);
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once([{ eventId: "e-kind", sourceUrl: URL }]))
+      .mockImplementationOnce(() => once([]))
+      .mockImplementationOnce(() => once([]));
+    const candidate: RawCandidateEvent = { ...rawCandidate, sourceId: "src-poolen", description: null, withheldDescription: DA, officialEventUrl: URL };
+    await runSourceSync("src-poolen", "Poolen", fakeAdapter(() => Promise.resolve([candidate])));
+    const { recordWithheldDescription } = await import("./writes");
+    for (const [, , patch] of vi.mocked(applySourceSyncPatch).mock.calls) expect(patch).not.toHaveProperty("description");
+    expect(recordWithheldDescription).toHaveBeenCalledWith("e-kind", "src-poolen", DA, "Ældre dansk tekst.");
+  });
+
+  it("a new review-queue row gets no description; nothing is recorded without an event", async () => {
+    mockThreeSelects();
+    const candidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-billetto",
+      title: "Melting Monday",
+      description: null,
+      withheldDescription: DA,
+      artists: [],
+      officialEventUrl: "https://billetto.dk/e/melting-monday-2",
+    };
+    const result = await runSourceSync("src-billetto", "Billetto", fakeAdapter(() => Promise.resolve([candidate])));
+    const { recordWithheldDescription } = await import("./writes");
+    expect(result.queuedForReview).toBe(1);
+    expect(insertDiscoveryItem).toHaveBeenCalledWith(expect.objectContaining({ description: null }));
+    expect(recordWithheldDescription).not.toHaveBeenCalled();
+  });
+
+  it("an auto-published event is created without it, and the text is recorded for that event", async () => {
+    const hangarenVenue: Venue = {
+      id: "v-hangaren", slug: "hangaren", name: "Hangaren", aliases: [], address: "", city: "Copenhagen",
+      postalCode: "", websiteUrl: null, description: "", shortDescription: null, venueProfile: null,
+    };
+    vi.mocked(getVenues).mockResolvedValueOnce([hangarenVenue]);
+    mockThreeSelects();
+    const candidate: RawCandidateEvent = {
+      ...rawCandidate,
+      sourceId: "src-hangaren",
+      title: "Miley Serious",
+      artists: ["Miley Serious"],
+      venueName: "Hangaren",
+      description: null,
+      withheldDescription: DA,
+      officialEventUrl: "https://www.hangaren.dk/events/miley-serious-2",
+    };
+    const result = await runSourceSync("src-hangaren", "Hangaren", fakeAdapter(() => Promise.resolve([candidate])));
+    const { recordWithheldDescription } = await import("./writes");
+    expect(result.created).toBe(1);
+    const created = vi.mocked(createEvent).mock.calls[0][0];
+    expect(created.description).toBeNull();
+    expect(recordWithheldDescription).toHaveBeenCalledWith(created.id, "src-hangaren", DA, null);
   });
 });

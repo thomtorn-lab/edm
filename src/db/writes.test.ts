@@ -32,6 +32,7 @@ const selectMock = vi.fn(() => ({
   from: () => ({
     where: () => ({
       limit: () => Promise.resolve(selectResults.shift() ?? []),
+      orderBy: () => ({ limit: () => Promise.resolve(selectResults.shift() ?? []) }),
     }),
   }),
 }));
@@ -1514,5 +1515,33 @@ describe("applySourceSyncPatch — a locked start keeps the stored status (edito
     expect(written.dateChanged).toBe(true);
     expect(written.postponed).toBe(false);
     expect(result.heldBack).toEqual([]);
+  });
+});
+
+describe("recordWithheldDescription — a source's Danish text kept in the change log only (2026-10-25)", () => {
+  const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset.";
+
+  it("writes one change-log row with the text and never updates the event row", async () => {
+    const { recordWithheldDescription } = await import("./writes");
+    selectResults = [[]];
+    expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, null)).toBe(true);
+    expect(insertValuesMock).toHaveBeenCalledTimes(1);
+    expect(insertValuesMock.mock.calls[0][0]).toMatchObject({
+      eventId: "e-1",
+      changedBy: "src-pumpehuset",
+      changeType: "withheld_description",
+      fieldsChanged: [],
+      note: DA,
+    });
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when the text repeats the last record or is already the stored description", async () => {
+    const { recordWithheldDescription } = await import("./writes");
+    selectResults = [[{ note: DA }]];
+    expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, null)).toBe(false);
+    expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, DA)).toBe(false);
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });

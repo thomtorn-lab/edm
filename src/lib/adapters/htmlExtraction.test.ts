@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToText, isSameHost, normalizeExtractedText, sanitizeExtractedTitle, stripBareUrls, truncateAtBoundary } from "./htmlExtraction";
+import { htmlToParagraphText, htmlToText, isSameHost, normalizeExtractedText, sanitizeExtractedTitle, stripBareUrls, truncateAtBoundary } from "./htmlExtraction";
 
 describe("htmlToText", () => {
   it("treats an attributed <br> the same as a bare one (real Pumpehuset lineup evidence)", () => {
@@ -248,5 +248,32 @@ describe("isSameHost (admin + public link integrity, 2026-09-08 — guards an ad
   it("false (never throws) for a malformed URL on either side", () => {
     expect(isSameHost("not a url", "https://www.kultunaut.dk/")).toBe(false);
     expect(isSameHost("https://www.kultunaut.dk/", "not a url")).toBe(false);
+  });
+});
+
+describe("htmlToParagraphText (stored descriptions, 2026-10-15)", () => {
+  it("separates block elements with a blank line and <br>/<li> with a single line break", () => {
+    expect(htmlToParagraphText("<p>First para.</p><p>Second<br>line two.</p><ul><li>A</li><li>B</li></ul>")).toBe(
+      "First para.\n\nSecond\nline two.\n\nA\nB",
+    );
+  });
+  it("collapses long runs of empty markup to a single paragraph break and decodes entities", () => {
+    expect(htmlToParagraphText("<div><p>&nbsp;</p><p>One &amp; two</p></div>\n\n\n<div><p>Three</p></div>")).toBe("One & two\n\nThree");
+  });
+});
+
+describe("normalizeExtractedText keepParagraphs", () => {
+  it("keeps single blank lines, collapses longer runs", () => {
+    expect(normalizeExtractedText("a  b\n\n\n\nc\nd", { keepParagraphs: true })).toBe("a b\n\nc\nd");
+  });
+  it("default mode is unchanged (blank lines removed)", () => {
+    expect(normalizeExtractedText("a\n\nb")).toBe("a\nb");
+  });
+});
+
+describe("truncateAtBoundary — paragraph boundary", () => {
+  it("prefers a late paragraph break over a sentence end", () => {
+    const text = `${"x".repeat(80)}. ${"y".repeat(5)}\n\n${"z".repeat(40)}`;
+    expect(truncateAtBoundary(text, 100)).toBe(`${"x".repeat(80)}. ${"y".repeat(5)}`);
   });
 });

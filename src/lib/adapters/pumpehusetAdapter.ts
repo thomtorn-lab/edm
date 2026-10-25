@@ -637,6 +637,11 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
     // relevance/genre gate otherwise — this is a source-completeness fix,
     // not a threshold change.
     let dropUnconfirmed = candidate.genreHint === null;
+    // The description to STORE, with the body text's own line breaks kept
+    // (About-text formatting, 2026-10-24). Everything that reads the text as
+    // evidence — genre resolution and relevanceText below — keeps using the
+    // unchanged flat `next.description`, so classification can't shift.
+    let structuredDescription: string | null = null;
     if (candidate.officialEventUrl) {
       try {
         const res = await fetchWithRetry(
@@ -682,6 +687,9 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
         // line only when neither exists at all — never replaces real prose
         // with the presenter line.
         const combinedDescription = [next.description, bodyDescription].filter(Boolean).join("\n\n") || presenter || next.description;
+        if (bodyDescription) {
+          structuredDescription = [next.description, descriptionLines.join("\n").trim()].filter(Boolean).join("\n\n");
+        }
         if (combinedDescription !== next.description) next = { ...next, description: combinedDescription };
 
         // This candidate's listing genre didn't already confirm Elektronisk
@@ -730,7 +738,12 @@ async function enrichWithShowTimes(candidates: RawCandidateEvent[], fetchImpl: t
     // or the bare presenter-line fallback) — genre resolution above already
     // used the real text as evidence; this only decides what's shown.
     if (next.description && isLikelyDanish(next.description)) {
-      next = { ...next, description: null };
+      // Kept for admin/QA instead of dropped; still never shown publicly
+      // (RawCandidateEvent.withheldDescription).
+      next = { ...next, description: null, withheldDescription: structuredDescription ?? next.description };
+    } else if (structuredDescription) {
+      // Stored with the body text's own line breaks (About-text formatting).
+      next = { ...next, description: structuredDescription };
     }
     // dropUnconfirmed only ever clears when this candidate's own detail page
     // confirmed a real Elektronisk tag; a still-null genreHint here means

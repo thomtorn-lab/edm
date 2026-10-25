@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, htmlToParagraphText } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -170,7 +170,10 @@ function tryOldTemplateFields(html: string, dateKey: DateKey): GravityCoreFields
   const musicText = extractInfoRow(html, "Music:");
   const paragraphMatch = html.match(/animate-paragraph">([\s\S]*?)<div class="d-flex align-items-center justify-content-center/);
   const fullDescriptionText = paragraphMatch ? htmlToText(paragraphMatch[1]).replace(/\n/g, " ").replace(/\s+/g, " ").trim() : "";
-  const description = [fullDescriptionText, musicText ? `Music: ${musicText}` : null].filter(Boolean).join(" ") || null;
+  // Stored description keeps the paragraphs and puts "Music:" on its own
+  // line (About-text formatting, 2026-10-15); genre evidence stays flat.
+  const structuredDescription = paragraphMatch ? htmlToParagraphText(paragraphMatch[1]) : "";
+  const description = [structuredDescription, musicText ? `Music: ${musicText}` : null].filter(Boolean).join("\n\n") || null;
   const genreEvidenceText = [musicText, fullDescriptionText].filter(Boolean).join(" ");
 
   return { startDatetime, endDatetime, venueName, description, genreEvidenceText, structuredGenreField: musicText };
@@ -276,7 +279,7 @@ export function parseGravityEventDetailHtml(html: string, entry: GravityListingE
     sourceId: GRAVITY_SOURCE_ID,
     sourceUrl,
     title,
-    description: description ? truncateAtBoundary(description, 800) : null,
+    description: description || null,
     // Admin Discovery Queue cleanup quality audit, 2026-09-06 — same real
     // gap found and fixed on aliceAdapter.ts: `description` above is
     // truncated to 800 chars for display, but genreHint is resolved from

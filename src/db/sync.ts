@@ -14,6 +14,7 @@ import {
   resolveDiscoveryItemAsPublished,
   touchSourceSyncStats,
   updateSourceLinkUrl,
+  recordWithheldDescription,
 } from "./writes";
 import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
@@ -369,6 +370,11 @@ async function runSourceSyncLocked(
         if (Object.keys(patch).length > 0) {
           await applySourceSyncPatch(match.eventId, sourceId, patch);
         }
+        // A Danish description this source does not publish is kept for
+        // admin/QA in the change log only (src/lib/withheldDescriptions.ts).
+        if (raw.withheldDescription) {
+          await recordWithheldDescription(match.eventId, sourceId, raw.withheldDescription, existing.description);
+        }
 
         // Existing-published-event safety (data-quality Workstream A
         // follow-up — existing published events that now resolve to HOLD):
@@ -541,6 +547,9 @@ async function runSourceSyncLocked(
         );
         created++;
         if (raw.soundcloudLinkReport) soundcloudObservations.set(eventId, raw.soundcloudLinkReport);
+        if (raw.withheldDescription) {
+          await recordWithheldDescription(eventId, sourceId, raw.withheldDescription, raw.description);
+        }
 
         // A candidate that already had a pending discovery_queue row from an
         // earlier, lower-confidence sync (see src/lib/sync.ts's
