@@ -53,7 +53,7 @@ export default function Footer() {
             <Link href="/contact" className="hover:text-text-secondary">Contact</Link>
             <Link href="/privacy" className="hover:text-text-secondary">Privacy</Link>
           </nav>
-          <ul aria-label="Electronic CPH on social media" className="-mx-1.5 flex items-center gap-1">
+          <ul aria-label="Electronic CPH on social media" className="-mx-1.5 -my-2 flex items-center gap-1">
             {SOCIAL_LINKS.map(({ name, href, Icon }) => (
               <li key={name}>
                 <a
