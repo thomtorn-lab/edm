@@ -689,9 +689,10 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
   // "Trance") are ALSO literal option text in the always-present Genre
   // filter <select> (desktop + mobile), so a plain screen.getByText would
   // match the dropdown option itself regardless of what's in the event
-  // list — these helpers exclude <option> elements so assertions only see
-  // real event-card content.
-  const ignoreOptions = { ignore: "option, script, style" };
+  // list — these helpers exclude <option> elements (and FilterSelect's
+  // visible copy of the selected one, [data-select-value]) so assertions only
+  // see real event-card content.
+  const ignoreOptions = { ignore: "option, [data-select-value], script, style" };
   const cardText = (text: string) => screen.getByText(text, ignoreOptions);
   const queryCardText = (text: string) => screen.queryByText(text, ignoreOptions);
   const allCardText = (text: string) => screen.getAllByText(text, ignoreOptions);

@@ -82,25 +82,30 @@ describe("FestivalExplorer — mobile visual-weight refinement (2026-09-13): the
     }
   });
 
-  it("mobile horizontal padding is reduced (px-2.5, not a bare px-3), and the line-height stays pinned to leading-4", () => {
+  // Paddings are the old px-2.5 / sm:px-3 converted for FilterSelect's
+  // custom chevron (pl = N + 4px, pr = N + 16px) — same rendered geometry.
+  it("mobile horizontal padding is reduced (old px-2.5 → pl-3.5/pr-[26px], not the desktop pl-4/pr-7), and the line-height stays pinned to leading-4", () => {
     render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
     const selects = screen.getAllByRole("combobox");
     for (const select of selects) {
       const classes = select.className.split(/\s+/);
-      expect(classes).toContain("px-2.5");
-      expect(classes).not.toContain("px-3");
+      expect(classes).toContain("pl-3.5");
+      expect(classes).toContain("pr-[26px]");
+      expect(classes).not.toContain("pl-4");
+      expect(classes).not.toContain("pr-7");
       expect(classes).toContain("leading-4");
     }
   });
 
-  it("desktop restores the exact original weight/tracking/padding via sm: overrides — sm:font-semibold, sm:tracking-wide, sm:px-3 — so desktop styling is completely unaffected by the mobile refinement", () => {
+  it("desktop restores the exact original weight/tracking/padding via sm: overrides — sm:font-semibold, sm:tracking-wide, sm:pl-4/sm:pr-7 (old sm:px-3) — so desktop styling is completely unaffected by the mobile refinement", () => {
     render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
     const selects = screen.getAllByRole("combobox");
     for (const select of selects) {
       const classes = select.className.split(/\s+/);
       expect(classes).toContain("sm:font-semibold");
       expect(classes).toContain("sm:tracking-wide");
-      expect(classes).toContain("sm:px-3");
+      expect(classes).toContain("sm:pl-4");
+      expect(classes).toContain("sm:pr-7");
     }
   });
 
