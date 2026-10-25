@@ -94,6 +94,12 @@ export interface GenreDef {
   visualGroup: VisualGroupSlug;
   /** Stored value kept for backward compatibility only — not selectable anywhere. */
   legacy?: true;
+  /**
+   * Legacy values only: the current genres this value still matches in a
+   * filter, so an unreviewed event is never hidden from every genre option
+   * ("Ambient / Experimental" shows under both Ambient and Experimental).
+   */
+  alsoMatches?: readonly GenreSlug[];
 }
 
 const GENRE_CATALOG: GenreDef[] = [
@@ -133,7 +139,7 @@ const GENRE_CATALOG: GenreDef[] = [
   // documented (see validateGenreTags).
   { slug: "electronic-other", label: "Electronic / Other", shortLabel: "Electronic", urlSlug: "electronic-other", visualGroup: "other" },
 
-  { slug: "ambient-experimental", label: "Ambient / Experimental", shortLabel: "Ambient", urlSlug: "ambient-experimental", visualGroup: "electro-experimental", legacy: true },
+  { slug: "ambient-experimental", label: "Ambient / Experimental", shortLabel: "Ambient", urlSlug: "ambient-experimental", visualGroup: "electro-experimental", legacy: true, alsoMatches: ["ambient", "experimental"] },
 ];
 
 /** Every selectable genre, in admin/filter display order (legacy values excluded). */
@@ -227,7 +233,10 @@ export function genreFilterLabel(value: GenreFilterValue): string {
  * THE genre-matching rule, shared by every surface (homepage filter,
  * genre pages, search, newsletter):
  *   - a main genre matches itself and each of its subgenres;
- *   - any other genre matches only itself (exact);
+ *   - any other genre matches only itself (exact) — plus, during the
+ *     transition, events still carrying a legacy value that covers it
+ *     (alsoMatches: an unreviewed "Ambient / Experimental" event shows
+ *     under Ambient and under Experimental, never under neither);
  *   - a legacy set matches any genre in the set.
  * Returns a boolean per event, so an event tagged with two matching genres
  * still appears once in a filtered list.
@@ -237,7 +246,7 @@ export function matchesGenreSelection(tags: readonly GenreSlug[], selection: Gen
     const set: readonly GenreSlug[] = LEGACY_GENRE_FILTERS[selection].genres;
     return tags.some((t) => set.includes(t));
   }
-  return tags.some((t) => t === selection || parentOf(t) === selection);
+  return tags.some((t) => t === selection || parentOf(t) === selection || (getGenre(t).alsoMatches?.includes(selection) ?? false));
 }
 
 /** Every genre a selection matches — the expanded set for e.g. SQL or docs. */

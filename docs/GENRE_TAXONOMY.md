@@ -60,7 +60,7 @@ Overgenrer udledes altid af hierarkiet (`withDerivedParents`). De gemmes aldrig 
 
 **Filtrering** (`matchesGenreSelection`, én fælles funktion):
 - En hovedgenre matcher sig selv og sine undergenrer.
-- Alle andre genrer matcher kun sig selv.
+- Alle andre genrer matcher kun sig selv. Undtagelse i overgangsperioden: et event, der stadig har legacy-værdien Ambient / Experimental, vises under både Ambient og Experimental, så det aldrig er skjult for alle genrevalg, før det er gennemgået.
 - En legacy-værdi matcher sin mængde.
 - Funktionen returnerer ét boolesk svar pr. event, så et event optræder aldrig to gange.
 - Den bruges af forsidefiltret (desktop, mobil og URL), `/genres/techno`, fritekstsøgning (overgenrernes navne indgår) og nyhedsbrevet.

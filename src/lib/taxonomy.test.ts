@@ -203,9 +203,24 @@ describe("filtering (F1–F11) — matchesGenreSelection", () => {
     expect(matched("hardstyle")).toEqual(["hardstyle", "rawstyle"]);
   });
 
-  it("F4: every subgenre and standalone genre matches only itself", () => {
+  it("F4: every subgenre and standalone genre matches only itself (plus the unreviewed legacy value for Ambient/Experimental — see below)", () => {
     for (const g of GENRES.filter((x) => !isMainGenre(x.slug))) {
-      expect(matched(g.slug), g.slug).toEqual([g.slug]);
+      const expected = g.slug === "ambient" || g.slug === "experimental" ? [g.slug, "ambient-experimental"].sort() : [g.slug];
+      expect(matched(g.slug), g.slug).toEqual(expected);
+    }
+  });
+
+  it("F4b: an unreviewed legacy 'Ambient / Experimental' event is never hidden from every genre option — it shows under Ambient and under Experimental, nowhere else", () => {
+    expect(matchesGenreSelection(["ambient-experimental"], "ambient")).toBe(true);
+    expect(matchesGenreSelection(["ambient-experimental"], "experimental")).toBe(true);
+    expect(GENRES.filter((g) => matchesGenreSelection(["ambient-experimental"], g.slug)).map((g) => g.slug)).toEqual(["ambient", "experimental"]);
+    // A reviewed event is exact again.
+    expect(matchesGenreSelection(["ambient"], "experimental")).toBe(false);
+  });
+
+  it("F4c: no stored value (current or legacy) is unreachable from every genre option", () => {
+    for (const slug of ALL_STORED) {
+      expect(GENRES.some((g) => matchesGenreSelection([slug], g.slug)), slug).toBe(true);
     }
   });
 

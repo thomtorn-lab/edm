@@ -23,6 +23,36 @@ Pr. event vælges: behold **Industrial** (industrial/EBM-linjen) eller skift til
 | 2026-12-09 | Kontravoid (US) + Spike Hellis (US) | `kontravoid-us-spike-hellis-us-e-c12db530` | electro + industrial | ja | src-kultunaut | EBM | – |
 | 2027-01-23 | Electro Shock Therapy @ Basement | `electro-shock-therapy-basement-e-4ce6964b` | electro + industrial | ja | src-kultunaut | EBM | electro |
 
+### R1 – anbefalinger for de 7 kommende events (2026-10-25, kun anbefalinger)
+
+Anbefalingerne bygger på offentlige kunstnerprofiler (kilder nedenfor) og eventets egen tekst. **Intet er ændret i Production.** En admin beslutter og retter i editoren.
+
+| Dato | Event | Tags nu | Anbefalet | Sikkerhed | Begrundelse |
+|---|---|---|---|---|---|
+| 2026-10-30 | NEW GAME+ // JOE SANE / KAITEN / Kardinal Bertram | techno + industrial | **Industrial Techno + Hard Techno** | Høj | New Game+ er Kardinal Bertrams klubnat med fokus på hypnotic, industrial techno, schranz og hard techno. Kardinal Bertram beskrives som schranz/industrial techno, og Joe Sane som hard/industrial techno. KAITEN kunne ikke verificeres. Industrial og EBM-scenen er ikke repræsenteret, så "Industrial" er forkert her |
+| 2026-11-07 | Cassie Raptor, Kardinal Bertram, LMN (Hangaren) | industrial | **Industrial Techno + Hard Techno** | Høj | Cassie Raptor beskrives som industrial/hard techno med metal- og dark techno-rødder. Kardinal Bertram som ovenfor. LMN optræder på New Game+-lineups, men har ingen offentlig profil |
+| 2026-11-27 | Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY m.fl. (Culture Box) | industrial + trance | **Industrial Techno + Trance** | Middel | Black Box er Kardinal Bertram/LMN (industrial techno). STEAMBOI beskrives som electronica/techno/trance og støtter den eksisterende Trance-tag. Red Box-lineuppen er ikke undersøgt |
+| 2026-11-11 | Moor Mother (US) | industrial + ambient-experimental (legacy) | **Industrial + Experimental** | Høj | Moor Mother er et eksperimentelt projekt, som kritikere beskriver som industrial noise, power electronics, spoken word og abstrakt hiphop. Det er ikke techno. Legacy-værdien erstattes af Experimental |
+| 2026-12-09 | Kontravoid (US) + Spike Hellis (US) | electro + industrial | **Behold: Electro + Industrial** | Høj | Kontravoid: mørk pop mellem EBM, electro og goth. Spike Hellis: EBM, industrial og techno. EBM hører til industrial-linjen, ikke Industrial Techno |
+| 2027-01-23 | Electro Shock Therapy @ Basement | electro + industrial | **Behold: Electro + Industrial** | Middel | Eventets egen KultuNaut-tekst nævner EBM. Ingen ekstern kilde fundet om arrangementet |
+| 2026-11-07 | SORT + support | industrial + electronic-other | **Industrial (fjern Electronic / Other)** | Lav | Ingen troværdig kilde fundet om akten. Industrial bevares (admin-valg). Electronic / Other skal fjernes, fordi den ikke må kombineres med en anden genre. Bør verificeres hos arrangøren |
+
+**Konsekvens for Techno-filtret:** med anbefalingerne vises de tre Kardinal Bertram-nætter igen under Techno (via Industrial Techno). De fire Industrial-events vises ikke under Techno, og det er tilsigtet.
+
+**Kilder:**
+- [RA: Kardinal Bertram](https://de.ra.co/dj/kardinalbertram)
+- [SoundCloud: Kardinal Bertram](https://soundcloud.com/kardinalbertram)
+- [ADE: Kardinal Bertram](https://www.amsterdam-dance-event.nl/en/artists-speakers/kardinal-bertram/26140/)
+- [Trifec: Joe Sane](https://trifec.one/joe-sane/)
+- [Trifec: Cassie Raptor](https://trifec.one/cassie-raptor/)
+- [Kaltblut: Cassie Raptor](https://www.kaltblut-magazine.com/cassie-raptor/)
+- [SoundCloud: steamboi](https://soundcloud.com/steamboi)
+- [CPH Distortion: steamboi](https://www.cphdistortion.dk/artists/steamboi)
+- [Treble: Moor Mother](https://www.treblezine.com/reviews/moor-mother-analog-fluids-of-sonic-black-holes-review-album-of-the-week/)
+- [Interview Magazine: Moor Mother](https://interviewmagazine.com/art/performance-artist-moor-mother-isnt-afraid-confrontation)
+- [post-punk.com: Kontravoid](https://post-punk.com/?p=93915)
+- [First Avenue: Spike Hellis](https://first-avenue.com/?p=93661)
+
 ## R2 – Ambient / Experimental (legacy) (17 publicerede + 1 upublicerede, 6 kommende)
 Pr. event vælges: **Ambient**, **Experimental**, begge (2 tags) eller en anden genre. Den gamle værdi fungerer og vises fortsat, indtil eventet er rettet.
 

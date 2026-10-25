@@ -215,6 +215,14 @@ describe("EventExplorer — genre links (main genres include subgenres, legacy s
     expect(notice()).toBeNull();
   });
 
+  it("?genre=ambient and ?genre=experimental each still show the unreviewed legacy Ambient / Experimental event", () => {
+    renderGenresAt("/?genre=ambient");
+    expect(listed()).toEqual(["Ambient Night", "Legacy Ambient Night"]);
+    cleanup();
+    renderGenresAt("/?genre=experimental");
+    expect(listed()).toEqual(["Experimental Night", "Legacy Ambient Night"]);
+  });
+
   it("?genre=drum-and-bass includes Jungle; ?genre=jungle is exact", () => {
     renderGenresAt("/?genre=drum-and-bass");
     expect(listed()).toEqual(["Jungle Night"]);
