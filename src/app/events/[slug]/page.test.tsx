@@ -494,6 +494,33 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
+  it("labels a practical-only text 'Practical information' and keeps it out of the JSON-LD description", async () => {
+    const text = "In Store and Lille VEGA the cloakroom must always be used for safety reasons. A cloakroom fee is charged.";
+    await renderPage(makeEvent({ description: text, aboutKind: "practical" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Practical information" })).toBeTruthy();
+    expect(screen.queryByText("About")).toBeNull();
+    expect(screen.getByText(text)).toBeTruthy();
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBeUndefined();
+  });
+
+  it("puts an About text (in its own language, unchanged) in the JSON-LD description", async () => {
+    await renderPage(makeEvent({ description: "En rigtig beskrivelse af aftenen.", aboutKind: "about" }));
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBe("En rigtig beskrivelse af aftenen.");
+  });
+
+  it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {
+    await renderPage(
+      makeEvent({
+        description:
+          "PRACTICAL INFORMATION\nDoors open at 23:00 and the night runs until five in the morning, with a cloakroom.\n\nListen: https://soundcloud.com/pinkmonkey",
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "PRACTICAL INFORMATION" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /SoundCloud/ }).getAttribute("href")).toBe("https://soundcloud.com/pinkmonkey");
+  });
+
   it("a maximally sparse event (title + date/time + venue only, no genre/description/links/artists) renders its core fields with no empty optional sections", async () => {
     await renderPage(
       makeEvent({

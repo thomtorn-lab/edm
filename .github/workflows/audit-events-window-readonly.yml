@@ -10,6 +10,11 @@ name: Audit Published Events Window (Read-Only)
 # Exception: per event, whether its genre was set manually by an admin
 # (genreManuallySet: primaryGenre/subgenres), computed in SQL. The override
 # list itself is never read or printed.
+# Second exception (language QA): per event, the latest Danish source text
+# the public site does not show (Poolen/Pumpehuset), read from
+# event_change_log rows of type withheld_description only — never any other
+# change history. A "Danish descriptions" section lists them together with
+# shown descriptions that read as Danish. Nothing is changed or translated.
 # Also prints an electronic-relevance recheck per event (assessRelevance on
 # the full stored text, stored RA link and cached Discogs rows; never the
 # stored genre). It is a CURRENT recomputation, not the historical publish

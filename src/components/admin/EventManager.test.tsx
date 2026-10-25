@@ -1039,3 +1039,21 @@ describe("EventManager — genre system revision (2026-10-24): grouped genre opt
     expect(body.patch).not.toHaveProperty("subgenres");
   });
 });
+
+describe("EventManager — withheld source description (2026-10-25)", () => {
+  it("shows the source's Danish text read-only while editing, without touching the Description field", () => {
+    const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset.";
+    render(<EventManager events={[makeEvent()]} venues={VENUES} withheldDescriptions={{ "e-1": DA }} />);
+    expect(screen.queryByText(DA)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByText("Source description not shown publicly (Danish)")).toBeTruthy();
+    expect(screen.getByText(DA)).toBeTruthy();
+    expect((screen.getByLabelText("Description") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("shows nothing extra for an event without one", () => {
+    render(<EventManager events={[makeEvent()]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByText("Source description not shown publicly (Danish)")).toBeNull();
+  });
+});

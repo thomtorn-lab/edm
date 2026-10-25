@@ -1,7 +1,12 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, extractLowestDkkAmount, truncateAtBoundary } from "./htmlExtraction";
+import {
+  decodeHtmlEntities,
+  htmlToText,
+  htmlToParagraphText,
+  extractLowestDkkAmount,
+} from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -179,7 +184,10 @@ export function parseAliceEventDetailHtml(html: string, entry: AliceProgramEntry
 
   const contentMatch = html.match(/class="[^"]*EventContent--content[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/);
   const fullDescriptionText = contentMatch ? htmlToText(contentMatch[1]).replace(/\n/g, " ").trim() : "";
-  const description = fullDescriptionText ? truncateAtBoundary(fullDescriptionText, 800) : entry.teaser;
+  // Stored description keeps the page's paragraphs (About-text formatting,
+  // 2026-10-15); fullDescriptionText above stays flat for genre evidence.
+  const structuredDescription = contentMatch ? htmlToParagraphText(contentMatch[1]) : "";
+  const description = structuredDescription || entry.teaser;
 
   // Genre evidence, evidence-hierarchy order (same rule as poolenAdapter.ts):
   // a specific subgenre keyword in the event's own description text is
