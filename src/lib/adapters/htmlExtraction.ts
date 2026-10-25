@@ -65,7 +65,10 @@ const ZERO_WIDTH_RE = /[​-‍﻿]/g;
  * goes through it, and a second harmless pass is the price of one universal
  * integration point instead of per-source conditional logic.
  */
-export function normalizeExtractedText(text: string, options: { singleLine?: boolean } = {}): string {
+export function normalizeExtractedText(
+  text: string,
+  options: { singleLine?: boolean; keepParagraphs?: boolean } = {},
+): string {
   if (!text) return text;
   let out = text
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
@@ -89,6 +92,17 @@ export function normalizeExtractedText(text: string, options: { singleLine?: boo
   if (options.singleLine) {
     return out.replace(/\s+/g, " ").trim();
   }
+  if (options.keepParagraphs) {
+    // Stored-description shape (About-text formatting, 2026-10-15): a single
+    // blank line between paragraphs is the only paragraph signal plain text
+    // has, so it is kept; longer runs of blank lines collapse to one.
+    return out
+      .split("\n")
+      .map((l) => l.replace(/[ \t]+/g, " ").trim())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
   return out
     .split("\n")
     .map((l) => l.replace(/[ \t]+/g, " ").trim())
@@ -96,6 +110,34 @@ export function normalizeExtractedText(text: string, options: { singleLine?: boo
     .join("\n")
     .trim();
 }
+
+/**
+ * Like htmlToText, but keeps the paragraph structure a browser would show:
+ * block elements (<p>, <div>, headings, lists) are separated by a blank
+ * line, <br>/<li> by a single line break. Used for stored event
+ * descriptions only (About-text formatting, 2026-10-15) — genre/relevance
+ * evidence keeps using htmlToText's flat form unchanged.
+ */
+export function htmlToParagraphText(html: string): string {
+  const marked = html
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\/(?:p|div|h[1-6]|ul|ol|section|article|blockquote|table)>/gi, "\n\n")
+    .replace(/<(?:p|div|h[1-6]|ul|ol|section|article|blockquote|table)\b[^>]*>/gi, "\n\n")
+    .replace(/<\/(?:li|tr)>/gi, "\n");
+  return normalizeExtractedText(marked, { keepParagraphs: true });
+}
+
+/**
+ * Safety ceiling for a stored event description — NOT a display cut
+ * (About-text formatting, 2026-10-24). Adapters store the full description;
+ * long texts are handled by the page layout, never by dropping stored
+ * information (Show more / Show less folds long texts on the page). The
+ * ceiling exists for one concrete technical reason: a broken extractor (a
+ * selector that stops matching its end marker) could otherwise store an
+ * entire web page as "description". Real descriptions are far below it (the longest fixture description is about
+ * 5,000 characters). Applied once, at the shared pipeline choke point.
+ */
+export const DESCRIPTION_SAFETY_MAX_LENGTH = 20_000;
 
 /** Renders an HTML fragment to plain text the way a browser would display it. */
 export function htmlToText(html: string): string {
@@ -148,6 +190,9 @@ export function stripBareUrls(text: string): string {
 export function truncateAtBoundary(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   const slice = text.slice(0, maxLength);
+  // A paragraph boundary is the cleanest cut of all when one exists late enough.
+  const lastParagraph = slice.lastIndexOf("\n\n");
+  if (lastParagraph > maxLength * 0.7) return slice.slice(0, lastParagraph).trim();
   const lastSentenceEnd = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("! "), slice.lastIndexOf("? "));
   if (lastSentenceEnd > maxLength * 0.5) return slice.slice(0, lastSentenceEnd + 1).trim();
   const lastSpace = slice.lastIndexOf(" ");
@@ -205,11 +250,10 @@ export function sanitizeExtractedTitle(title: string, maxLength = 200): string {
 // reliable rule, not a robust classifier. Reused by any adapter with the
 // same risk (pre-launch QA audit, 2026-08-29, found Poolen had no such
 // guard despite the same Danish-source-text risk as Pumpehuset).
-const DANISH_LETTERS = /[æøåÆØÅ]/;
-
-export function isLikelyDanish(text: string): boolean {
-  return DANISH_LETTERS.test(text);
-}
+// Implementation lives in src/lib/languageDetection.ts (2026-10-25: an
+// English text is no longer treated as Danish just for naming a Danish
+// place); re-exported here so existing imports keep working.
+export { isLikelyDanish } from "../languageDetection";
 
 /**
  * True when `url` resolves to the same host as `baseUrl` (www.-insensitive).

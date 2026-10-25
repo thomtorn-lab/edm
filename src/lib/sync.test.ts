@@ -1884,3 +1884,21 @@ describe("classifyVenueBlock (venue-block visibility precision fix, follow-up to
     expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "hold" })).toBe("other_blockers");
   });
 });
+
+describe("withheld descriptions never reach events.description (Poolen/Pumpehuset, 2026-10-25)", () => {
+  const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer.";
+  const EN = "An American artist bringing deep basslines and dark techno to Copenhagen for one night.";
+  const withheld = raw({ sourceId: "src-pumpehuset", description: null, withheldDescription: DA });
+  const owned = (description: string | null) => target({ canonicalSourceId: "src-pumpehuset", description });
+
+  it("proposes no description change, whether the stored one is empty, Danish or English", () => {
+    for (const stored of [null, "Pumpehuset præsenterer en aften med elektronisk musik.", EN]) {
+      expect(buildSyncPatch(withheld, resolved, owned(stored)).patch.description).toBeUndefined();
+    }
+  });
+
+  it("a public description is still patched as before", () => {
+    const both = raw({ sourceId: "src-pumpehuset", description: EN, withheldDescription: DA });
+    expect(buildSyncPatch(both, resolved, owned(null)).patch.description).toBe(EN);
+  });
+});

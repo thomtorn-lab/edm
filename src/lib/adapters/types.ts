@@ -60,6 +60,17 @@ export interface RawCandidateEvent {
    */
   relevanceText?: string | null;
   /**
+   * The source's own description when the adapter withholds it from public
+   * display (`description` is then null) — Poolen's and Pumpehuset's
+   * English-language guard (2026-10-25). Kept so admin and the read-only
+   * editorial audit (daily QA) can see the original text instead of it
+   * being dropped. Recorded only in event_change_log by the sync (see
+   * src/lib/withheldDescriptions.ts) — never in events.description, never
+   * in a Discovery Queue row, and never read by classification, relevance or
+   * moved-event detection, so what is stored and shown is exactly as before.
+   */
+  withheldDescription?: string | null;
+  /**
    * A dedicated, event-level genre-listing field — e.g. Gravity's own
    * "Music:" info-row — extracted via genuine structural parsing of the
    * source's own markup/schema (a specific HTML shape, a specific JSON-LD

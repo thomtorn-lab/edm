@@ -1,6 +1,6 @@
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText, hasRichGenreEvidence, maskLineupNamesWithGenreKeywords } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, truncateAtBoundary } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, htmlToParagraphText } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -321,7 +321,9 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
   // (relevanceText) — the shorter, display-truncated `description` is
   // derived from it, same split as every other adapter.
   const fullDescriptionText = description ? htmlToText(description) : "";
-  const truncatedDescription = fullDescriptionText ? truncateAtBoundary(fullDescriptionText, 800) : null;
+  // Stored text is the full description with its paragraph breaks
+  // (About-text formatting, 2026-10-15/24) — no display-length cut here.
+  const storedDescription = description ? htmlToParagraphText(description) || null : null;
 
   const performers = Array.isArray(event.performer) ? event.performer : [];
   const artists: string[] = [];
@@ -397,7 +399,7 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
     sourceId: HVADERPAA_SOURCE_ID,
     sourceUrl: eventUrl,
     title,
-    description: truncatedDescription,
+    description: storedDescription,
     relevanceText: fullDescriptionText || null,
     artists,
     lineupNamesAreStructured: true, // JSON-LD performer[] (genre QA, 2026-10-17)

@@ -494,6 +494,33 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
+  it("labels a practical-only text 'Practical information' and keeps it out of the JSON-LD description", async () => {
+    const text = "In Store and Lille VEGA the cloakroom must always be used for safety reasons. A cloakroom fee is charged.";
+    await renderPage(makeEvent({ description: text, aboutKind: "practical" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Practical information" })).toBeTruthy();
+    expect(screen.queryByText("About")).toBeNull();
+    expect(screen.getByText(text)).toBeTruthy();
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBeUndefined();
+  });
+
+  it("puts an About text (in its own language, unchanged) in the JSON-LD description", async () => {
+    await renderPage(makeEvent({ description: "En rigtig beskrivelse af aftenen.", aboutKind: "about" }));
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBe("En rigtig beskrivelse af aftenen.");
+  });
+
+  it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {
+    await renderPage(
+      makeEvent({
+        description:
+          "PRACTICAL INFORMATION\nDoors open at 23:00 and the night runs until five in the morning, with a cloakroom.\n\nListen: https://soundcloud.com/pinkmonkey",
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "PRACTICAL INFORMATION" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /SoundCloud/ }).getAttribute("href")).toBe("https://soundcloud.com/pinkmonkey");
+  });
+
   it("a maximally sparse event (title + date/time + venue only, no genre/description/links/artists) renders its core fields with no empty optional sections", async () => {
     await renderPage(
       makeEvent({
@@ -1192,7 +1219,21 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(screen.queryByText(/video preview/i)).toBeNull();
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
     // The iframe keeps its own accessible title (the video's title).
-    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("Live at Culture Box");
+    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("YouTube video: Live at Culture Box");
+  });
+
+  it("an admin-chosen video with no title and no artist name is named after the event, never after a lineup name", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({ ...VIDEO, artistName: null, videoTitle: "  " });
+    await renderPage(makeEvent({ title: "Warehouse Night", artists: ARTISTS }));
+    const title = document.querySelector("iframe")!.getAttribute("title");
+    expect(title).toBe("YouTube video for Warehouse Night");
+    expect(title).not.toContain("TIM ANDRESEN");
+  });
+
+  it("with no video title, an automated match is named after its artist", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({ ...VIDEO, videoTitle: null });
+    await renderPage(makeEvent({ artists: ARTISTS }));
+    expect(document.querySelector("iframe")!.getAttribute("title")).toBe("YouTube video: TIM ANDRESEN");
   });
 
   it("SoundCloud only: 'Get a taste' then 'Listen on SoundCloud', no #video anchor, links right under the heading", async () => {
