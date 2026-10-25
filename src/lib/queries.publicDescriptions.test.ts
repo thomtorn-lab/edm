@@ -54,9 +54,27 @@ beforeEach(() => {
   queue = [];
   throwOnCall = null;
   call = 0;
+  process.env.ENGLISH_ONLY_ABOUT_TEXTS = "true";
 });
 
-describe("public event queries: English-only descriptions", () => {
+describe("rollout flag off (ENGLISH_ONLY_ABOUT_TEXTS unset — the default at merge)", () => {
+  it("never hides an existing About text: translation when valid, otherwise the original as today", async () => {
+    delete process.env.ENGLISH_ONLY_ABOUT_TEXTS;
+    queue = [
+      [eventRow("translated", DA), eventRow("pending", DA), eventRow("english", EN_ORIGINAL)],
+      [VENUE_ROW],
+      [{ eventId: "translated", sourceHash: descriptionHash(DA), status: "translated", translatedText: EN_TRANSLATION }],
+    ];
+    const events = await getPublishedEventsWithVenue();
+    expect(Object.fromEntries(events.map((e) => [e.id, e.description]))).toEqual({
+      translated: EN_TRANSLATION,
+      pending: DA,
+      english: EN_ORIGINAL,
+    });
+  });
+});
+
+describe("public event queries with ENGLISH_ONLY_ABOUT_TEXTS=true", () => {
   it("homepage list: translated → English; untranslated Danish → null; English original → kept; none → null", async () => {
     queue = [
       [eventRow("translated", DA), eventRow("pending", DA), eventRow("english", EN_ORIGINAL), eventRow("empty", null)],

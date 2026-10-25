@@ -128,6 +128,16 @@ describe("publicDescriptionFor (what the public site may show: English or nothin
     expect(publicDescriptionFor("Techno all night", { sourceHash: descriptionHash("Techno all night"), status: "english", translatedText: null })).toBe("Techno all night");
     expect(publicDescriptionFor("Techno all night", null)).toBeNull(); // too short to be sure until the job confirms it
   });
+  it("with the rollout flag off, an untranslated original is shown as before (a valid translation still wins)", () => {
+    expect(publicDescriptionFor(DANISH, null, { englishOnly: false })).toBe(DANISH);
+    expect(publicDescriptionFor(DANISH, { sourceHash: hash, status: "translated", translatedText: "EN" }, { englishOnly: false })).toBe("EN");
+  });
+  it("short English texts show without waiting for the job; short Danish texts never pass", () => {
+    expect(publicDescriptionFor("Techno all night long with the residents", null)).toBe("Techno all night long with the residents");
+    for (const da of ["Techno hele natten", "Fest i aften med DJ", "Gratis for alle", "Kom og dans til house i aften"]) {
+      expect(publicDescriptionFor(da, null)).toBeNull();
+    }
+  });
   it("empty → nothing", () => {
     expect(publicDescriptionFor(null, null)).toBeNull();
     expect(publicDescriptionFor("  ", null)).toBeNull();

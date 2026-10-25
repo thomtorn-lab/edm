@@ -24,7 +24,8 @@ const OTHER_WORDS = new Set(
 /**
  * Cheap, offline pre-check: true only when the text is very clearly
  * English (plenty of English function words, almost none from other
- * languages). Anything less certain — short texts, mixed-language texts —
+ * languages; stricter still for texts under 12 words). Anything less
+ * certain — very short texts, mixed-language texts —
  * goes to the model, which decides itself whether anything needs
  * translating. A false "not English" only costs one API call; this function
  * is tuned to never call a non-English text English.
@@ -34,13 +35,18 @@ export function isClearlyEnglish(text: string): boolean {
     .toLowerCase()
     .replace(/https?:\/\/\S+|www\.\S+/g, " ")
     .match(/\p{L}+/gu);
-  if (!words || words.length < 12) return false;
+  if (!words || words.length < 4) return false;
   let english = 0;
   let other = 0;
   for (const w of words) {
     if (ENGLISH_WORDS.has(w)) english++;
     else if (OTHER_WORDS.has(w)) other++;
   }
+  // Short texts (2026-10-25): a short English text should not wait for the
+  // translation job, but a short text gives little evidence — so it must
+  // have at least two English function words, a quarter of its words, and
+  // not one word from another language.
+  if (words.length < 12) return english >= 2 && english / words.length >= 0.25 && other === 0;
   return english / words.length >= 0.12 && other / words.length <= 0.01;
 }
 

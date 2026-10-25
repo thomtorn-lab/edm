@@ -17,7 +17,8 @@ name: Translate Event Descriptions
 # about an hour and the existing backlog is worked through in batches. A
 # scheduled run would use mode "apply" (see INPUT_MODE below). Without the
 # secret, runs still succeed: clearly-English descriptions are recorded,
-# everything else stays pending and hidden on the public site.
+# everything else stays pending (original shown, or hidden once
+# ENGLISH_ONLY_ABOUT_TEXTS=true). Full order: docs/about-text-english-rollout.md.
 #
 # Secrets used: DATABASE_URL, ANTHROPIC_API_KEY (optional). Optional
 # repository variable DESCRIPTION_TRANSLATION_MODEL overrides the model.

@@ -38,7 +38,8 @@ import {
  * are pending and how many of those would need an API call.
  * --mode=apply requires ANTHROPIC_API_KEY for non-English texts; without it,
  * clearly-English texts are still recorded and the rest are left pending
- * (exit code 0 — non-English descriptions stay hidden on the public site).
+ * (exit code 0 — untranslated descriptions show their original text, or are
+ * hidden once ENGLISH_ONLY_ABOUT_TEXTS is on).
  * DESCRIPTION_TRANSLATION_MODEL overrides the model (default: DEFAULT_TRANSLATION_MODEL).
  * One fixed model per run, no automatic fallback to another model.
  */
@@ -145,7 +146,7 @@ async function main(): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : null;
   const model = process.env.DESCRIPTION_TRANSLATION_MODEL || DEFAULT_TRANSLATION_MODEL;
   if (!client) {
-    console.log("::notice::ANTHROPIC_API_KEY is not set — recording clearly-English descriptions only; others stay pending (hidden on the public site until translated).");
+    console.log("::notice::ANTHROPIC_API_KEY is not set — recording clearly-English descriptions only; others stay pending (original text shown, or hidden once ENGLISH_ONLY_ABOUT_TEXTS is on).");
   }
 
   const counts = { english: 0, translated: 0, failed: 0, skipped: 0, review: 0 };

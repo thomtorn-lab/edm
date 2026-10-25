@@ -23,6 +23,7 @@ import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreE
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
 import { publicDescriptionFor, type CachedTranslation } from "./translation/englishDescription";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
+import { isEnglishOnlyAboutEnabled } from "./translation/featureFlag";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 import type { EventChangeEntry } from "./dataQuality";
@@ -124,7 +125,9 @@ async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<E
  * each event's `description` with the text the public site may show — the
  * cached English version of exactly the current description, the
  * description itself when it is (confirmed or clearly) English, or null.
- * See publicDescriptionFor. Applied by every PUBLIC event query (event page,
+ * See publicDescriptionFor. Until ENGLISH_ONLY_ABOUT_TEXTS=true
+ * (translation/featureFlag.ts), a description without a translation is
+ * shown as before instead of null. Applied by every PUBLIC event query (event page,
  * homepage, venue and genre pages, calendar exports, JSON-LD), so no
  * consumer can show an original non-English text by accident. Admin queries
  * never call this: admin always sees and edits the original description.
@@ -153,11 +156,13 @@ async function withPublicDescriptions(list: EventWithVenue[]): Promise<EventWith
       console.error("[queries] description translation lookup failed:", err instanceof Error ? err.message : String(err));
     }
   }
+  const englishOnly = isEnglishOnlyAboutEnabled();
   return list.map((e) => {
     // Classified from the original text (the practical-vocabulary rule is
     // Danish + English); "empty" (bare labels only) shows nothing.
     const aboutKind = classifyAboutText(e.description);
-    const description = aboutKind === "empty" ? null : publicDescriptionFor(e.description, cached.get(e.id) ?? null);
+    const description =
+      aboutKind === "empty" ? null : publicDescriptionFor(e.description, cached.get(e.id) ?? null, { englishOnly });
     return { ...e, description, aboutKind: description ? aboutKind : null };
   });
 }

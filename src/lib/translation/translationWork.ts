@@ -5,7 +5,8 @@ import type { TranslationContext } from "./descriptionTranslation";
 /**
  * A failed description is retried on each of the next runs up to this many
  * attempts; after that, once a day (FAILED_RETRY_INTERVAL_MS) — it stays
- * hidden on the public site until it has a valid English version, so it is
+ * hidden on the public site (once ENGLISH_ONLY_ABOUT_TEXTS is on) until it
+ * has a valid English version, so it is
  * never given up on, but a persistently failing text can't run up cost.
  */
 export const MAX_TRANSLATION_ATTEMPTS = 3;
