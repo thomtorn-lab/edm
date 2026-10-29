@@ -55,22 +55,20 @@ export function technicalFindings(s:QaSnapshot) {
  * Human verification expires via next_check_at independently.
  */
 export function buildQaInputs(s:QaSnapshot):QaInput[] {
-  const links=new Map<string,Row[]>(),changes=new Map<string,Row[]>();
+  const links=new Map<string,Row[]>();
   for(const l of s.source_event_links) {
     const id=str(l.event_id);links.set(id,[...(links.get(id)??[]),l]);
-  }
-  for(const c of s.event_change_log) {
-    const id=str(c.event_id);changes.set(id,[...(changes.get(id)??[]),c]);
   }
   const result:QaInput[]=[];
   const add=(id:string,category:QaInput["category"],value:unknown)=>result.push({
     subject_id:id,category,source_fingerprint:fingerprint(value)});
   for(const e of s.events) {
-    const id=str(e.id), l=links.get(id)??[], c=changes.get(id)??[];
-    const changed=c.filter(x=>["title","artists","start_datetime","venue_id","sub_venue","official_event_url","ticket_url","primary_genre","subgenres"].some(field=>arr(x.fields_changed).includes(field)));
+    const id=str(e.id), l=links.get(id)??[];
+    // Changes are exported for evidence, but timestamps/history alone do not reopen checks.
+    // Reopen only when the current category-specific material actually changes.
     add(id,"source_facts",{title:e.title,artists:e.artists,start:e.start_datetime,venue:e.venue_id,
       room:e.sub_venue,cancelled:e.cancelled,postponed:e.postponed,sold_out:e.sold_out,
-      source_links:l.filter(x=>x.role==="official").map(x=>[x.source_id,x.source_url]),changes:changed});
+      source_links:l.filter(x=>x.role==="official").map(x=>[x.source_id,x.source_url])});
     add(id,"music_genre",{artists:e.artists,title:e.title,primary:e.primary_genre,
       subgenres:e.subgenres,confidence:e.genre_confidence});
     add(id,"links",{official:e.official_event_url,ticket:e.ticket_url,ra:e.resident_advisor_url,
