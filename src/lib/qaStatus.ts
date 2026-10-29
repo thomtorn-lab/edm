@@ -42,6 +42,7 @@ export function validateQaStatus(value:unknown): asserts value is QaStatus {
   }
 }
 function stable(value:unknown):unknown {
+  if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value==="object") return Object.fromEntries(
     Object.entries(value as Record<string,unknown>).sort(([a],[b])=>a.localeCompare(b))
