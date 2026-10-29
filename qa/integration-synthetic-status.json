@@ -1,8 +1,43 @@
 {
   "schema_version": 1,
-  "generation": 0,
-  "snapshot_generated_at": null,
+  "generation": 1,
+  "snapshot_generated_at": "2026-10-29T10:00:00.000Z",
   "last_successful_run_at": null,
-  "checks": [],
-  "reported_issues": []
+  "checks": [
+    {
+      "subject_id": "synthetic-event-1",
+      "category": "music_genre",
+      "status": "completed",
+      "source_fingerprint": "genre-a",
+      "checked_at": "2026-10-29T09:00:00.000Z",
+      "next_check_at": "2026-11-02T09:00:00.000Z",
+      "evidence": [
+        "synthetic genre review"
+      ],
+      "reported_issue_ids": [
+        "synthetic-issue-1"
+      ]
+    },
+    {
+      "subject_id": "synthetic-event-1",
+      "category": "links",
+      "status": "completed",
+      "source_fingerprint": "links-a",
+      "checked_at": "2026-10-29T09:00:00.000Z",
+      "next_check_at": "2026-10-30T09:00:00.000Z",
+      "evidence": [
+        "synthetic link review"
+      ],
+      "reported_issue_ids": []
+    }
+  ],
+  "reported_issues": [
+    {
+      "id": "synthetic-issue-1",
+      "subject_id": "synthetic-event-1",
+      "category": "music_genre",
+      "reported_at": "2026-10-29T09:00:00.000Z",
+      "resolved_at": null
+    }
+  ]
 }
