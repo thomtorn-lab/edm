@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 jobs:
-  verify:
+  typecheck:
     if: github.ref == 'refs/heads/feature/qa-export-status-v1-20261029'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -17,13 +17,47 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: Install locked dependencies
-        run: npm ci
-      - name: TypeScript typecheck (no build)
+      - run: npm ci
+      - name: Generate Next.js route types (no build or DB)
+        run: npx next typegen
+      - name: TypeScript typecheck
         run: npx tsc --noEmit
-      - name: QA unit tests
+  qa-tests:
+    if: github.ref == 'refs/heads/feature/qa-export-status-v1-20261029'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: QA status and snapshot tests
         run: npx vitest run src/lib/qaStatus.test.ts src/lib/qaSnapshotEnrichment.test.ts
-      - name: Existing relevant regression tests
+  regressions:
+    if: github.ref == 'refs/heads/feature/qa-export-status-v1-20261029'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Existing duplicate, source-health and read-only transaction tests
         run: npx vitest run src/lib/dedup.test.ts src/lib/sourceHealth.test.ts src/db/readOnlyTransaction.test.ts
-      - name: Validate GitHub workflow YAML and DST schedule
+  workflow-validation:
+    if: github.ref == 'refs/heads/feature/qa-export-status-v1-20261029'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Validate YAML and Copenhagen DST scheduling
         run: node --import tsx src/lib/qaWorkflowValidation.test.ts
