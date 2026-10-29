@@ -66,3 +66,92 @@ describe("QA status continuity", () => {
     await expect(persistQaStatus(read,async()=>{},x=>({...x,generation:x.generation+1}))).rejects.toThrow(/verification failed/);
   });
 });
+
+
+describe("end-to-end synthetic QA ledger with SHA compare-and-swap",()=>{
+  const at=(day:number)=>`2026-10-${String(day).padStart(2,"0")}T10:00:00Z`;
+  const sha=(n:number)=>n.toString(16).padStart(40,"0");
+  function fakeGithub(initial:QaStatus) {
+    let file=JSON.stringify(initial),version=1,writes=0;
+    let denyRead=false,failWrite=false,interrupt=false;
+    return {
+      read:async()=>{if(denyRead)throw Error("403 denied");return {sha:sha(version),content:file};},
+      write:async(expected:string,content:string)=>{
+        writes++;
+        if(failWrite)throw Error("409 conflict");
+        if(expected!==sha(version))throw Error("409 stale SHA");
+        if(interrupt)return;
+        file=content;version++;
+      },
+      get state(){return JSON.parse(file) as QaStatus;},
+      get writes(){return writes;},
+      deny:()=>{denyRead=true;},
+      conflict:()=>{failWrite=true;},
+      interrupted:()=>{interrupt=true;},
+      corrupt:()=>{file="{invalid-json";},
+      simulateConcurrentChange:()=>{version++;}
+    };
+  }
+  it("reconciles, writes with SHA, rereads and resumes across 3 synthetic generations",async()=>{
+    const github=fakeGithub(empty);
+    const inputs=[
+      {subject_id:"synthetic-e1",category:"music_genre" as const,source_fingerprint:"genre-A"},
+      {subject_id:"synthetic-e1",category:"links" as const,source_fingerprint:"links-A"}
+    ];
+    const first=await persistQaStatus(github.read,github.write,x=>reconcileQaStatus(x,inputs,at(29)));
+    expect(first.generation).toBe(1);
+    expect(first.checks.every(x=>x.status==="pending")).toBe(true);
+    // Synthetic human verification checkpoint; no production records.
+    const verified:QaStatus={...first,generation:2,checks:first.checks.map(c=>({
+      ...c,status:"completed" as const,checked_at:at(29),
+      next_check_at:c.category==="links"?at(30):"2026-11-02T10:00:00Z",
+      evidence:["synthetic evidence"],
+      reported_issue_ids:c.category==="music_genre"?["synthetic-issue-1"]:[]
+    })),reported_issues:[{id:"synthetic-issue-1",subject_id:"synthetic-e1",
+      category:"music_genre",reported_at:at(29),resolved_at:null}]};
+    await persistQaStatus(github.read,github.write,()=>verified);
+    const expired=await persistQaStatus(github.read,github.write,x=>reconcileQaStatus(x,inputs,at(30)));
+    expect(expired.generation).toBe(3);
+    expect(expired.checks.find(x=>x.category==="links")?.status).toBe("pending");
+    expect(expired.checks.find(x=>x.category==="music_genre")?.status).toBe("completed");
+    const changed=await persistQaStatus(github.read,github.write,x=>reconcileQaStatus(x,[
+      {...inputs[0],source_fingerprint:"genre-B"},inputs[1]],at(31)));
+    expect(changed.generation).toBe(4);
+    expect(changed.checks.find(x=>x.category==="music_genre")?.status).toBe("pending");
+    expect(changed.checks.find(x=>x.category==="links")?.source_fingerprint).toBe("links-A");
+    expect(changed.reported_issues).toEqual(verified.reported_issues);
+    expect(changed.checks.find(x=>x.category==="music_genre")?.reported_issue_ids).toEqual(["synthetic-issue-1"]);
+    expect(github.state).toEqual(changed);
+    expect(github.writes).toBe(4);
+  });
+  it("stops on access denial without writing",async()=>{
+    const gh=fakeGithub(empty);gh.deny();
+    await expect(persistQaStatus(gh.read,gh.write,x=>reconcileQaStatus(x,[],at(29)))).rejects.toThrow(/403/);
+    expect(gh.writes).toBe(0);
+  });
+  it("rejects corrupt JSON without writing",async()=>{
+    const gh=fakeGithub(empty);gh.corrupt();
+    await expect(persistQaStatus(gh.read,gh.write,x=>reconcileQaStatus(x,[],at(29)))).rejects.toThrow();
+    expect(gh.writes).toBe(0);
+  });
+  it("rejects stale snapshot without writing or losing history",async()=>{
+    const original=reconcileQaStatus(empty,[],at(30));
+    const gh=fakeGithub(original);
+    await expect(persistQaStatus(gh.read,gh.write,x=>reconcileQaStatus(x,[],at(29)))).rejects.toThrow(/Stale/);
+    expect(gh.writes).toBe(0);expect(gh.state).toEqual(original);
+  });
+  it("rejects concurrent SHA changes without overwriting",async()=>{
+    const gh=fakeGithub(empty);gh.simulateConcurrentChange();
+    const stale=sha(1);
+    await expect(gh.write(stale,JSON.stringify({...empty,generation:1}))).rejects.toThrow(/409/);
+    expect(gh.state).toEqual(empty);
+  });
+  it("rejects 409 conflict and interrupted write, preserves original state",async()=>{
+    const gh=fakeGithub(empty);gh.conflict();
+    await expect(persistQaStatus(gh.read,gh.write,x=>reconcileQaStatus(x,[],at(29)))).rejects.toThrow(/409/);
+    expect(gh.state).toEqual(empty);
+    const interrupted=fakeGithub(empty);interrupted.interrupted();
+    await expect(persistQaStatus(interrupted.read,interrupted.write,x=>reconcileQaStatus(x,[],at(29)))).rejects.toThrow(/verification failed/);
+    expect(interrupted.state).toEqual(empty);
+  });
+});
