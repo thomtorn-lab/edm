@@ -6,6 +6,7 @@ import { Client } from "pg";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { beginReadOnlyTransaction } from "./readOnlyTransaction";
+import { technicalFindings, buildQaInputs } from "@/lib/qaSnapshotEnrichment";
 
 export async function exportQaSnapshot(client: Pick<Client, "query">, generatedAt: string) {
   const events = await client.query(`
@@ -30,7 +31,7 @@ export async function exportQaSnapshot(client: Pick<Client, "query">, generatedA
       ORDER BY created_at, id`, [ids]),
     client.query(`SELECT id, source_name, source_type, trust_level, active,
       last_successful_sync, last_attempted_sync, last_complete_sync_at,
-      last_error, events_found, events_updated
+      last_error, events_found, events_updated, adapter, sync_frequency
       FROM sources ORDER BY id`),
     client.query(`SELECT id, source_id, probable_title, probable_start, probable_venue_name,
       source_url, status, predicted_genre, detected_lineup, created_at, last_seen_at
@@ -38,8 +39,12 @@ export async function exportQaSnapshot(client: Pick<Client, "query">, generatedA
       WHERE status = 'pending' AND (probable_start IS NULL OR probable_start >= $1::timestamptz)
       ORDER BY probable_start NULLS LAST, id`, [generatedAt]),
   ]);
+  const data = { generated_at: generatedAt, events: events.rows, source_event_links: links.rows,
+    event_change_log: changes.rows, sources: sources.rows, discovery_queue: discovery.rows };
   return {
     schema_version: 1,
+    technical_findings: technicalFindings(data),
+    qa_inputs: buildQaInputs(data),
     generated_at: generatedAt,
     scope: "published_upcoming_events",
     counts: { events: events.rows.length, source_links: links.rows.length,
