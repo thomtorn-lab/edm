@@ -1,0 +1,475 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "description": "SYNTHETIC ONLY: 10 fictional events, 40 event checks and 3 site checks; completions simulate state transitions, not real QA.",
+  "generation": 1,
+  "snapshot_generated_at": "2026-10-29T12:14:00.000Z",
+  "last_successful_run_at": "2026-10-29T12:14:00.000Z",
+  "checks": [
+    {
+      "subject_id": "synthetic-event-01",
+      "category": "source_facts",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-01:source_facts",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-01",
+      "category": "music_genre",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-01:music_genre",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-01",
+      "category": "links",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-01:links",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": [
+        "synthetic-issue-001"
+      ]
+    },
+    {
+      "subject_id": "synthetic-event-01",
+      "category": "duplicates",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-01:duplicates",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-02",
+      "category": "source_facts",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-02:source_facts",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-02",
+      "category": "music_genre",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-02:music_genre",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-02",
+      "category": "links",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-02:links",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": "2026-10-29T12:30:00.000Z",
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-02",
+      "category": "duplicates",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-02:duplicates",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-03",
+      "category": "source_facts",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-03:source_facts",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-03",
+      "category": "music_genre",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:synthetic-event-03:music_genre",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated QA status, not an actual verification"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-03",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-03:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-03",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-03:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-04",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-04:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-04",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-04:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-04",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-04:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-04",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-04:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-05",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-05:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-05",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-05:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-05",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-05:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-05",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-05:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-06",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-06:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-06",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-06:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-06",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-06:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-06",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-06:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-07",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-07:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-07",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-07:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-07",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-07:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-07",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-07:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-08",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-08:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-08",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-08:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-08",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-08:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-08",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-08:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-09",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-09:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-09",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-09:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-09",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-09:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-09",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-09:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-10",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-10:source_facts",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-10",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-10:music_genre",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-10",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-10:links",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "synthetic-event-10",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:synthetic-event-10:duplicates",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "site:discovery",
+      "category": "discovery",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:site:discovery",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated site QA status"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "site:about",
+      "category": "about_language",
+      "status": "completed",
+      "source_fingerprint": "synthetic:v1:site:about_language",
+      "checked_at": "2026-10-29T12:14:00.000Z",
+      "next_check_at": null,
+      "evidence": [
+        "SYNTHETIC ONLY - simulated site QA status"
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "site:technical",
+      "category": "production_technical",
+      "status": "pending",
+      "source_fingerprint": "synthetic:v1:site:production_technical",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    }
+  ],
+  "reported_issues": [
+    {
+      "id": "synthetic-issue-001",
+      "subject_id": "synthetic-event-01",
+      "category": "links",
+      "reported_at": "2026-10-29T12:14:00.000Z",
+      "resolved_at": null
+    }
+  ]
+}
