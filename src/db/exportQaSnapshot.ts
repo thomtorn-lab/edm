@@ -2,7 +2,7 @@
  * ElectronicCPH QA snapshot. SELECT-only; no migrations, sync or publishing.
  * GitHub Actions uploads the JSON artifact. Never print DB credentials.
  */
-import { Client, type QueryResultRow } from "pg";
+import { Client } from "pg";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { beginReadOnlyTransaction } from "./readOnlyTransaction";
