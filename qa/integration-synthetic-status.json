@@ -1,19 +1,17 @@
 {
   "schema_version": 1,
-  "generation": 2,
-  "snapshot_generated_at": "2026-10-30T10:00:00.000Z",
+  "generation": 3,
+  "snapshot_generated_at": "2026-10-31T10:00:00.000Z",
   "last_successful_run_at": null,
   "checks": [
     {
       "subject_id": "synthetic-event-1",
       "category": "music_genre",
-      "status": "completed",
-      "source_fingerprint": "genre-a",
-      "checked_at": "2026-10-29T09:00:00.000Z",
-      "next_check_at": "2026-11-02T09:00:00.000Z",
-      "evidence": [
-        "synthetic genre review"
-      ],
+      "status": "pending",
+      "source_fingerprint": "genre-b",
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
       "reported_issue_ids": [
         "synthetic-issue-1"
       ]
