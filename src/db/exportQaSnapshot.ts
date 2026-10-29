@@ -2,13 +2,13 @@
  * ElectronicCPH QA snapshot. SELECT-only; no migrations, sync or publishing.
  * GitHub Actions uploads the JSON artifact. Never print DB credentials.
  */
-import { Client } from "pg";
+import { Client, type QueryResultRow } from "pg";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { beginReadOnlyTransaction } from "./readOnlyTransaction";
 import { technicalFindings, buildQaInputs } from "@/lib/qaSnapshotEnrichment";
 
-export async function exportQaSnapshot(client: Pick<Client, "query">, generatedAt: string) {
+export async function exportQaSnapshot(client: Client, generatedAt: string) {
   const events = await client.query(`
     SELECT e.id, e.title, e.slug, e.description, e.artists, e.start_datetime,
       e.end_datetime, e.timezone, e.venue_id, v.name AS venue_name, e.sub_venue,
