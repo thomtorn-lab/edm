@@ -7,7 +7,7 @@
     "run_id": 40853005274,
     "conclusion": "success"
   },
-  "generation": 3,
+  "generation": 4,
   "checks": [
     {
       "event_id": "synthetic-event-a",
@@ -30,6 +30,12 @@
     {
       "event_id": "synthetic-event-d",
       "category": "links",
+      "status": "pending",
+      "evidence": null
+    },
+    {
+      "event_id": "synthetic-event-e",
+      "category": "genres",
       "status": "pending",
       "evidence": null
     }
