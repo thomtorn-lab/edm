@@ -2,25 +2,40 @@ name: ElectronicCPH QA Snapshot (read-only)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 4 * * *"
+    - cron: "15 3,4 * * *"
 permissions:
   contents: read
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    # 05:15 Europe/Copenhagen year-round (03:15 UTC summer, 04:15 UTC winter).
+    # Avoid exporting twice on DST transitions; skipped run is intentional.
+    if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '15 3,4 * * *')
     timeout-minutes: 10
     steps:
+      - name: Check Copenhagen wall-clock schedule
+        id: clock
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(TZ=Europe/Copenhagen date +%H:%M)" != "05:15" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v4
+        if: steps.clock.outputs.skip != 'true'
       - uses: actions/setup-node@v4
+        if: steps.clock.outputs.skip != 'true'
         with:
           node-version: "22"
           cache: npm
       - run: npm ci
+        if: steps.clock.outputs.skip != 'true'
       - name: Export read-only QA snapshot
+        if: steps.clock.outputs.skip != 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node --import tsx src/db/exportQaSnapshot.ts qa-output/qa-snapshot.json
       - name: Upload machine-readable QA snapshot
+        if: steps.clock.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: electroniccph-qa-snapshot
