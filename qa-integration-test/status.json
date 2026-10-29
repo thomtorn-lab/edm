@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "test_id": "qa-integration-20261029",
+  "source": {
+    "workflow": "inspect-source.yml",
+    "run_id": 40853005274,
+    "conclusion": "success"
+  },
+  "generation": 1,
+  "checks": [
+    {
+      "event_id": "synthetic-event-a",
+      "category": "genres",
+      "status": "completed",
+      "evidence": "synthetic-only"
+    },
+    {
+      "event_id": "synthetic-event-b",
+      "category": "links",
+      "status": "pending",
+      "evidence": null
+    }
+  ]
+}
