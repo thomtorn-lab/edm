@@ -1,0 +1,29 @@
+name: ElectronicCPH QA Snapshot (read-only)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 4 * * *"
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Export read-only QA snapshot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node --import tsx src/db/exportQaSnapshot.ts qa-output/qa-snapshot.json
+      - name: Upload machine-readable QA snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: electroniccph-qa-snapshot
+          path: qa-output/qa-snapshot.json
+          if-no-files-found: error
+          retention-days: 14
