@@ -6,8 +6,10 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 
 /**
  * Privacy page (GDPR review, 2026-10-30). Describes what the site does,
- * verified in code, plus facts the owner confirmed: hosting on Vercel (Pro,
- * under Vercel's DPA), Vercel Web Analytics only after consent
+ * verified in code, plus facts the owner confirmed: hosting on Vercel's free
+ * Hobby plan (which comes with no data processing addendum — the page states
+ * the plan and makes no compliance claim about it), Vercel Web Analytics
+ * only after consent
  * (src/components/PrivacyAwareAnalytics.tsx, AnalyticsConsentSettings), the
  * session-storage "back to list" record, YouTube videos loaded only after
  * the visitor presses play (src/components/ArtistVideoPreview.tsx),
@@ -170,7 +172,7 @@ export default function PrivacyPage() {
       <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
         <p>We use these providers:</p>
         <ul className="list-disc space-y-1 pl-5">
-          <li>Vercel Inc. (USA) — hosting and visitor statistics, under Vercel&rsquo;s data processing addendum</li>
+          <li>Vercel Inc. (USA) — hosting and visitor statistics, on Vercel&rsquo;s free Hobby plan</li>
           <li>
             Supabase — the database for event information, hosted in the EU (Paris), under Supabase&rsquo;s data
             processing addendum
@@ -181,9 +183,10 @@ export default function PrivacyPage() {
         <p>
           Google also receives data when you load a YouTube video, as described above. Vercel, Resend and Google
           may process personal data outside the EU/EEA, including in the USA, and Supabase may do so for
-          limited parts of its service. Where that happens, the transfer relies on the EU-U.S. Data Privacy
-          Framework or the EU Standard Contractual Clauses. Use{" "}
-          <Link href="/contact" className={linkClass}>Contact</Link> to ask about the safeguards that apply.
+          limited parts of its service. Vercel and Resend state that they are certified under the EU-U.S. Data
+          Privacy Framework, and Supabase&rsquo;s data processing addendum uses the EU Standard Contractual
+          Clauses. Use <Link href="/contact" className={linkClass}>Contact</Link> if you have questions about
+          these transfers.
         </p>
       </div>
 
