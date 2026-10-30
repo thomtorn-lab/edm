@@ -1,17 +1,20 @@
 {
   "schema_version": 1,
-  "generation": 1,
-  "snapshot_generated_at": "2026-10-30T07:22:00Z",
-  "last_successful_run_at": "2026-10-30T07:22:00Z",
+  "generation": 2,
+  "snapshot_generated_at": "2026-10-30T08:35:00Z",
+  "last_successful_run_at": "2026-10-30T08:35:00Z",
   "checks": [
     {
       "subject_id": "event:e3bd3ab9",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://culture-box.com/events/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Oct 30 22:00-08:00 Culture Box Black/Red Box lineup checked"
+      ],
       "reported_issue_ids": []
     },
     {
@@ -47,21 +50,27 @@
     {
       "subject_id": "event:e571e160",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://loppen.dk/kalender/miaw",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Oct 30 21:00 Loppen miaw + SPLITSCREEN checked"
+      ],
       "reported_issue_ids": []
     },
     {
       "subject_id": "event:e571e160",
       "category": "music_genre",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://loppen.dk/kalender/miaw",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Lineup assessment: miaw UK-bass breakbeats, SPLITSCREEN breakcore/shoegaze/hyperpop. Recommend Garage + Ambient / Experimental (imperfect taxonomy mapping)."
+      ],
       "reported_issue_ids": []
     },
     {
@@ -91,8 +100,15 @@
       "source_fingerprint": null,
       "checked_at": null,
       "next_check_at": null,
-      "evidence": [],
-      "reported_issue_ids": []
+      "evidence": [
+        "https://www.electroniccph.com/events/open-decks-unleash-your-sound-e-7ea07d08",
+        "https://krudttonden.kk.dk/program/open-decks-slip-din-lyd-fri",
+        "https://brugbyen.kk.dk/det-sker/open-decks-slip-din-lyd-fri",
+        "Unresolved official-source lineup conflict: Krudttonden and ElectronicCPH Ellen/Rasmus vs BrugByen FLØ/Bale."
+      ],
+      "reported_issue_ids": [
+        "real-pilot-issue-002"
+      ]
     },
     {
       "subject_id": "event:7ea07d08",
@@ -127,11 +143,14 @@
     {
       "subject_id": "event:78675cfd",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://ra.co/events/2542770",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Oct 31 22:00-04:00 Sigurd CPH and four performers checked against promoter RA"
+      ],
       "reported_issue_ids": []
     },
     {
@@ -181,11 +200,14 @@
     {
       "subject_id": "event:689a26ca",
       "category": "music_genre",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://pumpehuset.dk/koncerter/stvw-pres-punk-rave-2/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: STVW show blends EDM/trance with pop-punk/emo; recommend Trance as closest available genre."
+      ],
       "reported_issue_ids": []
     },
     {
@@ -211,21 +233,27 @@
     {
       "subject_id": "event:74bb2574",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/paydar-ir-dk-heyvan-ep-release-naghib-shanbehzadeh-live-ir-fr/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Nov 7 ALICE doors 20:00 concert 21:00 PAYDAR + Naghib checked"
+      ],
       "reported_issue_ids": []
     },
     {
       "subject_id": "event:74bb2574",
       "category": "music_genre",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/paydar-ir-dk-heyvan-ep-release-naghib-shanbehzadeh-live-ir-fr/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: PAYDAR percussive SWANA club sound, Naghib traditional/experimental live percussion; recommend Electronic / Other, not unsupported Afro House."
+      ],
       "reported_issue_ids": []
     },
     {
@@ -251,21 +279,27 @@
     {
       "subject_id": "event:8b106ce7",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/moor-mother-us-3/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Nov 11 ALICE doors 19:00 concert 20:00 checked"
+      ],
       "reported_issue_ids": []
     },
     {
       "subject_id": "event:8b106ce7",
       "category": "music_genre",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/moor-mother-us-3/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Moor Mother harsh noise/experimental sample collage and rap; recommend Ambient / Experimental; Industrial not sufficiently supported."
+      ],
       "reported_issue_ids": []
     },
     {
@@ -291,21 +325,27 @@
     {
       "subject_id": "event:29afc31e",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/ana-roxanne-us-hasfeldt-dk/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Nov 14 ALICE doors 20:00 concert 21:00 both artists checked"
+      ],
       "reported_issue_ids": []
     },
     {
       "subject_id": "event:29afc31e",
       "category": "music_genre",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/ana-roxanne-us-hasfeldt-dk/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Both acts reviewed: Ana Roxanne ambient/minimalism, Hasfeldt electronic ambient. Recommend Ambient / Experimental."
+      ],
       "reported_issue_ids": []
     },
     {
@@ -331,11 +371,14 @@
     {
       "subject_id": "event:8793413f",
       "category": "source_facts",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://www.royalarena.dk/en/all-events/the-prodigy-tickets-ae8441",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Nov 17 Royal Arena 20:00 The Prodigy checked"
+      ],
       "reported_issue_ids": []
     },
     {
@@ -375,17 +418,26 @@
       "source_fingerprint": null,
       "checked_at": null,
       "next_check_at": null,
-      "evidence": [],
-      "reported_issue_ids": []
+      "evidence": [
+        "https://www.electroniccph.com/events/s-h-x-alice-rezmorah-br-pt-us-e-75a069c3",
+        "https://alicecph.com/en/event/s-h-x-alice-rezmorah-br-pt-us/",
+        "CONFIRMED venue mismatch: ElectronicCPH says ALICE/Nørre Allé 7; organizer says SORT/HVID."
+      ],
+      "reported_issue_ids": [
+        "real-pilot-issue-001"
+      ]
     },
     {
       "subject_id": "event:75a069c3",
       "category": "music_genre",
-      "status": "pending",
+      "status": "completed",
       "source_fingerprint": null,
-      "checked_at": null,
-      "next_check_at": null,
-      "evidence": [],
+      "checked_at": "2026-10-30T08:35:00Z",
+      "next_check_at": "2026-11-02T09:00:00Z",
+      "evidence": [
+        "https://alicecph.com/en/event/s-h-x-alice-rezmorah-br-pt-us/",
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: REZMORAH ritual electronic spoken-word performance; recommend Ambient / Experimental."
+      ],
       "reported_issue_ids": []
     },
     {
@@ -439,7 +491,22 @@
       "reported_issue_ids": []
     }
   ],
-  "reported_issues": [],
+  "reported_issues": [
+    {
+      "id": "real-pilot-issue-001",
+      "subject_id": "event:75a069c3",
+      "category": "source_facts",
+      "reported_at": "2026-10-30T08:35:00Z",
+      "resolved_at": null
+    },
+    {
+      "id": "real-pilot-issue-002",
+      "subject_id": "event:7ea07d08",
+      "category": "source_facts",
+      "reported_at": "2026-10-30T08:35:00Z",
+      "resolved_at": null
+    }
+  ],
   "pilot_metadata": {
     "kind": "real-events-read-only-parallel-pilot",
     "sample_scope": "10 events, 40 event checks + 3 cross-cutting checks",
@@ -527,6 +594,11 @@
         "category": "source_facts",
         "note": "Original Oct 14 rescheduled to Nov 4 confirmed on official Pumpehuset page."
       }
+    ],
+    "run2_notes": [
+      "13 category checks newly completed with official source documentation.",
+      "Links, duplicates, discovery, ABOUT and Production technical checks remain pending; no unsupported completions.",
+      "No actual changed or expired controls reopened. Previous STVW source-facts result preserved."
     ]
   }
 }
