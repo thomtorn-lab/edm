@@ -127,7 +127,7 @@ export function EventFieldEditorTop(props: TopProps) {
         <input id={id("title")} value={props.title} onChange={(e) => props.onTitleChange(e.target.value)} className={inputCls} />
       </Field>
       <Field id={id("description")} label="Description">
-        <textarea id={id("description")} value={props.description} onChange={(e) => props.onDescriptionChange(e.target.value)} rows={2} className={inputCls} />
+        <textarea id={id("description")} value={props.description} onChange={(e) => props.onDescriptionChange(e.target.value)} rows={8} className={`${inputCls} resize-y`} />
       </Field>
       {props.startLocal !== undefined && props.onStartLocalChange && (
         <Field id={id("start")} label="Date &amp; time">
