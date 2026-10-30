@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "generation": 2,
-  "snapshot_generated_at": "2026-10-30T08:35:00Z",
-  "last_successful_run_at": "2026-10-30T08:35:00Z",
+  "generation": 3,
+  "snapshot_generated_at": "2026-10-30T09:00:00Z",
+  "last_successful_run_at": "2026-10-30T09:00:00Z",
   "checks": [
     {
       "subject_id": "event:e3bd3ab9",
@@ -63,13 +63,14 @@
     {
       "subject_id": "event:e571e160",
       "category": "music_genre",
-      "status": "completed",
+      "status": "pending",
       "source_fingerprint": null,
-      "checked_at": "2026-10-30T08:35:00Z",
-      "next_check_at": "2026-11-02T09:00:00Z",
+      "checked_at": null,
+      "next_check_at": null,
       "evidence": [
         "https://loppen.dk/kalender/miaw",
-        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Lineup assessment: miaw UK-bass breakbeats, SPLITSCREEN breakcore/shoegaze/hyperpop. Recommend Garage + Ambient / Experimental (imperfect taxonomy mapping)."
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Lineup assessment: miaw UK-bass breakbeats, SPLITSCREEN breakcore/shoegaze/hyperpop. Recommend Garage + Ambient / Experimental (imperfect taxonomy mapping).",
+        "FINAL AUDIT: insufficient independent artist/music-source evidence for full lineup; previous recommendation not counted as completed."
       ],
       "reported_issue_ids": []
     },
@@ -104,7 +105,10 @@
         "https://www.electroniccph.com/events/open-decks-unleash-your-sound-e-7ea07d08",
         "https://krudttonden.kk.dk/program/open-decks-slip-din-lyd-fri",
         "https://brugbyen.kk.dk/det-sker/open-decks-slip-din-lyd-fri",
-        "Unresolved official-source lineup conflict: Krudttonden and ElectronicCPH Ellen/Rasmus vs BrugByen FLØ/Bale."
+        "Unresolved official-source lineup conflict: Krudttonden and ElectronicCPH Ellen/Rasmus vs BrugByen FLØ/Bale.",
+        "https://krudttonden.kk.dk/program/open-decks-slip-din-lyd-fri",
+        "https://brugbyen.kk.dk/det-sker/open-decks-slip-din-lyd-fri",
+        "Conflicting official lineups and end times; request direct confirmation; preserve issue."
       ],
       "reported_issue_ids": [
         "real-pilot-issue-002"
@@ -200,13 +204,14 @@
     {
       "subject_id": "event:689a26ca",
       "category": "music_genre",
-      "status": "completed",
+      "status": "pending",
       "source_fingerprint": null,
-      "checked_at": "2026-10-30T08:35:00Z",
-      "next_check_at": "2026-11-02T09:00:00Z",
+      "checked_at": null,
+      "next_check_at": null,
       "evidence": [
         "https://pumpehuset.dk/koncerter/stvw-pres-punk-rave-2/",
-        "Independent comparison with event on ElectronicCPH and official promoter/venue source: STVW show blends EDM/trance with pop-punk/emo; recommend Trance as closest available genre."
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: STVW show blends EDM/trance with pop-punk/emo; recommend Trance as closest available genre.",
+        "FINAL AUDIT: insufficient independent artist/music-source evidence for full lineup; previous recommendation not counted as completed."
       ],
       "reported_issue_ids": []
     },
@@ -246,13 +251,14 @@
     {
       "subject_id": "event:74bb2574",
       "category": "music_genre",
-      "status": "completed",
+      "status": "pending",
       "source_fingerprint": null,
-      "checked_at": "2026-10-30T08:35:00Z",
-      "next_check_at": "2026-11-02T09:00:00Z",
+      "checked_at": null,
+      "next_check_at": null,
       "evidence": [
         "https://alicecph.com/en/event/paydar-ir-dk-heyvan-ep-release-naghib-shanbehzadeh-live-ir-fr/",
-        "Independent comparison with event on ElectronicCPH and official promoter/venue source: PAYDAR percussive SWANA club sound, Naghib traditional/experimental live percussion; recommend Electronic / Other, not unsupported Afro House."
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: PAYDAR percussive SWANA club sound, Naghib traditional/experimental live percussion; recommend Electronic / Other, not unsupported Afro House.",
+        "FINAL AUDIT: insufficient independent artist/music-source evidence for full lineup; previous recommendation not counted as completed."
       ],
       "reported_issue_ids": []
     },
@@ -292,13 +298,14 @@
     {
       "subject_id": "event:8b106ce7",
       "category": "music_genre",
-      "status": "completed",
+      "status": "pending",
       "source_fingerprint": null,
-      "checked_at": "2026-10-30T08:35:00Z",
-      "next_check_at": "2026-11-02T09:00:00Z",
+      "checked_at": null,
+      "next_check_at": null,
       "evidence": [
         "https://alicecph.com/en/event/moor-mother-us-3/",
-        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Moor Mother harsh noise/experimental sample collage and rap; recommend Ambient / Experimental; Industrial not sufficiently supported."
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Moor Mother harsh noise/experimental sample collage and rap; recommend Ambient / Experimental; Industrial not sufficiently supported.",
+        "FINAL AUDIT: insufficient independent artist/music-source evidence for full lineup; previous recommendation not counted as completed."
       ],
       "reported_issue_ids": []
     },
@@ -338,13 +345,14 @@
     {
       "subject_id": "event:29afc31e",
       "category": "music_genre",
-      "status": "completed",
+      "status": "pending",
       "source_fingerprint": null,
-      "checked_at": "2026-10-30T08:35:00Z",
-      "next_check_at": "2026-11-02T09:00:00Z",
+      "checked_at": null,
+      "next_check_at": null,
       "evidence": [
         "https://alicecph.com/en/event/ana-roxanne-us-hasfeldt-dk/",
-        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Both acts reviewed: Ana Roxanne ambient/minimalism, Hasfeldt electronic ambient. Recommend Ambient / Experimental."
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: Both acts reviewed: Ana Roxanne ambient/minimalism, Hasfeldt electronic ambient. Recommend Ambient / Experimental.",
+        "FINAL AUDIT: insufficient independent artist/music-source evidence for full lineup; previous recommendation not counted as completed."
       ],
       "reported_issue_ids": []
     },
@@ -421,7 +429,9 @@
       "evidence": [
         "https://www.electroniccph.com/events/s-h-x-alice-rezmorah-br-pt-us-e-75a069c3",
         "https://alicecph.com/en/event/s-h-x-alice-rezmorah-br-pt-us/",
-        "CONFIRMED venue mismatch: ElectronicCPH says ALICE/Nørre Allé 7; organizer says SORT/HVID."
+        "CONFIRMED venue mismatch: ElectronicCPH says ALICE/Nørre Allé 7; organizer says SORT/HVID.",
+        "https://alicecph.com/en/event/s-h-x-alice-rezmorah-br-pt-us/",
+        "ALICE confirms actual venue SORT/HVID; recommend venue/address correction, preserve issue."
       ],
       "reported_issue_ids": [
         "real-pilot-issue-001"
@@ -430,13 +440,14 @@
     {
       "subject_id": "event:75a069c3",
       "category": "music_genre",
-      "status": "completed",
+      "status": "pending",
       "source_fingerprint": null,
-      "checked_at": "2026-10-30T08:35:00Z",
-      "next_check_at": "2026-11-02T09:00:00Z",
+      "checked_at": null,
+      "next_check_at": null,
       "evidence": [
         "https://alicecph.com/en/event/s-h-x-alice-rezmorah-br-pt-us/",
-        "Independent comparison with event on ElectronicCPH and official promoter/venue source: REZMORAH ritual electronic spoken-word performance; recommend Ambient / Experimental."
+        "Independent comparison with event on ElectronicCPH and official promoter/venue source: REZMORAH ritual electronic spoken-word performance; recommend Ambient / Experimental.",
+        "FINAL AUDIT: insufficient independent artist/music-source evidence for full lineup; previous recommendation not counted as completed."
       ],
       "reported_issue_ids": []
     },
@@ -599,6 +610,12 @@
       "13 category checks newly completed with official source documentation.",
       "Links, duplicates, discovery, ABOUT and Production technical checks remain pending; no unsupported completions.",
       "No actual changed or expired controls reopened. Previous STVW source-facts result preserved."
-    ]
+    ],
+    "final_audit": {
+      "genre_reopened": 6,
+      "reason": "Independent artist/music source evidence missing",
+      "remaining": "Links including KultuNaut, exact/fuzzy duplicates, discovery, ABOUT and full Production/mobile/admin genre QA not fully verified",
+      "recommendation": "Not ready for full upcoming event rollout"
+    }
   }
 }
