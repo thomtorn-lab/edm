@@ -92,21 +92,63 @@ Legacy-værdien tildeles aldrig. En gammel Discogs-cache-post med legacy-værdie
 - Alle værdier fra den tidligere 12-gruppe-model er fortsat gyldige og vises, hvis de er gemt.
 - Ingen migrering, ingen aktivering og ingen udsendelse.
 
-## 4. SEO – uændret politik, kendte svagheder
+## 4. SEO – kvalitetssikring (2026-10-30) og uændret politik
 
-**Uændret:**
-- Forsidens `canonical: "/"` for alle filter-URL'er.
-- `robots.ts` (blokerer kun `/admin` og `/api/`).
-- `/genres/techno` som eneste genreside (self-canonical, i sitemap).
-- Nye indekserbare sider kræver særskilt godkendelse (`GENRES_WITH_PAGES`).
+### 4.1 Central allowlist
+`INDEXABLE_GENRE_PAGES` i `src/lib/taxonomy.ts` er den eneste liste over offentlige, indekserbare genresider. Den indeholder kun `techno`.
+- Sitemap'ets genre-post og genremærkernes links udledes af listen. Sitemap-outputtet er uændret: præcis én genre-URL.
+- Der er bevidst ingen dynamisk `/genres/[slug]`-route. Alle andre `/genres/*`-URL'er er derfor ægte HTTP 404 med Next.js' noindex.
+- En ny side kræver både en post i listen og sin egen route. Begge dele er en særskilt godkendt SEO-beslutning.
+- Tests: `src/app/genres/genreRoutes.test.ts`, `sitemap.test.ts`, `genres/techno/page.test.tsx`.
 
-**Tilsigtet indholdsændring:** `/genres/techno` inkluderer igen techno-undergenrer, men ikke Industrial. Intro og meta-description følger med.
+### 4.2 Verificeret på et lokalt produktionsbuild
+Lokal Postgres, ingen Production-adgang.
 
-**Svagheder og forslag** (ikke implementeret, kræver godkendelse):
-1. Filtrerede forsidevisninger har andet indhold end canonical "/". Google kan ignorere en canonical mellem ikke-identiske sider. Risikoen er lav, fordi filtrene ikke er crawlbare links. Forslag: behold, og overvåg i Search Console, om `?genre=`-URL'er indekseres.
-2. En ukendt `?genre=` giver 200 med en synlig besked (canonical "/"). Forslag: behold. En 404 ville ramme gamle delte links.
-3. Sitemap hardcoder `/genres/techno` ved siden af `GENRES_WITH_PAGES`. Forslag: generér sitemap-posten fra `genrePagePath`, så der kun er én kilde.
-4. Der er ingen dynamisk `/genres/[slug]`. Forslag til nye sider: en route, der kun gengiver slugs på listen og giver 404 for alt andet, og som bruger samme `matchesGenreSelection`. Kriterier: ≥10 kommende events på 90 dage, redaktionel intro og dokumenteret søgeefterspørgsel.
+| URL | HTTP | title | canonical | robots | H1 |
+|---|---|---|---|---|---|
+| `/genres/techno` | 200 | Techno Events in Copenhagen \| Electronic CPH | `https://www.electroniccph.com/genres/techno` | (ingen → index) | Techno Events in Copenhagen |
+| `/genres/techno` (tom database) | 200 | samme | samme | (ingen) | samme + tom tilstand "No upcoming techno events listed" |
+| `/genres/house`, `/genres/industrial`, `/genres/industrial-techno`, `/genres/uk-garage`, `/genres/garage`, `/genres/bass-breaks`, `/genres/hard-dance`, `/genres/ambient-experimental`, `/genres/techno/extra` | **404** | standardtitel | ingen | **noindex** | Page not found |
+| `/?genre=garage`, `garage-bass`, `hardstyle-hardcore`, `ambient-experimental`, `polka` | 200 | forsidens | `https://www.electroniccph.com` | (ingen) | Electronic music in Copenhagen |
+
+- Description på `/genres/techno`: "Upcoming techno events in Copenhagen: club nights and concerts tagged techno or a techno subgenre, listed by date."
+- Sitemap: præcis én genre-URL (`/genres/techno`) og ingen URL med `?` eller `#`.
+- `robots.txt`: uændret (`Disallow: /admin`, `/api/`).
+- Forsidens canonical, `robots.ts` og `layout.tsx` er uændrede i denne PR.
+
+### 4.3 Techno-sidens indhold, før og efter
+**Datagrundlag:** read-only Production-snapshot 2026-10-24 kl. 12:50 UTC (inspect-source run 40095581932). Det er den eneste Production-kilde. Nye tal kræver en read-only databaserolle, som endnu ikke findes. Tallene er "kommende publicerede events" på snapshot-tidspunktet.
+
+| | Antal kommende events |
+|---|---|
+| **Før** (Production i dag, #161: kun eksakt Techno) | **35** |
+| **Efter** (denne PR: Techno + undergenrer, ikke Industrial) | **40** |
+| Heraf bidrag fra Hard Techno | +2 |
+| Heraf bidrag fra Minimal Techno | +3 |
+| Heraf bidrag fra Melodic, Industrial og Hypnotic Techno | +0 (de to sidste findes først efter denne PR) |
+| Industrial alene (ikke med, før eller efter) | 6 (det 7. Industrial-event har også Techno og er talt med) |
+
+Ingen events i snapshottet har to techno-tags, så summen er eksakt og uden dubletter. Hvis en admin gennemfører R1-anbefalingerne, kommer Cassie Raptor (Hangaren) og Culture Box Black Box med (+2). NEW GAME+ er allerede talt via sit Techno-tag.
+
+### 4.4 Interne links fra undergenre-mærker (kun anbefaling, ikke implementeret)
+I dag linker kun mærket "Techno" til `/genres/techno`.
+
+| Mulighed | Konsekvens |
+|---|---|
+| A. Undergenre-mærker (Hard Techno, Industrial Techno …) linker til `/genres/techno` | Flere interne links til siden. Men ankerteksten ("Hard Techno") lover en side, der ikke findes, og linkene skal laves om, hvis en undergenreside senere godkendes |
+| B. **Anbefalet:** behold mærkerne som tekst, og tilføj et separat link "More techno events in Copenhagen" på eventsider med en techno-familie-genre | Korrekt ankertekst og samme linkværdi. Kræver en lille UI-ændring på eventsiden |
+| C. Ingen ændring | Ingen risiko, men ingen ekstra intern linkværdi |
+
+### 4.5 Kendte svagheder (uændret, kræver godkendelse for at ændre)
+1. Filtrerede forsidevisninger har andet indhold end canonical "/". Risikoen er lav, fordi filtrene ikke er crawlbare links. Forslag: overvåg i Search Console.
+2. En ukendt `?genre=` giver 200 med en synlig besked (canonical "/"). Forslag: behold.
+
+### 4.6 SEO-beslutninger, der fortsat kræver godkendelse
+1. Nye genresider (fx House og Trance): post i `INDEXABLE_GENRE_PAGES` + route + sitemap. Forslag til kriterier: ≥10 kommende events på 90 dage, redaktionel intro og dokumenteret søgeefterspørgsel (Search Console).
+2. Interne links fra undergenre-mærker (4.4).
+3. Politik for tomme genresider ud over `/genres/techno` (bevidst ikke fastlagt).
+4. Eventuelle redirects fra gamle eller alternative genre-URL'er (der laves ingen i denne PR).
+5. Overvågning og eventuel håndtering af indekserede `?genre=`-URL'er (4.5).
 
 ## 5. Testkontrakt (til QA)
 
@@ -125,7 +167,7 @@ Legacy-værdien tildeles aldrig. En gammel Discogs-cache-post med legacy-værdie
 | K6 | Forslag til sekundær genre følger parreglerne | `secondaryGenreSuggestion.test.ts` |
 | N | Nyhedsbrevets valg og bagudkompatibilitet | `taxonomy.test.ts`, `NewsletterPreferencesForm.test.tsx`, `newsletter/genreMatching.test.ts` |
 | D3 | Statiske data og seed-data er gyldige | `src/lib/data/genreData.test.ts` |
-| S1–S5 | `/genres/techno`, kun Techno-side, sitemap, canonical, robots uændret | `genres/techno/page.test.tsx`, `sitemap.test.ts`, `page.test.tsx`, `robotsMeta.test.ts` |
+| S1–S7 | `/genres/techno` (200, index, self-canonical, title/H1/description, også uden events), central allowlist (kun Techno), ingen dynamisk genre-route (ikke-godkendte = 404), sitemap kun fra allowlisten og uden parameter-URL'er, forsidens canonical og robots uændret | `genres/techno/page.test.tsx`, `genres/genreRoutes.test.ts`, `sitemap.test.ts`, `page.test.tsx`, `robotsMeta.test.ts` |
 
 ## 6. Kilder til faglige valg
 

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { EventWithVenue } from "@/lib/queries";
-import { GENRES, matchesGenreSelection, parentOf, type GenreSlug } from "@/lib/taxonomy";
+import { GENRES, INDEXABLE_GENRE_PAGES, genrePagePath, matchesGenreSelection, parentOf, type GenreSlug } from "@/lib/taxonomy";
 import type { Venue } from "@/lib/types";
 
 const VENUE: Venue = {
@@ -96,6 +96,16 @@ describe("/genres/techno — metadata", () => {
   it("is request-time rendered from the DB (revalidate = 0)", () => {
     expect(pageModule.revalidate).toBe(0);
   });
+
+  // SEO QA (genre system revision, 2026-10-30): the page stays indexable —
+  // no robots metadata, so the default "index, follow" applies (the root
+  // layout sets none either; see layout.tsx) — and its canonical is the
+  // allowlisted page path itself.
+  it("stays indexable (no robots override) and its canonical is the allowlisted genre page path", () => {
+    expect(metadata.robots).toBeUndefined();
+    expect(metadata.alternates?.canonical).toBe(genrePagePath("techno"));
+    expect(INDEXABLE_GENRE_PAGES).toEqual(["techno"]);
+  });
 });
 
 describe("/genres/techno — page", () => {
@@ -169,6 +179,13 @@ describe("/genres/techno — page", () => {
   it("only ever reads published events (getPublishedEventsWithVenue)", async () => {
     await renderPage([]);
     expect(getPublishedEventsWithVenue).toHaveBeenCalledTimes(1);
+  });
+
+  it("with zero events at all it still renders the full page (H1, intro, empty state) — never a 404", async () => {
+    await renderPage([]);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Techno Events in Copenhagen");
+    expect(screen.getByText(/every published event tagged Techno, Hard Techno/)).toBeTruthy();
+    expect(screen.getByText("No upcoming techno events listed")).toBeTruthy();
   });
 
   it("shows the empty state, not an empty list, when no upcoming techno event exists", async () => {

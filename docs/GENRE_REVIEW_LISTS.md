@@ -59,6 +59,20 @@ Anbefalingerne bygger på officielle/offentlige eventlistings og kunstnerprofile
 - [Dark Italia: Neotek](https://darkitalia.com/style/bands/neotek)
 - [RA: Mikkel Wonsbek-event](https://ra.co/events/2419348)
 
+### R1 – foreløbige beslutninger (ejer, 2026-10-30)
+
+Beslutningerne er foreløbige. **Ingen Production-data ændres uden særskilt godkendelse.**
+
+| Event | Beslutning | Forudsætning før ændring |
+|---|---|---|
+| NEW GAME+ | Industrial Techno + Hard Techno | – |
+| Cassie Raptor, Kardinal Bertram, LMN | Industrial Techno + Hard Techno | – |
+| Culture Box (Black Box/Red Box) | Industrial Techno + Trance | Den samlede lineup skal verificeres |
+| Moor Mother | Industrial + Experimental | Eventets eksistens og venue skal verificeres |
+| Kontravoid + Spike Hellis | Behold Electro + Industrial | Eventets eksistens og venue skal verificeres |
+| Electro Shock Therapy | Behold Electro + Industrial foreløbig | Electro skal undersøges yderligere |
+| SORT + support | Afvent | Den primære genre skal verificeres. Electronic / Other må ikke kombineres med andre genrer ved fremtidige ændringer (håndhæves af admin-valideringen) |
+
 ## R2 – Ambient / Experimental (legacy) (17 publicerede + 1 upublicerede, 6 kommende)
 Pr. event vælges: **Ambient**, **Experimental**, begge (2 tags) eller en anden genre. Den gamle værdi fungerer og vises fortsat, indtil eventet er rettet.
 

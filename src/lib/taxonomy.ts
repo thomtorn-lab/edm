@@ -344,13 +344,24 @@ export function isValidSecondaryGenre(primary: GenreSlug, candidate: GenreSlug):
 }
 
 /**
- * Genres that have their own crawlable landing page (SEO pilot,
- * 2026-10-09: Techno only). New indexable pages need explicit approval —
- * adding a genre here is that decision. A main genre's page lists the
- * genre and its subgenres (matchesGenreSelection), exactly like the
- * homepage filter.
+ * THE allowlist of public, indexable genre landing pages (SEO pilot,
+ * 2026-10-09; confirmed in the genre system revision: Techno only). A
+ * genre never gets a page automatically — adding one here is an explicit,
+ * separately approved SEO decision, and needs its own route under
+ * src/app/genres/ (there is deliberately no dynamic /genres/[slug] route,
+ * so every other /genres/* URL is a real HTTP 404). The sitemap's genre
+ * entries and the genre-badge links are both derived from this list. A
+ * main genre's page lists the genre and its subgenres
+ * (matchesGenreSelection), exactly like the homepage filter.
  */
-const GENRES_WITH_PAGES: ReadonlySet<GenreSlug> = new Set<GenreSlug>(["techno"]);
+export const INDEXABLE_GENRE_PAGES: readonly GenreSlug[] = ["techno"];
+
+const GENRES_WITH_PAGES: ReadonlySet<GenreSlug> = new Set<GenreSlug>(INDEXABLE_GENRE_PAGES);
+
+/** Every approved genre page path, for the sitemap. */
+export function indexableGenrePagePaths(): string[] {
+  return INDEXABLE_GENRE_PAGES.map((slug) => genrePagePath(slug)!);
+}
 
 export function genrePagePath(slug: GenreSlug): string | null {
   return GENRES_WITH_PAGES.has(slug) ? `/genres/${getGenre(slug).urlSlug}` : null;
