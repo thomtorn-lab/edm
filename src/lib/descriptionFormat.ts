@@ -76,14 +76,68 @@ function htmlToPlain(html: string): string {
   return out;
 }
 
+// Unicode "mathematical" bold letters and digits (serif bold, bold italic,
+// sans-serif bold, sans-serif bold italic, bold digits) \u2014 the styled text
+// Instagram captions use for section titles ("\uD835\uDDDF\uD835\uDDF6\uD835\uDDFB\uD835\uDDF2\uD835\uDE02\uD835\uDDFD", "\uD835\uDDD4\uD835\uDDF1\uD835\uDDFA\uD835\uDDF6\uD835\uDE00\uD835\uDE00\uD835\uDDF6\uD835\uDDFC\uD835\uDDFB"). Italic
+// alone is emphasis, not a heading, so it is deliberately not included.
+const STYLED_BOLD = "\\u{1D400}-\\u{1D433}\\u{1D468}-\\u{1D49B}\\u{1D5D4}-\\u{1D607}\\u{1D63C}-\\u{1D66F}\\u{1D7CE}-\\u{1D7D7}\\u{1D7EC}-\\u{1D7F5}";
+// A styled-bold run at the start of a line: at least three bold characters,
+// with only spaces and light punctuation between them; then the rest.
+const STYLED_HEAD_RE = new RegExp(`^((?:[${STYLED_BOLD}][\\s'\u2019:&/+.,!()\\-\u2013\u2014]*){3,})([\\s\\S]*)$`, "u");
+// A line that is nothing but a separator ("\u2014\u2014\u2014\u2014", "-----").
+const SEPARATOR_LINE_RE = /^(?:[\u2014\u2013]{3,}|-{4,}|_{4,}|={4,})$/;
+const SEPARATOR_RUN_RE = /(?:[\u2014\u2013]{3,}|-{4,}|_{4,}|={4,})/g;
+
+/** Styled Unicode letters/digits shown as the plain characters they stand for. */
+function plainStyled(text: string): string {
+  return text.replace(/[\u{1D400}-\u{1D7FF}]/gu, (c) => c.normalize("NFKC"));
+}
+
+/**
+ * Splits a styled-bold section title off the start of a line
+ * ("\uD835\uDDDF\uD835\uDDF6\uD835\uDDFB\uD835\uDDF2\uD835\uDE02\uD835\uDDFD Beste Hira \u2026" \u2192 "Lineup" + "Beste Hira \u2026"). Null unless the run
+ * reads as a title: short, not a sentence, and ending on a word boundary.
+ */
+function splitStyledHeading(line: string): { heading: string; rest: string } | null {
+  const m = line.match(STYLED_HEAD_RE);
+  if (!m) return null;
+  const [, run, rest] = m;
+  if (rest && !/[\s:\u2013\u2014\-]$/.test(run)) return null;
+  const heading = plainStyled(run).replace(/[\s:\u2013\u2014\-]+$/, "").trim();
+  if (!heading || heading.length > 80 || wordCount(heading) > 10 || /[.!?]$/.test(heading)) return null;
+  return { heading, rest: rest.trim() };
+}
+
+/**
+ * A description stored as one long line (its line breaks lost before it
+ * reached us \u2014 real case: an admin-created Den Anden Side listing) keeps
+ * its old paragraph breaks only as runs of two or more spaces. Those alone
+ * are never trusted (some writers put two spaces after every sentence):
+ * the text must also mark its sections itself \u2014 separator runs ("\u2014\u2014\u2014\u2014") or
+ * styled-bold section titles at those boundaries, at least two such marks.
+ * Then each run becomes a paragraph break again; otherwise the text is
+ * returned unchanged.
+ */
+function recoverFlatStructure(text: string): string {
+  if (text.includes("\n") || text.length < 600) return text;
+  const gaps = (text.match(/ {2,}/g) ?? []).length;
+  if (gaps < 3) return text;
+  const separators = (text.match(SEPARATOR_RUN_RE) ?? []).length;
+  const segments = text.split(/ {2,}/).flatMap((s) => s.split(SEPARATOR_RUN_RE)).map((s) => s.trim());
+  const styledHeads = segments.filter((s) => splitStyledHeading(s) !== null).length;
+  if (separators + styledHeads < 2 || styledHeads < 1) return text;
+  return text.replace(/ *((?:[\u2014\u2013]{3,}|-{4,}|_{4,}|={4,})) */g, "\n\n$1\n\n").replace(/ {2,}/g, "\n\n");
+}
+
 function normalize(text: string): string {
   const plain = HTML_TAG_RE.test(text) ? htmlToPlain(text) : text;
-  return plain
+  const unified = plain
     .replace(/\r\n?/g, "\n")
     .replace(/\u2029/g, "\n\n")
     .replace(/\u2028/g, "\n")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .replace(/[\u00A0\u202F]/g, " ")
+    .replace(/[\u00A0\u202F]/g, " ");
+  return recoverFlatStructure(unified.trim())
     .split("\n")
     // Paired Markdown bold markers ("**PLEASE READ**") are markup, not
     // content: the markers go, the words stay. An unpaired "*" is kept.
@@ -521,7 +575,14 @@ export function formatDescription(text: string | null | undefined, options: Form
   const normalized = normalize(text);
   if (!normalized) return [];
 
-  const rawBlocks = tidyBlocks(normalized.split(/\n\n/).map((b) => b.split("\n").filter(Boolean)));
+  // A styled-bold title at the start of a line becomes a section heading
+  // (shown in plain letters); any text after it on that line stays as body.
+  const rawBlocks = tidyBlocks(normalized.split(/\n\n/).map((b) => b.split("\n").filter(Boolean))).map((lines) =>
+    lines.flatMap((line) => {
+      const styled = splitStyledHeading(line);
+      return styled ? [`${HEADING_MARK}${styled.heading}`, ...(styled.rest ? [styled.rest] : [])] : [line];
+    }),
+  );
   const allLines = rawBlocks.flat();
   const upperCount = allLines.filter(isUpperCaseLine).length;
   const ctx: LineContext = {
@@ -597,4 +658,90 @@ export function previewBlockCount(blocks: DescriptionBlock[]): number | null {
   while (count > 1 && blocks[count - 1].type === "heading") shown -= lengths[--count];
   if (count === 0 || count >= blocks.length) return null;
   return total - shown >= PREVIEW_MIN_REST ? count : null;
+}
+
+// ------------------------------------------------------ practical sections
+
+// Section titles that only ever head practical venue information.
+const PRACTICAL_HEADING_RE =
+  /^(?:admission|entry|entrance|tickets?|ticket info(?:rmation)?|billetter|entr[ée]e?|prices?|priser|age(?: limit)?|aldersgrænse|wardrobe|garderobe|cloakroom|door ?policy|dørpolitik|code of conduct|house rules|vibe vision|awareness|safer? spaces?(?: policy)?|accessibility|tilgængelighed|practical info(?:rmation)?|praktisk info(?:rmation)?|praktiske oplysninger)$/i;
+const EXPLICIT_PRACTICAL_RE = /^(?:practical info(?:rmation)?|praktisk info(?:rmation)?|praktiske oplysninger)$/i;
+const ABOUT_MIN_CHARS = 200;
+
+function inlineText(tokens: DescriptionInline[]): string {
+  return tokens.map((t) => (t.type === "text" ? t.text : t.label)).join("");
+}
+
+function isPracticalHeading(block: DescriptionBlock): boolean {
+  return block.type === "heading" && PRACTICAL_HEADING_RE.test(inlineText(block.content).replace(/[\s:.\-–—]+$/, "").trim());
+}
+
+/** The source's own "Practical information" title, if that is how the block reads. */
+export function explicitPracticalTitle(block: DescriptionBlock | undefined): string | null {
+  if (block?.type !== "heading") return null;
+  const text = inlineText(block.content).replace(/[\s:]+$/, "").trim();
+  return EXPLICIT_PRACTICAL_RE.test(text) ? text : null;
+}
+
+function isSeparator(block: DescriptionBlock | undefined): boolean {
+  return block?.type === "paragraph" && block.lines.length === 1 && SEPARATOR_LINE_RE.test(inlineText(block.lines[0]).trim());
+}
+
+/**
+ * Where a description's trailing practical section starts (2026-10-30), or
+ * null to keep it as one About text. Only when the source itself marks it:
+ * from the first practical section title (Admission, Age, Wardrobe, Door
+ * policy, Code of conduct, Awareness, Practical information…) to the end,
+ * every heading is practical, there are at least two of them (or one
+ * explicit "Practical information"), and a real About text (lineup
+ * included) comes before. Separator lines just before it go with it.
+ * Nothing is dropped: the caller shows both parts.
+ */
+export function practicalTailStart(blocks: DescriptionBlock[]): number | null {
+  const first = blocks.findIndex(isPracticalHeading);
+  if (first <= 0) return null;
+  const tail = blocks.slice(first);
+  if (tail.some((b) => b.type === "heading" && !isPracticalHeading(b))) return null;
+  const practicalHeadings = tail.filter(isPracticalHeading);
+  const explicit = explicitPracticalTitle(blocks[first]) !== null;
+  if (practicalHeadings.length < 2 && !explicit) return null;
+  let start = first;
+  while (start > 0 && isSeparator(blocks[start - 1])) start--;
+  const aboutChars = blocks.slice(0, start).filter((b) => b.type === "paragraph").reduce((n, b) => n + blockTextLength(b), 0);
+  return aboutChars >= ABOUT_MIN_CHARS ? start : null;
+}
+
+/**
+ * A long About text that is one single paragraph can't be folded between
+ * paragraphs. Folds it inside the paragraph instead, at the end of a
+ * sentence about PREVIEW_TARGET characters in (2026-10-30). Null when the
+ * block isn't one long single-line paragraph or no clean sentence end is
+ * found. The paragraph itself stays one paragraph.
+ */
+export function splitLongParagraph(block: DescriptionBlock): { preview: DescriptionInline[]; rest: DescriptionInline[] } | null {
+  if (block.type !== "paragraph" || block.lines.length !== 1) return null;
+  const tokens = block.lines[0];
+  const total = blockTextLength(block);
+  if (total <= PREVIEW_MIN_TOTAL) return null;
+  let offset = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const len = t.type === "text" ? t.text.length : t.label.length;
+    if (t.type === "text") {
+      const re = /[.!?…]["”’)]?(?=\s+["“(]?\p{Lu})/gu;
+      for (const m of t.text.matchAll(re)) {
+        const at = offset + (m.index ?? 0) + m[0].length;
+        if (at < 400) continue;
+        if (at > 750 || total - at < PREVIEW_MIN_REST) return null;
+        const cut = (m.index ?? 0) + m[0].length;
+        return {
+          preview: [...tokens.slice(0, i), { type: "text", text: t.text.slice(0, cut) }],
+          rest: [{ type: "text", text: t.text.slice(cut) }, ...tokens.slice(i + 1)],
+        };
+      }
+    }
+    offset += len;
+    if (offset > 750) return null;
+  }
+  return null;
 }
