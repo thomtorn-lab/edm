@@ -55,7 +55,11 @@ describe("/venues — introduction (2026-10-30)", () => {
   it("shows the updated introduction and the highlights-list note", async () => {
     await renderPage();
     expect(screen.getByText("A curated guide to Copenhagen venues where electronic music is the main focus.")).toBeTruthy();
-    expect(screen.getByText(/This is a highlights list, not a full directory/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This is a highlights list, not a full directory - electronic events on this site may appear at other Copenhagen venues too.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/regularly hosting standalone/)).toBeNull();
   });
 });

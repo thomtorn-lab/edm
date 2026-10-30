@@ -46,7 +46,7 @@ export default async function VenuesPage() {
         A curated guide to Copenhagen venues where electronic music is the main focus.
       </p>
       <p className="mt-2 max-w-xl text-xs text-text-tertiary">
-        This is a highlights list, not a full directory — electronic events on this site may appear at other
+        This is a highlights list, not a full directory - electronic events on this site may appear at other
         Copenhagen venues too.
       </p>
 
