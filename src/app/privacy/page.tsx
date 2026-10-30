@@ -13,7 +13,8 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
  * (src/components/PrivacyAwareAnalytics.tsx, AnalyticsConsentSettings), the
  * session-storage "back to list" record, YouTube videos loaded only after
  * the visitor presses play (src/components/ArtistVideoPreview.tsx),
- * Contact/Suggest-an-event sent via Resend to a Gmail inbox and deleted
+ * Contact/Suggest-an-event sent via Resend to our @electroniccph.com inbox
+ * (mail hosting at Simply.com) and deleted
  * after 6 months, the Supabase database in the EU (Paris), and artist data
  * built from public listings.
  *
@@ -114,8 +115,9 @@ export default function PrivacyPage() {
           If you use <Link href="/contact" className={linkClass}>Contact</Link> or{" "}
           <Link href="/suggest-event" className={linkClass}>Suggest an event</Link>, what you submit (your name,
           email address and message, or the event details, your email address and note) is sent by email via
-          our email provider, Resend, to our inbox at Gmail (Google). It isn&rsquo;t stored in our website database and is used
-          only to reply to you or review your suggestion. Your IP address is used briefly in server memory to
+          our email-sending provider, Resend, to our @electroniccph.com inbox, which is hosted by Simply.com.
+          It isn&rsquo;t stored in our website database and is used only to reply to you or review your
+          suggestion. Your IP address is used briefly in server memory to
           block repeated automated submissions and isn&rsquo;t stored. The legal basis is our legitimate
           interest in answering enquiries and keeping the calendar accurate (GDPR Art. 6(1)(f)). We delete
           messages from our inbox 6 months after our last exchange with you.
@@ -178,7 +180,7 @@ export default function PrivacyPage() {
             processing addendum
           </li>
           <li>Resend Inc. (USA) — sending Contact and Suggest-an-event messages to our inbox</li>
-          <li>Google (Gmail) — our email inbox</li>
+          <li>Simply.com — hosting of our @electroniccph.com email inbox</li>
         </ul>
         <p>
           Google also receives data when you load a YouTube video, as described above. Vercel, Resend and Google
