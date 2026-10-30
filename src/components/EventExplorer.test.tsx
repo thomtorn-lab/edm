@@ -719,23 +719,24 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
     expect(queryCardText("Hard Techno")).toBeNull();
   });
 
-  // Exact-match genre filter (2026-10-23): the homepage offers the admin's
-  // own 22 genres and each one matches only events tagged with it — a
-  // broader genre no longer pulls in its subgenres.
-  it("the House filter shows only events tagged House, not Deep House", () => {
+  // Genre system revision (2026-10-24 — intended change from #161, which
+  // made every genre exact): a MAIN genre (Techno, House, Trance, Drum &
+  // Bass, Hardstyle) includes its subgenres; every other genre stays exact;
+  // Industrial is standalone and never part of Techno.
+  it("the House filter (a main genre) includes Deep House", () => {
     render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("house");
-    expect(queryCardText("Deep House")).toBeNull();
+    expect(allCardText("Deep House")).toHaveLength(1);
     expect(queryCardText("Melodic Techno")).toBeNull();
     expect(queryCardText("Trance")).toBeNull();
   });
 
-  it("the Techno filter shows neither Melodic Techno nor Industrial; each of those has its own filter", () => {
+  it("the Techno filter includes Melodic Techno but not the standalone Industrial genre; subgenre filters stay exact", () => {
     render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("techno");
-    expect(queryCardText("Melodic Techno")).toBeNull();
+    expect(allCardText("Melodic Techno")).toHaveLength(1);
     expect(queryCardText("Industrial")).toBeNull();
     selectGenre("melodic-techno");
     expect(allCardText("Melodic Techno")).toHaveLength(1);
@@ -762,7 +763,24 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
     expect(allCardText("Industrial")).toHaveLength(1); // the Industrial-only event's own badge
   });
 
-  it("every one of the 22 genre options shows exactly the events tagged with that genre", () => {
+  it("an event with two techno subgenres appears exactly once under Techno and once under each subgenre", () => {
+    const TWO_SUBGENRES = {
+      ...makeEvent("2026-08-17T20:00:00.000Z"),
+      primaryGenre: "hard-techno" as GenreSlug,
+      title: "Double Techno Night",
+      subgenres: ["hard-techno", "hypnotic-techno"] as GenreSlug[],
+    };
+    render(<EventExplorer events={[...ALL_EVENTS, TWO_SUBGENRES]} serverNow="2026-08-01T12:00:00.000Z" />);
+    vi.runOnlyPendingTimers();
+    for (const g of ["techno", "hard-techno", "hypnotic-techno"]) {
+      selectGenre(g);
+      expect(allCardText("Double Techno Night"), g).toHaveLength(1);
+    }
+    selectGenre("melodic-techno");
+    expect(queryCardText("Double Techno Night")).toBeNull();
+  });
+
+  it("every one of the 27 genre options shows exactly the events it matches: a main genre itself plus its subgenres, every other genre only itself", () => {
     const perGenre = GENRES.map((g, i) => ({
       ...makeEvent(`2026-09-${String(i + 1).padStart(2, "0")}T20:00:00.000Z`),
       id: `evt-${g.slug}`,
@@ -773,14 +791,34 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
     }));
     render(<EventExplorer events={perGenre} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
-    expect(GENRES).toHaveLength(22);
+    expect(GENRES).toHaveLength(27);
     for (const g of GENRES) {
       selectGenre(g.slug);
       for (const other of GENRES) {
         const shown = queryCardText(`Night of ${other.slug}`) !== null;
-        expect(shown, `${g.slug} filter, ${other.slug} event`).toBe(other.slug === g.slug);
+        expect(shown, `${g.slug} filter, ${other.slug} event`).toBe(other.slug === g.slug || other.parent === g.slug);
       }
     }
+  });
+
+  it("the drawn selected label (FilterSelect overlay) shows the chosen genre — grouped options included, not the 'All genres' fallback", () => {
+    render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
+    const select = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const shownLabel = () => select.parentElement!.querySelector("[data-select-value]")!.textContent;
+    expect(shownLabel()).toBe("All genres");
+    selectGenre("techno");
+    expect(shownLabel()).toBe("Techno");
+    selectGenre("garage");
+    expect(shownLabel()).toBe("UK Garage");
+  });
+
+  it("the genre options sit under the visual group headings, which are never selectable values", () => {
+    render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
+    const select = screen.getByLabelText("Genre") as HTMLSelectElement;
+    const groups = Array.from(select.querySelectorAll("optgroup"));
+    expect(groups.map((g) => g.label)).toEqual(["Techno", "House & Disco", "Trance", "Bass & Breaks", "Hard Dance", "Electro & Experimental", "Other"]);
+    expect(Array.from(groups[3].querySelectorAll("option")).map((o) => o.textContent)).toEqual(["Drum & Bass", "Jungle", "Breakbeat", "UK Garage", "Dubstep"]);
+    expect(Array.from(groups[4].querySelectorAll("option")).map((o) => o.textContent)).toEqual(["Hardstyle", "Rawstyle", "Hardcore"]);
   });
 
   it("an event tagged with an unrelated genre (Trance) is unaffected by the Techno/House filter change", () => {

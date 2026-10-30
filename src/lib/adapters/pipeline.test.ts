@@ -469,8 +469,40 @@ describe("source-aware relevance evidence (data-quality Workstream A — a gener
       }),
       { venues: VENUES, existingEvents: [] },
     );
-    expect(result.genre).toBe("industrial");
+    // Genre system revision (2026-10-24): the text names Industrial Techno,
+    // the techno subgenre, so the "industrial" hint is refined to it.
+    expect(result.genre).toBe("industrial-techno");
     expect(result.decision).toBe("auto_publish");
+  });
+
+  it("caps a bare 'industrial' hint at medium confidence so it always gets a human look — Industrial (industrial/EBM line) and Industrial Techno are easily confused in event copy (genre system revision, 2026-10-24)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Kontravoid + Spike Hellis",
+        description: "A night of industrial and EBM club sounds.",
+        artists: ["Kontravoid", "Spike Hellis"],
+        genreHint: "industrial",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("industrial");
+    expect(result.genreConfidence).toBe("medium");
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("never assigns the legacy 'ambient-experimental' value: a stale legacy hint is re-derived from the event's own text (genre system revision, 2026-10-24)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Drone Night",
+        description: "Long-form ambient drone sets on a club soundsystem.",
+        artists: ["Somebody"],
+        genreHint: "ambient-experimental",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("ambient");
   });
 
   it("caps a bare, uncorroborated generic electronic tag at review_queue even with no negative genre signal present at all", () => {
@@ -690,7 +722,7 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
       }),
       { venues: VENUES, existingEvents: [] },
     );
-    expect(result.genre).toBe("ambient-experimental"); // confirms this test exercises the real mis-mapping, not a different code path
+    expect(result.genre).toBe("ambient"); // confirms this test exercises the real mis-mapping, not a different code path
     expect(result.decision).toBe("hold");
     expect(result.holdReason).toBe("negative_relevance");
   });

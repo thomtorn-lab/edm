@@ -578,8 +578,9 @@ export const soundcloudLinkBlocks = pgTable("soundcloud_link_blocks", {
  * Newsletter subscribers (weekly digest MVP, 2026-10-05). No account/login —
  * `confirmToken`/`manageToken` are the entire auth model, matching the
  * task's explicit "no account creation" requirement. `genres` stores
- * `MainGenreSlug[]` (the same 12 broad groups the public Genre filter
- * already uses, see src/lib/taxonomy.ts's MAIN_GENRES/mainGenreOf) — an
+ * genre filter values from the shared genre model (see src/lib/taxonomy.ts
+ * NEWSLETTER_GENRE_OPTIONS / isNewsletterGenreValue — values from the
+ * earlier 12-group model stay valid, so no data migration) — an
  * empty array means "all events", not a separate boolean/enum field, so
  * there's exactly one way to represent "no filter" rather than two that
  * could disagree.

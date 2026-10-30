@@ -21,7 +21,8 @@ import {
   writeListReturn,
   type ExplorerMode,
 } from "@/lib/explorerFilters";
-import { GENRES, genreFilterLabel, isLegacyGenreFilter, matchesGenreFilter, type GenreFilterValue } from "@/lib/taxonomy";
+import { genreFilterLabel, isLegacyGenreFilter, matchesGenreSelection, type GenreFilterValue } from "@/lib/taxonomy";
+import { renderGenreOptions } from "./GenreOptions";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
 import { FilterSelect } from "./FilterSelect";
@@ -74,7 +75,7 @@ function applyFilters(
     if (mode === "tonight" && !isTonight(e, now)) return false;
     if (mode === "weekend" && !isThisWeekend(e, now)) return false;
     if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
-    if (genre !== "all" && !matchesGenreFilter(e.subgenres, genre)) return false;
+    if (genre !== "all" && !matchesGenreSelection(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
     return true;
@@ -861,19 +862,20 @@ function EventExplorerList({
     setMobileFiltersOpen(false);
   }
 
-  // Options are exactly the admin's genre list. A legacy group from an old
-  // link ("garage-bass", "hardstyle-hardcore") gets a hidden option only
+  // Options are exactly the admin's genre list, under the same visual
+  // headings (renderGenreOptions). Selecting a main genre (Techno, House, ...)
+  // also shows its subgenres; every other option is exact — see
+  // matchesGenreSelection. A legacy set from an old link ("garage-bass",
+  // "hardstyle-hardcore", "ambient-experimental") gets a hidden option only
   // while it is the selected value, so the select shows what is applied
-  // without offering the group as a choice.
+  // without offering the set as a choice.
   const genreOptions = (selected: GenreFilterValue | "all") => (
     <>
       <option value="all">All genres</option>
       {isLegacyGenreFilter(selected) && (
         <option value={selected} hidden>{genreFilterLabel(selected)}</option>
       )}
-      {GENRES.map((g) => (
-        <option key={g.slug} value={g.slug}>{g.label}</option>
-      ))}
+      {renderGenreOptions()}
     </>
   );
 
