@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "generation": 1,
+  "snapshot_generated_at": "2026-10-30T07:22:00Z",
+  "last_successful_run_at": "2026-10-30T07:22:00Z",
+  "checks": [
+    {
+      "subject_id": "event:e3bd3ab9",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e3bd3ab9",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e3bd3ab9",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e3bd3ab9",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e571e160",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e571e160",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e571e160",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:e571e160",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:7ea07d08",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:7ea07d08",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:7ea07d08",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:7ea07d08",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:78675cfd",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:78675cfd",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:78675cfd",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:78675cfd",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:689a26ca",
+      "category": "source_facts",
+      "status": "completed",
+      "source_fingerprint": null,
+      "checked_at": "2026-10-30T07:22:00Z",
+      "next_check_at": "2026-11-03T09:00:00Z",
+      "evidence": [
+        "ElectronicCPH: https://www.electroniccph.com/events/stvw-pres-punk-rave-e-689a26ca",
+        "Official venue: https://pumpehuset.dk/koncerter/stvw-pres-punk-rave-2/",
+        "Compared title, date 4 Nov, venue Pumpehuset, opening 19:00 and rescheduled status. No full ticket redirect check; tracked separately under links."
+      ],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:689a26ca",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:689a26ca",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:689a26ca",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:74bb2574",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:74bb2574",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:74bb2574",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:74bb2574",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8b106ce7",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8b106ce7",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8b106ce7",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8b106ce7",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:29afc31e",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:29afc31e",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:29afc31e",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:29afc31e",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8793413f",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8793413f",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8793413f",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:8793413f",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:75a069c3",
+      "category": "source_facts",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:75a069c3",
+      "category": "music_genre",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:75a069c3",
+      "category": "links",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "event:75a069c3",
+      "category": "duplicates",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "site:discovery",
+      "category": "discovery",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "site:about",
+      "category": "about_language",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    },
+    {
+      "subject_id": "site:technical",
+      "category": "production_technical",
+      "status": "pending",
+      "source_fingerprint": null,
+      "checked_at": null,
+      "next_check_at": null,
+      "evidence": [],
+      "reported_issue_ids": []
+    }
+  ],
+  "reported_issues": [],
+  "pilot_metadata": {
+    "kind": "real-events-read-only-parallel-pilot",
+    "sample_scope": "10 events, 40 event checks + 3 cross-cutting checks",
+    "events": [
+      {
+        "event_id": "e3bd3ab9",
+        "title": "NECKLESS HALLOWEEN EDITION",
+        "date": "2026-10-30T22:00:00+01:00",
+        "venue": "Culture Box",
+        "url": "https://www.electroniccph.com/events/neckless-halloween-edition-e-e3bd3ab9"
+      },
+      {
+        "event_id": "e571e160",
+        "title": "miaw (DK/NL) + SPLITSCREEN",
+        "date": "2026-10-30T21:00:00+01:00",
+        "venue": "Loppen",
+        "url": "https://www.electroniccph.com/events/miaw-dk-nl-e-e571e160"
+      },
+      {
+        "event_id": "7ea07d08",
+        "title": "Open Decks - Unleash your sound",
+        "date": "2026-10-31T20:00:00+01:00",
+        "venue": "Kulturhuset Krudttønden",
+        "url": "https://www.electroniccph.com/events/open-decks-unleash-your-sound-e-7ea07d08"
+      },
+      {
+        "event_id": "78675cfd",
+        "title": "Bailehouse x Halloween",
+        "date": "2026-10-31T22:00:00+01:00",
+        "venue": "Sigurd CPH",
+        "url": "https://www.electroniccph.com/events/bailehouse-x-halloween-e-78675cfd"
+      },
+      {
+        "event_id": "689a26ca",
+        "title": "STVW pres. Punk Rave",
+        "date": "2026-11-04T19:00:00+01:00",
+        "venue": "Pumpehuset",
+        "url": "https://www.electroniccph.com/events/stvw-pres-punk-rave-e-689a26ca"
+      },
+      {
+        "event_id": "74bb2574",
+        "title": "PAYDAR (IR/DK)",
+        "date": "2026-11-07T20:00:00+01:00",
+        "venue": "ALICE",
+        "url": "https://www.electroniccph.com/events/paydar-ir-dk-heyvan-ep-release-naghib-shanbehzadeh-live-ir-fr-alice-e-74bb2574"
+      },
+      {
+        "event_id": "8b106ce7",
+        "title": "Moor Mother (US)",
+        "date": "2026-11-11T19:00:00+01:00",
+        "venue": "ALICE",
+        "url": "https://www.electroniccph.com/events/moor-mother-us-e-8b106ce7"
+      },
+      {
+        "event_id": "29afc31e",
+        "title": "Ana Roxanne (US) + Hasfeldt (DK)",
+        "date": "2026-11-14T20:00:00+01:00",
+        "venue": "ALICE",
+        "url": "https://www.electroniccph.com/events/ana-roxanne-us-hasfeldt-dk-e-29afc31e"
+      },
+      {
+        "event_id": "8793413f",
+        "title": "The Prodigy",
+        "date": "2026-11-17T20:00:00+01:00",
+        "venue": "Royal Arena",
+        "url": "https://www.electroniccph.com/events/the-prodigy-e-8793413f"
+      },
+      {
+        "event_id": "75a069c3",
+        "title": "S/H x ALICE: REZMORAH (BR/PT/US)",
+        "date": "2026-11-20T20:00:00+01:00",
+        "venue": "ALICE (event at SORT/HVID)",
+        "url": "https://www.electroniccph.com/events/s-h-x-alice-rezmorah-br-pt-us-e-75a069c3"
+      }
+    ],
+    "notes": "Event IDs are public URL suffixes, not verified database primary keys. All unchecked categories remain pending. Completion requires full criterion-specific evidence; event page existence alone is not external source verification.",
+    "observations": [
+      {
+        "event_id": "75a069c3",
+        "category": "source_facts",
+        "note": "ElectronicCPH venue says ALICE while description specifies concert at SORT/HVID; needs independent venue classification review, not yet confirmed as issue."
+      },
+      {
+        "event_id": "689a26ca",
+        "category": "source_facts",
+        "note": "Original Oct 14 rescheduled to Nov 4 confirmed on official Pumpehuset page."
+      }
+    ]
+  }
+}
