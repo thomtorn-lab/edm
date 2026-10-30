@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 const VENUE = {
   id: "v1",
@@ -49,10 +49,21 @@ describe("/venues — top-level heading hierarchy (Round 19)", () => {
   });
 });
 
+describe("/venues — introduction (2026-10-30)", () => {
+  afterEach(cleanup);
+
+  it("shows the updated introduction and the highlights-list note", async () => {
+    await renderPage();
+    expect(screen.getByText("A curated guide to Copenhagen venues where electronic music is the main focus.")).toBeTruthy();
+    expect(screen.getByText(/This is a highlights list, not a full directory/)).toBeTruthy();
+    expect(screen.queryByText(/regularly hosting standalone/)).toBeNull();
+  });
+});
+
 describe("/venues — stays curated even when a non-curated venue row exists (admin venue creation follow-up)", () => {
   afterEach(cleanup);
 
-  it("never shows a curated card for a venue whose slug isn't in the curated list, e.g. an admin-created one — it only gets a plain link under Other venues", async () => {
+  it("never shows a venue whose slug isn't in the curated list, e.g. an admin-created one", async () => {
     vi.mocked(getVenues).mockResolvedValue([
       VENUE,
       { ...VENUE, id: "v2", slug: "suporama", name: "Suporama" },
@@ -61,10 +72,7 @@ describe("/venues — stays curated even when a non-curated venue row exists (ad
     const { default: VenuesPage } = await import("./page");
     render(await VenuesPage());
     expect(screen.getByRole("link", { name: /Culture Box/ })).toBeTruthy();
-    // Exactly one occurrence, and it is the plain link in the Other venues list — not a card.
-    expect(screen.getAllByText("Suporama")).toHaveLength(1);
-    const others = screen.getByRole("list", { name: "Other venues" });
-    expect(within(others).getByRole("link", { name: "Suporama" }).getAttribute("href")).toBe("/venues/suporama");
+    expect(screen.queryByText("Suporama")).toBeNull();
   });
 });
 
@@ -78,61 +86,71 @@ const JOLENE = venue({ id: "v-jolene", slug: "jolene", name: "Jolene Bar" });
 const BAGGEN = venue({ id: "v-baggen", slug: "baggen", name: "Baggen" });
 const CULTURE_BOX = venue({ id: "v-culture-box", slug: "culture-box", name: "Culture Box" });
 const H15 = venue({ id: "v-h15", slug: "h15", name: "H15" });
-const HOTEL_CECIL = venue({ id: "v-hotel-cecil", slug: "hotel-cecil", name: "Hotel Cecil" });
 const KLUB_WERKSTATT = venue({ id: "v-klub-werkstatt", slug: "klub-werkstatt", name: "Klub Werkstatt" });
-const HALVANDET = venue({ id: "v-halvandet", slug: "halvandet", name: "Halvandet" });
-const PYLONEN = venue({ id: "v-pylonen", slug: "pylonen", name: "Pylonen" });
-const UNDERWERKET = venue({ id: "v-underwerket", slug: "underwerket", name: "UnderWerket" });
-const MAYHEM = venue({ id: "v-mayhem", slug: "mayhem", name: "Mayhem" });
-const ODDS_AND_ENDS = venue({ id: "v-odds-and-ends", slug: "odds-and-ends", name: "Odds and Ends" });
 const RUST = venue({ id: "v-rust", slug: "rust", name: "RUST" });
 
 function futureEvent(id: string, venueId: string) {
   return { id, venueId, startDatetime: "2099-01-01T20:00:00.000Z", endDatetime: null };
 }
 
-describe("/venues — VEGA overall-venue presentation (2026-09-11)", () => {
+describe("/venues — approved nine-venue list (2026-10-30)", () => {
   afterEach(cleanup);
 
-  it("shows a single 'VEGA' entry aggregating Store VEGA/Lille VEGA + Ideal Bar upcoming counts without double-counting, and never shows the old 'VEGA (Ideal Bar)' entry", async () => {
-    vi.mocked(getVenues).mockResolvedValue([VEGA, IDEAL_BAR, CULTURE_BOX]);
+  it("renders a card for each of the nine approved venues, in editorial order, linking to its venue page", async () => {
+    const { VENUES } = await import("@/lib/data/venues");
+    vi.mocked(getVenues).mockResolvedValue(VENUES);
+    vi.mocked(getEventsForVenue).mockResolvedValue([]);
+    const { default: VenuesPage } = await import("./page");
+    const { container } = render(await VenuesPage());
+
+    const hrefs = Array.from(container.querySelectorAll("a[href^='/venues/']")).map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "/venues/culture-box",
+      "/venues/hangaren",
+      "/venues/den-anden-side",
+      "/venues/module",
+      "/venues/jolene",
+      "/venues/baggen",
+      "/venues/poolen",
+      "/venues/klub-werkstatt",
+      "/venues/pylonen",
+    ]);
+    expect(screen.getByRole("link", { name: /Klub Werkstatt/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Pylonen/ })).toBeTruthy();
+  });
+
+  it("has no Other venues section and shows no other venue, even though their registry rows still exist", async () => {
+    vi.mocked(getVenues).mockResolvedValue([CULTURE_BOX, VEGA, IDEAL_BAR, RUST, H15]);
+    vi.mocked(getEventsForVenue).mockResolvedValue([]);
+    const { default: VenuesPage } = await import("./page");
+    render(await VenuesPage());
+
+    expect(screen.queryByRole("heading", { name: /Other venues/i })).toBeNull();
+    expect(screen.queryByRole("list", { name: /Other venues/i })).toBeNull();
+    for (const hidden of [VEGA, IDEAL_BAR, RUST, H15]) {
+      expect(screen.queryByText(hidden.name)).toBeNull();
+    }
+    expect(screen.getByRole("link", { name: /Culture Box/ })).toBeTruthy();
+  });
+
+  it("counts only a venue's own upcoming published events, ignoring past ones", async () => {
+    vi.mocked(getVenues).mockResolvedValue([CULTURE_BOX, KLUB_WERKSTATT]);
     vi.mocked(getEventsForVenue).mockImplementation(async (id: string) => {
-      if (id === "v-vega") return [futureEvent("e-store", "v-vega"), futureEvent("e-lille", "v-vega")] as never;
-      if (id === "v-vega-ideal-bar") return [futureEvent("e-idealbar", "v-vega-ideal-bar")] as never;
+      if (id === "v-klub-werkstatt") {
+        return [
+          futureEvent("e-kw-1", "v-klub-werkstatt"),
+          futureEvent("e-kw-2", "v-klub-werkstatt"),
+          { id: "e-kw-past", venueId: "v-klub-werkstatt", startDatetime: "2000-01-01T20:00:00.000Z", endDatetime: null },
+        ] as never;
+      }
+      if (id === "v-culture-box") return [futureEvent("e-cb", "v-culture-box")] as never;
       return [];
     });
     const { default: VenuesPage } = await import("./page");
     render(await VenuesPage());
 
-    expect(screen.getAllByRole("link", { name: /^VEGA/ })).toHaveLength(1);
-    expect(screen.queryByText(/VEGA \(Ideal Bar\)/)).toBeNull();
-    expect(screen.getByText("3 upcoming events")).toBeTruthy();
-  });
-
-  it("removed venues (H15, Hotel Cecil, Klub Werkstatt, Halvandet, Pylonen, UnderWerket, Mayhem, Odds and Ends, RUST) get no curated card, only a plain Other venues link", async () => {
-    vi.mocked(getVenues).mockResolvedValue([
-      CULTURE_BOX,
-      H15,
-      HOTEL_CECIL,
-      KLUB_WERKSTATT,
-      HALVANDET,
-      PYLONEN,
-      UNDERWERKET,
-      MAYHEM,
-      ODDS_AND_ENDS,
-      RUST,
-    ]);
-    vi.mocked(getEventsForVenue).mockResolvedValue([]);
-    const { default: VenuesPage } = await import("./page");
-    render(await VenuesPage());
-
-    const others = screen.getByRole("list", { name: "Other venues" });
-    for (const removed of [H15, HOTEL_CECIL, KLUB_WERKSTATT, HALVANDET, PYLONEN, UNDERWERKET, MAYHEM, ODDS_AND_ENDS, RUST]) {
-      expect(screen.getAllByText(removed.name)).toHaveLength(1);
-      expect(within(others).getByRole("link", { name: removed.name }).getAttribute("href")).toBe(`/venues/${removed.slug}`);
-    }
-    // Unrelated, still-curated venue is unaffected.
-    expect(screen.getByRole("link", { name: /Culture Box/ })).toBeTruthy();
+    expect(screen.getByText("2 upcoming events")).toBeTruthy();
+    expect(screen.getByText("1 upcoming event")).toBeTruthy();
   });
 
   it("Jolene and Baggen display with their public '(Club)' label instead of their canonical name", async () => {
@@ -168,42 +186,5 @@ describe("/venues — venue-name link affordance (Round 19)", () => {
     const link = screen.getByRole("link", { name: /Culture Box/ });
     expect(link.className).toContain("hover:brightness-110");
     expect(link.className).toContain("focus-visible:brightness-110");
-  });
-});
-
-describe("/venues — every published venue page is reachable via a crawlable link (sitemap/link hygiene, 2026-10-09)", () => {
-  afterEach(cleanup);
-
-  it("links every non-grouped registry venue — curated as a card, the rest under Other venues — and skips grouped members whose URL redirects", async () => {
-    const { VENUES, CURATED_VENUE_SLUGS, getPublicVenueGroupPrimaryId } = await import("@/lib/data/venues");
-    vi.mocked(getVenues).mockResolvedValue(VENUES);
-    vi.mocked(getEventsForVenue).mockResolvedValue([]);
-    const { default: VenuesPage } = await import("./page");
-    const { container } = render(await VenuesPage());
-
-    const hrefs = new Set(Array.from(container.querySelectorAll("a[href^='/venues/']")).map((a) => a.getAttribute("href")));
-    for (const v of VENUES) {
-      if (getPublicVenueGroupPrimaryId(v.id)) {
-        expect(hrefs.has(`/venues/${v.slug}`)).toBe(false);
-      } else {
-        expect(hrefs.has(`/venues/${v.slug}`), v.slug).toBe(true);
-      }
-    }
-
-    // The curated cards are unchanged: one card per curated slug, none for anything else.
-    const others = screen.getByRole("list", { name: "Other venues" });
-    for (const slug of CURATED_VENUE_SLUGS) {
-      expect(within(others).queryByRole("link", { name: new RegExp(`^${VENUES.find((v) => v.slug === slug)!.name}$`) })).toBeNull();
-    }
-  });
-
-  it("omits the Other venues section entirely when every venue is curated", async () => {
-    render(await (async () => {
-      vi.mocked(getVenues).mockResolvedValue([CULTURE_BOX]);
-      vi.mocked(getEventsForVenue).mockResolvedValue([]);
-      const { default: VenuesPage } = await import("./page");
-      return VenuesPage();
-    })());
-    expect(screen.queryByRole("heading", { name: "Other venues" })).toBeNull();
   });
 });
