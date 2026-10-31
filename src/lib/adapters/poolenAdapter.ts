@@ -1,7 +1,7 @@
 import { copenhagenWallClockToUtc, type DateKey } from "../datetime";
 import { genreConfidenceForEvidence } from "../classification";
 import { deterministicGenreFromText } from "./deterministicGenreMapping";
-import { decodeHtmlEntities, htmlToText, truncateAtBoundary, isLikelyDanish } from "./htmlExtraction";
+import { decodeHtmlEntities, htmlToText, htmlToParagraphText, isLikelyDanish } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
 
@@ -229,12 +229,11 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
   // post-relaunch, but the guard is harmless to keep and still protects
   // against any residual Danish copy). Genre resolution below still uses
   // the real, untruncated fullDescriptionText as evidence regardless — this
-  // only decides what's shown.
-  const description = !fullDescriptionText
-    ? null
-    : isLikelyDanish(fullDescriptionText)
-      ? null
-      : truncateAtBoundary(fullDescriptionText, 600);
+  // only decides what's shown. A shown description is stored in full with
+  // its paragraphs (About-text formatting, 2026-10-25).
+  const structuredDescription = fullDescriptionText ? htmlToParagraphText(descriptionHtml) || null : null;
+  const withheld = structuredDescription !== null && isLikelyDanish(fullDescriptionText);
+  const description = withheld ? null : structuredDescription;
 
   // Support-artist names live in their own `.pc-concert__band` sections,
   // each with a `.pc-concert__band-name` heading — a distinct class from
@@ -284,6 +283,9 @@ export function parsePoolenEventDetailHtml(html: string, entry: PoolenProgramEnt
     // whose `description` above is null (relevance-architecture audit,
     // 2026-08-30 — see RawCandidateEvent.relevanceText's doc comment).
     relevanceText: fullDescriptionText || null,
+    // Kept for admin/QA instead of dropped; still never shown publicly
+    // (RawCandidateEvent.withheldDescription).
+    withheldDescription: withheld ? structuredDescription : null,
     soldOutHint,
     cancelledHint,
     cancellationEvidence: cancelledHint ? 'Poolen status badge "Cancelled"' : null,

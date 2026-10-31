@@ -201,15 +201,19 @@ describe("parseAliceEventDetailHtml — relevanceText carries evidence past the 
   };
   const event = parseAliceEventDetailHtml(BRUNO_BERLE_HTML, entry);
 
-  it("truncates description to 800 chars, cutting it off before the bio's own genre self-identification", () => {
-    expect(event.description!.length).toBeLessThan(700);
-    expect(event.description).not.toContain("Música Popular Brasileira");
+  // The stored description is no longer cut at 800 characters and keeps
+  // the page's paragraphs (About-text formatting, 2026-10-15/24). What this
+  // block guards is unchanged: relevanceText is always the full, flat text.
+  it("keeps the whole bio in the stored description, with its paragraph breaks", () => {
+    expect(event.description!.replace(/\s+/g, " ")).toBe(event.relevanceText);
+    expect(event.description).toContain("Música Popular Brasileira");
+    expect(event.description).toContain("\n\n");
   });
 
-  it("still carries the FULL untruncated bio in relevanceText, including the genre self-identification the truncated description drops", () => {
+  it("carries the FULL untruncated bio in relevanceText as flat text, including the genre self-identification", () => {
     expect(event.relevanceText).toContain("Música Popular Brasileira");
     expect(event.relevanceText).toContain("subtle electronic textures");
-    expect(event.relevanceText!.length).toBeGreaterThan(event.description!.length);
+    expect(event.relevanceText).not.toContain("\n");
   });
 });
 

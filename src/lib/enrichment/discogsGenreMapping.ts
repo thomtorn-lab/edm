@@ -64,6 +64,12 @@ const STYLE_TO_GENRE_SLUG_RAW: Record<string, GenreSlug> = {
   "psy-trance": "psytrance",
   psytrance: "psytrance",
   "psychedelic trance": "psytrance",
+  // Genre system revision (2026-10-24): Jungle and Breakbeat are their own
+  // genres now. "Breaks" here is Discogs' controlled style string (exact
+  // match), not the everyday word the text path deliberately ignores.
+  jungle: "jungle",
+  breakbeat: "breakbeat",
+  breaks: "breakbeat",
   "drum n bass": "drum-and-bass",
   "drum & bass": "drum-and-bass",
   "drum and bass": "drum-and-bass",
@@ -77,8 +83,9 @@ const STYLE_TO_GENRE_SLUG_RAW: Record<string, GenreSlug> = {
   frenchcore: "hardcore",
   electro: "electro",
   disco: "disco",
-  ambient: "ambient-experimental",
-  experimental: "ambient-experimental",
+  // Ambient / Experimental is split; the legacy combined value is never assigned.
+  ambient: "ambient",
+  experimental: "experimental",
 };
 
 const STYLE_TO_GENRE_SLUG: Record<string, GenreSlug> = Object.fromEntries(

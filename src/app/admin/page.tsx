@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getRecentSyncIdentityChanges, getSources, getVenues } from "@/lib/queries";
+import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getRecentSyncIdentityChanges, getSources, getVenues, getWithheldDescriptionsAdmin } from "@/lib/queries";
 import { buildDataQualityReport } from "@/lib/dataQuality";
 import DataQualityPanel from "@/components/admin/DataQualityPanel";
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
@@ -36,12 +36,13 @@ const HEALTH_COLOR: Record<string, string> = {
 
 export default async function AdminPage() {
   const now = new Date();
-  const [sources, discoveryQueueRows, venues, allEvents, recentIdentityChanges] = await Promise.all([
+  const [sources, discoveryQueueRows, venues, allEvents, recentIdentityChanges, withheldDescriptions] = await Promise.all([
     getSources(),
     getDiscoveryQueueForAdmin(),
     getVenues(),
     getAllEventsAdmin(),
     getRecentSyncIdentityChanges(),
+    getWithheldDescriptionsAdmin(),
   ]);
 
   const pendingItems = discoveryQueueRows.filter((item) => item.status === "pending");
@@ -123,7 +124,7 @@ export default async function AdminPage() {
           overwritten by a later automated sync.
         </p>
         <div className="mt-3">
-          <EventManager events={allEvents} venues={venues} />
+          <EventManager events={allEvents} venues={venues} withheldDescriptions={withheldDescriptions} />
         </div>
       </section>
 

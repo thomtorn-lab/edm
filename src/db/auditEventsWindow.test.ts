@@ -13,6 +13,7 @@ import {
   WINDOW_COUNT_SQL,
   WINDOW_EVENTS_SQL,
   WINDOW_PREDICATE_SQL,
+  WITHHELD_DESCRIPTIONS_SQL,
   type QueryClient,
   type WindowEventRow,
 } from "./auditEventsWindow";
@@ -117,7 +118,9 @@ describe("SQL — completeness and minimal output", () => {
       // checks (genre QA, 2026-10-17), never selected as a column.
       const overrideUses = sql.match(/[^\n]*overridden_fields[^\n]*/g) ?? [];
       for (const use of overrideUses) {
-        expect(use.trim()).toMatch(/^\('(primaryGenre|subgenres)' = ANY\(e\.overridden_fields\)\) AS (primary_genre|subgenres)_overridden,?$/);
+        expect(use.trim()).toMatch(
+          /^\('(primaryGenre|subgenres)' = ANY\(e\.overridden_fields\)\) AS (primary_genre|subgenres)_overridden,?$/,
+        );
       }
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
     }
@@ -160,6 +163,21 @@ describe("toScreeningEvent", () => {
     // overridden_fields NULL/absent in the DB yields NULL from ANY(): treated as not overridden.
     expect(ev({ primary_genre_overridden: null, subgenres_overridden: null }).genreManuallySet).toEqual([]);
     expect(Object.keys(ev({}))).not.toContain("overriddenFields");
+  });
+
+  it("Danish-description QA (2026-10-25): flags Danish shown text and the source's withheld text, hides nothing", () => {
+    const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer og det bliver vildt.";
+    const EN = "The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.";
+    const ev = (o: Partial<WindowEventRow>, withheld: string | null = null) => toScreeningEvent(row({ id: "e-d", start: "2026-10-17T22:00:00Z", ...o }), w, withheld);
+    // A Danish description stored today is reported, and passed through unchanged.
+    expect(ev({ description: DA, canonical_source_id: "src-pumpehuset" })).toMatchObject({ descriptionReadsDanish: true, withheldSourceDescription: null, description: shortenDescription(DA) });
+    expect(ev({ description: null, canonical_source_id: "src-pumpehuset" }, DA)).toMatchObject({ descriptionReadsDanish: false, withheldSourceDescription: shortenDescription(DA) });
+    expect(ev({ description: EN, canonical_source_id: "src-poolen" })).toMatchObject({ descriptionReadsDanish: false, withheldSourceDescription: null });
+  });
+
+  it("reads withheld texts with one narrow SELECT: that change type only, event id and text only", () => {
+    expect(WITHHELD_DESCRIPTIONS_SQL).toMatch(/^SELECT l\.event_id, l\.note\nFROM event_change_log l\nWHERE l\.change_type = 'withheld_description' AND l\.event_id = ANY\(\$1\)/);
+    expect(WITHHELD_DESCRIPTIONS_SQL).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
   });
 
   it("shortens and whitespace-collapses descriptions", () => {
@@ -207,6 +225,7 @@ function fakeClient(
       if (sql === READ_ONLY_TX_STATEMENTS.verify) return { rows: [{ transaction_read_only: readOnly }] };
       if (sql === WINDOW_EVENTS_SQL) return { rows };
       if (sql === WINDOW_COUNT_SQL) return { rows: counts };
+      if (sql === WITHHELD_DESCRIPTIONS_SQL) return { rows: [{ event_id: "e-src", note: "Nyere tekst" }, { event_id: "e-src", note: "Ældre tekst" }] };
       return { rows: [] };
     },
   };
@@ -218,6 +237,7 @@ const ALLOWED_STATEMENTS = [
   "SET LOCAL statement_timeout = '25s'",
   "SHOW transaction_read_only",
   WINDOW_EVENTS_SQL,
+  WITHHELD_DESCRIPTIONS_SQL,
   WINDOW_COUNT_SQL,
   "ROLLBACK",
 ];
@@ -240,6 +260,8 @@ describe("runEventsWindowAudit — read-only transaction", () => {
     expect(report.completenessCheck).toBe("ok");
     expect(report.events.map((e) => e.id)).toEqual(["e-src", "e-none"]);
     expect(report.countBySource).toContainEqual({ sourceId: null, count: 1 });
+    // Latest withheld text per event (rows arrive newest first).
+    expect(report.events.map((e) => e.withheldSourceDescription)).toEqual(["Nyere tekst", null]);
   });
 
   it("reports a mismatch when the independent count disagrees with the rows", async () => {
@@ -318,6 +340,9 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
         artist_name_normalized text PRIMARY KEY, lookup_status text NOT NULL, proposed_genre text, genre_confidence text,
         identity_confidence text, discogs_artist_id integer, evidence jsonb NOT NULL DEFAULT '[]', classification_method text NOT NULL,
         looked_up_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL)`);
+      await client.query(`CREATE TABLE event_change_log (
+        id text PRIMARY KEY, event_id text NOT NULL, changed_by text NOT NULL, change_type text NOT NULL,
+        fields_changed text[] NOT NULL DEFAULT '{}', note text, created_at timestamptz NOT NULL DEFAULT now())`);
       await client.query(`INSERT INTO venues VALUES ('v1', 'Venue One')`);
       const ins = (id: string, start: string, opts: { end?: string; published?: boolean; source?: string | null } = {}) =>
         client.query(

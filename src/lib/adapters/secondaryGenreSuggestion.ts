@@ -1,5 +1,5 @@
 import type { GenreSlug } from "../taxonomy";
-import { mainGenreOf } from "../taxonomy";
+import { isValidSecondaryGenre, parentOf } from "../taxonomy";
 import type { ConfidenceLevel } from "../types";
 import { findAllGenreMatches } from "./deterministicGenreMapping";
 
@@ -63,10 +63,15 @@ function distinctGenresIn(text: string): GenreSlug[] {
   return distinct;
 }
 
+/** A genre's family: its main genre, or itself when it has no parent (taxonomy.ts hierarchy). */
+function familyOf(slug: GenreSlug): GenreSlug {
+  return parentOf(slug) ?? slug;
+}
+
 /**
  * Given a qualifying pair and the already-resolved primary genre, decides
  * whether the pair corroborates that primary (one element shares its exact
- * slug or its broader genre GROUP — see taxonomy.ts's mainGenreOf) and, if
+ * slug or its genre FAMILY — see familyOf) and, if
  * so, returns the OTHER element as the secondary candidate — but only when
  * that other element is in a genuinely DIFFERENT group than the primary.
  *
@@ -83,16 +88,21 @@ function distinctGenresIn(text: string): GenreSlug[] {
  * groups, never two siblings in the same one.
  */
 function secondaryCandidateFromPair(pair: GenrePair, primaryGenre: GenreSlug): GenreSlug | null {
-  const primaryGroup = mainGenreOf(primaryGenre);
+  const primaryFamily = familyOf(primaryGenre);
   const [a, b] = pair;
-  const aAnchorsPrimary = a === primaryGenre || mainGenreOf(a) === primaryGroup;
-  const bAnchorsPrimary = b === primaryGenre || mainGenreOf(b) === primaryGroup;
+  const aAnchorsPrimary = a === primaryGenre || familyOf(a) === primaryFamily;
+  const bAnchorsPrimary = b === primaryGenre || familyOf(b) === primaryFamily;
 
-  if (aAnchorsPrimary && !bAnchorsPrimary) return b;
-  if (bAnchorsPrimary && !aAnchorsPrimary) return a;
+  // The candidate must also be a valid second tag next to the primary
+  // (taxonomy.ts validateGenreTags: never Electronic / Other, never a
+  // legacy value, never a main genre with its own subgenre).
+  const candidate = aAnchorsPrimary && !bAnchorsPrimary ? b : bAnchorsPrimary && !aAnchorsPrimary ? a : null;
+  if (candidate && isValidSecondaryGenre(primaryGenre, candidate)) return candidate;
   // Neither element relates to the already-established primary (unrelated/
-  // conflicting evidence), or both do (a same-family pair, not a second
-  // genre) — either way, this field doesn't corroborate a secondary.
+  // conflicting evidence), or both do (a same-family pair — the model
+  // allows two subgenres of one main genre, but this automatic suggestion
+  // stays conservative and leaves that to an admin) — either way, this
+  // field doesn't corroborate a secondary.
   return null;
 }
 

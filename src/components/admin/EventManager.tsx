@@ -7,6 +7,7 @@ import type { AdminUnpublishReason, Venue } from "@/lib/types";
 import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
+import EventYoutubePanel from "./EventYoutubePanel";
 
 /** UNPUBLISH reasons offered in the admin UI (admin unpublish/cancellation
  *  safety, 2026-09-06) — must stay in sync with AdminUnpublishReason. */
@@ -18,17 +19,26 @@ const UNPUBLISH_REASONS: { value: AdminUnpublishReason; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
-export default function EventManager({ events, venues }: { events: EventWithVenue[]; venues: Venue[] }) {
+export default function EventManager({
+  events,
+  venues,
+  withheldDescriptions = {},
+}: {
+  events: EventWithVenue[];
+  venues: Venue[];
+  /** Latest withheld source description per event id (getWithheldDescriptionsAdmin). */
+  withheldDescriptions?: Record<string, string>;
+}) {
   return (
     <ul>
       {events.map((event) => (
-        <EventRow key={event.id} event={event} venues={venues} />
+        <EventRow key={event.id} event={event} venues={venues} withheldDescription={withheldDescriptions[event.id] ?? null} />
       ))}
     </ul>
   );
 }
 
-function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] }) {
+function EventRow({ event, venues, withheldDescription }: { event: EventWithVenue; venues: Venue[]; withheldDescription: string | null }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -385,6 +395,15 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               setEndTouched(true);
             }}
           />
+          {withheldDescription && (
+            // The source's own (Danish) text, kept for admin/QA but never
+            // shown publicly — see src/lib/withheldDescriptions.ts. Read-only:
+            // copying it into Description above is an explicit admin edit.
+            <details className="text-xs text-text-secondary">
+              <summary className="cursor-pointer">Source description not shown publicly (Danish)</summary>
+              <p className="mt-1 whitespace-pre-line">{withheldDescription}</p>
+            </details>
+          )}
           <Field id={`event-venue-${event.id}`} label="Venue">
             <select id={`event-venue-${event.id}`} value={venueId} onChange={(e) => setVenueId(e.target.value)} className={inputCls}>
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -424,6 +443,7 @@ function EventRow({ event, venues }: { event: EventWithVenue; venues: Venue[] })
               Save (marks edited fields as manually overridden)
             </button>
           </div>
+          <EventYoutubePanel eventId={event.id} />
         </div>
       )}
       {error && <p className="mt-2 text-xs text-status-bad">{error}</p>}

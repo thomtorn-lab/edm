@@ -269,6 +269,12 @@ describe("parsePoolenEventDetailHtml — Outside event stays tagged to the real 
     expect(event.ticketUrl).toBe("https://billetto.dk/en/e/outdoor-90s-00s-r-b-festival-copenhagen-billetter-1982682");
     expect(event.priceFrom).toBe(250);
   });
+
+  it("keeps the English description although it names Refshaleøen (language-guard false positive fixed 2026-10-25)", () => {
+    expect(event.description).toBeTruthy();
+    expect(event.description).toMatch(/Refshaleøen/);
+    expect(event.withheldDescription ?? null).toBeNull();
+  });
 });
 
 describe("parsePoolenEventDetailHtml — support-artist extraction and colon-separated times (real fixture)", () => {
@@ -292,6 +298,11 @@ describe("parsePoolenEventDetailHtml — support-artist extraction and colon-sep
     expect(event.soldOutHint).toBeNull();
     expect(event.cancelledHint).toBeNull();
     expect(event.ticketUrl).toBe("https://secure.tickster.com/7cwak39ey6pecvc");
+  });
+
+  it("keeps the English description although it contains Danish names with æ/ø/å (fixed 2026-10-25)", () => {
+    expect(event.description).toBeTruthy();
+    expect(event.withheldDescription ?? null).toBeNull();
   });
 });
 
@@ -321,9 +332,9 @@ describe("parsePoolenEventDetailHtml — genre resolution tiers (real page, bio 
     expect(event.genreConfidenceHint).toBeNull();
   });
 
-  it("resolves ambient-experimental when the bio explicitly ties 'experimental' to electronic music", () => {
+  it("resolves experimental when the bio explicitly ties 'experimental' to electronic music", () => {
     const event = parsePoolenEventDetailHtml(withProse("<p>Deep, forward-leaning experimental electronic soundscapes.</p>"), entry);
-    expect(event.genreHint).toBe("ambient-experimental");
+    expect(event.genreHint).toBe("experimental");
     expect(event.genreConfidenceHint).toBe("high");
   });
 

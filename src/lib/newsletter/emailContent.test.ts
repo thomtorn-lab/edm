@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildManageUrl, buildNewsletterEmail, buildUnsubscribeUrl } from "./emailContent";
 import type { EventWithVenue } from "../queries";
-import type { GenreSlug, MainGenreSlug } from "../taxonomy";
+import type { GenreSlug, GenreFilterValue } from "../taxonomy";
 
 const VENUE = {
   id: "v-test",
@@ -112,7 +112,7 @@ describe("buildNewsletterEmail", () => {
   });
 
   it("includes a scope line reflecting the subscriber's selected genres", () => {
-    const { html, text } = buildNewsletterEmail({ genres: ["techno", "house"] as MainGenreSlug[], events: [], manageToken: "tok" });
+    const { html, text } = buildNewsletterEmail({ genres: ["techno", "house"] as GenreFilterValue[], events: [], manageToken: "tok" });
     expect(html).toContain("Techno, House");
     expect(text).toContain("Techno, House");
   });

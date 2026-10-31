@@ -3,23 +3,26 @@ import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "./client";
 import { newsletterSends, newsletterSubscribers } from "./schema";
 import { generateNewsletterToken } from "../lib/newsletter/tokens";
-import { MAIN_GENRES, type MainGenreSlug } from "../lib/taxonomy";
+import { isNewsletterGenreValue, type GenreFilterValue } from "../lib/taxonomy";
 import type { EventWithVenue } from "../lib/queries";
 import { selectEventsForSubscriber } from "../lib/newsletter/eventSelection";
 import { buildNewsletterEmail } from "../lib/newsletter/emailContent";
 import { NEWSLETTER_CONSENT_VERSION } from "../lib/newsletter/consent";
 
-const VALID_MAIN_GENRES = new Set<string>(MAIN_GENRES.map((g) => g.slug));
-
-/** Defensive allowlist filter — drops anything that isn't one of the 12 known MainGenreSlug values rather than trusting raw request input. */
-export function sanitizeGenreSelection(input: unknown): MainGenreSlug[] {
+/**
+ * Defensive allowlist filter — drops anything that isn't a known newsletter
+ * genre value (taxonomy.ts isNewsletterGenreValue: the offered choices plus
+ * every value from the earlier 12-group model) rather than trusting raw
+ * request input.
+ */
+export function sanitizeGenreSelection(input: unknown): GenreFilterValue[] {
   if (!Array.isArray(input)) return [];
-  const result: MainGenreSlug[] = [];
+  const result: GenreFilterValue[] = [];
   const seen = new Set<string>();
   for (const value of input) {
-    if (typeof value !== "string" || !VALID_MAIN_GENRES.has(value) || seen.has(value)) continue;
+    if (!isNewsletterGenreValue(value) || seen.has(value)) continue;
     seen.add(value);
-    result.push(value as MainGenreSlug);
+    result.push(value);
   }
   return result;
 }
@@ -27,7 +30,7 @@ export function sanitizeGenreSelection(input: unknown): MainGenreSlug[] {
 export interface NewsletterSubscriberRecord {
   id: string;
   email: string;
-  genres: MainGenreSlug[];
+  genres: GenreFilterValue[];
   confirmed: boolean;
   manageToken: string;
 }
@@ -106,10 +109,10 @@ export async function getSubscriberByManageToken(manageToken: string): Promise<N
   const rows = await db.select().from(newsletterSubscribers).where(eq(newsletterSubscribers.manageToken, manageToken)).limit(1);
   const row = rows[0];
   if (!row) return null;
-  return { id: row.id, email: row.email, genres: row.genres as MainGenreSlug[], confirmed: row.confirmed, manageToken: row.manageToken };
+  return { id: row.id, email: row.email, genres: sanitizeGenreSelection(row.genres), confirmed: row.confirmed, manageToken: row.manageToken };
 }
 
-export async function updateSubscriberGenres(manageToken: string, genres: MainGenreSlug[]): Promise<boolean> {
+export async function updateSubscriberGenres(manageToken: string, genres: GenreFilterValue[]): Promise<boolean> {
   const result = await db
     .update(newsletterSubscribers)
     .set({ genres })
@@ -154,7 +157,7 @@ export async function getConfirmedSubscribers(emailAllowlist?: Set<string> | nul
   return matching.map((row) => ({
     id: row.id,
     email: row.email,
-    genres: row.genres as MainGenreSlug[],
+    genres: sanitizeGenreSelection(row.genres),
     confirmed: row.confirmed,
     manageToken: row.manageToken,
   }));

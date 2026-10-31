@@ -75,3 +75,42 @@ describe("proxy — POST /api/admin/venues is gated exactly like every other adm
     });
   });
 });
+
+describe("proxy — the per-event YouTube video route is admin-only (2026-10-24)", () => {
+  const ORIGINAL_USER = process.env.ADMIN_USERNAME;
+  const ORIGINAL_PASS = process.env.ADMIN_PASSWORD;
+
+  beforeEach(() => {
+    process.env.ADMIN_USERNAME = "test-admin";
+    process.env.ADMIN_PASSWORD = "test-secret";
+  });
+
+  afterEach(() => {
+    process.env.ADMIN_USERNAME = ORIGINAL_USER;
+    process.env.ADMIN_PASSWORD = ORIGINAL_PASS;
+  });
+
+  for (const method of ["GET", "PUT", "DELETE"]) {
+    it(`${method} /api/admin/events/:id/youtube without credentials is a 401`, () => {
+      const res = proxy(new NextRequest("http://localhost/api/admin/events/e-1/youtube", { method }));
+      expect(res.status).toBe(401);
+    });
+
+    it(`${method} /api/admin/events/:id/youtube with the wrong password is a 401`, () => {
+      const res = proxy(new NextRequest("http://localhost/api/admin/events/e-1/youtube", { method, headers: { authorization: basicAuthHeader("test-admin", "wrong") } }));
+      expect(res.status).toBe(401);
+    });
+  }
+
+  it("is let through with the right credentials", () => {
+    const res = proxy(makeRequest("/api/admin/events/e-1/youtube", basicAuthHeader("test-admin", "test-secret")));
+    expect(res.status).toBe(200);
+  });
+
+  it("fails closed when no admin credentials are configured", () => {
+    delete process.env.ADMIN_USERNAME;
+    delete process.env.ADMIN_PASSWORD;
+    const res = proxy(makeRequest("/api/admin/events/e-1/youtube", basicAuthHeader("test-admin", "test-secret")));
+    expect(res.status).toBe(401);
+  });
+});

@@ -20,12 +20,20 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
+import { classifyAboutText, type AboutKind } from "./aboutContent";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
 import type { EventChangeEntry } from "./dataQuality";
+import { latestWithheldByEvent, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "./withheldDescriptions";
 
 export interface EventWithVenue extends EventRecord {
   venue: Venue;
+  /**
+   * Set by the public queries (withAboutKind): whether the About
+   * text is about the event or only practical venue information — see
+   * src/lib/aboutContent.ts. Classified from the ORIGINAL stored text.
+   */
+  aboutKind?: AboutKind | null;
 }
 
 /**
@@ -111,6 +119,22 @@ async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<E
 }
 
 /**
+ * About-text presentation for the public queries (About-text formatting,
+ * 2026-10-25): marks each event's description as about the event or only
+ * practical venue information, and drops a description that is nothing but
+ * bare labels with no value ("Praktisk info:.", "Entré") — see
+ * src/lib/aboutContent.ts. Pure and deterministic: the stored description
+ * is never changed, and every other description is passed through as is, in
+ * whatever language the source wrote it. Admin queries never call this.
+ */
+function withAboutKind(list: EventWithVenue[]): EventWithVenue[] {
+  return list.map((e) => {
+    const aboutKind = classifyAboutText(e.description);
+    return aboutKind === "empty" ? { ...e, description: null, aboutKind: null } : { ...e, aboutKind };
+  });
+}
+
+/**
  * All published events with their venue attached. Past-event filtering and
  * Tonight/Weekend filtering both depend on "now", which is deliberately
  * computed client-side (the browser's own clock) rather than baked in here,
@@ -118,7 +142,7 @@ async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<E
  */
 export async function getPublishedEventsWithVenue(): Promise<EventWithVenue[]> {
   const rows = await db.select().from(events).where(eq(events.published, true));
-  return attachVenue(rows);
+  return withAboutKind(await attachVenue(rows));
 }
 
 export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVenue | undefined> {
@@ -127,7 +151,7 @@ export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVe
     .from(events)
     .where(and(eq(events.slug, slug), eq(events.published, true)))
     .limit(1);
-  const withVenue = await attachVenue(rows);
+  const withVenue = withAboutKind(await attachVenue(rows));
   return withVenue[0];
 }
 
@@ -325,20 +349,29 @@ async function readEventOverrides(eventIds: string[]): Promise<Map<string, Event
 }
 
 /**
+ * What the event page embeds. artistName is null for an admin-chosen video
+ * recorded without one (every video chosen in the admin UI): the page then
+ * names the player after the event, not after a lineup name the video may
+ * have nothing to do with.
+ */
+export type EventYoutubePreview = Omit<ArtistYoutubePreview, "artistName"> & { artistName: string | null };
+
+/**
  * The event page's video: the event's own override when it has one (a chosen
  * video, or deliberately none — hidden, or the chosen video is unavailable),
  * otherwise the automated lineup match (getArtistYoutubePreviewForLineup,
  * unchanged). The artist cache is not even read when an override decides, or
  * when the override read failed (no video then — see readEventOverrides).
  */
-export async function getEventYoutubePreview(event: { id: string; artists: string[] }): Promise<ArtistYoutubePreview | null> {
+export async function getEventYoutubePreview(event: { id: string; artists: string[] }): Promise<EventYoutubePreview | null> {
   const overrides = await readEventOverrides([event.id]);
   if (!overrides) return null;
   const decision = resolveEventOverride(overrides.get(event.id));
   if (decision.kind === "none") return null;
   if (decision.kind === "video") {
     return {
-      artistName: decision.artistName ?? event.artists[0] ?? "Artist",
+      // Only the name the video was actually chosen for — never a guess from the lineup (2026-10-24).
+      artistName: decision.artistName,
       videoId: decision.videoId,
       videoTitle: decision.videoTitle,
       channelTitle: decision.channelTitle,
@@ -430,7 +463,7 @@ export async function getEventsForVenue(venueId: string): Promise<EventWithVenue
     .select()
     .from(events)
     .where(and(eq(events.venueId, venueId), eq(events.published, true)));
-  return attachVenue(rows);
+  return withAboutKind(await attachVenue(rows));
 }
 
 /** Includes unpublished/hidden events — used by the admin tools, never by public pages. */
@@ -463,6 +496,20 @@ export async function getRecentSyncIdentityChanges(days = 14): Promise<EventChan
       ),
     );
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+}
+
+/**
+ * Admin only: each event's latest withheld source description (a Danish
+ * Poolen/Pumpehuset text the public site does not show) — see
+ * src/lib/withheldDescriptions.ts. Never used by a public page.
+ */
+export async function getWithheldDescriptionsAdmin(): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ eventId: eventChangeLog.eventId, note: eventChangeLog.note })
+    .from(eventChangeLog)
+    .where(eq(eventChangeLog.changeType, WITHHELD_DESCRIPTION_CHANGE_TYPE))
+    .orderBy(desc(eventChangeLog.createdAt));
+  return latestWithheldByEvent(rows);
 }
 
 export async function getAllEventsAdmin(): Promise<EventWithVenue[]> {
