@@ -41,6 +41,8 @@ describe("source_anchor: the adapter's structured lineup links (Culture Box, rea
       ["LeLe", "user-339333395", "source_anchor", "two_handles_same_key"],
     ]);
     expect(reusableProfilesByKey(all).has("lele")).toBe(false);
+    // conflicted evidence never backs an appearance, not even on its own event: review until an admin splits them
+    expect(lele.some((r) => evidenceBacksAppearance(r))).toBe(false);
   });
 
   it("a linked collective or duo is evidence for review, never for one artist (MSW COLLECTIVE, BONGO & PUSK)", () => {

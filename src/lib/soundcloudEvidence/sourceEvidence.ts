@@ -240,9 +240,11 @@ export function extractSourceSoundcloudEvidence(input: EvidenceInput): Soundclou
 /**
  * Cross-event check over every record: an identity key that carries more
  * than one profile is marked two_handles_same_key on every record with that
- * key (Culture Box "LELE" -> user-442274348, "LeLe" -> user-339333395). The
- * name then never selects a profile on its own; per-event source evidence
- * still stands for its own event.
+ * key (Culture Box "LELE" -> user-442274348, "LeLe" -> user-339333395). Per
+ * the shared contract, conflicted evidence is never used to link, so every
+ * appearance under that key goes to review, including each event's own
+ * source link, until an admin splits the identities. (The existing
+ * event-based display, event_soundcloud_links, is separate and unchanged.)
  */
 export function findKeyConflicts(records: readonly SoundcloudEvidence[]): SoundcloudEvidence[] {
   const urlsByKey = new Map<string, Set<string>>();
