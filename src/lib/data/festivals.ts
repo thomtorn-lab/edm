@@ -584,6 +584,21 @@ export const FESTIVALS: FestivalRecord[] = [
     description: "Festival on Refshaleøen, a former shipyard area in Copenhagen, spanning house, disco and techno across multiple outdoor stages.",
     officialUrl: "https://www.karrusel.dk/",
   }),
+  // Multi-genre festival with a strong electronic programme, not a dedicated electronic
+  // festival — its bill also carries pop/rock acts, so genre tags stay broad.
+  mk({
+    name: "O Days",
+    country: "Denmark",
+    location: "Sønder Hoved, Refshaleøen, Copenhagen",
+    typicalMonth: "July / August",
+    edition: confirmed("5–7 Aug 2027"),
+    genres: ["house", "drum-and-bass", "electronic-other"],
+    description: "Three-day summer festival on Refshaleøen's former shipyard grounds in Copenhagen harbour, pairing a substantial electronic and club programme (Disclosure, Overmono, Nia Archives and Yaeji in 2026) with alternative acts, art installations and local food.",
+    officialUrl: "https://www.odaysfestival.dk/",
+    // Official ticket page; the festival guide does not render ticketUrl, so this never
+    // presents tickets as on sale (Early Days sold out, next release unannounced as of 2026-10-31).
+    ticketUrl: "https://www.odaysfestival.dk/tickets",
+  }),
 ];
 
 export function getFestivalBySlug(slug: string): FestivalRecord | undefined {
