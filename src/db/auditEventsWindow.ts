@@ -16,7 +16,11 @@
  * They are computed in SQL, so the override list itself is never read or
  * printed. Genre suggestions must not override an editorial decision, and
  * genre_confidence is not updated when an admin edits the genre, so the
- * reviewer needs this flag.
+ * reviewer needs this flag. Second exception (language QA, 2026-10-25): the
+ * latest withheld source description per event — a Danish Poolen/Pumpehuset
+ * text the public site does not show (src/lib/withheldDescriptions.ts) —
+ * read by WITHHELD_DESCRIPTIONS_SQL, which selects only that row type's
+ * text and never any other change history.
  *
  * Window semantics (nightlife-aware, see src/lib/datetime.ts): for
  * from..to inclusive, the window is [from 00:00, (to + 1) 06:00) Copenhagen
@@ -35,6 +39,8 @@
  * default for later transactions), so it is deliberately not relied on here.
  * See runEventsWindowAudit.
  */
+import { readsAsDanish } from "@/lib/languageDetection";
+import { latestWithheldByEvent, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "@/lib/withheldDescriptions";
 import {
   addDaysToDateKey,
   copenhagenWallClockToUtc,
@@ -119,6 +125,15 @@ WHERE ${WINDOW_PREDICATE_SQL}
 GROUP BY e.canonical_source_id
 ORDER BY e.canonical_source_id NULLS FIRST`;
 
+/**
+ * The withheld source descriptions of the window's events, newest first —
+ * only rows of that one change type, only their event id and text.
+ */
+export const WITHHELD_DESCRIPTIONS_SQL = `SELECT l.event_id, l.note
+FROM event_change_log l
+WHERE l.change_type = '${WITHHELD_DESCRIPTION_CHANGE_TYPE}' AND l.event_id = ANY($1)
+ORDER BY l.created_at DESC`;
+
 /** Row shape returned by WINDOW_EVENTS_SQL (pg returns timestamptz as Date). */
 export interface WindowEventRow {
   id: string;
@@ -185,6 +200,18 @@ export interface ScreeningEvent {
   publicUrl: string;
   sourceUrls: string[];
   description: string | null;
+  /**
+   * Language reporting for the daily QA (2026-10-25). Computed from the
+   * FULL stored description, not the shortened one above.
+   * - descriptionReadsDanish: the text reads as Danish by its grammar
+   *   (src/lib/languageDetection.ts readsAsDanish) — any source, shown
+   *   publicly or not. A report signal only; it hides nothing.
+   * - withheldSourceDescription: the source's own Danish text that the
+   *   public site does not show (shortened like description) — kept for
+   *   admin and QA, see src/lib/withheldDescriptions.ts. Null when none.
+   */
+  descriptionReadsDanish: boolean;
+  withheldSourceDescription: string | null;
   edgeFlags: EdgeFlag[];
 }
 
@@ -219,7 +246,7 @@ export function edgeFlagsFor(start: Date, window: AuditWindow): EdgeFlag[] {
   return flags;
 }
 
-export function toScreeningEvent(row: WindowEventRow, window: AuditWindow): ScreeningEvent {
+export function toScreeningEvent(row: WindowEventRow, window: AuditWindow, withheld: string | null = null): ScreeningEvent {
   const start = toDate(row.start_datetime);
   const urls = [
     row.official_event_url,
@@ -252,6 +279,8 @@ export function toScreeningEvent(row: WindowEventRow, window: AuditWindow): Scre
     publicUrl: `${SITE_URL}/events/${row.slug}`,
     sourceUrls: Array.from(new Set(urls)),
     description: shortenDescription(row.description),
+    descriptionReadsDanish: row.description ? readsAsDanish(row.description) : false,
+    withheldSourceDescription: shortenDescription(withheld),
     edgeFlags: edgeFlagsFor(start, window),
   };
 }
@@ -345,7 +374,8 @@ export const READ_ONLY_TX_STATEMENTS = {
  * The only statements ever sent are BEGIN READ ONLY, a statement timeout, a
  * SHOW that proves the transaction is read-only (aborting otherwise), the
  * two SELECTs above, the read-only artist_genre_cache SELECT for the
- * relevance recheck (src/db/auditRelevance.ts), and ROLLBACK.
+ * relevance recheck (src/db/auditRelevance.ts), WITHHELD_DESCRIPTIONS_SQL,
+ * and ROLLBACK.
  */
 export async function runEventsWindowAudit(client: QueryClient, window: AuditWindow): Promise<EventsWindowReport> {
   await client.query(READ_ONLY_TX_STATEMENTS.begin);
@@ -364,6 +394,9 @@ export async function runEventsWindowAudit(client: QueryClient, window: AuditWin
     const artistKeys = [...new Set(rows.flatMap((r) => (r.artists ?? []).map(cacheKeyForArtist)).filter(Boolean))];
     const cacheRows = artistKeys.length > 0 ? ((await client.query(ARTIST_CACHE_SQL, [artistKeys])).rows as ArtistCacheRow[]) : [];
     const artistCache = new Map(cacheRows.map((c) => [c.artist_name_normalized, toCacheEntry(c)]));
+    const withheldRows =
+      rows.length > 0 ? ((await client.query(WITHHELD_DESCRIPTIONS_SQL, [rows.map((r) => r.id)])).rows as { event_id: string; note: string | null }[]) : [];
+    const withheldByEvent = latestWithheldByEvent(withheldRows.map((w) => ({ eventId: w.event_id, note: w.note })));
     const counts = (await client.query(WINDOW_COUNT_SQL, params)).rows as { source_id: string | null; n: number }[];
     const countBySource = counts.map((c) => ({ sourceId: c.source_id, count: Number(c.n) }));
     const counted = countBySource.reduce((sum, c) => sum + c.count, 0);
@@ -378,7 +411,7 @@ export async function runEventsWindowAudit(client: QueryClient, window: AuditWin
       countBySource,
       completenessCheck: counted === rows.length ? "ok" : "mismatch",
       events: await Promise.all(
-        rows.map(async (r) => ({ ...toScreeningEvent(r, window), relevanceRecheck: await recheckRelevance(r, artistCache) })),
+        rows.map(async (r) => ({ ...toScreeningEvent(r, window, withheldByEvent[r.id] ?? null), relevanceRecheck: await recheckRelevance(r, artistCache) })),
       ),
       duplicateCandidates: findDuplicateCandidates(rows),
     };

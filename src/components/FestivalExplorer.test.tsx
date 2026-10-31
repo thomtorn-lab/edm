@@ -82,25 +82,30 @@ describe("FestivalExplorer — mobile visual-weight refinement (2026-09-13): the
     }
   });
 
-  it("mobile horizontal padding is reduced (px-2.5, not a bare px-3), and the line-height stays pinned to leading-4", () => {
+  // Paddings are the old px-2.5 / sm:px-3 converted for FilterSelect's
+  // custom chevron (pl = N + 4px, pr = N + 16px) — same rendered geometry.
+  it("mobile horizontal padding is reduced (old px-2.5 → pl-3.5/pr-[26px], not the desktop pl-4/pr-7), and the line-height stays pinned to leading-4", () => {
     render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
     const selects = screen.getAllByRole("combobox");
     for (const select of selects) {
       const classes = select.className.split(/\s+/);
-      expect(classes).toContain("px-2.5");
-      expect(classes).not.toContain("px-3");
+      expect(classes).toContain("pl-3.5");
+      expect(classes).toContain("pr-[26px]");
+      expect(classes).not.toContain("pl-4");
+      expect(classes).not.toContain("pr-7");
       expect(classes).toContain("leading-4");
     }
   });
 
-  it("desktop restores the exact original weight/tracking/padding via sm: overrides — sm:font-semibold, sm:tracking-wide, sm:px-3 — so desktop styling is completely unaffected by the mobile refinement", () => {
+  it("desktop restores the exact original weight/tracking/padding via sm: overrides — sm:font-semibold, sm:tracking-wide, sm:pl-4/sm:pr-7 (old sm:px-3) — so desktop styling is completely unaffected by the mobile refinement", () => {
     render(<FestivalExplorer festivals={[FESTIVAL_WITH_URL]} />);
     const selects = screen.getAllByRole("combobox");
     for (const select of selects) {
       const classes = select.className.split(/\s+/);
       expect(classes).toContain("sm:font-semibold");
       expect(classes).toContain("sm:tracking-wide");
-      expect(classes).toContain("sm:px-3");
+      expect(classes).toContain("sm:pl-4");
+      expect(classes).toContain("sm:pr-7");
     }
   });
 
@@ -200,5 +205,22 @@ describe("FestivalExplorer — final mobile compactness polish (2026-09-13 follo
     fireEvent.change(countrySelect, { target: { value: "Netherlands" } });
     expect(screen.queryByRole("link", { name: /Other Festival/ })).toBeNull();
     expect(screen.getByRole("link", { name: /Test Festival/ })).toBeTruthy();
+  });
+});
+
+describe("FestivalExplorer — genre filter uses the site-wide genre rule (genre system revision, 2026-10-24)", () => {
+  afterEach(cleanup);
+
+  it("a main genre also matches festivals listing one of its subgenres; a subgenre stays exact", () => {
+    const psy = { ...FESTIVAL_WITH_URL, id: "f2", slug: "psy", name: "Psy Fest", genres: ["psytrance"] } as FestivalRecord;
+    const trance = { ...FESTIVAL_WITH_URL, id: "f3", slug: "trance", name: "Trance Fest", genres: ["trance"] } as FestivalRecord;
+    render(<FestivalExplorer festivals={[psy, trance]} />);
+    const genreSelect = screen.getAllByRole("combobox")[2] as HTMLSelectElement;
+    fireEvent.change(genreSelect, { target: { value: "trance" } });
+    expect(screen.getByRole("link", { name: /Psy Fest/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Trance Fest/ })).toBeTruthy();
+    fireEvent.change(genreSelect, { target: { value: "psytrance" } });
+    expect(screen.getByRole("link", { name: /Psy Fest/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Trance Fest/ })).toBeNull();
   });
 });

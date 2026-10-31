@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { discoveryQueue, eventChangeLog, events, sourceEventLinks, sources, venues } from "./schema";
 import { venueRowToRecord } from "./mappers";
@@ -9,8 +9,9 @@ import { assessDuplicate } from "../lib/dedup";
 import { isResidentAdvisorUrl } from "../lib/links";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
+import { shouldRecordWithheldDescription, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "../lib/withheldDescriptions";
 import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types";
-import type { GenreSlug } from "../lib/taxonomy";
+import { genreEditError, type GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
 import { classifyAdminQueueRow } from "../lib/adminQueue";
@@ -217,6 +218,16 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // their own write paths.
   const derivedSubgenres =
     effectivePatch.primaryGenre != null && !("subgenres" in patch) ? { subgenres: [effectivePatch.primaryGenre] } : {};
+
+  // Genre classification rules (taxonomy.ts validateGenreTags) — checked
+  // only when this save really changes a genre field, on the tags that
+  // will actually be stored, so an existing admin-locked combination never
+  // blocks an unrelated edit.
+  if ("primaryGenre" in effectivePatch || "subgenres" in effectivePatch) {
+    const nextTags = (derivedSubgenres.subgenres ?? effectivePatch.subgenres ?? existing.subgenres ?? []) as string[];
+    const error = genreEditError(nextTags, [existing.primaryGenre, ...(existing.subgenres ?? [])]);
+    if (error) throw new Error(error);
+  }
 
   await db
     .update(events)
@@ -595,6 +606,29 @@ export async function applySourceSyncPatch(
   );
 
   return { applied: Object.keys(safePatch), skipped: skippedFields, heldBack };
+}
+
+/**
+ * Keeps a source's withheld (not publicly shown) description for admin and
+ * the editorial audit — see src/lib/withheldDescriptions.ts. Writes only to
+ * event_change_log, never to the event row.
+ */
+export async function recordWithheldDescription(
+  eventId: string,
+  sourceId: string,
+  withheld: string,
+  storedDescription: string | null,
+): Promise<boolean> {
+  if (!shouldRecordWithheldDescription(withheld, storedDescription, null)) return false;
+  const [last] = await db
+    .select({ note: eventChangeLog.note })
+    .from(eventChangeLog)
+    .where(and(eq(eventChangeLog.eventId, eventId), eq(eventChangeLog.changeType, WITHHELD_DESCRIPTION_CHANGE_TYPE)))
+    .orderBy(desc(eventChangeLog.createdAt))
+    .limit(1);
+  if (!shouldRecordWithheldDescription(withheld, storedDescription, last?.note ?? null)) return false;
+  await writeChangeLog(eventId, sourceId, WITHHELD_DESCRIPTION_CHANGE_TYPE, [], withheld);
+  return true;
 }
 
 interface NewEventInput {
@@ -1103,6 +1137,18 @@ export async function updateDiscoveryItem(id: string, patch: DiscoveryEditPatch)
     if (effectiveStart && !isEndAfterStart(effectiveStart, effectiveEnd)) {
       throw new Error(END_BEFORE_START_ERROR);
     }
+  }
+
+  // Same genre rules as a published-event edit (applyAdminEventEdit),
+  // checked only when this save changes a genre field.
+  if ("predictedGenre" in effectivePatch || "predictedSecondaryGenre" in effectivePatch) {
+    const nextPrimary = "predictedGenre" in effectivePatch ? effectivePatch.predictedGenre : existing.predictedGenre;
+    const nextSecondary = "predictedSecondaryGenre" in effectivePatch ? effectivePatch.predictedSecondaryGenre : existing.predictedSecondaryGenre;
+    const nextTags = [nextPrimary, nextSecondary].filter((g): g is string => Boolean(g));
+    const currentTags = [existing.predictedGenre, existing.predictedSecondaryGenre].filter((g): g is string => Boolean(g));
+    if (!nextPrimary && nextSecondary) throw new Error("Choose a primary genre before a secondary genre.");
+    const error = genreEditError(nextTags, currentTags);
+    if (error) throw new Error(error);
   }
 
   const missingFields = existing.missingFields.filter((f) => {

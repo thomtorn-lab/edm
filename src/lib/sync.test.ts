@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
@@ -17,6 +17,8 @@ import {
 } from "./sync";
 import { stripLockedSyncFields, stripOverriddenFields } from "./override";
 import type { RawCandidateEvent } from "./adapters/types";
+import { runIngestionPipeline } from "./adapters/pipeline";
+import { VENUES } from "./data/venues";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseKultunautDetailHtml } from "./adapters/kultunautAdapter";
@@ -1882,5 +1884,126 @@ describe("classifyVenueBlock (venue-block visibility precision fix, follow-up to
 
   it("6. null/negative-relevance counterfactual is never ACTIVE (mirrors pipeline.test.ts's venueResolvedCounterfactual case 5)", () => {
     expect(classifyVenueBlock({ isCurrent: true, isPast: false, venueResolvedDecision: "hold" })).toBe("other_blockers");
+  });
+});
+
+describe("withheld descriptions never reach events.description (Poolen/Pumpehuset, 2026-10-25)", () => {
+  const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset til et univers af dybe baslinjer.";
+  const EN = "An American artist bringing deep basslines and dark techno to Copenhagen for one night.";
+  const withheld = raw({ sourceId: "src-pumpehuset", description: null, withheldDescription: DA });
+  const owned = (description: string | null) => target({ canonicalSourceId: "src-pumpehuset", description });
+
+  it("proposes no description change, whether the stored one is empty, Danish or English", () => {
+    for (const stored of [null, "Pumpehuset præsenterer en aften med elektronisk musik.", EN]) {
+      expect(buildSyncPatch(withheld, resolved, owned(stored)).patch.description).toBeUndefined();
+    }
+  });
+
+  it("a public description is still patched as before", () => {
+    const both = raw({ sourceId: "src-pumpehuset", description: EN, withheldDescription: DA });
+    expect(buildSyncPatch(both, resolved, owned(null)).patch.description).toBe(EN);
+  });
+});
+
+describe("buildSyncPatch — Den Anden Side room split is kept (2026-10-27)", () => {
+  beforeEach(() => {
+    process.env.DAS_ROOMS_ENABLED = "true";
+  });
+  afterEach(() => {
+    delete process.env.DAS_ROOMS_ENABLED;
+  });
+
+  const STRUCTURED = "Intro.\n\nDen Anden Side\nA1, A2\n\nDen Anden Ende\nB1";
+  const existing = target({
+    id: "e-gag",
+    title: "GAG x DAS",
+    description: STRUCTURED,
+    artists: ["A1", "A2", "B1"],
+    venueId: "v-den-anden-side",
+    canonicalSourceId: "src-hvaderpaa",
+  });
+  const das = { resolvedVenueId: "v-den-anden-side", genre: "techno" as const, genreConfidence: "medium" as const };
+
+  it("a source without room information does not flatten a verified split", () => {
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-billetto", title: "GAG x DAS (tickets)", description: "Intro.", artists: ["B1", "A1", "A2"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["B1", "A1", "A2"] },
+      existing,
+    );
+    expect(patch.title).toBeUndefined();
+    expect(patch.description).toBeUndefined();
+    expect(patch.artists).toBeUndefined();
+  });
+
+  it("appends a newly announced artist without placing it in a room", () => {
+    const { patch } = buildSyncPatch(
+      raw({ title: "GAG x DAS", description: "Intro.", artists: ["A1", "A2", "B1", "C1"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["A1", "A2", "B1", "C1"] },
+      existing,
+    );
+    expect(patch.artists).toEqual(["A1", "A2", "B1", "C1"]);
+    expect(patch.description).toBeUndefined();
+  });
+
+  it("a source that itself gives a (corrected) split still updates", () => {
+    const corrected = "Intro.\n\nDen Anden Side\nA1\n\nDen Anden Ende\nA2, B1";
+    const { patch } = buildSyncPatch(
+      raw({ title: "GAG x DAS", description: corrected, artists: ["A1", "A2", "B1"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["A1", "A2", "B1"] },
+      existing,
+    );
+    expect(patch.description).toBe(corrected);
+  });
+
+  it("end to end: imported, stored, then re-synced from the same source and from a source without rooms — nothing doubled, nothing lost", () => {
+    const sourceText = [
+      "Fast Forward and Bassiani return.",
+      "",
+      "𝗟𝗶𝗻𝗲𝘂𝗽",
+      "",
+      "MAIN FLOOR:",
+      "𝗞𝗮𝗻𝗰𝗵𝗲𝗹𝗶 [he/him]",
+      "𝗦𝗰𝗵𝗮𝗰𝗸𝗲 𝗕𝟮𝗕 𝗩𝗶𝘅𝗲𝗻",
+      "",
+      "FEUM TAKEOVER @ DEN ANDEN ENDE:",
+      "𝗡𝘆𝗴𝗺𝗮",
+    ].join("\n");
+    const artists = ["Kancheli", "Schacke", "B2B", "Vixen", "Nygma"];
+    const fresh = () => raw({ sourceId: "src-hvaderpaa", title: "Fast Forward x Bassiani", description: sourceText, artists: [...artists], venueName: "Den Anden Side" });
+
+    // First import -> stored event.
+    const first = fresh();
+    const r1 = runIngestionPipeline(first, { venues: VENUES, existingEvents: [] });
+    const stored = target({
+      id: "e-ff",
+      title: first.title,
+      description: first.description,
+      artists: r1.normalizedArtists,
+      venueId: "v-den-anden-side",
+      canonicalSourceId: "src-hvaderpaa",
+    });
+    expect(stored.description).toContain("Den Anden Side\nKancheli [he/him], Schacke B2B Vixen\n\nDen Anden Ende (FEUM TAKEOVER)\nNygma");
+    for (const a of ["Kancheli", "Nygma"]) expect(stored.description!.split(a).length - 1).toBe(1);
+
+    // Same source again: no change at all to title/description/artists.
+    const again = fresh();
+    const r2 = runIngestionPipeline(again, { venues: VENUES, existingEvents: [] });
+    const p2 = buildSyncPatch(again, { ...das, normalizedArtists: r2.normalizedArtists }, stored).patch;
+    expect(p2.title).toBeUndefined();
+    expect(p2.description).toBeUndefined();
+    expect(p2.artists).toBeUndefined();
+
+    // Another source with a flat lineup: split kept, no artist lost or moved.
+    const flat = raw({ sourceId: "src-billetto", title: "Fast Forward x Bassiani", description: "Techno night.", artists: [...artists].reverse(), venueName: "Den Anden Side" });
+    const r3 = runIngestionPipeline(flat, { venues: VENUES, existingEvents: [] });
+    const p3 = buildSyncPatch(flat, { ...das, normalizedArtists: r3.normalizedArtists }, stored).patch;
+    expect(p3.description).toBeUndefined();
+    expect(p3.artists).toBeUndefined();
+    expect(p3.title).toBeUndefined();
+  });
+
+  it("does not touch other venues", () => {
+    const { patch } = buildSyncPatch(raw({ description: "New text." }), resolved, target({ description: STRUCTURED }));
+    expect(patch.description).toBe("New text.");
   });
 });

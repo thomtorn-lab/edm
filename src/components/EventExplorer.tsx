@@ -21,9 +21,11 @@ import {
   writeListReturn,
   type ExplorerMode,
 } from "@/lib/explorerFilters";
-import { GENRES, genreFilterLabel, isLegacyGenreFilter, matchesGenreFilter, type GenreFilterValue } from "@/lib/taxonomy";
+import { genreFilterLabel, isLegacyGenreFilter, matchesGenreSelection, type GenreFilterValue } from "@/lib/taxonomy";
+import { renderGenreOptions } from "./GenreOptions";
 import EventRow from "./EventRow";
 import EmptyState from "./EmptyState";
+import { FilterSelect } from "./FilterSelect";
 
 type Mode = ExplorerMode;
 
@@ -73,7 +75,7 @@ function applyFilters(
     if (mode === "tonight" && !isTonight(e, now)) return false;
     if (mode === "weekend" && !isThisWeekend(e, now)) return false;
     if (mode === "next-weekend" && !isNextWeekend(e, now)) return false;
-    if (genre !== "all" && !matchesGenreFilter(e.subgenres, genre)) return false;
+    if (genre !== "all" && !matchesGenreSelection(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
     return true;
@@ -91,11 +93,23 @@ const pillClasses = (active: boolean) =>
 // the control's own border/text (matching pillClasses), so the sitewide
 // focus-visible ring must not ALSO render purple on top of it (that reads as
 // a separate outer ring rather than one accent treatment). See globals.css.
+// pl-4/pr-7 and h-[31px] reproduce the native control's text position, width
+// and height around the custom chevron. See FilterSelect.
+const selectTextClasses = "pl-4 text-xs font-semibold";
+
 const selectClasses = (active: boolean) =>
-  "accent-select rounded-full border bg-surface-1 px-3 py-1.5 text-xs font-semibold transition-colors " +
+  "accent-select h-[31px] rounded-full border bg-surface-1 pr-7 py-1.5 transition-colors " +
   (active
     ? "border-accent text-accent-strong"
     : "border-border-strong text-text-secondary hover:text-text-primary");
+
+const selectValueClasses = (active: boolean) =>
+  active ? "text-accent-strong" : "text-text-secondary peer-hover:text-text-primary";
+
+// pl-[18px]/pr-[30px] and h-12: same native-geometry match. See FilterSelect.
+const sheetSelectTextClasses = "pl-[18px] text-base leading-5";
+const sheetSelectClasses =
+  "h-12 w-full rounded border border-border-strong bg-surface-2 pr-[30px] py-3 text-text-primary";
 
 function FilterIcon() {
   return (
@@ -848,19 +862,20 @@ function EventExplorerList({
     setMobileFiltersOpen(false);
   }
 
-  // Options are exactly the admin's genre list. A legacy group from an old
-  // link ("garage-bass", "hardstyle-hardcore") gets a hidden option only
+  // Options are exactly the admin's genre list, under the same visual
+  // headings (renderGenreOptions). Selecting a main genre (Techno, House, ...)
+  // also shows its subgenres; every other option is exact — see
+  // matchesGenreSelection. A legacy set from an old link ("garage-bass",
+  // "hardstyle-hardcore", "ambient-experimental") gets a hidden option only
   // while it is the selected value, so the select shows what is applied
-  // without offering the group as a choice.
+  // without offering the set as a choice.
   const genreOptions = (selected: GenreFilterValue | "all") => (
     <>
       <option value="all">All genres</option>
       {isLegacyGenreFilter(selected) && (
         <option value={selected} hidden>{genreFilterLabel(selected)}</option>
       )}
-      {GENRES.map((g) => (
-        <option key={g.slug} value={g.slug}>{g.label}</option>
-      ))}
+      {renderGenreOptions()}
     </>
   );
 
@@ -870,28 +885,32 @@ function EventExplorerList({
   }
 
   const genreSelect = (id: string) => (
-    <select
+    <FilterSelect
       id={id}
       value={genre}
       onChange={(e) => changeGenre(e.target.value as GenreFilterValue | "all")}
       className={selectClasses(genre !== "all")}
+      textClassName={selectTextClasses}
+      valueClassName={selectValueClasses(genre !== "all")}
     >
       {genreOptions(genre)}
-    </select>
+    </FilterSelect>
   );
 
   const venueSelect = (id: string) => (
-    <select
+    <FilterSelect
       id={id}
       value={venueId}
       onChange={(e) => setVenueId(e.target.value)}
       className={selectClasses(venueId !== "all")}
+      textClassName={selectTextClasses}
+      valueClassName={selectValueClasses(venueId !== "all")}
     >
       <option value="all">All venues</option>
       {venueOptions.map(([optionId, name]) => (
         <option key={optionId} value={optionId}>{name}</option>
       ))}
-    </select>
+    </FilterSelect>
   );
 
   return (
@@ -1098,31 +1117,37 @@ function EventExplorerList({
                   </label>
                   {/* text-base, not text-sm — same iOS auto-zoom fix as the
                       mobile search input above. */}
-                  <select
+                  <FilterSelect
                     id="genre-filter-mobile"
                     value={draftGenre}
                     onChange={(e) => setDraftGenre(e.target.value as GenreFilterValue | "all")}
-                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
+                    className={sheetSelectClasses}
+                    textClassName={sheetSelectTextClasses}
+                    valueClassName="text-text-primary"
+                    wrapperClassName="w-full"
                   >
                     {genreOptions(draftGenre)}
-                  </select>
+                  </FilterSelect>
                 </div>
 
                 <div>
                   <label htmlFor="venue-filter-mobile" className="mb-1.5 block text-xs font-semibold text-text-secondary">
                     Venue
                   </label>
-                  <select
+                  <FilterSelect
                     id="venue-filter-mobile"
                     value={draftVenueId}
                     onChange={(e) => setDraftVenueId(e.target.value)}
-                    className="w-full rounded border border-border-strong bg-surface-2 px-3.5 py-3 text-base leading-5 text-text-primary"
+                    className={sheetSelectClasses}
+                    textClassName={sheetSelectTextClasses}
+                    valueClassName="text-text-primary"
+                    wrapperClassName="w-full"
                   >
                     <option value="all">All venues</option>
                     {venueOptions.map(([id, name]) => (
                       <option key={id} value={id}>{name}</option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 </div>
               </div>
             </div>

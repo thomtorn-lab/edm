@@ -2,8 +2,18 @@
 
 import { useMemo, useState } from "react";
 import type { FestivalRecord } from "@/lib/types";
-import { getGenre, type GenreSlug } from "@/lib/taxonomy";
+import { getGenre, matchesGenreSelection, type GenreSlug } from "@/lib/taxonomy";
 import { formatFestivalEdition } from "@/lib/festivalEdition";
+import { FilterSelect } from "./FilterSelect";
+
+// See the comment on the selects below for the mobile/sm+ splits. The
+// paddings (former px-2.5 / sm:px-3 + the FilterSelect adjustment) and
+// h-9 / sm:h-[31px] reproduce the native control's geometry. See FilterSelect.
+const selectTextClassName =
+  "pl-3.5 sm:pl-4 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide";
+const selectClassName =
+  "h-9 sm:h-[31px] rounded-full border border-border bg-surface-1 pr-[26px] py-1.5 sm:border-border-strong sm:pr-7 sm:py-1.5 text-text-secondary hover:text-text-primary";
+const selectValueClassName = "text-text-secondary peer-hover:text-text-primary";
 
 export default function FestivalExplorer({ festivals }: { festivals: FestivalRecord[] }) {
   const [country, setCountry] = useState<string>("all");
@@ -27,7 +37,9 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
     .filter((f) => {
       if (country !== "all" && f.country !== country) return false;
       if (month !== "all" && !f.typicalMonth.startsWith(month)) return false;
-      if (genre !== "all" && !f.genres.includes(genre)) return false;
+      // Same site-wide genre rule as the event filter: a main genre also
+      // matches festivals listing one of its subgenres.
+      if (genre !== "all" && !matchesGenreSelection(f.genres, genre)) return false;
       return true;
     })
     .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
@@ -67,36 +79,45 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
             border = 30px (still well short of any accidental shrink toward
             the 16px iOS-zoom threshold, which only concerns font-size, left
             untouched). */}
-        <select
+        <FilterSelect
+          aria-label="Country"
           value={country}
           onChange={(e) => setCountry(e.target.value)}
-          className="rounded-full border border-border bg-surface-1 px-2.5 py-1.5 sm:border-border-strong sm:px-3 sm:py-1.5 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
+          className={selectClassName}
+          textClassName={selectTextClassName}
+          valueClassName={selectValueClassName}
         >
           <option value="all">All countries</option>
           {countries.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
-        </select>
-        <select
+        </FilterSelect>
+        <FilterSelect
+          aria-label="Month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-full border border-border bg-surface-1 px-2.5 py-1.5 sm:border-border-strong sm:px-3 sm:py-1.5 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
+          className={selectClassName}
+          textClassName={selectTextClassName}
+          valueClassName={selectValueClassName}
         >
           <option value="all">All months</option>
           {months.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
-        </select>
-        <select
+        </FilterSelect>
+        <FilterSelect
+          aria-label="Genre"
           value={genre}
           onChange={(e) => setGenre(e.target.value as GenreSlug | "all")}
-          className="rounded-full border border-border bg-surface-1 px-2.5 py-1.5 sm:border-border-strong sm:px-3 sm:py-1.5 text-base leading-4 sm:text-xs font-medium sm:font-semibold uppercase tracking-normal sm:tracking-wide text-text-secondary hover:text-text-primary"
+          className={selectClassName}
+          textClassName={selectTextClassName}
+          valueClassName={selectValueClassName}
         >
           <option value="all">All genres</option>
           {genres.map((g) => (
             <option key={g} value={g}>{getGenre(g).label}</option>
           ))}
-        </select>
+        </FilterSelect>
         {hasActiveFilters && (
           <button
             type="button"

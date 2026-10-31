@@ -1,6 +1,10 @@
 name: Event YouTube Video Override
 
-# Admin per-event YouTube video (2026-10-23). Runs src/db/eventYoutubeOverride.ts:
+# Admin per-event YouTube video (2026-10-23). Since 2026-10-24 the everyday
+# choose/replace/hide/clear lives in the admin UI (an event's Edit view ->
+# "YouTube video", via /api/admin/events/[id]/youtube — same table, same
+# writes, same validation). This workflow stays for the weekly verify run and
+# the one-off migrate-artist-pin. Runs src/db/eventYoutubeOverride.ts:
 # choose, replace, hide or clear the video shown on ONE event, without
 # touching the per-artist cache the automated matcher uses. Writes only
 # event_youtube_preview_overrides — except migrate-artist-pin, the one-off

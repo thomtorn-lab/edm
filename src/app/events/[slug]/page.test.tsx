@@ -90,6 +90,21 @@ type SourceLinkRow = { sourceId: string; sourceUrl: string; role: string };
  * feature, so it stays off unless a test opts in. getSoundcloudLinksForLineup
  * likewise defaults to no links.
  */
+/**
+ * The Artist Preview is click-to-load (GDPR review, 2026-10-30): the page
+ * renders a play button, and the YouTube iframe only exists after it is
+ * pressed. Ordering/anchor checks use the button; checks on the player
+ * itself press it first.
+ */
+function videoPlayButton(): HTMLElement {
+  return screen.getByRole("button", { name: /^Play YouTube video/ });
+}
+
+function pressPlay(): HTMLIFrameElement {
+  fireEvent.click(videoPlayButton());
+  return document.querySelector("iframe")!;
+}
+
 async function renderPage(
   event: EventWithVenue,
   sourceLinks: SourceLinkRow[] = [],
@@ -494,6 +509,33 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
     expect(screen.getByText("A real description.")).toBeTruthy();
   });
 
+  it("labels a practical-only text 'Practical information' and keeps it out of the JSON-LD description", async () => {
+    const text = "In Store and Lille VEGA the cloakroom must always be used for safety reasons. A cloakroom fee is charged.";
+    await renderPage(makeEvent({ description: text, aboutKind: "practical" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Practical information" })).toBeTruthy();
+    expect(screen.queryByText("About")).toBeNull();
+    expect(screen.getByText(text)).toBeTruthy();
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBeUndefined();
+  });
+
+  it("puts an About text (in its own language, unchanged) in the JSON-LD description", async () => {
+    await renderPage(makeEvent({ description: "En rigtig beskrivelse af aftenen.", aboutKind: "about" }));
+    const jsonLd = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(jsonLd.description).toBe("En rigtig beskrivelse af aftenen.");
+  });
+
+  it("structures the About text: section headings, separate paragraphs and labelled links, never raw markup", async () => {
+    await renderPage(
+      makeEvent({
+        description:
+          "PRACTICAL INFORMATION\nDoors open at 23:00 and the night runs until five in the morning, with a cloakroom.\n\nListen: https://soundcloud.com/pinkmonkey",
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "PRACTICAL INFORMATION" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /SoundCloud/ }).getAttribute("href")).toBe("https://soundcloud.com/pinkmonkey");
+  });
+
   it("a maximally sparse event (title + date/time + venue only, no genre/description/links/artists) renders its core fields with no empty optional sections", async () => {
     await renderPage(
       makeEvent({
@@ -758,7 +800,7 @@ describe("Event detail page — multi-day event date-range display", () => {
 describe("Event detail page — YouTube Artist Preview embed (automated Rule A V1, 2026-09-25)", () => {
   afterEach(cleanup);
 
-  it("renders the embed when a cached accepted match exists", async () => {
+  it("renders a play button, not the embed, when a cached accepted match exists", async () => {
     vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -767,9 +809,34 @@ describe("Event detail page — YouTube Artist Preview embed (automated Rule A V
     });
     await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
 
-    const iframe = document.querySelector("iframe");
+    expect(videoPlayButton()).toBeTruthy();
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("loads nothing from YouTube/Google until the visitor presses play (click-to-load, GDPR review 2026-10-30)", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
+      artistName: "Eric Prydz",
+      videoId: "abc123XYZ",
+      videoTitle: "Eric Prydz DJ Set",
+      channelTitle: "Eric Prydz",
+    });
+    await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
+
+    // Nothing on the page that the browser fetches by itself (frames, images,
+    // scripts, preconnect/preload links, media) points at YouTube/Google
+    // before play. Plain <a> links (Google Maps, Google Calendar) are only
+    // followed when clicked, so they don't count.
+    const googleUrl = /(?:https?:)?\/\/[^/\s"']*(?:youtube|youtu\.be|ytimg|googlevideo|google|gstatic|doubleclick|ggpht)/i;
+    const fetched = document.querySelectorAll("iframe, frame, img, script, link, source, video, audio, track, object, embed, input[type=image], [style*='url(']");
+    const fetchedUrls = Array.from(fetched).flatMap((el) =>
+      ["src", "srcset", "href", "data", "poster", "style"].map((name) => el.getAttribute(name) ?? ""),
+    );
+    expect(fetchedUrls.filter((value) => googleUrl.test(value))).toEqual([]);
+    expect(document.querySelector("iframe")).toBeNull();
+
+    const iframe = pressPlay();
     expect(iframe).not.toBeNull();
-    expect(iframe?.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ");
+    expect(iframe.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1");
   });
 
   it("renders no embed and no placeholder when there is no cached match", async () => {
@@ -966,9 +1033,8 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
     await renderPage(makeEvent({ artists: ["Eric Prydz"], description: "Some description." }));
 
     const aboutHeading = screen.getByText("About");
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    expect(iframe!.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const preview = videoPlayButton();
+    expect(preview.compareDocumentPosition(aboutHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders the Artist Preview embed after the secondary actions (Add to calendar, Share) and the Get a taste heading", async () => {
@@ -980,13 +1046,13 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
     });
     await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
 
-    const iframe = document.querySelector("iframe")!;
+    const preview = videoPlayButton();
     const calendarButton = screen.getByRole("button", { name: "Add to calendar" });
     const shareButton = screen.getByRole("button", { name: /^Share /i });
     const heading = screen.getByRole("heading", { level: 2, name: "Get a taste" });
     expect(calendarButton.compareDocumentPosition(shareButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(shareButton.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(heading.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("Artist Preview never appears before the Tickets/Official event CTA", async () => {
@@ -999,15 +1065,14 @@ describe("Event detail page — Artist Preview positioned below Add to calendar,
     await renderPage(makeEvent({ artists: ["Eric Prydz"], ticketUrl: "https://billetto.dk/e/x" }));
 
     const tickets = screen.getByRole("link", { name: /^Tickets/i });
-    const iframe = document.querySelector("iframe")!;
-    expect(tickets.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tickets.compareDocumentPosition(videoPlayButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
 describe("Event detail page — Artist Preview #video anchor (homepage VIDEO deep-link work, 2026-09-26)", () => {
   afterEach(cleanup);
 
-  it("the Artist Preview section has id=\"video\" on its own container, not on the iframe", async () => {
+  it("the Artist Preview section has id=\"video\" on its own container, not on the player", async () => {
     vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -1019,7 +1084,8 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
     const anchor = document.getElementById("video");
     expect(anchor).not.toBeNull();
     expect(anchor!.tagName).not.toBe("IFRAME");
-    expect(anchor!.querySelector("iframe")).not.toBeNull();
+    expect(anchor!.contains(videoPlayButton())).toBe(true);
+    expect(anchor!.contains(pressPlay())).toBe(true);
   });
 
   it("no #video anchor exists when there is no Artist Preview", async () => {
@@ -1027,7 +1093,7 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
     expect(document.getElementById("video")).toBeNull();
   });
 
-  it("keeps youtube-nocookie.com and no autoplay parameter on the embed src", async () => {
+  it("keeps youtube-nocookie.com on the embed src and autoplays only after the press", async () => {
     vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({
       artistName: "Eric Prydz",
       videoId: "abc123XYZ",
@@ -1036,9 +1102,9 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
     });
     await renderPage(makeEvent({ artists: ["Eric Prydz"] }));
 
-    const iframe = document.querySelector("iframe")!;
-    expect(iframe.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ");
-    expect(iframe.getAttribute("src")).not.toContain("autoplay");
+    expect(document.querySelector("iframe")).toBeNull();
+    const iframe = pressPlay();
+    expect(iframe.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1");
   });
 });
 
@@ -1182,17 +1248,32 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     const heading = screen.getByRole("heading", { level: 2, name: "Get a taste" });
     const section = heading.closest("section")!;
     expect(section.getAttribute("aria-labelledby")).toBe(heading.id);
-    expect(section.querySelector("iframe")).not.toBeNull();
+    expect(section.contains(videoPlayButton())).toBe(true);
     // No separate artist label under the player (removed 2026-10-18): the
     // player is the section's last element, with nothing (and no empty
     // spacer) after it.
     expect(section.querySelector("figure, figcaption")).toBeNull();
+    pressPlay();
     expect(section.textContent).not.toContain("TIM ANDRESEN");
     expect(section.lastElementChild!.querySelector("iframe")).not.toBeNull();
     expect(screen.queryByText(/video preview/i)).toBeNull();
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
     // The iframe keeps its own accessible title (the video's title).
-    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("Live at Culture Box");
+    expect(section.querySelector("iframe")!.getAttribute("title")).toBe("YouTube video: Live at Culture Box");
+  });
+
+  it("an admin-chosen video with no title and no artist name is named after the event, never after a lineup name", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({ ...VIDEO, artistName: null, videoTitle: "  " });
+    await renderPage(makeEvent({ title: "Warehouse Night", artists: ARTISTS }));
+    const title = pressPlay().getAttribute("title");
+    expect(title).toBe("YouTube video for Warehouse Night");
+    expect(title).not.toContain("TIM ANDRESEN");
+  });
+
+  it("with no video title, an automated match is named after its artist", async () => {
+    vi.mocked(getEventYoutubePreview).mockResolvedValueOnce({ ...VIDEO, videoTitle: null });
+    await renderPage(makeEvent({ artists: ARTISTS }));
+    expect(pressPlay().getAttribute("title")).toBe("YouTube video: TIM ANDRESEN");
   });
 
   it("SoundCloud only: 'Get a taste' then 'Listen on SoundCloud', no #video anchor, links right under the heading", async () => {
@@ -1211,7 +1292,7 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     const section = screen.getByRole("heading", { level: 2, name: "Get a taste" }).closest("section")!;
     const soundcloud = document.getElementById("soundcloud")!;
     expect(section.contains(soundcloud)).toBe(true);
-    expect(section.querySelector("iframe")!.compareDocumentPosition(soundcloud) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(videoPlayButton().compareDocumentPosition(soundcloud) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(soundcloud.className).toContain("mt-8");
     expect(soundcloud.className).toContain("sm:mt-10");
     // Artist names stay on the SoundCloud links — only the video caption went.

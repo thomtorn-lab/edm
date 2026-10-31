@@ -32,6 +32,7 @@ const selectMock = vi.fn(() => ({
   from: () => ({
     where: () => ({
       limit: () => Promise.resolve(selectResults.shift() ?? []),
+      orderBy: () => ({ limit: () => Promise.resolve(selectResults.shift() ?? []) }),
     }),
   }),
 }));
@@ -1514,5 +1515,80 @@ describe("applySourceSyncPatch — a locked start keeps the stored status (edito
     expect(written.dateChanged).toBe(true);
     expect(written.postponed).toBe(false);
     expect(result.heldBack).toEqual([]);
+  });
+});
+
+describe("admin genre edits — classification rules (genre system revision, 2026-10-24; contract K3/K4)", () => {
+  const event = (primaryGenre: string, subgenres: string[]) => ({ id: "e-1", overriddenFields: [] as string[], primaryGenre, subgenres });
+
+  it("rejects a main genre together with its own subgenre", async () => {
+    selectResults = [[event("house", ["house"])]];
+    await expect(applyAdminEventEdit("e-1", { primaryGenre: "house", subgenres: ["house", "deep-house"] })).rejects.toThrow(/Deep House already belongs to House/);
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects Electronic / Other in a pair, and a newly chosen legacy value", async () => {
+    selectResults = [[event("house", ["house"])]];
+    await expect(applyAdminEventEdit("e-1", { primaryGenre: "electronic-other", subgenres: ["electronic-other", "house"] })).rejects.toThrow(/fallback/);
+    selectResults = [[event("house", ["house"])]];
+    await expect(applyAdminEventEdit("e-1", { primaryGenre: "ambient-experimental", subgenres: ["ambient-experimental"] })).rejects.toThrow(/can no longer be selected/);
+  });
+
+  it("accepts two subgenres of the same main genre", async () => {
+    selectResults = [[event("techno", ["techno"])]];
+    await applyAdminEventEdit("e-1", { primaryGenre: "hard-techno", subgenres: ["hard-techno", "hypnotic-techno"] });
+    expect(updateSetMock.mock.calls[0][0].subgenres).toEqual(["hard-techno", "hypnotic-techno"]);
+  });
+
+  it("K4: an existing admin-locked invalid pair never blocks an unrelated edit, and is left untouched", async () => {
+    selectResults = [[event("house", ["house", "deep-house"])]];
+    await applyAdminEventEdit("e-1", { title: "Corrected Title" });
+    const patch = updateSetMock.mock.calls[0][0];
+    expect(patch.title).toBe("Corrected Title");
+    expect(patch).not.toHaveProperty("subgenres");
+    expect(patch).not.toHaveProperty("primaryGenre");
+  });
+
+  it("an untouched stored legacy value may stay when the other genre changes", async () => {
+    selectResults = [[event("ambient-experimental", ["ambient-experimental"])]];
+    await applyAdminEventEdit("e-1", { primaryGenre: "ambient-experimental", subgenres: ["ambient-experimental", "industrial"] });
+    expect(updateSetMock.mock.calls[0][0].subgenres).toEqual(["ambient-experimental", "industrial"]);
+  });
+
+  it("applies the same rules to a Discovery Queue genre edit", async () => {
+    const pending = { id: "dq-1", status: "pending", overriddenFields: [] as string[], missingFields: [] as string[], predictedGenre: "trance", predictedSecondaryGenre: null };
+    selectResults = [[{ ...pending }]];
+    await expect(updateDiscoveryItem("dq-1", { predictedSecondaryGenre: "psytrance" })).rejects.toThrow(/Psytrance already belongs to Trance/);
+    selectResults = [[{ ...pending }]];
+    await updateDiscoveryItem("dq-1", { predictedSecondaryGenre: "industrial" });
+    expect(updateSetMock.mock.calls[0][0].predictedSecondaryGenre).toBe("industrial");
+  });
+});
+
+describe("recordWithheldDescription — a source's Danish text kept in the change log only (2026-10-25)", () => {
+  const DA = "Den amerikanske artist WITCHZ står klar til at forvandle Pumpehuset.";
+
+  it("writes one change-log row with the text and never updates the event row", async () => {
+    const { recordWithheldDescription } = await import("./writes");
+    selectResults = [[]];
+    expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, null)).toBe(true);
+    expect(insertValuesMock).toHaveBeenCalledTimes(1);
+    expect(insertValuesMock.mock.calls[0][0]).toMatchObject({
+      eventId: "e-1",
+      changedBy: "src-pumpehuset",
+      changeType: "withheld_description",
+      fieldsChanged: [],
+      note: DA,
+    });
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when the text repeats the last record or is already the stored description", async () => {
+    const { recordWithheldDescription } = await import("./writes");
+    selectResults = [[{ note: DA }]];
+    expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, null)).toBe(false);
+    expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, DA)).toBe(false);
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });
