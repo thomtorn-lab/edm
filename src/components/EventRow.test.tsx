@@ -164,20 +164,23 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     expect(screen.getByRole("link", { name: /Test Event/ }).contains(technoLink)).toBe(false);
   });
 
-  it("keeps subgenre and other-genre labels as plain text — only the Techno label links", () => {
+  it("keeps subgenre and other-genre labels as plain text — only labels of genres with their own page link", () => {
     render(<EventRow event={makeEvent({ primaryGenre: "melodic-techno", subgenres: ["melodic-techno", "industrial"] as GenreSlug[] })} />);
     expect(genreSpan("Melodic Techno · Industrial")).toBeTruthy();
     expect(screen.queryByRole("link", { name: /Melodic Techno|Industrial/ })).toBeNull();
     cleanup();
-    render(<EventRow event={makeEvent({ primaryGenre: "hard-techno", subgenres: ["hard-techno", "house"] as GenreSlug[] })} />);
-    expect(screen.queryByRole("link", { name: /Hard Techno|House/ })).toBeNull();
+    render(<EventRow event={makeEvent({ primaryGenre: "hard-techno", subgenres: ["hard-techno", "psytrance"] as GenreSlug[] })} />);
+    expect(screen.queryByRole("link", { name: /Hard Techno|Psytrance/ })).toBeNull();
     expect(document.querySelector('a[href^="/genres/"]')).toBeNull();
   });
 
-  it("links a Techno badge in the secondary position too, and only to the exact-Techno page", () => {
+  it("links each badge whose genre has a page, in either position: House + Techno link to their own pages (2026-10-31)", () => {
     render(<EventRow event={makeEvent({ primaryGenre: "house", subgenres: ["house", "techno"] as GenreSlug[] })} />);
     expect(screen.getByRole("link", { name: "Techno" }).getAttribute("href")).toBe("/genres/techno");
-    expect(screen.queryByRole("link", { name: "House" })).toBeNull();
+    expect(screen.getByRole("link", { name: "House" }).getAttribute("href")).toBe("/genres/house");
+    cleanup();
+    render(<EventRow event={makeEvent({ primaryGenre: "trance", subgenres: ["trance"] as GenreSlug[] })} />);
+    expect(screen.getByRole("link", { name: "Trance" }).getAttribute("href")).toBe("/genres/trance");
   });
 
   it("for every one of the 22 genres, the badge links only when that exact genre has a page", () => {

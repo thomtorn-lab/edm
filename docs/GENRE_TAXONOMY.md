@@ -94,12 +94,14 @@ Legacy-værdien tildeles aldrig. En gammel Discogs-cache-post med legacy-værdie
 
 ## 4. SEO – kvalitetssikring (2026-10-30) og uændret politik
 
-### 4.1 Central allowlist
-`INDEXABLE_GENRE_PAGES` i `src/lib/taxonomy.ts` er den eneste liste over offentlige, indekserbare genresider. Den indeholder kun `techno`.
-- Sitemap'ets genre-post og genremærkernes links udledes af listen. Sitemap-outputtet er uændret: præcis én genre-URL.
-- Der er bevidst ingen dynamisk `/genres/[slug]`-route. Alle andre `/genres/*`-URL'er er derfor ægte HTTP 404 med Next.js' noindex.
-- En ny side kræver både en post i listen og sin egen route. Begge dele er en særskilt godkendt SEO-beslutning.
-- Tests: `src/app/genres/genreRoutes.test.ts`, `sitemap.test.ts`, `genres/techno/page.test.tsx`.
+### 4.1 Central allowlist og fælles genreside (opdateret 2026-10-31)
+`INDEXABLE_GENRE_PAGES` i `src/lib/taxonomy.ts` er den eneste liste over offentlige, indekserbare genresider. Den indeholder **Techno, House og Trance**.
+- **Én route:** `src/app/genres/[slug]/page.tsx` serverer alle tre. Den genererer kun allowlistede slugs, og med `dynamicParams = false` er alle andre `/genres/*`-URL'er ægte HTTP 404 med noindex. Siden kalder desuden `notFound()` for ukendte slugs.
+- **Tekster** (H1, SEO-title, description, introduktion) ligger i `src/lib/genrePages.ts`. Filen er knyttet til de eksisterende genre-ID'er og er ikke en separat taksonomi. Sætningen "includes …" og eventlisten kommer fra den fælles hierarkiske filterfunktion (`matchesGenreSelection`).
+- **Metadata:** hver side har self-canonical og Open Graph/Twitter-metadata.
+- **Interne links:** footer-links til de tre sider, et "More genres"-link mellem siderne og genremærker (Techno, House, Trance), der linker til deres side. Alt udledes af allowlisten. Sitemap'et lister præcis de tre sider.
+- **En ny side** kræver en post i allowlisten og tekst i `genrePages.ts` (TypeScript håndhæver det sidste). Begge dele er en særskilt godkendt SEO-beslutning.
+- **Tests:** `src/app/genres/genreRoutes.test.ts`, `src/app/genres/[slug]/page.test.tsx`, `sitemap.test.ts`, `Footer.test.tsx`.
 
 ### 4.2 Verificeret på et lokalt produktionsbuild
 Lokal Postgres, ingen Production-adgang.

@@ -345,18 +345,25 @@ export function isValidSecondaryGenre(primary: GenreSlug, candidate: GenreSlug):
 
 /**
  * THE allowlist of public, indexable genre landing pages (SEO pilot,
- * 2026-10-09; confirmed in the genre system revision: Techno only). A
- * genre never gets a page automatically — adding one here is an explicit,
- * separately approved SEO decision, and needs its own route under
- * src/app/genres/ (there is deliberately no dynamic /genres/[slug] route,
- * so every other /genres/* URL is a real HTTP 404). The sitemap's genre
- * entries and the genre-badge links are both derived from this list. A
+ * 2026-10-09; Techno, House and Trance approved 2026-10-31). A genre never
+ * gets a page automatically — adding one here is an explicit, separately
+ * approved SEO decision, and needs its editorial copy in
+ * src/lib/genrePages.ts. The single /genres/[slug] route only generates
+ * allowlisted slugs (dynamicParams = false), so every other /genres/* URL
+ * is a real HTTP 404. The sitemap's genre entries, the footer's genre
+ * links and the genre-badge links are all derived from this list. A
  * main genre's page lists the genre and its subgenres
  * (matchesGenreSelection), exactly like the homepage filter.
  */
-export const INDEXABLE_GENRE_PAGES: readonly GenreSlug[] = ["techno"];
+export const INDEXABLE_GENRE_PAGES = ["techno", "house", "trance"] as const satisfies readonly GenreSlug[];
+export type IndexableGenre = (typeof INDEXABLE_GENRE_PAGES)[number];
 
 const GENRES_WITH_PAGES: ReadonlySet<GenreSlug> = new Set<GenreSlug>(INDEXABLE_GENRE_PAGES);
+
+/** The allowlisted genre a `/genres/[slug]` URL segment names, or null (→ 404). */
+export function indexableGenreForUrlSlug(urlSlug: string): IndexableGenre | null {
+  return INDEXABLE_GENRE_PAGES.find((slug) => getGenre(slug).urlSlug === urlSlug) ?? null;
+}
 
 /** Every approved genre page path, for the sitemap. */
 export function indexableGenrePagePaths(): string[] {

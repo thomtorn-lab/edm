@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { EventWithVenue } from "@/lib/queries";
 import { GENRES, INDEXABLE_GENRE_PAGES, genrePagePath, matchesGenreSelection, parentOf, type GenreSlug } from "@/lib/taxonomy";
+import { GENRE_PAGE_CONTENT } from "@/lib/genrePages";
 import type { Venue } from "@/lib/types";
 
 const VENUE: Venue = {
@@ -74,17 +75,20 @@ vi.mock("@/lib/queries", () => ({
 
 const { getPublishedEventsWithVenue, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
 const pageModule = await import("./page");
-const { default: TechnoGenrePage, metadata } = pageModule;
+const { default: GenrePage, generateMetadata, generateStaticParams } = pageModule;
+const props = (slug: string) => ({ params: Promise.resolve({ slug }) }) as unknown as PageProps<"/genres/[slug]">;
+const metadataFor = (slug: string) => generateMetadata(props(slug));
+const metadata = await metadataFor("techno");
 
-async function renderPage(events: EventWithVenue[]) {
+async function renderPage(events: EventWithVenue[], slug = "techno") {
   vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
-  render(await TechnoGenrePage());
+  render(await GenrePage(props(slug)));
 }
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
-describe("/genres/techno — metadata", () => {
+describe("/genres/techno — metadata (via the shared /genres/[slug] route)", () => {
   it("has the agreed title (absolute, brand once), a factual description and a self-canonical", () => {
     expect(metadata.title).toEqual({ absolute: "Techno Events in Copenhagen | Electronic CPH" });
     expect(metadata.description).toMatch(/^Upcoming techno events in Copenhagen/);
@@ -104,7 +108,7 @@ describe("/genres/techno — metadata", () => {
   it("stays indexable (no robots override) and its canonical is the allowlisted genre page path", () => {
     expect(metadata.robots).toBeUndefined();
     expect(metadata.alternates?.canonical).toBe(genrePagePath("techno"));
-    expect(INDEXABLE_GENRE_PAGES).toEqual(["techno"]);
+    expect(INDEXABLE_GENRE_PAGES).toEqual(["techno", "house", "trance"]);
   });
 });
 
@@ -193,5 +197,92 @@ describe("/genres/techno — page", () => {
     expect(screen.getByText("No upcoming techno events listed")).toBeTruthy();
     expect(screen.queryByRole("list")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Techno Events in Copenhagen");
+  });
+});
+
+// Shared genre route (2026-10-31): Techno, House and Trance from one
+// implementation; every other slug is a 404.
+describe("/genres/[slug] — shared route", () => {
+  const FUTURE = "2099-01-01T20:00:00.000Z";
+
+  it("generates exactly the allowlisted slugs, and nothing else (dynamicParams = false)", () => {
+    expect(generateStaticParams()).toEqual([{ slug: "techno" }, { slug: "house" }, { slug: "trance" }]);
+    expect(pageModule.dynamicParams).toBe(false);
+  });
+
+  it("each page has its own H1, title, description, self-canonical and Open Graph/Twitter metadata", async () => {
+    const pages = await Promise.all(INDEXABLE_GENRE_PAGES.map(async (g) => ({ g, m: await metadataFor(g) })));
+    const expected = {
+      techno: { title: "Techno Events in Copenhagen | Electronic CPH", canonical: "/genres/techno" },
+      house: { title: "House Music Events in Copenhagen | Electronic CPH", canonical: "/genres/house" },
+      trance: { title: "Trance & Psytrance Events in Copenhagen | Electronic CPH", canonical: "/genres/trance" },
+    } as const;
+    for (const { g, m } of pages) {
+      expect(m.title, g).toEqual({ absolute: expected[g].title });
+      expect(m.alternates?.canonical, g).toBe(expected[g].canonical);
+      expect(m.robots, g).toBeUndefined();
+      expect((m.description as string).length, g).toBeLessThanOrEqual(160);
+      expect(m.openGraph, g).toMatchObject({ type: "website", siteName: "Electronic CPH", url: expected[g].canonical, title: `${GENRE_PAGE_CONTENT[g].h1} — Electronic CPH`, description: m.description });
+      expect(m.twitter, g).toMatchObject({ card: "summary", title: `${GENRE_PAGE_CONTENT[g].h1} — Electronic CPH`, description: m.description });
+    }
+    for (const key of ["h1", "seoTitle", "description"] as const) {
+      expect(new Set(INDEXABLE_GENRE_PAGES.map((g) => GENRE_PAGE_CONTENT[g][key])).size, key).toBe(INDEXABLE_GENRE_PAGES.length);
+    }
+  });
+
+  it("an unknown or unapproved slug is a 404 (notFound) with no metadata", async () => {
+    for (const slug of ["industrial", "hard-techno", "psytrance", "uk-garage", "bass-breaks", "nope"]) {
+      await expect(GenrePage(props(slug))).rejects.toThrow(/NEXT_HTTP_ERROR_FALLBACK;404/);
+      expect(await metadataFor(slug)).toEqual({});
+    }
+  });
+
+  it("/genres/house lists House and its subgenres, each once, in date order — not Disco or Techno-only events", async () => {
+    await renderPage(
+      [
+        makeEvent("deep", ["deep-house"], "2099-01-05T20:00:00.000Z"),
+        makeEvent("house-techno", ["house", "techno"], "2099-01-02T20:00:00.000Z"),
+        makeEvent("two-subgenres", ["tech-house", "afro-house"], "2099-01-03T20:00:00.000Z"),
+        makeEvent("disco", ["disco"], FUTURE),
+        makeEvent("techno", ["techno"], FUTURE),
+      ],
+      "house",
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("House Music Events in Copenhagen");
+    expect(screen.getByText(/every published event tagged House, Deep House, Tech House, Progressive House or Afro House\./)).toBeTruthy();
+    const titles = screen.getAllByRole("listitem").map((li) => within(li).getAllByRole("link")[0].textContent?.replace(/→$/, "").trim());
+    expect(titles).toEqual(["Event house-techno", "Event two-subgenres", "Event deep"]);
+  });
+
+  it("/genres/trance lists Trance and Psytrance — and nothing else", async () => {
+    await renderPage([makeEvent("psy", ["psytrance"], FUTURE), makeEvent("trance", ["trance", "techno"], FUTURE), makeEvent("hardstyle", ["hardstyle"], FUTURE)], "trance");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Trance Events in Copenhagen");
+    expect(screen.getByText(/every published event tagged Trance or Psytrance\./)).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.queryByText("Event hardstyle")).toBeNull();
+  });
+
+  it("each page lists exactly what the homepage filter matches for that genre, for every genre combination", async () => {
+    const all = GENRES.flatMap((a, i) => GENRES.slice(i).map((b) => makeEvent(`${a.slug}+${b.slug}`, a.slug === b.slug ? [a.slug] : [a.slug, b.slug], FUTURE)));
+    for (const g of INDEXABLE_GENRE_PAGES) {
+      cleanup();
+      await renderPage(all, g);
+      expect(screen.getAllByRole("listitem").length, g).toBe(all.filter((e) => matchesGenreSelection(e.subgenres, g)).length);
+    }
+  });
+
+  it("renders the full page with an empty state when a genre has no upcoming events — never a 404", async () => {
+    for (const g of INDEXABLE_GENRE_PAGES) {
+      cleanup();
+      await renderPage([], g);
+      expect(screen.getByRole("heading", { level: 1 }).textContent, g).toBe(GENRE_PAGE_CONTENT[g].h1);
+      expect(screen.getByText(`No upcoming ${GENRE_PAGE_CONTENT[g].eventsNoun} listed`)).toBeTruthy();
+    }
+  });
+
+  it("links to the other approved genre pages, and only to them", async () => {
+    await renderPage([], "house");
+    const genreLinks = screen.getAllByRole("link").map((a) => a.getAttribute("href")).filter((h) => h?.startsWith("/genres/"));
+    expect(genreLinks).toEqual(["/genres/techno", "/genres/trance"]);
   });
 });

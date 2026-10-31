@@ -117,14 +117,16 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     }
   });
 
-  it("includes the /genres/techno landing page exactly once, on the www origin (genre page pilot, 2026-10-09)", async () => {
+  it("includes the approved genre landing pages (Techno, House, Trance) exactly once each, on the www origin — and no other genre", async () => {
     vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
     vi.mocked(getVenues).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const urls = (await sitemap()).map((r) => r.url);
-    expect(urls.filter((u) => u === "https://www.electroniccph.com/genres/techno")).toHaveLength(1);
-    // Pilot scope: no other genre page exists yet, so none may be listed.
-    expect(urls.filter((u) => u.includes("/genres/"))).toEqual(["https://www.electroniccph.com/genres/techno"]);
+    expect(urls.filter((u) => u.includes("/genres/"))).toEqual([
+      "https://www.electroniccph.com/genres/techno",
+      "https://www.electroniccph.com/genres/house",
+      "https://www.electroniccph.com/genres/trance",
+    ]);
   });
 
   it("SEO QA (2026-10-30): genre entries come from the central allowlist only, and no filter-parameter URL is ever listed", async () => {

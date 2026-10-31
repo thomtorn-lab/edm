@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
+import { INDEXABLE_GENRE_PAGES, genrePagePath, getGenre } from "@/lib/taxonomy";
 
 export default function Footer() {
   return (
@@ -10,6 +11,13 @@ export default function Footer() {
           <Link href="/" className="hover:text-text-secondary">Events</Link>
           <Link href="/venues" className="hover:text-text-secondary">Venues</Link>
           <Link href="/festivals" className="hover:text-text-secondary">Festivals</Link>
+          {/* The approved genre landing pages (taxonomy.ts allowlist), so
+              every page links to them; no other genre gets a link here. */}
+          {INDEXABLE_GENRE_PAGES.map((slug) => (
+            <Link key={slug} href={genrePagePath(slug)!} className="hover:text-text-secondary">
+              {getGenre(slug).label}
+            </Link>
+          ))}
           <Link href="/about" className="hover:text-text-secondary">About</Link>
           {/* Links back to the homepage signup section (there is no
               separate footer form — one signup surface, not two; see
