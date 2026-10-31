@@ -1,3 +1,5 @@
+import { stripDenAndenSideRoomPrefix } from "./denAndenSideRooms";
+
 /**
  * Presentation-only helpers for the event listing. Never touches the
  * canonical `title`/`artists` data — these only decide what to render.
@@ -37,6 +39,12 @@ export function cleanEventTitle(title: string, venueName: string): string {
   if (venueName === "Pumpehuset") {
     const stripped = title.replace(BYHAVEN_PREFIX, "").trim();
     if (stripped !== title) return stripped;
+  }
+  if (venueName === "Den Anden Side") {
+    // Same room-prefix model for Den Anden Side's two rooms ("Den Anden
+    // Ende: X") — see src/lib/denAndenSideRooms.ts.
+    const cleaned = stripDenAndenSideRoomPrefix(title);
+    if (cleaned !== title) return cleaned;
   }
   if (venueName === "Culture Box") {
     const cleaned = title
