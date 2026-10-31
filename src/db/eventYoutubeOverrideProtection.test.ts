@@ -28,7 +28,23 @@ describe("event_youtube_preview_overrides — who can touch it", () => {
   it("only the schema, the override module, and the read-only display query reference the table in code", () => {
     // The drizzle table object, or the table name as a quoted SQL/string literal (comments naming it don't count).
     const touching = files.filter((f) => /eventYoutubePreviewOverrides|["'`]event_youtube_preview_overrides/.test(f.text)).map((f) => f.path);
-    expect(touching.sort()).toEqual(["db/eventYoutubeOverrides.ts", "db/schema.ts", "lib/queries.ts"]);
+    expect(touching.sort()).toEqual([
+      "db/eventYoutubeOverrides.ts",
+      // Read-only YouTube preview risk report (#141): SELECT inside a verified READ ONLY transaction, as the read-only report_ro role.
+      "db/reportReadOnlyGuard.ts",
+      "db/schema.ts",
+      "db/youtubePreviewRiskReport.ts",
+      "lib/queries.ts",
+    ]);
+  });
+
+  it("the read-only risk report only names the table in SELECT / catalog lookups — never writes it", () => {
+    for (const path of ["db/youtubePreviewRiskReport.ts", "db/reportReadOnlyGuard.ts"]) {
+      const text = files.find((f) => f.path === path)!.text;
+      expect(text).not.toMatch(/\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE|DROP\s+TABLE)\s+(public\.)?event_youtube_preview_overrides/i);
+      expect(text).not.toMatch(/\.(insert|update|delete)\(\s*eventYoutubePreviewOverrides/);
+      expect(text).not.toMatch(/from "(\.\/|@\/db\/)eventYoutubeOverrides"/);
+    }
   });
 
   it("the display query only selects from it — never inserts, updates or deletes", () => {

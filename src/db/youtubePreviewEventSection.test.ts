@@ -230,9 +230,9 @@ describe("buildEventSection — manual choices are always respected", () => {
     expect(s.events[0]).toMatchObject({ shownToday: null, shownTodayBasis: "event_override_none", manualOverride: { decision: "none" } });
   });
 
-  it("an override without artist name is credited to the first lineup entry, like the page", () => {
+  it("an override without artist name names no artist, like the page — never a guess from the lineup", () => {
     const s = buildEventSection([night], cache, [{ event_id: "e-a2b5cf47", mode: "video", video_id: "Pbb0KmuwYSA", available: true }]);
-    expect(s.events[0].shownToday).toMatchObject({ artist: "Opener Act", isHeadliner: false });
+    expect(s.events[0].shownToday).toMatchObject({ artist: null, videoId: "Pbb0KmuwYSA", isHeadliner: false });
   });
 
   it("without the override table Production fails closed: no video is shown today anywhere", () => {

@@ -56,7 +56,7 @@ function formatEvent(e: EventEntry): string {
   if (e.manualOverride) lines.push(`    event override: mode ${e.manualOverride.mode}${e.manualOverride.videoId ? `, video ${e.manualOverride.videoId}` : ""}, available ${e.manualOverride.available} → ${e.manualOverride.decision}`);
   lines.push(
     shown
-      ? `    shown today (${e.shownTodayBasis}): ${shown.manualPin ? "[manual pin] " : ""}${shown.artist} — "${shown.videoTitle ?? ""}" (${shown.channelTitle ?? "?"})${shown.isHeadliner ? " [headliner]" : ""}${shown.solo ? "" : ` B2B with ${shown.partners.join(", ")}${shown.outsiders.length > 0 ? ` (not performing: ${shown.outsiders.join(", ")})` : ""}`}${shown.proposedFailures.length > 0 ? ` — fails proposed: ${shown.proposedFailures.join(", ")}` : ""}`
+      ? `    shown today (${e.shownTodayBasis}): ${shown.manualPin ? "[manual pin] " : ""}${shown.artist ?? "(no artist name)"} — "${shown.videoTitle ?? ""}" (${shown.channelTitle ?? "?"})${shown.isHeadliner ? " [headliner]" : ""}${shown.solo ? "" : ` B2B with ${shown.partners.join(", ")}${shown.outsiders.length > 0 ? ` (not performing: ${shown.outsiders.join(", ")})` : ""}`}${shown.proposedFailures.length > 0 ? ` — fails proposed: ${shown.proposedFailures.join(", ")}` : ""}`
       : `    shown today: no video (${e.shownTodayBasis})`,
   );
   for (const v of e.headliners) {

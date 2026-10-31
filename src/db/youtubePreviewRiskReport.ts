@@ -258,7 +258,15 @@ export interface EventEntry {
    * says none (or the override table is missing: the page fails closed),
    * otherwise the first lineup artist with an accepted, unblocked match.
    */
-  shownToday: (VideoView & { isHeadliner: boolean; manualPin: boolean; source: "event_override" | "artist_cache" }) | null;
+  shownToday:
+    | (Omit<VideoView, "artist"> & {
+        /** null only for an override video saved without an artist name — the page then names none (2026-10-24). */
+        artist: string | null;
+        isHeadliner: boolean;
+        manualPin: boolean;
+        source: "event_override" | "artist_cache";
+      })
+    | null;
   shownTodayBasis: ShownBasis;
   /** Set when the event has an override row: the page shows that manual choice (or none). */
   manualOverride: { mode: string; videoId: string | null; available: boolean; decision: EventOverrideDecision["kind"] } | null;
@@ -306,7 +314,7 @@ export interface DecisionSummary {
   /** Every change the simulation would make, from → to. Manual choices never appear here. */
   changes: {
     slug: string;
-    from: { artist: string; videoId: string } | null;
+    from: { artist: string | null; videoId: string } | null;
     to: { artist: string; videoId: string } | null;
     reason: SimulatedReason;
     requiresVisibleArtistName: boolean;
@@ -665,8 +673,9 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
       shownTodayBasis = "event_override_none";
     } else if (decision.kind === "video") {
       shownTodayBasis = "event_override_video";
-      const artist = decision.artistName ?? lineup[0] ?? "Artist";
-      const { solo, partners } = billedPartners(decision.videoTitle ?? "", cleanArtistDisplayName(artist), decision.channelTitle ?? "");
+      // Like the page: only the name the video was chosen for, never a guess from the lineup.
+      const artist = decision.artistName;
+      const { solo, partners } = billedPartners(decision.videoTitle ?? "", artist ? cleanArtistDisplayName(artist) : "", decision.channelTitle ?? "");
       shownToday = {
         artist,
         videoId: decision.videoId,
@@ -677,7 +686,7 @@ export function buildEventSection(eventRows: EventRow[], cacheRows: CacheRow[], 
         outsiders: partners.filter((p) => !inLineup(p, lineup)),
         // A person chose it: never judged by a rule.
         proposedFailures: [],
-        isHeadliner: headlinerKeys.has(keyOf(artist)),
+        isHeadliner: artist !== null && headlinerKeys.has(keyOf(artist)),
         manualPin: false,
         source: "event_override",
       };

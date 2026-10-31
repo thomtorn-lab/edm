@@ -63,7 +63,7 @@ describe("report shownToday matches getEventYoutubePreview", () => {
     ["duplicate names keep the first position", ["B", "A", "b"], [row("a", "va"), row("b", "vb")], []],
     ["no match at all", ["Nobody"], [row("someone", "s")], []],
     ["an available override video wins over the artist match", LINEUP, [row("sarah wild", "sw")], [override()]],
-    ["an override without artist name is credited to the first lineup entry", LINEUP, [row("dasha", "d")], [override({ artist_name: null })]],
+    ["an override without artist name names no artist (never a lineup guess)", LINEUP, [row("dasha", "d")], [override({ artist_name: null })]],
     ["a hidden override shows nothing, never the artist match", LINEUP, [row("sarah wild", "sw")], [override({ mode: "hidden", video_id: null })]],
     ["an unavailable override shows nothing", LINEUP, [row("sarah wild", "sw")], [override({ available: false })]],
     ["an unknown override mode shows nothing", LINEUP, [row("sarah wild", "sw")], [override({ mode: "something-new" })]],
