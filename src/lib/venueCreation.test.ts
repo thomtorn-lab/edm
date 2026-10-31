@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isProtectedSubVenueName, planVenueCreation, slugifyVenueName } from "./venueCreation";
 import type { Venue } from "./types";
+import { VENUES } from "./data/venues";
 
 const PUMPEHUSET: Venue = {
   id: "v-pumpehuset",
@@ -190,5 +191,12 @@ describe("planVenueCreation — new venue identity (genuinely new Copenhagen loc
     );
     expect(plan.kind).toBe("create");
     if (plan.kind === "create") expect(plan.venue.websiteUrl).toBeNull();
+  });
+});
+
+describe("planVenueCreation — Den Anden Ende (2026-10-27)", () => {
+  it("never creates Den Anden Side's small room as a venue without explicit confirmation", () => {
+    const plan = planVenueCreation({ name: "Den Anden Ende", address: "Axeltorv 5", city: "Copenhagen", postalCode: "1609" }, VENUES);
+    expect(plan.kind).toBe("needs-confirmation");
   });
 });
