@@ -25,11 +25,11 @@ describe("Privacy page (GDPR review, 2026-10-30)", () => {
     expect(text).not.toMatch(/Vercel\u2019s data processing addendum|Vercel Pro|Pro plan/);
   });
 
-  it("names Resend as sender and Simply.com as the inbox host, not Gmail", () => {
+  it("names Resend as sender and Simply.com (Denmark, under its DPA) as the inbox host, not Gmail", () => {
     render(<PrivacyPage />);
     const text = document.body.textContent!;
-    expect(text).toContain("our email-sending provider, Resend, to our @electroniccph.com inbox, which is hosted by Simply.com");
-    expect(text).toContain("Simply.com \u2014 hosting of our @electroniccph.com email inbox");
+    expect(text).toContain("our email-sending provider, Resend, to our @electroniccph.com inbox, which is hosted by Simply.com in Denmark");
+    expect(text).toContain("Simply.com (Denmark) \u2014 hosting of our @electroniccph.com email inbox, with data stored in Denmark, under Simply.com\u2019s data processing agreement");
     expect(text).toContain("6 months after our last exchange");
     expect(text).not.toMatch(/Gmail/);
   });

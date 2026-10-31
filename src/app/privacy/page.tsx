@@ -14,7 +14,7 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
  * session-storage "back to list" record, YouTube videos loaded only after
  * the visitor presses play (src/components/ArtistVideoPreview.tsx),
  * Contact/Suggest-an-event sent via Resend to our @electroniccph.com inbox
- * (mail hosting at Simply.com) and deleted
+ * (mail hosting at Simply.com, data in Denmark, under its DPA) and deleted
  * after 6 months, the Supabase database in the EU (Paris), and artist data
  * built from public listings.
  *
@@ -115,7 +115,8 @@ export default function PrivacyPage() {
           If you use <Link href="/contact" className={linkClass}>Contact</Link> or{" "}
           <Link href="/suggest-event" className={linkClass}>Suggest an event</Link>, what you submit (your name,
           email address and message, or the event details, your email address and note) is sent by email via
-          our email-sending provider, Resend, to our @electroniccph.com inbox, which is hosted by Simply.com.
+          our email-sending provider, Resend, to our @electroniccph.com inbox, which is hosted by Simply.com in
+          Denmark.
           It isn&rsquo;t stored in our website database and is used only to reply to you or review your
           suggestion. Your IP address is used briefly in server memory to
           block repeated automated submissions and isn&rsquo;t stored. The legal basis is our legitimate
@@ -180,7 +181,10 @@ export default function PrivacyPage() {
             processing addendum
           </li>
           <li>Resend Inc. (USA) — sending Contact and Suggest-an-event messages to our inbox</li>
-          <li>Simply.com — hosting of our @electroniccph.com email inbox</li>
+          <li>
+            Simply.com (Denmark) — hosting of our @electroniccph.com email inbox, with data stored in Denmark, under
+            Simply.com&rsquo;s data processing agreement
+          </li>
         </ul>
         <p>
           Google also receives data when you load a YouTube video, as described above. Vercel, Resend and Google
