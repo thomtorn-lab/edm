@@ -49,7 +49,7 @@ export const GENRE_PAGE_CONTENT: Record<IndexableGenre, GenrePageContent> = {
     description:
       "Upcoming trance and psytrance events in Copenhagen: club nights, raves and parties for melodic, uplifting and psychedelic trance, listed by date.",
     intro: [
-      "Trance and psytrance in Copenhagen, from melodic and uplifting club nights to psychedelic, high-tempo parties.",
+      "Trance and psytrance events in Copenhagen, from melodic club nights to driving, psychedelic dancefloors.",
     ],
     eventsNoun: "trance events",
   },
