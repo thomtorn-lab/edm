@@ -3,7 +3,7 @@ import { cleanArtistDisplayName, isShortGenericArtistName } from "../enrichment/
 import { decodeHtmlEntities } from "../adapters/htmlExtraction";
 import { soundcloudProfileUrl } from "../adapters/cultureBoxSoundcloudLinks";
 import type { RawCandidateEvent } from "../adapters/types";
-import type { EvidenceSignal, IdentityEvidence } from "../artistIdentity/evidence";
+import { ADMIN_EVIDENCE_SOURCE_ID, type EvidenceSignal, type IdentityEvidence } from "../artistIdentity/evidence";
 
 /**
  * Source-provided SoundCloud evidence (2026-10-24), the SoundCloud side of
@@ -193,15 +193,19 @@ function inlinePairings(text: string, artists: readonly string[]): Pairing[] {
 /** All SoundCloud evidence one event's own source data gives, with per-event conflicts flagged. */
 export function extractSourceSoundcloudEvidence(input: EvidenceInput): SoundcloudEvidence[] {
   const raw: (Pairing & { signal: EvidenceSignal })[] = [];
-  for (const link of input.anchoredLinks ?? []) {
+  for (const link of input.sourceId === ADMIN_EVIDENCE_SOURCE_ID ? [] : (input.anchoredLinks ?? [])) {
     const profile = soundcloudProfileUrl(link.url);
     const exact = input.artists.find((a) => a === link.name);
     const targets = exact ? [{ entry: exact, part: exact }] : targetsForKey(input.artists, artistIdentityKey(link.name));
     if (targets.length === 1 && "url" in profile) raw.push({ ...targets[0], url: profile.url, signal: "source_anchor" });
   }
+  // Text on an admin-created event is often pasted promoter copy, not the
+  // venue's own statement: the shared model makes it candidate-only
+  // ("admin_inline"), never a source_* signal.
+  const inlineSignal: EvidenceSignal = input.sourceId === ADMIN_EVIDENCE_SOURCE_ID ? "admin_inline" : "source_inline";
   for (const text of input.texts) {
     if (!text) continue;
-    for (const p of inlinePairings(text, input.artists)) raw.push({ ...p, signal: "source_inline" });
+    for (const p of inlinePairings(text, input.artists)) raw.push({ ...p, signal: inlineSignal });
   }
 
   // One record per (performer, url); an anchor outranks the same pair found inline.
@@ -274,6 +278,7 @@ export function reusableProfilesByKey(records: readonly SoundcloudEvidence[]): M
   const out = new Map<string, string>();
   for (const r of checked) {
     if (conflicted.has(r.key) || !r.key) continue;
+    if (r.signal !== "source_anchor" && r.signal !== "source_inline") continue; // candidate-only evidence never seeds reuse
     const cleaned = cleanArtistDisplayName(r.part);
     if (isShortGenericArtistName(cleaned) || !isSingleArtistEntry(r.part)) continue;
     out.set(r.key, r.url);
@@ -307,9 +312,9 @@ export function evidenceForCandidate(
  * Evidence for an event already stored: its current lineup and stored
  * description (Pylonen keeps the source's profile links there). Only names
  * still in the event's current lineup can get a record, so an admin-edited
- * lineup is respected as it is. An event without a canonical source
- * (admin-created) yields nothing until the shared model defines how such
- * evidence is attributed (IdentityEvidence.sourceId is required).
+ * lineup is respected as it is. An admin-created event (no canonical
+ * source) is attributed to ADMIN_EVIDENCE_SOURCE_ID with the candidate-only
+ * "admin_inline" signal: it can go to review, never link on its own.
  */
 export function evidenceForStoredEvent(
   row: {
@@ -321,11 +326,10 @@ export function evidenceForStoredEvent(
   },
   observedAt: Date,
 ): SoundcloudEvidence[] {
-  if (!row.canonicalSourceId) return [];
   return extractSourceSoundcloudEvidence({
     artists: row.artists,
     texts: [row.description],
-    sourceId: row.canonicalSourceId,
+    sourceId: row.canonicalSourceId ?? ADMIN_EVIDENCE_SOURCE_ID,
     eventId: row.id,
     sourceUrl: row.officialEventUrl,
     observedAt,

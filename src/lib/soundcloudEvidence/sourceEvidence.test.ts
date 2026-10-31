@@ -13,7 +13,7 @@ import {
 import { parseCultureBoxEventsHtml } from "../adapters/cultureBoxAdapter";
 import { parseHangarenEventsHtml } from "../adapters/hangarenAdapter";
 import { classifyAppearance, splitLineupEntry } from "../artistIdentity/lineupIdentity";
-import { evidenceBacksAppearance } from "../artistIdentity/evidence";
+import { ADMIN_EVIDENCE_SOURCE_ID, evidenceBacksAppearance } from "../artistIdentity/evidence";
 
 const AT = new Date("2026-10-24T12:00:00.000Z");
 
@@ -230,10 +230,14 @@ describe("the shared IdentityEvidence contract", () => {
     expect(evidenceBacksAppearance({ ...clean, eventId: null })).toBe(false);
   });
 
-  it("an admin-created event (no canonical source) yields no evidence until the model defines its attribution", () => {
-    expect(
-      evidenceForStoredEvent({ id: "e-a", canonicalSourceId: null, artists: ["Kromagon"], description: "Kromagon: https://soundcloud.com/aragon", officialEventUrl: null }, AT),
-    ).toEqual([]);
+  it("an admin-created event (no canonical source) gives candidate-only admin_inline evidence: never backs an appearance, never seeds reuse", () => {
+    const records = evidenceForStoredEvent(
+      { id: "e-a", canonicalSourceId: null, artists: ["Kromagon"], description: "Kromagon: https://soundcloud.com/aragon", officialEventUrl: null },
+      AT,
+    );
+    expect(records).toEqual([expect.objectContaining({ sourceId: ADMIN_EVIDENCE_SOURCE_ID, signal: "admin_inline", eventId: "e-a", conflict: null })]);
+    expect(evidenceBacksAppearance(records[0])).toBe(false);
+    expect(reusableProfilesByKey(records).size).toBe(0);
   });
 });
 

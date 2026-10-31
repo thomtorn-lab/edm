@@ -12,7 +12,13 @@ const events = [
     description: "SEID (Frikvens Syndikatet) https://soundcloud.com/seid1312",
     officialEventUrl: null,
   },
-  { id: "e-adm", canonicalSourceId: null, artists: ["Rexie Lex", "NAT b2b YOON", "Lulla-Li & Nihility"], description: "Lulla-Li & Nihility: https://soundcloud.com/tenna-li-andersen", officialEventUrl: null },
+  {
+    id: "e-adm",
+    canonicalSourceId: null,
+    artists: ["Rexie Lex", "NAT b2b YOON", "Lulla-Li & Nihility", "Kromagon"],
+    description: "Lulla-Li & Nihility: https://soundcloud.com/tenna-li-andersen\nKromagon: https://soundcloud.com/aragon",
+    officialEventUrl: null,
+  },
 ];
 const links = [
   { eventId: "e-cb1", artistName: "LELE", url: "https://soundcloud.com/user-442274348" },
@@ -28,7 +34,8 @@ describe("buildSoundcloudEvidenceAuditSection", () => {
     expect(of("src-culture-box")).toMatchObject({ events: 2, performers: 3, shownToday: 3, documentedNotCaptured: 0 });
     expect(of("src-pylonen")).toMatchObject({ performers: 2, shownToday: 0, documentedNotCaptured: 1, reusableByKey: 0, none: 1 });
     // admin: Rexie Lex reusable from Culture Box; NAT b2b YOON splits into two performers with no evidence; the duo's link is conflicted
-    expect(of("(admin)")).toMatchObject({ performers: 4, reusableByKey: 1, conflicted: 1, none: 2 });
+    // Kromagon's admin text link is a candidate only (admin_inline), never "documented by the source"
+    expect(of("(admin)")).toMatchObject({ performers: 5, documentedNotCaptured: 0, adminCandidates: 1, reusableByKey: 1, conflicted: 1, none: 2 });
   });
 
   it("lists LELE/LeLe as one key with two profiles", () => {
@@ -45,6 +52,6 @@ describe("buildSoundcloudEvidenceAuditSection", () => {
   });
 
   it("declares its bases like the shared audit", () => {
-    expect(section.basis).toEqual({ shownToday: "observed", documentedNotCaptured: "observed", reusableByKey: "estimated", conflicted: "observed" });
+    expect(section.basis).toEqual({ shownToday: "observed", documentedNotCaptured: "observed", adminCandidates: "observed", reusableByKey: "estimated", conflicted: "observed" });
   });
 });

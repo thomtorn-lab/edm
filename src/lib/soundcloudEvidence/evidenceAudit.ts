@@ -1,5 +1,6 @@
 import { artistIdentityKey, splitLineupEntry } from "../artistIdentity/lineupIdentity";
-import { extractSourceSoundcloudEvidence, findKeyConflicts, reusableProfilesByKey, type SoundcloudEvidence } from "./sourceEvidence";
+import { evidenceForStoredEvent, findKeyConflicts, reusableProfilesByKey, type SoundcloudEvidence } from "./sourceEvidence";
+import { ADMIN_EVIDENCE_SOURCE_ID } from "../artistIdentity/evidence";
 import { soundcloudProfileUrl } from "../adapters/cultureBoxSoundcloudLinks";
 
 /**
@@ -44,13 +45,15 @@ export interface SourceEvidenceCoverage {
   documentedNotCaptured: number;
   /** estimated: neither of the above, but a verified handle for the same distinctive key exists on another event. */
   reusableByKey: number;
+  /** observed: admin-created events whose stored text pairs this performer with a profile ("admin_inline", candidate-only: review). */
+  adminCandidates: number;
   /** observed: performers whose only evidence is flagged (duo/collective, two handles). */
   conflicted: number;
   none: number;
 }
 
 export interface SoundcloudEvidenceAuditSection {
-  basis: { shownToday: "observed"; documentedNotCaptured: "observed"; reusableByKey: "estimated"; conflicted: "observed" };
+  basis: { shownToday: "observed"; documentedNotCaptured: "observed"; adminCandidates: "observed"; reusableByKey: "estimated"; conflicted: "observed" };
   bySource: SourceEvidenceCoverage[];
   /** observed: identity keys with more than one profile across stored links and stored text. */
   keysWithSeveralProfiles: { key: string; urls: string[]; entries: string[] }[];
@@ -85,7 +88,7 @@ export function buildSoundcloudEvidenceAuditSection(
           key: artistIdentityKey(l.artistName),
           url: profile.url,
           signal: "source_anchor" as const,
-          sourceId: e.canonicalSourceId ?? ADMIN,
+          sourceId: e.canonicalSourceId ?? ADMIN_EVIDENCE_SOURCE_ID,
           eventId: e.id,
           sourceUrl: e.officialEventUrl,
           observedAt: now,
@@ -93,19 +96,7 @@ export function buildSoundcloudEvidenceAuditSection(
         },
       ];
     });
-  // Admin-created events are measured too: these records only feed the
-  // counts below and never leave this function, so the placeholder source
-  // id is never stored or passed to the identity model.
-  const inlineRecords = input.events.flatMap((e) =>
-    extractSourceSoundcloudEvidence({
-      artists: e.artists,
-      texts: [e.description],
-      sourceId: e.canonicalSourceId ?? ADMIN,
-      eventId: e.id,
-      sourceUrl: e.officialEventUrl,
-      observedAt: now,
-    }),
-  );
+  const inlineRecords = input.events.flatMap((e) => evidenceForStoredEvent(e, now));
   const all = findKeyConflicts([...anchorRecords, ...inlineRecords]);
   const reuse = reusableProfilesByKey(all);
 
@@ -113,7 +104,7 @@ export function buildSoundcloudEvidenceAuditSection(
   for (const e of input.events) {
     const sourceId = e.canonicalSourceId ?? ADMIN;
     if (!bySourceMap.has(sourceId)) {
-      bySourceMap.set(sourceId, { sourceId, events: 0, performers: 0, shownToday: 0, documentedNotCaptured: 0, reusableByKey: 0, conflicted: 0, none: 0 });
+      bySourceMap.set(sourceId, { sourceId, events: 0, performers: 0, shownToday: 0, documentedNotCaptured: 0, adminCandidates: 0, reusableByKey: 0, conflicted: 0, none: 0 });
     }
     const c = bySourceMap.get(sourceId)!;
     c.events++;
@@ -123,6 +114,7 @@ export function buildSoundcloudEvidenceAuditSection(
         const own = all.filter((r) => r.eventId === e.id && r.entry === entry && r.part === part.name);
         if (shown.has(`${e.id}\u0000${entry}`)) c.shownToday++;
         else if (own.some((r) => !r.conflict && r.signal === "source_inline")) c.documentedNotCaptured++;
+        else if (own.some((r) => !r.conflict && r.signal === "admin_inline")) c.adminCandidates++;
         else if (reuse.has(artistIdentityKey(part.name))) c.reusableByKey++;
         else if (own.length > 0) c.conflicted++;
         else c.none++;
@@ -138,7 +130,7 @@ export function buildSoundcloudEvidenceAuditSection(
   }
 
   return {
-    basis: { shownToday: "observed", documentedNotCaptured: "observed", reusableByKey: "estimated", conflicted: "observed" },
+    basis: { shownToday: "observed", documentedNotCaptured: "observed", adminCandidates: "observed", reusableByKey: "estimated", conflicted: "observed" },
     bySource: [...bySourceMap.values()].sort((a, b) => b.performers - a.performers || a.sourceId.localeCompare(b.sourceId)),
     keysWithSeveralProfiles: [...byKey.entries()]
       .filter(([, v]) => v.urls.size > 1)
