@@ -27,9 +27,22 @@ export type EvidenceSignal =
   /** Derived via Resident Advisor event -> RA artist -> profile. Candidate only. */
   | "ra_chain"
   /** A profile URL listed on a Discogs artist page. Candidate only. */
-  | "discogs_url";
+  | "discogs_url"
+  /**
+   * "Name — soundcloud.com/x" in the text of an admin-created event (no
+   * canonical source). An admin often pastes promoter text, so this is not
+   * the venue's own statement: candidate only, confirmed through review.
+   */
+  | "admin_inline";
 
 export const SOURCE_SIGNALS: readonly EvidenceSignal[] = ["source_anchor", "source_inline"];
+
+/**
+ * sourceId for evidence from an admin-created event (canonical_source_id is
+ * null). Matches event_change_log.changed_by for admin edits. Never pair it
+ * with a source_* signal: use "admin_inline".
+ */
+export const ADMIN_EVIDENCE_SOURCE_ID = "admin";
 
 export type EvidenceConflict =
   /** The same event links one lineup name to two different profiles. */
@@ -68,5 +81,5 @@ export interface IdentityEvidence {
  * model, not by this check.
  */
 export function evidenceBacksAppearance(e: IdentityEvidence): boolean {
-  return e.conflict === null && SOURCE_SIGNALS.includes(e.signal) && e.eventId !== null;
+  return e.conflict === null && SOURCE_SIGNALS.includes(e.signal) && e.eventId !== null && e.sourceId !== ADMIN_EVIDENCE_SOURCE_ID;
 }

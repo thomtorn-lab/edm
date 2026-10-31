@@ -138,5 +138,8 @@ describe("evidenceBacksAppearance", () => {
     expect(evidenceBacksAppearance({ ...base, signal: "discogs_url" })).toBe(false);
     expect(evidenceBacksAppearance({ ...base, eventId: null })).toBe(false);
     expect(evidenceBacksAppearance({ ...base, conflict: { kind: "two_handles_same_key", otherUrls: ["https://soundcloud.com/other"] } })).toBe(false);
+    // admin-created events: candidate only, never source-backed
+    expect(evidenceBacksAppearance({ ...base, sourceId: "admin", signal: "admin_inline" })).toBe(false);
+    expect(evidenceBacksAppearance({ ...base, sourceId: "admin", signal: "source_inline" })).toBe(false);
   });
 });
