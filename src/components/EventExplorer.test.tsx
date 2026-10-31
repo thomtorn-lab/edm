@@ -836,8 +836,10 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
   // twice even though the filter predicate checks two array elements.
   const HOUSE_DISCO_EVENT = {
     ...makeEvent("2026-08-14T20:00:00.000Z"),
-    primaryGenre: "house" as GenreSlug,
-    subgenres: ["house", "disco"] as GenreSlug[],
+    // Deep House (not House itself): a "House" badge now links to
+    // /genres/house, which would split the joined genre text in two.
+    primaryGenre: "deep-house" as GenreSlug,
+    subgenres: ["deep-house", "disco"] as GenreSlug[],
   };
 
   // EventRow renders both genres as one joined string ("House · Disco") in a
@@ -859,27 +861,27 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
     expect(queryCardText("House")).toBeNull();
   });
 
-  it("a two-genre event (House · Disco) is discoverable under the House filter", () => {
+  it("a two-genre event (Deep House · Disco) is discoverable under the House filter", () => {
     render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("house");
-    expect(cardText("House · Disco")).toBeTruthy();
+    expect(cardText("Deep House · Disco")).toBeTruthy();
   });
 
-  it("the same two-genre event (House · Disco) is also discoverable under the Disco filter", () => {
+  it("the same two-genre event (Deep House · Disco) is also discoverable under the Disco filter", () => {
     render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("disco");
-    expect(cardText("House · Disco")).toBeTruthy();
+    expect(cardText("Deep House · Disco")).toBeTruthy();
   });
 
   it("a two-genre event never appears twice in the list under either of its own genre filters", () => {
     render(<EventExplorer events={[HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("house");
-    expect(allCardText("House · Disco")).toHaveLength(1);
+    expect(allCardText("Deep House · Disco")).toHaveLength(1);
     selectGenre("disco");
-    expect(allCardText("House · Disco")).toHaveLength(1);
+    expect(allCardText("Deep House · Disco")).toHaveLength(1);
   });
 });
 

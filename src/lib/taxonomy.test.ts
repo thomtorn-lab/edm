@@ -326,9 +326,11 @@ describe("classification rules (K3) — validateGenreTags", () => {
 });
 
 describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
-  it("only Techno has a landing page so far", () => {
+  it("only the allowlisted genres (Techno, House, Trance) have a landing page", () => {
     expect(genrePagePath("techno")).toBe("/genres/techno");
-    for (const g of GENRES.filter((m) => m.slug !== "techno")) expect(genrePagePath(g.slug), g.slug).toBeNull();
+    expect(genrePagePath("house")).toBe("/genres/house");
+    expect(genrePagePath("trance")).toBe("/genres/trance");
+    for (const g of GENRES.filter((m) => !["techno", "house", "trance"].includes(m.slug))) expect(genrePagePath(g.slug), g.slug).toBeNull();
   });
 
   it("a genre badge only ever links to the page for that exact genre (same meaning as the homepage filter)", () => {
@@ -338,9 +340,11 @@ describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
     }
   });
 
-  it("genreLabelPagePath links only the plain Techno label, never a subgenre label", () => {
+  it("genreLabelPagePath links only the plain labels of genres with a page, never a subgenre label", () => {
     expect(genreLabelPagePath("techno")).toBe("/genres/techno");
-    for (const slug of ["melodic-techno", "minimal-techno", "industrial", "hard-techno", "house"] as GenreSlug[]) {
+    expect(genreLabelPagePath("house")).toBe("/genres/house");
+    expect(genreLabelPagePath("trance")).toBe("/genres/trance");
+    for (const slug of ["melodic-techno", "minimal-techno", "industrial", "hard-techno", "deep-house", "psytrance"] as GenreSlug[]) {
       expect(genreLabelPagePath(slug), slug).toBeNull();
     }
   });
