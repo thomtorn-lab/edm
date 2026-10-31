@@ -64,6 +64,7 @@ SoundCloud lookup, nothing stored.
   plus 9 reuse candidates among 208 performers in the sample. Well-known
   names from Poolen, Pumpehuset, HvadErPå and admin events have no evidence
   in source data at all.
-- **Admin-created events:** they have no canonical source, so they yield no
-  evidence until the shared model defines how such evidence is attributed.
-  The question is open with Artist Alerts.
+- **Admin-created events:** they have no canonical source. Their text is
+  attributed to `"admin"` with the candidate-only `admin_inline` signal
+  (the shared model's decision): it goes to review and never links on its
+  own, because pasted promoter text is not the venue's own statement.
