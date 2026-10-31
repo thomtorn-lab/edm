@@ -1,0 +1,80 @@
+name: Den Anden Side Rooms
+
+# One-time restructuring of stored Den Anden Side events into the Culture Box
+# room model (Den Anden Side main room + Den Anden Ende small room, one venue).
+# Logic: src/db/denAndenSideRoomStructure.ts, planned by the pure, tested
+# src/lib/denAndenSideMigration.ts with the same room reading every future
+# import runs (src/lib/denAndenSideRooms.ts).
+#
+# "plan" is read-only and prints every event's verdict and exact patch, the
+# events needing manual review and the summary counts. "apply" writes only
+# title/description/artist order (and venueId for a stray "Den Anden Ende"
+# venue), never over admin-overridden fields, and requires the confirmation
+# string. Run "plan" first and review its output.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default) or "apply" (writes)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: "apply mode only: type STRUCTURE-DEN-ANDEN-SIDE-ROOMS to confirm writing to Production."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-anden-side-rooms
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run Den Anden Side room restructuring
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          args=(--mode="$INPUT_MODE")
+          [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
+          node --env-file=.env.local --import tsx src/db/denAndenSideRoomStructure.ts "${args[@]}" | tee report.txt
+          {
+            echo '```'
+            sed -n '/=== SUMMARY ===/,$p' report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

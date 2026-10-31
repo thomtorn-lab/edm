@@ -163,3 +163,12 @@ describe("subVenueLabel — structural subVenue field (generalized sub-venue mod
     expect(subVenueLabel("Solar Flare", "VEGA", "Store VEGA")).not.toContain(":");
   });
 });
+
+describe("cleanEventTitle — Den Anden Side rooms (2026-10-27)", () => {
+  it("strips the room prefix like Culture Box's, only at Den Anden Side", () => {
+    expect(cleanEventTitle("Den Anden Ende: Kilele x DAS", "Den Anden Side")).toBe("Kilele x DAS");
+    expect(cleanEventTitle("GAG x DAS", "Den Anden Side")).toBe("GAG x DAS");
+    expect(cleanEventTitle("Den Anden Ende: Kilele x DAS", "Culture Box")).toBe("Den Anden Ende: Kilele x DAS");
+    expect(cleanEventTitle("Black Box: X · Red Box: Y", "Culture Box")).toBe("X · Y");
+  });
+});

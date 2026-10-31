@@ -1902,3 +1902,52 @@ describe("withheld descriptions never reach events.description (Poolen/Pumpehuse
     expect(buildSyncPatch(both, resolved, owned(null)).patch.description).toBe(EN);
   });
 });
+
+describe("buildSyncPatch — Den Anden Side room split is kept (2026-10-27)", () => {
+  const STRUCTURED = "Intro.\n\nDen Anden Side\nA1, A2\n\nDen Anden Ende\nB1";
+  const existing = target({
+    id: "e-gag",
+    title: "GAG x DAS",
+    description: STRUCTURED,
+    artists: ["A1", "A2", "B1"],
+    venueId: "v-den-anden-side",
+    canonicalSourceId: "src-hvaderpaa",
+  });
+  const das = { resolvedVenueId: "v-den-anden-side", genre: "techno" as const, genreConfidence: "medium" as const };
+
+  it("a source without room information does not flatten a verified split", () => {
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-billetto", title: "GAG x DAS (tickets)", description: "Intro.", artists: ["B1", "A1", "A2"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["B1", "A1", "A2"] },
+      existing,
+    );
+    expect(patch.title).toBeUndefined();
+    expect(patch.description).toBeUndefined();
+    expect(patch.artists).toBeUndefined();
+  });
+
+  it("appends a newly announced artist without placing it in a room", () => {
+    const { patch } = buildSyncPatch(
+      raw({ title: "GAG x DAS", description: "Intro.", artists: ["A1", "A2", "B1", "C1"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["A1", "A2", "B1", "C1"] },
+      existing,
+    );
+    expect(patch.artists).toEqual(["A1", "A2", "B1", "C1"]);
+    expect(patch.description).toBeUndefined();
+  });
+
+  it("a source that itself gives a (corrected) split still updates", () => {
+    const corrected = "Intro.\n\nDen Anden Side\nA1\n\nDen Anden Ende\nA2, B1";
+    const { patch } = buildSyncPatch(
+      raw({ title: "GAG x DAS", description: corrected, artists: ["A1", "A2", "B1"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["A1", "A2", "B1"] },
+      existing,
+    );
+    expect(patch.description).toBe(corrected);
+  });
+
+  it("does not touch other venues", () => {
+    const { patch } = buildSyncPatch(raw({ description: "New text." }), resolved, target({ description: STRUCTURED }));
+    expect(patch.description).toBe("New text.");
+  });
+});

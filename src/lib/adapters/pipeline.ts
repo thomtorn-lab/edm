@@ -3,6 +3,7 @@ import type { GenreSlug } from "../taxonomy";
 import { isSelectableGenre } from "../taxonomy";
 import type { Venue } from "../types";
 import { resolveVenue, dedupeArtistList } from "../normalize";
+import { isDenAndenSideVenueName, isSmallRoomVenueName, MAIN_ROOM as DAS_MAIN_ROOM, structureDenAndenSideRooms } from "../denAndenSideRooms";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
 import { findBestMovedEventMatch } from "../movedEventDetection";
 import { evaluateQualityGate, genreConfidenceForEvidence, type PublishDecision } from "../classification";
@@ -424,6 +425,20 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   if (raw.structuredGenreField) raw.structuredGenreField = normalizeExtractedText(raw.structuredGenreField, { singleLine: true });
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });
   raw.artists = raw.artists.map((a) => normalizeExtractedText(a, { singleLine: true }));
+
+  // DEN ANDEN SIDE ROOMS (2026-10-27): the Culture Box room model for every
+  // source's Den Anden Side candidates, at the same single choke point — see
+  // src/lib/denAndenSideRooms.ts. Its small room "Den Anden Ende" resolves to
+  // the club itself (never a venue of its own), and a room split the source
+  // states explicitly becomes a room-separated lineup; anything unverifiable
+  // passes through unchanged.
+  if (isDenAndenSideVenueName(raw.venueName)) {
+    const structured = structureDenAndenSideRooms({ title: raw.title, description: raw.description, artists: raw.artists, venueName: raw.venueName });
+    raw.title = structured.title;
+    raw.description = structured.description;
+    raw.artists = structured.artists;
+    if (isSmallRoomVenueName(raw.venueName)) raw.venueName = DAS_MAIN_ROOM;
+  }
 
   // VALIDATION
   const missingFields: string[] = [];
