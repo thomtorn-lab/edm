@@ -1,16 +1,15 @@
-import { mainGenreOf, type GenreSlug, type MainGenreSlug } from "../taxonomy";
+import { matchesGenreSelection, type GenreFilterValue, type GenreSlug } from "../taxonomy";
 
 /**
- * Event<->subscriber genre matching (newsletter MVP, 2026-10-05). Mirrors
- * EventExplorer.tsx's own Genre filter predicate exactly
- * (`subgenres.some((s) => mainGenreOf(s) === genre)`), extended from a
- * single selected genre to a subscriber's multiple selected genres via
- * `.includes()` — an event matches if ANY of its (up to two, per the
- * max-two-genres-per-event model) subgenres maps to ANY of the
- * subscriber's selected MainGenreSlug groups. An empty selection means
- * "all events" (the subscription-model default, not a separate flag).
+ * Event<->subscriber genre matching (newsletter MVP, 2026-10-05; genre
+ * system revision 2026-10-24). Uses the site-wide genre rule
+ * (matchesGenreSelection — the same one the homepage filter uses): an
+ * event matches if it matches ANY of the subscriber's selected genres,
+ * where a main genre includes its subgenres and a legacy set keeps its
+ * original meaning. An empty selection means "all events" (the
+ * subscription-model default, not a separate flag).
  */
-export function eventMatchesGenres(eventSubgenres: GenreSlug[], selectedGenres: MainGenreSlug[]): boolean {
+export function eventMatchesGenres(eventSubgenres: GenreSlug[], selectedGenres: GenreFilterValue[]): boolean {
   if (selectedGenres.length === 0) return true;
-  return eventSubgenres.some((slug) => selectedGenres.includes(mainGenreOf(slug)));
+  return selectedGenres.some((selection) => matchesGenreSelection(eventSubgenres, selection));
 }

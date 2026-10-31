@@ -71,6 +71,8 @@ const LATE_START_LOCAL_HOUR = 22;
 const DANCEFLOOR_GENRES: ReadonlySet<GenreSlug> = new Set<GenreSlug>([
   "techno",
   "hard-techno",
+  "industrial-techno",
+  "hypnotic-techno",
   "industrial",
   "melodic-techno",
   "minimal-techno",
@@ -82,6 +84,8 @@ const DANCEFLOOR_GENRES: ReadonlySet<GenreSlug> = new Set<GenreSlug>([
   "trance",
   "psytrance",
   "drum-and-bass",
+  "jungle",
+  "breakbeat",
   "dubstep",
   "garage",
   "hardstyle",

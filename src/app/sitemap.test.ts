@@ -127,6 +127,16 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     expect(urls.filter((u) => u.includes("/genres/"))).toEqual(["https://www.electroniccph.com/genres/techno"]);
   });
 
+  it("SEO QA (2026-10-30): genre entries come from the central allowlist only, and no filter-parameter URL is ever listed", async () => {
+    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
+    vi.mocked(getVenues).mockResolvedValue([]);
+    const { default: sitemap } = await import("./sitemap");
+    const { indexableGenrePagePaths } = await import("@/lib/taxonomy");
+    const urls = (await sitemap()).map((r) => r.url);
+    expect(urls.filter((u) => u.includes("/genres/"))).toEqual(indexableGenrePagePaths().map((p) => `https://www.electroniccph.com${p}`));
+    expect(urls.filter((u) => u.includes("?") || u.includes("#"))).toEqual([]);
+  });
+
   it("includes mocked event URLs", async () => {
     const event = makeEvent({ slug: "mocked-event-slug" });
     vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([event]);

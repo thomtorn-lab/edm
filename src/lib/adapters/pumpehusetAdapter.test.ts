@@ -381,6 +381,10 @@ describe("createPumpehusetAdapter", () => {
     // guard), so it's never shown as the public description — only used
     // internally as genre evidence.
     expect(witchz!.description).toBeNull();
+    // Since 2026-10-25 the Danish text is kept (with its line breaks) for
+    // admin and the editorial audit, outside the public `description`.
+    expect(witchz!.withheldDescription).toMatch(/^Den amerikanske artist WITCHZ står klar/);
+    expect(witchz!.relevanceText).not.toBeNull();
     expect(witchz!.genreHint).toBe("electronic-other"); // no NAMED specific subgenre — the assertion signal (relevance.ts) is what carries it, not genre precision
     expect(witchz!.genreConfidenceHint).toBe("high");
 

@@ -99,9 +99,9 @@ describe("getEventYoutubePreview — override precedence for one event", () => {
     await expect(getEventYoutubePreview({ id: "e-22222222", artists: ["STEAMBOI"] })).resolves.toMatchObject({ videoId: "AUTOsteamb1" });
   });
 
-  it("an override without a recorded artist name falls back to the first lineup name for the iframe title", async () => {
+  it("an override without a recorded artist name has no artist name — never a guess from the lineup (the page names the player after the event)", async () => {
     tableRows.event_youtube_preview_overrides = [overrideRow("e-a2b5cf47", { artist_name: null })];
-    await expect(getEventYoutubePreview({ id: "e-a2b5cf47", artists: LINEUP })).resolves.toMatchObject({ artistName: "STEAMBOI" });
+    await expect(getEventYoutubePreview({ id: "e-a2b5cf47", artists: LINEUP })).resolves.toMatchObject({ artistName: null, videoId: "Pbb0KmuwYSA" });
   });
 
   it("a failed override read shows no video (fail closed) — never the automated match in place of a possible override, and never an error", async () => {

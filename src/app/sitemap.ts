@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
 import { getPublicVenueGroupPrimaryId } from "@/lib/data/venues";
 import { SITE_URL } from "@/lib/siteUrl";
+import { indexableGenrePagePaths } from "@/lib/taxonomy";
 
 // Forced request-time (build-time DB dependency audit, 2026-09-07): without
 // this, Next.js prerenders this route at BUILD time by default, so the
@@ -24,8 +25,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${SITE_URL}/`, lastModified: now, changeFrequency: "hourly", priority: 1 },
-    // Genre landing page SEO pilot (2026-10-09) — Techno is the only genre page so far.
-    { url: `${SITE_URL}/genres/techno`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
+    // Genre landing pages come from the central allowlist (taxonomy.ts
+    // INDEXABLE_GENRE_PAGES — Techno only); a genre never gets a sitemap
+    // entry, or a page, without being approved there.
+    ...indexableGenrePagePaths().map((path) => ({ url: `${SITE_URL}${path}`, lastModified: now, changeFrequency: "daily" as const, priority: 0.7 })),
     { url: `${SITE_URL}/venues`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
     { url: `${SITE_URL}/festivals`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/about`, lastModified: now, changeFrequency: "monthly", priority: 0.3 },

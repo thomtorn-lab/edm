@@ -16,6 +16,7 @@ import AddToCalendar from "@/components/AddToCalendar";
 import BackToEventsLink from "@/components/BackToEventsLink";
 import ArtistVideoPreview from "@/components/ArtistVideoPreview";
 import SoundcloudLinks from "@/components/SoundcloudLinks";
+import EventDescription from "@/components/EventDescription";
 
 // Events are admin-editable now (publish/hide/correct/cancel); render fresh
 // on every request rather than risk serving a stale prebuilt page.
@@ -90,7 +91,11 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const splitActionRow = primaryLink !== null && secondaryLinks.length === 1;
   const hasMusic = artistVideoPreview !== null || soundcloudArtists.length > 0;
   const canonicalUrl = `${SITE_URL}/events/${event.slug}`;
-  const jsonLd = buildEventJsonLd({ ...event, title }, canonicalUrl);
+  // Practical-only text (cloakroom, access, contact — src/lib/aboutContent.ts)
+  // is shown under its own label and kept out of the structured-data
+  // description, which should describe the event itself.
+  const practicalOnly = event.aboutKind === "practical";
+  const jsonLd = buildEventJsonLd({ ...event, title, description: practicalOnly ? null : event.description }, canonicalUrl);
 
   const calendarInput = {
     title,
@@ -274,6 +279,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           {artistVideoPreview && (
             <ArtistVideoPreview
               artistName={artistVideoPreview.artistName}
+              eventTitle={title}
               videoId={artistVideoPreview.videoId}
               videoTitle={artistVideoPreview.videoTitle}
             />
@@ -286,8 +292,13 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
 
       {event.description && (
         <div className="mt-8">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">About</h2>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{event.description}</p>
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+            {practicalOnly ? "Practical information" : "About"}
+          </h2>
+          {/* Structured, link-safe rendering of the stored text — see
+              src/components/EventDescription.tsx. Artist names and the title
+              are passed only as hints for recognising headings. */}
+          <EventDescription text={event.description} headingHints={[...event.artists, title]} />
         </div>
       )}
 

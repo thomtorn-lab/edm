@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "./pipeline";
 import { VENUES } from "../data/venues";
 import type { RawCandidateEvent } from "./types";
@@ -469,8 +469,40 @@ describe("source-aware relevance evidence (data-quality Workstream A — a gener
       }),
       { venues: VENUES, existingEvents: [] },
     );
-    expect(result.genre).toBe("industrial");
+    // Genre system revision (2026-10-24): the text names Industrial Techno,
+    // the techno subgenre, so the "industrial" hint is refined to it.
+    expect(result.genre).toBe("industrial-techno");
     expect(result.decision).toBe("auto_publish");
+  });
+
+  it("caps a bare 'industrial' hint at medium confidence so it always gets a human look — Industrial (industrial/EBM line) and Industrial Techno are easily confused in event copy (genre system revision, 2026-10-24)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Kontravoid + Spike Hellis",
+        description: "A night of industrial and EBM club sounds.",
+        artists: ["Kontravoid", "Spike Hellis"],
+        genreHint: "industrial",
+        genreConfidenceHint: "high",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("industrial");
+    expect(result.genreConfidence).toBe("medium");
+    expect(result.decision).not.toBe("auto_publish");
+  });
+
+  it("never assigns the legacy 'ambient-experimental' value: a stale legacy hint is re-derived from the event's own text (genre system revision, 2026-10-24)", () => {
+    const result = runIngestionPipeline(
+      raw({
+        title: "Drone Night",
+        description: "Long-form ambient drone sets on a club soundsystem.",
+        artists: ["Somebody"],
+        genreHint: "ambient-experimental",
+        genreConfidenceHint: "medium",
+      }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.genre).toBe("ambient");
   });
 
   it("caps a bare, uncorroborated generic electronic tag at review_queue even with no negative genre signal present at all", () => {
@@ -690,7 +722,7 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
       }),
       { venues: VENUES, existingEvents: [] },
     );
-    expect(result.genre).toBe("ambient-experimental"); // confirms this test exercises the real mis-mapping, not a different code path
+    expect(result.genre).toBe("ambient"); // confirms this test exercises the real mis-mapping, not a different code path
     expect(result.decision).toBe("hold");
     expect(result.holdReason).toBe("negative_relevance");
   });
@@ -1736,5 +1768,80 @@ describe("lineup names are not genre evidence (genre QA, 2026-10-17)", () => {
       existingEvents: [],
     });
     expect(r.genre).toBe("house");
+  });
+});
+
+describe("runIngestionPipeline — Den Anden Side rooms (2026-10-27)", () => {
+  beforeEach(() => {
+    process.env.DAS_ROOMS_ENABLED = "true";
+  });
+  afterEach(() => {
+    delete process.env.DAS_ROOMS_ENABLED;
+  });
+
+  const das = (overrides: Partial<RawCandidateEvent> = {}) =>
+    raw({
+      sourceId: "src-hvaderpaa",
+      sourceUrl: "https://hvaderpaa.dk/da/event/21353/",
+      officialEventUrl: "https://hvaderpaa.dk/da/event/21353/",
+      venueName: "Den Anden Side",
+      genreHint: "house",
+      ...overrides,
+    });
+
+  it("files a 'Den Anden Ende' venue string under Den Anden Side, never a venue of its own", () => {
+    const result = runIngestionPipeline(das({ venueName: "Den Anden Ende", title: "Open Decks", artists: [] }), { venues: VENUES, existingEvents: [] });
+    expect(result.resolvedVenueId).toBe("v-den-anden-side");
+    expect(result.missingFields).not.toContain("venue (unresolved against registry)");
+  });
+
+  it("gives a small-room night the Culture Box single-room shape", () => {
+    const candidate = das({ title: "Kilele x DAS at Den Anden Ende", artists: ["Kilele"], description: "Afro house all night." });
+    const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(result.resolvedVenueId).toBe("v-den-anden-side");
+    expect(candidate.title).toBe("Den Anden Ende: Kilele x DAS");
+    expect(candidate.description).toBe("Afro house all night.\n\nDen Anden Ende\nKilele");
+  });
+
+  it("splits an explicit two-room lineup and keeps the event name", () => {
+    const candidate = das({
+      title: "GAG x DAS",
+      artists: ["B1", "A1", "A2"],
+      description: "Lineup\nDen Anden Side: A1, A2\nDen Anden Ende: B1",
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).toBe("GAG x DAS");
+    expect(candidate.artists).toEqual(["A1", "A2", "B1"]);
+    expect(candidate.description).toContain("Den Anden Side\nA1, A2\n\nDen Anden Ende\nB1");
+  });
+
+  it("keeps an unverifiable lineup combined and untouched", () => {
+    const candidate = das({ title: "Night", artists: ["A", "B"], description: "A in the main room, B on the small dancefloor." });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).toBe("Night");
+    expect(candidate.artists).toEqual(["A", "B"]);
+    expect(candidate.description).toBe("A in the main room, B on the small dancefloor.");
+  });
+
+  it("leaves Culture Box candidates exactly as before", () => {
+    const candidate = raw({ title: "Black Box: HYGGELIT · Red Box: X", description: "Black Box\nNAILS\n\nRed Box\nTEODORA LUX" });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).toBe("Black Box: HYGGELIT · Red Box: X");
+    expect(candidate.description).toBe("Black Box\nNAILS\n\nRed Box\nTEODORA LUX");
+  });
+});
+
+describe("runIngestionPipeline — Den Anden Side rooms ship inert (DAS_ROOMS_ENABLED unset)", () => {
+  it("changes nothing until the flag is switched on", () => {
+    const candidate = raw({
+      sourceId: "src-hvaderpaa",
+      venueName: "Den Anden Side",
+      title: "Kilele x DAS at Den Anden Ende",
+      artists: ["Kilele"],
+      description: "Afro house all night.",
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).toBe("Kilele x DAS at Den Anden Ende");
+    expect(candidate.description).toBe("Afro house all night.");
   });
 });

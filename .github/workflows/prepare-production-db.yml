@@ -120,6 +120,10 @@ jobs:
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
 
       - name: Apply database migrations
+        # db:migrate refuses a hosted DATABASE_URL unless this names it
+        # (src/db/localDatabaseGuard.ts) — this workflow targets Production on purpose.
+        env:
+          ALLOW_HOSTED_DATABASE: db:migrate
         run: npm run db:migrate
 
       - name: Seed production reference data (full bootstrap, or one scoped source if source_id was given)
