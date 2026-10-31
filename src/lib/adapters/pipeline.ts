@@ -3,7 +3,7 @@ import type { GenreSlug } from "../taxonomy";
 import { isSelectableGenre } from "../taxonomy";
 import type { Venue } from "../types";
 import { resolveVenue, dedupeArtistList } from "../normalize";
-import { isDenAndenSideVenueName, isSmallRoomVenueName, MAIN_ROOM as DAS_MAIN_ROOM, structureDenAndenSideRooms } from "../denAndenSideRooms";
+import { isDenAndenSideRoomsEnabled, isDenAndenSideVenueName, isSmallRoomVenueName, MAIN_ROOM as DAS_MAIN_ROOM, structureDenAndenSideRooms } from "../denAndenSideRooms";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
 import { findBestMovedEventMatch } from "../movedEventDetection";
 import { evaluateQualityGate, genreConfidenceForEvidence, type PublishDecision } from "../classification";
@@ -431,8 +431,8 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // src/lib/denAndenSideRooms.ts. Its small room "Den Anden Ende" resolves to
   // the club itself (never a venue of its own), and a room split the source
   // states explicitly becomes a room-separated lineup; anything unverifiable
-  // passes through unchanged.
-  if (isDenAndenSideVenueName(raw.venueName)) {
+  // passes through unchanged. Inert until DAS_ROOMS_ENABLED="true".
+  if (isDenAndenSideRoomsEnabled() && isDenAndenSideVenueName(raw.venueName)) {
     const structured = structureDenAndenSideRooms({ title: raw.title, description: raw.description, artists: raw.artists, venueName: raw.venueName });
     raw.title = structured.title;
     raw.description = structured.description;

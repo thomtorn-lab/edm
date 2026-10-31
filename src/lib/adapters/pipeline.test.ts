@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "./pipeline";
 import { VENUES } from "../data/venues";
 import type { RawCandidateEvent } from "./types";
@@ -1772,6 +1772,13 @@ describe("lineup names are not genre evidence (genre QA, 2026-10-17)", () => {
 });
 
 describe("runIngestionPipeline — Den Anden Side rooms (2026-10-27)", () => {
+  beforeEach(() => {
+    process.env.DAS_ROOMS_ENABLED = "true";
+  });
+  afterEach(() => {
+    delete process.env.DAS_ROOMS_ENABLED;
+  });
+
   const das = (overrides: Partial<RawCandidateEvent> = {}) =>
     raw({
       sourceId: "src-hvaderpaa",
@@ -1821,5 +1828,20 @@ describe("runIngestionPipeline — Den Anden Side rooms (2026-10-27)", () => {
     runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
     expect(candidate.title).toBe("Black Box: HYGGELIT · Red Box: X");
     expect(candidate.description).toBe("Black Box\nNAILS\n\nRed Box\nTEODORA LUX");
+  });
+});
+
+describe("runIngestionPipeline — Den Anden Side rooms ship inert (DAS_ROOMS_ENABLED unset)", () => {
+  it("changes nothing until the flag is switched on", () => {
+    const candidate = raw({
+      sourceId: "src-hvaderpaa",
+      venueName: "Den Anden Side",
+      title: "Kilele x DAS at Den Anden Ende",
+      artists: ["Kilele"],
+      description: "Afro house all night.",
+    });
+    runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    expect(candidate.title).toBe("Kilele x DAS at Den Anden Ende");
+    expect(candidate.description).toBe("Afro house all night.");
   });
 });

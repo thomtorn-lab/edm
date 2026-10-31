@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { db } from "./client";
 import { events, venues } from "./schema";
 import { applySourceSyncPatch } from "./writes";
@@ -46,12 +46,14 @@ function parseArgs(argv: string[]): Record<string, string> {
   return out;
 }
 
-async function loadSnapshots(): Promise<{ snapshots: DasEventSnapshot[]; strayVenueIds: string[] }> {
-  const venueRows = await db.select({ id: venues.id, name: venues.name, slug: venues.slug }).from(venues);
+type Reader = Pick<typeof db, "select">;
+
+async function loadSnapshots(q: Reader): Promise<{ snapshots: DasEventSnapshot[]; strayVenueIds: string[] }> {
+  const venueRows = await q.select({ id: venues.id, name: venues.name, slug: venues.slug }).from(venues);
   const strayVenueIds = venueRows.filter((v) => v.id !== DEN_ANDEN_SIDE_VENUE_ID && (isSmallRoomVenueName(v.name) || v.slug === "den-anden-ende")).map((v) => v.id);
   const venueName = new Map(venueRows.map((v) => [v.id, v.name]));
   const ids = [DEN_ANDEN_SIDE_VENUE_ID, ...strayVenueIds];
-  const rows = await db.select().from(events).where(inArray(events.venueId, ids));
+  const rows = await q.select().from(events).where(inArray(events.venueId, ids));
   rows.sort((a, b) => a.startDatetime.getTime() - b.startDatetime.getTime());
   return {
     strayVenueIds,
@@ -86,7 +88,20 @@ async function main() {
   if (mode !== "plan" && mode !== "apply") throw new Error('--mode must be "plan" or "apply"');
   if (mode === "apply" && args.confirm !== CONFIRM) throw new Error(`--mode=apply requires --confirm=${CONFIRM}`);
 
-  const { snapshots, strayVenueIds } = await loadSnapshots();
+  // plan reads inside one READ ONLY transaction, verified with SHOW before
+  // anything is read — Postgres itself rejects any write there (same guard
+  // as the repo's read-only audit workflows). apply reads normally.
+  const { snapshots, strayVenueIds } =
+    mode === "plan"
+      ? await db.transaction(async (tx) => {
+          await tx.execute(sql`SET TRANSACTION READ ONLY`);
+          const ro = await tx.execute(sql`SHOW transaction_read_only`);
+          const value = (ro.rows[0] as { transaction_read_only?: string } | undefined)?.transaction_read_only;
+          if (value !== "on") throw new Error(`Refusing to plan: transaction_read_only is "${value}", expected "on".`);
+          console.log("Read-only transaction confirmed (transaction_read_only = on).");
+          return loadSnapshots(tx);
+        })
+      : await loadSnapshots(db);
   const plan = planDenAndenSideMigration(snapshots);
   console.log(`Loaded ${snapshots.length} event(s) at Den Anden Side${strayVenueIds.length ? ` (incl. stray "Den Anden Ende" venue row(s): ${strayVenueIds.join(", ")})` : ""}.`);
 

@@ -117,8 +117,13 @@ describe("real source: RA 2131356, Fast Forward x Bassiani (2025-04-26), both ro
     expect(new Set(s.artists)).toEqual(new Set(RA_ARTISTS));
     const blocks = formatDescription(s.description);
     const about = formattedDescriptionToText(blocks.slice(0, practicalTailStart(blocks) ?? blocks.length));
-    expect(about).toContain("Den Anden Side\nKancheli, HVL, Ezy, Schacke, B2B, Vixen");
-    expect(about).toContain("Den Anden Ende\nNygma, Mikkelbarsxe");
+    // The source's own lineup section becomes the room blocks, in its own
+    // wording (pronouns, "Schacke B2B Vixen" kept whole), and the takeover's
+    // name stays on its room.
+    expect(about).toContain("Den Anden Side\nKancheli [he/him], HVL [he/him], Ezy [she/her], Schacke B2B Vixen");
+    expect(about).toContain("Den Anden Ende (FEUM TAKEOVER)\nNygma, Mikkelbarsxe");
+    // Shown once, not twice.
+    for (const name of ["Kancheli", "Nygma", "Mikkelbarsxe"]) expect(s.description!.normalize("NFKC").split(name).length - 1).toBe(1);
   });
 });
 
@@ -187,9 +192,11 @@ describe("structureDenAndenSideRooms", () => {
     expect(s.changed).toBe(true);
     expect(s.title).toBe("Fast Forward x Bassiani");
     expect(s.artists).toEqual(FAST_FORWARD.artists);
-    expect(s.description).toContain("Den Anden Side\nKancheli, HVL, Ezy, Schacke B2B Vixen\n\nDen Anden Ende\nNygma, Mikkelbarsxe\n\n————\n𝗔𝗱𝗺𝗶𝘀𝘀𝗶𝗼𝗻");
-    // Nothing from the source is lost.
-    for (const line of FAST_FORWARD.description.split("\n").filter(Boolean)) expect(s.description).toContain(line);
+    expect(s.description).toContain("𝗟𝗶𝗻𝗲𝘂𝗽\n\nDen Anden Side\nKancheli, HVL, Ezy, Schacke B2B Vixen\n\nDen Anden Ende (FEUM takeover)\nNygma, Mikkelbarsxe\n\n————\n𝗔𝗱𝗺𝗶𝘀𝘀𝗶𝗼𝗻");
+    // Everything outside the replaced lineup lines is kept verbatim, and every artist is still named.
+    const lineupLines = new Set(FAST_FORWARD.description.split("\n").filter((l) => /Den Anden (Side|Ende)\)/.test(l)));
+    for (const line of FAST_FORWARD.description.split("\n").filter((l) => l && !lineupLines.has(l))) expect(s.description).toContain(line);
+    for (const a of FAST_FORWARD.artists) expect(s.description).toContain(a);
   });
 
   it("keeps the event page's practical-tail split and shows both room blocks", () => {
@@ -234,8 +241,8 @@ describe("structureDenAndenSideRooms", () => {
   it("reads back the breakdown it wrote, and never a source paragraph that only starts with a room name", () => {
     const s = structureDenAndenSideRooms(FAST_FORWARD);
     expect(readGeneratedBreakdown(s.description, s.artists)).toEqual({
-      "Den Anden Side": ["Kancheli", "HVL", "Ezy", "Schacke B2B Vixen"],
-      "Den Anden Ende": ["Nygma", "Mikkelbarsxe"],
+      "Den Anden Side": "Kancheli, HVL, Ezy, Schacke B2B Vixen",
+      "Den Anden Ende": "Nygma, Mikkelbarsxe",
     });
     expect(readGeneratedBreakdown("Den Anden Side\nAxeltorv 5", ["A"])).toBeNull();
   });

@@ -7,7 +7,7 @@ import { resolveByCanonicalPriority, type PublishDecision } from "./classificati
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
 import { usableDiscoveryDescription } from "./descriptionQuality";
-import { DEN_ANDEN_SIDE_VENUE_ID, readGeneratedBreakdown } from "./denAndenSideRooms";
+import { DEN_ANDEN_SIDE_VENUE_ID, isDenAndenSideRoomsEnabled, readGeneratedBreakdown } from "./denAndenSideRooms";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -224,7 +224,7 @@ export function buildSyncPatch(
  * edits stay protected downstream exactly as before (overriddenFields).
  */
 function keepDenAndenSideRoomSplit(patch: Record<string, unknown>, raw: RawCandidateEvent, existing: SyncTargetEvent): void {
-  if (existing.venueId !== DEN_ANDEN_SIDE_VENUE_ID) return;
+  if (!isDenAndenSideRoomsEnabled() || existing.venueId !== DEN_ANDEN_SIDE_VENUE_ID) return;
   if (!readGeneratedBreakdown(existing.description, existing.artists)) return;
   if (readGeneratedBreakdown(raw.description, raw.artists)) return;
   delete patch.title;

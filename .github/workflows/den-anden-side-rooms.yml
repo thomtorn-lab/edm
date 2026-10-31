@@ -10,7 +10,12 @@ name: Den Anden Side Rooms
 # events needing manual review and the summary counts. "apply" writes only
 # title/description/artist order (and venueId for a stray "Den Anden Ende"
 # venue), never over admin-overridden fields, and requires the confirmation
-# string. Run "plan" first and review its output.
+# string. Run "plan" first and review its output. "plan" reads inside one
+# READ ONLY transaction, verified before any read (Postgres rejects writes).
+#
+# Rollout: merge with DAS_ROOMS_ENABLED unset (imports/syncs unchanged) ->
+# "plan" -> review -> set DAS_ROOMS_ENABLED=true in Vercel + redeploy ->
+# "apply". Apply right after enabling, so syncs and stored events agree.
 
 on:
   workflow_dispatch:
