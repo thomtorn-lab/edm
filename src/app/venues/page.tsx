@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getEventsForVenue, getVenues } from "@/lib/queries";
-import { isPastEvent } from "@/lib/datetime";
+import { getUpcomingEventCountsByVenue, getVenuesBySlugs } from "@/lib/queries";
 import { CURATED_VENUE_SLUGS, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import type { Venue } from "@/lib/types";
 
@@ -14,28 +13,24 @@ export const metadata: Metadata = {
 export const revalidate = 0;
 
 export default async function VenuesPage() {
-  const registryVenues = await getVenues();
+  // Supabase egress work (2026-11-01): only the curated venues' rows, and
+  // one narrow query for every upcoming count, instead of the whole venues
+  // table plus a full events + venue read per listed venue.
+  const registryVenues = await getVenuesBySlugs(CURATED_VENUE_SLUGS);
   const bySlug = new Map(registryVenues.map((v) => [v.slug, v]));
 
+  // Grouped venues (VEGA overall-venue presentation, 2026-09-11):
+  // aggregate the upcoming count across the primary plus every group
+  // member (e.g. VEGA + Ideal Bar) — each id names a distinct set of
+  // events, so summing never double-counts.
+  const venueIdsFor = (venue: Venue) => [venue.id, ...(PUBLIC_VENUE_GROUPS[venue.id] ?? [])];
   const now = new Date();
-  const curated = await Promise.all(
-    CURATED_VENUE_SLUGS.map(async (slug) => {
-      const venue = bySlug.get(slug);
-      // Grouped venues (VEGA overall-venue presentation, 2026-09-11):
-      // aggregate the upcoming count across the primary plus every group
-      // member (e.g. VEGA + Ideal Bar) — each id names a distinct set of
-      // events, so summing never double-counts.
-      const groupMemberIds = venue ? (PUBLIC_VENUE_GROUPS[venue.id] ?? []) : [];
-      const upcomingCount = venue
-        ? (
-            await Promise.all([venue.id, ...groupMemberIds].map((id) => getEventsForVenue(id)))
-          )
-            .flat()
-            .filter((e) => !isPastEvent(e, now)).length
-        : null;
-      return { slug, venue, upcomingCount };
-    }),
-  );
+  const counts = await getUpcomingEventCountsByVenue(registryVenues.flatMap(venueIdsFor), now);
+  const curated = CURATED_VENUE_SLUGS.map((slug) => {
+    const venue = bySlug.get(slug);
+    const upcomingCount = venue ? venueIdsFor(venue).reduce((sum, id) => sum + (counts.get(id) ?? 0), 0) : null;
+    return { slug, venue, upcomingCount };
+  });
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">

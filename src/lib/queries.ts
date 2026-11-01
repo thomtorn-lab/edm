@@ -1,4 +1,5 @@
-import { and, desc, eq, gte, inArray, ne, notExists, sql } from "drizzle-orm";
+import { cache } from "react";
+import { and, desc, eq, gt, gte, inArray, ne, notExists, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   artistYoutubePreviewCache,
@@ -21,8 +22,11 @@ import {
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
+import { isPastEvent } from "./datetime";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
+import type { GenreSlug } from "./taxonomy";
+import type { EventRowFields, EventRowVenue } from "./homepageEvents";
 import type { EventChangeEntry } from "./dataQuality";
 import { latestWithheldByEvent, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "./withheldDescriptions";
 
@@ -48,9 +52,35 @@ export async function getVenues(): Promise<Venue[]> {
   return rows.map(venueRowToRecord);
 }
 
-export async function getVenueBySlug(slug: string): Promise<Venue | undefined> {
+/**
+ * Memoized per server request with React `cache` (Supabase egress work,
+ * 2026-11-01): /venues/[slug] calls this from both generateMetadata and the
+ * page, which used to send the same query twice per view. Outside a React
+ * server request (scripts, route handlers, tests) `cache` simply calls
+ * through, so every other caller behaves exactly as before.
+ */
+export const getVenueBySlug = cache(async (slug: string): Promise<Venue | undefined> => {
   const [row] = await db.select().from(venues).where(eq(venues.slug, slug)).limit(1);
   return row ? venueRowToRecord(row) : undefined;
+});
+
+/**
+ * Only the venues /venues actually lists (its curated slugs), instead of the
+ * whole venues table (Supabase egress work, 2026-11-01). Full rows: the page
+ * shows each venue's address and descriptions.
+ */
+export async function getVenuesBySlugs(slugs: readonly string[]): Promise<Venue[]> {
+  if (slugs.length === 0) return [];
+  const rows = await db.select().from(venues).where(inArray(venues.slug, [...slugs])).orderBy(venues.name);
+  return rows.map(venueRowToRecord);
+}
+
+/**
+ * The two columns the sitemap needs per venue, in the same order getVenues
+ * returns them (Supabase egress work, 2026-11-01).
+ */
+export async function getVenueSitemapEntries(): Promise<{ id: string; slug: string }[]> {
+  return db.select({ id: venues.id, slug: venues.slug }).from(venues).orderBy(venues.name);
 }
 
 export async function getVenueById(id: string): Promise<Venue | undefined> {
@@ -145,7 +175,174 @@ export async function getPublishedEventsWithVenue(): Promise<EventWithVenue[]> {
   return withAboutKind(await attachVenue(rows));
 }
 
-export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVenue | undefined> {
+/**
+ * The sitemap's per-event fields (Supabase egress work, 2026-11-01): slug and
+ * updatedAt for every published event, instead of whole event rows plus
+ * their venues. The inner join keeps the exact set getPublishedEventsWithVenue
+ * returned — an event whose venue can't be resolved never reached the sitemap
+ * (attachVenue skips it) and still doesn't. updatedAt is ISO, as in
+ * eventRowToRecord.
+ */
+export async function getPublishedEventSitemapEntries(): Promise<{ slug: string; updatedAt: string }[]> {
+  const rows = await db
+    .select({ slug: events.slug, updatedAt: events.updatedAt })
+    .from(events)
+    .innerJoin(venues, eq(venues.id, events.venueId))
+    .where(eq(events.published, true));
+  return rows.map((r) => ({ slug: r.slug, updatedAt: r.updatedAt.toISOString() }));
+}
+
+/**
+ * How far back the SQL pre-filter for "not yet over" looks (Supabase egress
+ * work, 2026-11-01). It only has to be a SUPERSET of what isPastEvent
+ * (src/lib/datetime.ts) keeps, because every caller still applies
+ * isPastEvent itself afterwards:
+ * - an event with a trustworthy end (end > start) is over exactly when
+ *   end <= now, so `end_datetime > now` keeps every such event still running;
+ * - an event without one ends at 06:00 Copenhagen time after its nightlife
+ *   day, at most ~25 hours after its start (DST included), so any event that
+ *   started within the last 3 days is kept.
+ * An event is therefore only left out when it is already past by isPastEvent.
+ * Covered by queries.upcomingPrefilter.test.ts.
+ */
+export const UPCOMING_PREFILTER_LOOKBACK_MS = 3 * 24 * 3_600_000;
+
+export function upcomingCandidateCondition(now: Date): SQL {
+  return or(
+    gte(events.startDatetime, new Date(now.getTime() - UPCOMING_PREFILTER_LOOKBACK_MS)),
+    gt(events.endDatetime, now),
+  )!;
+}
+
+/**
+ * What the public event lists (homepage, genre pages, venue pages) render
+ * per event: the EventRow fields plus primaryGenre, with the five venue
+ * fields EventRow shows.
+ */
+export type ListEvent = EventRowFields & { primaryGenre: GenreSlug; venue: EventRowVenue };
+
+const listEventColumns = {
+  id: events.id,
+  slug: events.slug,
+  title: events.title,
+  description: events.description,
+  artists: events.artists,
+  startDatetime: events.startDatetime,
+  endDatetime: events.endDatetime,
+  venueId: events.venueId,
+  subVenue: events.subVenue,
+  primaryGenre: events.primaryGenre,
+  subgenres: events.subgenres,
+  officialEventUrl: events.officialEventUrl,
+  ticketUrl: events.ticketUrl,
+  facebookUrl: events.facebookUrl,
+  residentAdvisorUrl: events.residentAdvisorUrl,
+  otherSourceUrls: events.otherSourceUrls,
+  canonicalSourceId: events.canonicalSourceId,
+  overriddenFields: events.overriddenFields,
+  priceFrom: events.priceFrom,
+  soldOut: events.soldOut,
+  postponed: events.postponed,
+  dateChanged: events.dateChanged,
+};
+
+const listVenueColumns = {
+  id: venues.id,
+  slug: venues.slug,
+  name: venues.name,
+  address: venues.address,
+  aliases: venues.aliases,
+};
+
+/**
+ * Published events that are not over yet, for the public event lists
+ * (Supabase egress work, 2026-11-01). Replaces getPublishedEventsWithVenue
+ * on the homepage, the genre pages and the venue pages, which read every
+ * published event ever (past ones included) with every column, plus every
+ * referenced venue's full row, and then dropped the past events in code.
+ *
+ * Same result for the page: the SQL pre-filter is a superset of
+ * isPastEvent (see UPCOMING_PREFILTER_LOOKBACK_MS) and callers keep applying
+ * isPastEvent themselves; values are converted exactly as eventRowToRecord
+ * does; an event without a resolvable venue is skipped, as in attachVenue;
+ * and the description gets the same About-text treatment as withAboutKind
+ * (a labels-only text becomes null). `venueIds` narrows it to those venues.
+ */
+export async function getUpcomingPublishedEventsForList(now: Date, venueIds?: readonly string[]): Promise<ListEvent[]> {
+  if (venueIds && venueIds.length === 0) return [];
+  const conditions = [eq(events.published, true), upcomingCandidateCondition(now)];
+  if (venueIds) conditions.push(inArray(events.venueId, [...venueIds]));
+  const rows = await db.select(listEventColumns).from(events).where(and(...conditions));
+  if (rows.length === 0) return [];
+
+  const referencedVenueIds = [...new Set(rows.map((row) => row.venueId))];
+  const venueRows = await db.select(listVenueColumns).from(venues).where(inArray(venues.id, referencedVenueIds));
+  const venueById = new Map(venueRows.map((v) => [v.id, v]));
+
+  const result: ListEvent[] = [];
+  for (const row of rows) {
+    const venue = venueById.get(row.venueId);
+    if (!venue) continue; // an event with no resolvable venue never reaches the public site
+    result.push({
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      description: classifyAboutText(row.description) === "empty" ? null : row.description,
+      artists: row.artists,
+      startDatetime: row.startDatetime.toISOString(),
+      endDatetime: row.endDatetime?.toISOString() ?? null,
+      subVenue: row.subVenue,
+      primaryGenre: row.primaryGenre as GenreSlug,
+      subgenres: row.subgenres as GenreSlug[],
+      officialEventUrl: row.officialEventUrl,
+      ticketUrl: row.ticketUrl,
+      facebookUrl: row.facebookUrl,
+      residentAdvisorUrl: row.residentAdvisorUrl,
+      otherSourceUrls: row.otherSourceUrls,
+      canonicalSourceId: row.canonicalSourceId,
+      overriddenFields: row.overriddenFields,
+      priceFrom: row.priceFrom,
+      soldOut: row.soldOut,
+      postponed: row.postponed,
+      dateChanged: row.dateChanged,
+      venue: { id: venue.id, slug: venue.slug, name: venue.name, address: venue.address, aliases: venue.aliases },
+    });
+  }
+  return result;
+}
+
+/**
+ * Upcoming published events per venue, for the /venues overview's counts
+ * (Supabase egress work, 2026-11-01). One query reading three columns,
+ * instead of one full getEventsForVenue read (events + venue rows) per
+ * listed venue and group member. Counted with the exact isPastEvent rule
+ * the page used before; the SQL pre-filter only drops events that rule
+ * already treats as past (see UPCOMING_PREFILTER_LOOKBACK_MS). Venues with
+ * no upcoming events are absent from the map.
+ */
+export async function getUpcomingEventCountsByVenue(venueIds: readonly string[], now: Date): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (venueIds.length === 0) return counts;
+  const rows = await db
+    .select({ venueId: events.venueId, startDatetime: events.startDatetime, endDatetime: events.endDatetime })
+    .from(events)
+    .where(and(eq(events.published, true), inArray(events.venueId, [...venueIds]), upcomingCandidateCondition(now)));
+  for (const row of rows) {
+    const timing = { startDatetime: row.startDatetime.toISOString(), endDatetime: row.endDatetime?.toISOString() ?? null };
+    if (isPastEvent(timing, now)) continue;
+    counts.set(row.venueId, (counts.get(row.venueId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Memoized per server request with React `cache` (Supabase egress work,
+ * 2026-11-01): /events/[slug] calls this from both generateMetadata and the
+ * page, which used to send the event query and its venue query twice per
+ * view. Outside a React server request (calendar.ics, scripts, tests)
+ * `cache` simply calls through, so those callers behave exactly as before.
+ */
+export const getEventBySlugWithVenue = cache(async (slug: string): Promise<EventWithVenue | undefined> => {
   const rows = await db
     .select()
     .from(events)
@@ -153,7 +350,7 @@ export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVe
     .limit(1);
   const withVenue = withAboutKind(await attachVenue(rows));
   return withVenue[0];
-}
+});
 
 /**
  * All `source_event_links` rows for one event (public source-link

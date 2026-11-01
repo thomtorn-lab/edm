@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getPublishedEventsWithVenue, getSoundcloudAvailabilityForEvents } from "@/lib/queries";
+import { getSoundcloudAvailabilityForEvents, getUpcomingPublishedEventsForList } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { INDEXABLE_GENRE_PAGES, genrePagePath, getGenre, indexableGenreForUrlSlug, matchesGenreSelection } from "@/lib/taxonomy";
 import { GENRE_PAGE_CONTENT, genrePageIncludedLabels } from "@/lib/genrePages";
@@ -51,7 +51,9 @@ export default async function GenrePage({ params }: PageProps<"/genres/[slug]">)
   const content = GENRE_PAGE_CONTENT[genre];
 
   const now = new Date();
-  const events = await getPublishedEventsWithVenue();
+  // Clearly-past events are left out in SQL, list columns only (Supabase
+  // egress work, 2026-11-01); the exact isPastEvent rule still applies below.
+  const events = await getUpcomingPublishedEventsForList(now);
   const upcoming = sortByStart(events.filter((e) => !isPastEvent(e, now) && matchesGenreSelection(e.subgenres, genre)));
   const audioAvailability = await getSoundcloudAvailabilityForEvents(upcoming);
   const otherGenres = INDEXABLE_GENRE_PAGES.filter((slug) => slug !== genre);
