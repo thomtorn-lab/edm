@@ -69,11 +69,11 @@ function makeEvent(id: string, subgenres: GenreSlug[], startDatetime: string, ov
 }
 
 vi.mock("@/lib/queries", () => ({
-  getPublishedEventsWithVenue: vi.fn(),
+  getUpcomingPublishedEventsForList: vi.fn(),
   getSoundcloudAvailabilityForEvents: vi.fn(async (list: unknown[]) => list.map(() => false)),
 }));
 
-const { getPublishedEventsWithVenue, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
+const { getUpcomingPublishedEventsForList, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
 const pageModule = await import("./page");
 const { default: GenrePage, generateMetadata, generateStaticParams } = pageModule;
 const props = (slug: string) => ({ params: Promise.resolve({ slug }) }) as unknown as PageProps<"/genres/[slug]">;
@@ -81,7 +81,7 @@ const metadataFor = (slug: string) => generateMetadata(props(slug));
 const metadata = await metadataFor("techno");
 
 async function renderPage(events: EventWithVenue[], slug = "techno") {
-  vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
+  vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue(events);
   render(await GenrePage(props(slug)));
 }
 
@@ -180,9 +180,9 @@ describe("/genres/techno — page", () => {
     expect(within(row).getByRole("link", { name: "Test Venue" }).getAttribute("href")).toBe("/venues/test-venue");
   });
 
-  it("only ever reads published events (getPublishedEventsWithVenue)", async () => {
+  it("only ever reads published events (getUpcomingPublishedEventsForList)", async () => {
     await renderPage([]);
-    expect(getPublishedEventsWithVenue).toHaveBeenCalledTimes(1);
+    expect(getUpcomingPublishedEventsForList).toHaveBeenCalledTimes(1);
   });
 
   it("with zero events at all it still renders the full page (H1, intro, empty state) — never a 404", async () => {
