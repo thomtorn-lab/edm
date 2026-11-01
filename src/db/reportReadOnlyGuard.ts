@@ -11,7 +11,9 @@
  *     tables, granted to PUBLIC by default — is reported as a warning);
  *   - every table, view, materialized view, foreign table and sequence in every
  *     non-system schema: no INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER
- *     (table- or column-level), no sequence USAGE/UPDATE, and not owned;
+ *     (table- or column-level), no MAINTAIN (PostgreSQL 17+: VACUUM, ANALYZE,
+ *     REINDEX, CLUSTER, LOCK, REFRESH MATERIALIZED VIEW), no sequence
+ *     USAGE/UPDATE, and not owned;
  *   - every schema: no CREATE, not owned;
  *   - functions: none it can execute that run as their owner (SECURITY
  *     DEFINER) or that it owns, in a schema it can use;
@@ -52,7 +54,10 @@ WHERE ${SYSTEM_SCHEMA_FILTER}
   AND (
     (c.relkind IN ('r', 'p', 'v', 'm', 'f') AND (
       has_table_privilege(c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-      OR has_any_column_privilege(c.oid, 'INSERT, UPDATE, REFERENCES')))
+      OR has_any_column_privilege(c.oid, 'INSERT, UPDATE, REFERENCES')
+      -- MAINTAIN exists from PostgreSQL 17 (Production runs 17.6); older servers reject the word,
+      -- so CASE (which evaluates in order) asks only where it exists.
+      OR CASE WHEN current_setting('server_version_num')::int >= 170000 THEN has_table_privilege(c.oid, 'MAINTAIN') ELSE false END))
     OR (c.relkind = 'S' AND has_sequence_privilege(c.oid, 'USAGE, UPDATE'))
     OR pg_has_role(c.relowner, 'USAGE')
   )
