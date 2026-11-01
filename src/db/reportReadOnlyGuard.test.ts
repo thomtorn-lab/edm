@@ -171,6 +171,12 @@ describe("assertReadOnlyRole", () => {
     }
   });
 
+  it("checks MAINTAIN (PostgreSQL 17+, Production runs 17.6), only where the server knows it", () => {
+    expect(WRITABLE_RELATIONS_SQL).toContain(
+      "CASE WHEN current_setting('server_version_num')::int >= 170000 THEN has_table_privilege(c.oid, 'MAINTAIN') ELSE false END",
+    );
+  });
+
   it("checks every non-system schema, not only public", () => {
     expect(WRITABLE_RELATIONS_SQL).not.toMatch(/nspname = 'public'/);
     expect(WRITABLE_RELATIONS_SQL).toContain("NOT IN ('pg_catalog', 'information_schema')");

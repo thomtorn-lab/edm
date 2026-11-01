@@ -30,7 +30,10 @@ The report stops before its first data query when any of these holds:
 - **Tables and sequences:** the role has any write privilege on any table,
   view, materialized view, foreign table or sequence, in any non-system schema
   and not only `public`. This covers INSERT, UPDATE, DELETE, TRUNCATE,
-  REFERENCES and TRIGGER, column-level grants, and sequence USAGE or UPDATE. It
+  REFERENCES and TRIGGER, column-level grants, MAINTAIN (PostgreSQL 17+:
+  VACUUM, ANALYZE, REINDEX, CLUSTER, LOCK, REFRESH MATERIALIZED VIEW), and
+  sequence USAGE or UPDATE. Membership of PostgreSQL 17's `pg_maintain` role
+  is refused like any other role membership. It
   also stops when the role owns such an object.
 - **Schemas:** the role has CREATE on a schema or owns one.
 - **Functions:** the role can execute a function that runs with its owner's
