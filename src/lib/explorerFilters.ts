@@ -1,4 +1,4 @@
-import { isGenreFilterValue, type GenreFilterValue } from "./taxonomy";
+import { genreFilterUrlValue, parseGenreFilterUrlValue, type GenreFilterValue } from "./taxonomy";
 
 /**
  * URL-backed homepage filter state (homepage search/navigation work,
@@ -57,7 +57,9 @@ export function parseExplorerFilters(params: ParamsLike | null | undefined): Exp
     : "all";
 
   const rawGenre = params.get(KEYS.genre);
-  const genre = isGenreFilterValue(rawGenre) ? rawGenre : "all";
+  // A genre's public urlSlug (or alias) resolves to its internal id; the
+  // three legacy sets resolve to themselves (see taxonomy.ts).
+  const genre = parseGenreFilterUrlValue(rawGenre) ?? "all";
   const unknownGenre = rawGenre && rawGenre !== "all" && genre === "all" ? rawGenre.slice(0, 100) : undefined;
 
   const rawVenue = params.get(KEYS.venue)?.trim() ?? "";
@@ -77,7 +79,7 @@ export function serializeExplorerFilters(filters: ExplorerUrlFilters, current = 
   const params = new URLSearchParams(current);
   for (const key of Object.values(KEYS)) params.delete(key);
   if (filters.mode !== "all") params.set(KEYS.mode, filters.mode);
-  if (filters.genre !== "all") params.set(KEYS.genre, filters.genre);
+  if (filters.genre !== "all") params.set(KEYS.genre, genreFilterUrlValue(filters.genre));
   if (filters.venueSlug) params.set(KEYS.venue, filters.venueSlug);
   if (filters.query.trim() !== "") params.set(KEYS.query, filters.query);
   return params.toString();

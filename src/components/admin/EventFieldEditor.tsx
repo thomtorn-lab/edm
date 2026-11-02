@@ -1,6 +1,7 @@
 "use client";
 
-import { GENRES } from "@/lib/taxonomy";
+import { describeGenreTagProblem, getGenre, isGenreSlug, isLegacyGenre, isValidSecondaryGenre, validateGenreTags } from "@/lib/taxonomy";
+import { renderGenreOptions } from "../GenreOptions";
 
 /**
  * Shared event-field editor (unified event create/edit model, 2026-09-08).
@@ -127,7 +128,7 @@ export function EventFieldEditorTop(props: TopProps) {
         <input id={id("title")} value={props.title} onChange={(e) => props.onTitleChange(e.target.value)} className={inputCls} />
       </Field>
       <Field id={id("description")} label="Description">
-        <textarea id={id("description")} value={props.description} onChange={(e) => props.onDescriptionChange(e.target.value)} rows={2} className={inputCls} />
+        <textarea id={id("description")} value={props.description} onChange={(e) => props.onDescriptionChange(e.target.value)} rows={8} className={`${inputCls} resize-y`} />
       </Field>
       {props.startLocal !== undefined && props.onStartLocalChange && (
         <Field id={id("start")} label="Date &amp; time">
@@ -158,9 +159,8 @@ export function EventFieldEditorBottom(props: BottomProps) {
       <Field id={id("genre")} label="Genre">
         <select id={id("genre")} value={props.genre} onChange={(e) => props.onGenreChange(e.target.value)} className={inputCls}>
           {props.allowUnresolvedGenre && <option value="">Unresolved</option>}
-          {GENRES.map((g) => (
-            <option key={g.slug} value={g.slug}>{g.label}</option>
-          ))}
+          <LegacyGenreOption value={props.genre} />
+          {renderGenreOptions()}
         </select>
       </Field>
       {props.onSecondaryGenreChange && (
@@ -176,10 +176,19 @@ export function EventFieldEditorBottom(props: BottomProps) {
             className={inputCls}
           >
             <option value="">None</option>
-            {GENRES.filter((g) => g.slug !== props.genre).map((g) => (
-              <option key={g.slug} value={g.slug}>{g.label}</option>
-            ))}
+            <LegacyGenreOption value={props.secondaryGenre ?? ""} />
+            {/* Only genres that form a valid pair with the primary (taxonomy.ts
+                validateGenreTags): never the primary itself, never a main
+                genre with its own subgenre, never Electronic / Other in a
+                pair. With no primary chosen yet, every genre but the
+                fallback is offered. */}
+            {renderGenreOptions(
+              (g) =>
+                g.slug === props.secondaryGenre ||
+                (isGenreSlug(props.genre) ? isValidSecondaryGenre(props.genre, g.slug) : g.slug !== "electronic-other"),
+            )}
           </select>
+          <GenrePairWarning primary={props.genre} secondary={props.secondaryGenre ?? ""} />
         </Field>
       )}
       <Field id={id("artists")} label="Artists / lineup (comma-separated)">
@@ -232,5 +241,33 @@ export default function EventFieldEditor(props: EventFieldEditorProps) {
       <EventFieldEditorTop {...props} />
       <EventFieldEditorBottom {...props} />
     </div>
+  );
+}
+
+/**
+ * A stored legacy genre ("Ambient / Experimental") is no longer selectable,
+ * but an admin-locked event may still carry it: it gets its own option so
+ * the select shows the real stored value (instead of silently displaying
+ * the first genre) until an admin picks a current genre.
+ */
+function LegacyGenreOption({ value }: { value: string }) {
+  if (!isGenreSlug(value) || !isLegacyGenre(value)) return null;
+  return <option value={value}>{getGenre(value).label} (legacy — choose a current genre)</option>;
+}
+
+/**
+ * Explains why the current genre pair breaks the classification rules
+ * (e.g. an existing admin-locked "House + Deep House"). Informational only:
+ * the stored value is kept until an admin changes a genre field, and only
+ * a changed genre field is validated on save.
+ */
+function GenrePairWarning({ primary, secondary }: { primary: string; secondary: string }) {
+  const tags = [primary, secondary].filter(Boolean);
+  const problems = validateGenreTags(tags, tags).filter((p) => p.kind !== "duplicate");
+  if (problems.length === 0) return null;
+  return (
+    <p role="status" className="mt-1 text-xs text-status-warn">
+      {problems.map(describeGenreTagProblem).join(" ")}
+    </p>
   );
 }

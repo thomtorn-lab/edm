@@ -1,7 +1,7 @@
 import type { EventWithVenue } from "../queries";
 import { isPastEvent, sortByStart } from "../datetime";
 import { eventMatchesGenres } from "./genreMatching";
-import type { GenreSlug, MainGenreSlug } from "../taxonomy";
+import type { GenreFilterValue, GenreSlug } from "../taxonomy";
 
 export const NEWSLETTER_WINDOW_DAYS = 7;
 export const NEWSLETTER_MAX_EVENTS = 20;
@@ -50,7 +50,7 @@ export function selectUpcomingEventsForNewsletter(
  */
 export function selectEventsForSubscriber(
   windowEvents: EventWithVenue[],
-  selectedGenres: MainGenreSlug[],
+  selectedGenres: GenreFilterValue[],
   max: number = NEWSLETTER_MAX_EVENTS,
 ): EventWithVenue[] {
   const seen = new Set<string>();

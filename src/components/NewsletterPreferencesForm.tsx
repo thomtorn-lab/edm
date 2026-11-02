@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MAIN_GENRES, type MainGenreSlug } from "@/lib/taxonomy";
+import { NEWSLETTER_GENRE_OPTIONS, newsletterGenreLabel, type GenreFilterValue } from "@/lib/taxonomy";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type UnsubscribeStatus = "idle" | "unsubscribing" | "done" | "error";
@@ -14,13 +14,20 @@ export default function NewsletterPreferencesForm({
   initialGenres,
 }: {
   token: string;
-  initialGenres: MainGenreSlug[];
+  initialGenres: GenreFilterValue[];
 }) {
-  const [selected, setSelected] = useState<Set<MainGenreSlug>>(new Set(initialGenres));
+  const [selected, setSelected] = useState<Set<GenreFilterValue>>(new Set(initialGenres));
+  // The offered broad choices, plus any stored value from the earlier
+  // 12-group model that is no longer offered (e.g. "Hard Techno") — shown so
+  // an existing preference stays visible and is never silently dropped.
+  const [options] = useState<GenreFilterValue[]>(() => [
+    ...NEWSLETTER_GENRE_OPTIONS,
+    ...initialGenres.filter((g) => !NEWSLETTER_GENRE_OPTIONS.includes(g)),
+  ]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [unsubscribeStatus, setUnsubscribeStatus] = useState<UnsubscribeStatus>("idle");
 
-  function toggleGenre(slug: MainGenreSlug) {
+  function toggleGenre(slug: GenreFilterValue) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(slug)) next.delete(slug);
@@ -69,15 +76,15 @@ export default function NewsletterPreferencesForm({
     <div className="mt-6">
       <fieldset className="flex flex-col gap-2.5">
         <legend className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Genres</legend>
-        {MAIN_GENRES.map((genre) => (
-          <label key={genre.slug} className={checkboxLabelClasses}>
+        {options.map((value) => (
+          <label key={value} className={checkboxLabelClasses}>
             <input
               type="checkbox"
-              checked={selected.has(genre.slug)}
-              onChange={() => toggleGenre(genre.slug)}
+              checked={selected.has(value)}
+              onChange={() => toggleGenre(value)}
               className="h-4 w-4 accent-accent"
             />
-            {genre.label}
+            {newsletterGenreLabel(value)}
           </label>
         ))}
       </fieldset>

@@ -207,3 +207,20 @@ describe("FestivalExplorer — final mobile compactness polish (2026-09-13 follo
     expect(screen.getByRole("link", { name: /Test Festival/ })).toBeTruthy();
   });
 });
+
+describe("FestivalExplorer — genre filter uses the site-wide genre rule (genre system revision, 2026-10-24)", () => {
+  afterEach(cleanup);
+
+  it("a main genre also matches festivals listing one of its subgenres; a subgenre stays exact", () => {
+    const psy = { ...FESTIVAL_WITH_URL, id: "f2", slug: "psy", name: "Psy Fest", genres: ["psytrance"] } as FestivalRecord;
+    const trance = { ...FESTIVAL_WITH_URL, id: "f3", slug: "trance", name: "Trance Fest", genres: ["trance"] } as FestivalRecord;
+    render(<FestivalExplorer festivals={[psy, trance]} />);
+    const genreSelect = screen.getAllByRole("combobox")[2] as HTMLSelectElement;
+    fireEvent.change(genreSelect, { target: { value: "trance" } });
+    expect(screen.getByRole("link", { name: /Psy Fest/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Trance Fest/ })).toBeTruthy();
+    fireEvent.change(genreSelect, { target: { value: "psytrance" } });
+    expect(screen.getByRole("link", { name: /Psy Fest/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Trance Fest/ })).toBeNull();
+  });
+});

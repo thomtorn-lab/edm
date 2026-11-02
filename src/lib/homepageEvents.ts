@@ -54,7 +54,10 @@ export interface HomepageEvent extends EventRowEvent {
 
 /** Copies exactly the HomepageEvent fields — nothing else from the full record reaches the client. */
 export function toHomepageEvent(
-  event: EventRecord & { venue: Venue },
+  // Structural: a full EventRecord + Venue still fits, and so does the
+  // narrower list projection the homepage now reads (ListEvent in
+  // src/lib/queries.ts) — only the fields copied below are required.
+  event: EventRowFields & Pick<EventRecord, "primaryGenre"> & { venue: EventRowVenue },
   hasArtistPreview: boolean,
   hasAudioLinks = false,
 ): HomepageEvent {

@@ -7,6 +7,7 @@ import { resolveByCanonicalPriority, type PublishDecision } from "./classificati
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
 import { usableDiscoveryDescription } from "./descriptionQuality";
+import { DEN_ANDEN_SIDE_VENUE_ID, isDenAndenSideRoomsEnabled, readGeneratedBreakdown } from "./denAndenSideRooms";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -207,7 +208,33 @@ export function buildSyncPatch(
     patch.postponed = false;
   }
 
+  keepDenAndenSideRoomSplit(patch, raw, existing);
+
   return { patch, dateChanged, timeChanged };
+}
+
+/**
+ * Den Anden Side room split (src/lib/denAndenSideRooms.ts): once an event
+ * carries a verified room breakdown, a later sync whose source text says
+ * nothing about rooms (another source, or the same one trimming its text)
+ * must not flatten it. Title and description stay as they are; artists the
+ * source newly adds are appended to the lineup without being placed in a
+ * room — never moved between rooms, never guessed. A source that itself
+ * gives a (possibly corrected) split still updates normally, and admin
+ * edits stay protected downstream exactly as before (overriddenFields).
+ */
+function keepDenAndenSideRoomSplit(patch: Record<string, unknown>, raw: RawCandidateEvent, existing: SyncTargetEvent): void {
+  if (!isDenAndenSideRoomsEnabled() || existing.venueId !== DEN_ANDEN_SIDE_VENUE_ID) return;
+  if (!readGeneratedBreakdown(existing.description, existing.artists)) return;
+  if (readGeneratedBreakdown(raw.description, raw.artists)) return;
+  delete patch.title;
+  delete patch.description;
+  if (Array.isArray(patch.artists)) {
+    const known = new Set(existing.artists);
+    const added = (patch.artists as string[]).filter((a) => !known.has(a));
+    if (added.length === 0) delete patch.artists;
+    else patch.artists = [...existing.artists, ...added];
+  }
 }
 
 export type SyncMatchKind = "linked" | "high-confidence-duplicate";

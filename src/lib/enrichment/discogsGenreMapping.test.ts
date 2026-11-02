@@ -97,3 +97,23 @@ describe("mapDiscogsEvidenceToGenre", () => {
     });
   });
 });
+
+describe("genre system revision (2026-10-24) — Discogs style mapping (contract K2)", () => {
+  it.each([
+    ["Jungle", "jungle"],
+    ["Breakbeat", "breakbeat"],
+    ["Breaks", "breakbeat"],
+    ["Ambient", "ambient"],
+    ["Experimental", "experimental"],
+    ["Industrial", "industrial"],
+    ["UK Garage", "garage"],
+    ["Hard Techno", "hard-techno"],
+  ])("Discogs style %s -> %s", (style, genre) => {
+    expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: [style] }]).genre).toBe(genre);
+  });
+
+  it("never maps Hardcore Punk, and never produces the legacy ambient-experimental value", () => {
+    expect(mapDiscogsEvidenceToGenre([{ genres: ["Rock"], styles: ["Hardcore Punk"] }]).genre).toBeNull();
+    expect(mapDiscogsEvidenceToGenre([{ genres: ["Electronic"], styles: ["Ambient"] }]).genre).not.toBe("ambient-experimental");
+  });
+});

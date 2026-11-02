@@ -1,7 +1,9 @@
 import type { ConfidenceLevel } from "../types";
 import type { GenreSlug } from "../taxonomy";
+import { isSelectableGenre } from "../taxonomy";
 import type { Venue } from "../types";
 import { resolveVenue, dedupeArtistList } from "../normalize";
+import { isDenAndenSideRoomsEnabled, isDenAndenSideVenueName, isSmallRoomVenueName, MAIN_ROOM as DAS_MAIN_ROOM, structureDenAndenSideRooms } from "../denAndenSideRooms";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
 import { findBestMovedEventMatch } from "../movedEventDetection";
 import { evaluateQualityGate, genreConfidenceForEvidence, type PublishDecision } from "../classification";
@@ -424,6 +426,20 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });
   raw.artists = raw.artists.map((a) => normalizeExtractedText(a, { singleLine: true }));
 
+  // DEN ANDEN SIDE ROOMS (2026-10-27): the Culture Box room model for every
+  // source's Den Anden Side candidates, at the same single choke point — see
+  // src/lib/denAndenSideRooms.ts. Its small room "Den Anden Ende" resolves to
+  // the club itself (never a venue of its own), and a room split the source
+  // states explicitly becomes a room-separated lineup; anything unverifiable
+  // passes through unchanged. Inert until DAS_ROOMS_ENABLED="true".
+  if (isDenAndenSideRoomsEnabled() && isDenAndenSideVenueName(raw.venueName)) {
+    const structured = structureDenAndenSideRooms({ title: raw.title, description: raw.description, artists: raw.artists, venueName: raw.venueName });
+    raw.title = structured.title;
+    raw.description = structured.description;
+    raw.artists = structured.artists;
+    if (isSmallRoomVenueName(raw.venueName)) raw.venueName = DAS_MAIN_ROOM;
+  }
+
   // VALIDATION
   const missingFields: string[] = [];
   if (!raw.title?.trim()) missingFields.push("title");
@@ -476,6 +492,18 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   // specific sibling (e.g. "psytrance") without changing the evidence tier.
   if (genre) {
     genre = refineGenreFromText(genre, genreEvidenceText);
+  }
+  // Legacy stored values (e.g. "ambient-experimental" from an older hint)
+  // are never newly assigned (genre system revision, 2026-10-24): the
+  // event's own text decides between the current genres instead.
+  if (genre && !isSelectableGenre(genre)) {
+    genre = deterministicGenreFromText(genreEvidenceText) ?? GENERIC_ELECTRONIC_GENRE;
+  }
+  // A bare "industrial" (the standalone industrial/EBM genre) is easily
+  // confused with industrial techno in event copy, so it never auto-
+  // publishes on its own: capped at "medium", it always gets a human look.
+  if (genre === "industrial" && genreConfidence === "high") {
+    genreConfidence = "medium";
   }
 
   // CONSERVATIVE SECONDARY-GENRE SUGGESTION (Discovery secondary-genre V1,

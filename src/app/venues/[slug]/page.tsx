@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
-import { getEventsForVenue, getSoundcloudAvailabilityForEvents, getVenueById, getVenueBySlug } from "@/lib/queries";
+import { getSoundcloudAvailabilityForEvents, getUpcomingPublishedEventsForList, getVenueById, getVenueBySlug } from "@/lib/queries";
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import { buildVenueSeoDescription, buildVenueSeoTitle } from "@/lib/seoMetadata";
@@ -64,7 +64,10 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
   // a distinct set of events, so concatenating never double-counts.
   const groupMemberIds = PUBLIC_VENUE_GROUPS[venue.id] ?? [];
   const now = new Date();
-  const rawEvents = (await Promise.all([venue.id, ...groupMemberIds].map((id) => getEventsForVenue(id)))).flat();
+  // One query for the venue and its group members, clearly-past events left
+  // out in SQL, list columns only (Supabase egress work, 2026-11-01); the
+  // exact isPastEvent rule still applies below.
+  const rawEvents = await getUpcomingPublishedEventsForList(now, [venue.id, ...groupMemberIds]);
   const upcoming = sortByStart(rawEvents.filter((e) => !isPastEvent(e, now)));
   const audioAvailability = await getSoundcloudAvailabilityForEvents(upcoming);
 

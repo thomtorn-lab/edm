@@ -1,4 +1,12 @@
-import { formatDescription, previewBlockCount, type DescriptionBlock, type DescriptionInline } from "@/lib/descriptionFormat";
+import {
+  explicitPracticalTitle,
+  formatDescription,
+  practicalTailStart,
+  previewBlockCount,
+  splitLongParagraph,
+  type DescriptionBlock,
+  type DescriptionInline,
+} from "@/lib/descriptionFormat";
 import ShowMore from "./ShowMore";
 
 /**
@@ -16,16 +24,47 @@ import ShowMore from "./ShowMore";
  * from forcing horizontal scroll on mobile.
  */
 export default function EventDescription({ text, headingHints }: { text: string; headingHints?: readonly string[] }) {
-  const blocks = formatDescription(text, { headingHints });
-  if (blocks.length === 0) return null;
-  const render = (from: number, to: number) =>
-    blocks.slice(from, to).map((block, i) => <Block key={from + i} block={block} previous={blocks[from + i - 1]} isFirst={from + i === 0} />);
+  const all = formatDescription(text, { headingHints });
+  if (all.length === 0) return null;
+  // A trailing practical section the source marks itself (admission, age,
+  // wardrobe, door policy, code of conduct…) is shown separately, folded,
+  // after the About text — see practicalTailStart. Nothing is dropped.
+  const tailStart = practicalTailStart(all);
+  const blocks = tailStart === null ? all : all.slice(0, tailStart);
+  const tail = tailStart === null ? [] : all.slice(tailStart);
+  // The source's own "Practical information" title becomes the section's
+  // toggle label instead of being shown twice.
+  const ownTitle = explicitPracticalTitle(tail[0]);
+  const practical = ownTitle ? tail.slice(1) : tail;
+  const render = (list: DescriptionBlock[], from: number, to: number) =>
+    list.slice(from, to).map((block, i) => <Block key={from + i} block={block} previous={list[from + i - 1]} isFirst={from + i === 0} />);
   // Long texts fold behind "Show more" (src/components/ShowMore.tsx); the
   // folded part is still rendered into the HTML. Short texts show in full.
+  // One long paragraph folds at a sentence end inside that paragraph.
   const split = previewBlockCount(blocks);
+  const single = split === null && blocks.length === 1 ? splitLongParagraph(blocks[0]) : null;
   return (
     <div className="mt-2 max-w-prose text-sm leading-relaxed text-text-secondary [overflow-wrap:anywhere]">
-      {split === null ? render(0, blocks.length) : <ShowMore preview={render(0, split)} rest={render(split, blocks.length)} />}
+      {single ? (
+        <p>
+          <ShowMore inline preview={<Inline tokens={single.preview} />} rest={<Inline tokens={single.rest} />} />
+        </p>
+      ) : split === null ? (
+        render(blocks, 0, blocks.length)
+      ) : (
+        <ShowMore preview={render(blocks, 0, split)} rest={render(blocks, split, blocks.length)} />
+      )}
+      {tail.length > 0 && (
+        <details className="group mt-6">
+          <summary className="inline-flex min-h-[2.75rem] cursor-pointer list-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary-strong [&::-webkit-details-marker]:hidden">
+            <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-90">
+              ›
+            </span>
+            {ownTitle ?? "Practical information"}
+          </summary>
+          <div className="mt-1">{render(practical, 0, practical.length)}</div>
+        </details>
+      )}
     </div>
   );
 }

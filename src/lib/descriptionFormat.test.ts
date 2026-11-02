@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { formatDescription, formattedDescriptionToText, previewBlockCount, type DescriptionBlock, type DescriptionInline } from "./descriptionFormat";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import {
+  explicitPracticalTitle,
+  formatDescription,
+  formattedDescriptionToText,
+  practicalTailStart,
+  previewBlockCount,
+  splitLongParagraph,
+  type DescriptionBlock,
+  type DescriptionInline,
+} from "./descriptionFormat";
 
 /** Compact, readable rendering of the block list for assertions. */
 function render(blocks: DescriptionBlock[]): string[] {
@@ -273,5 +284,135 @@ describe("formatDescription — deterministic tidying (real KultuNaut fixtures)"
     expect(render(formatDescription(`${para}\n\nA second paragraph.\n\n${para.toUpperCase()}`))).toEqual([para, "A second paragraph."]);
     expect(render(formatDescription("Sold out\n\nSold out"))).toEqual(["Sold out", "Sold out"]);
     expect(render(formatDescription(`${para}\n\n${para.replace("five", "six")}`))).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structure recovery and practical sections (2026-10-30). Real stored texts,
+// see src/lib/__fixtures__/descriptions/README.md.
+// ---------------------------------------------------------------------------
+const fixture = (name: string) => readFileSync(path.join(__dirname, "__fixtures__", "descriptions", name), "utf8");
+const MORPHEUS = fixture("den-anden-side-morpheus-flat.txt");
+const DAS = fixture("den-anden-side-das-4-ever.txt");
+const SYNTHARAX = fixture("den-anden-side-syntharax-prose.txt");
+const HANGAREN = fixture("hangaren-britta-arnold.txt");
+const ICONA = fixture("pumpehuset-icona-pop-flat.txt");
+
+const blockText = (b: DescriptionBlock) =>
+  (b.type === "heading" ? [b.content] : b.lines).map((l) => l.map((t) => (t.type === "text" ? t.text : t.label)).join("")).join("\n");
+const headingsOf = (blocks: DescriptionBlock[]) => blocks.filter((b) => b.type === "heading").map(blockText);
+/** Every word of the original (styled letters read as plain ones) is still there, in order. */
+function keepsEveryWord(original: string, blocks: DescriptionBlock[]) {
+  const words = (s: string) => s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
+  const want = words(original);
+  const got = words(formattedDescriptionToText(blocks));
+  let j = 0;
+  for (const w of got) if (j < want.length && w === want[j]) j++;
+  expect(want.slice(j, j + 5)).toEqual([]);
+}
+
+describe("flat text recovery (line breaks lost before storage)", () => {
+  it("rebuilds paragraphs and sections when the text marks them itself (Den Anden Side, admin-created)", () => {
+    expect(MORPHEUS).not.toContain("\n");
+    const blocks = formatDescription(MORPHEUS);
+    expect(blocks.length).toBeGreaterThan(15);
+    expect(headingsOf(blocks)).toEqual([
+      "Tonight’s guide through the dark: Beste Hira",
+      "00:30: Sleeping Beauty",
+      "Lineup",
+      "Admission",
+      "Vibe Vision",
+      "Code Of Conduct",
+      "Awareness",
+    ]);
+    keepsEveryWord(MORPHEUS, blocks);
+  });
+
+  it("never splits on double spaces alone", () => {
+    const prose = Array.from({ length: 12 }, (_, i) => `Sentence number ${i} of a long flat text written with two spaces after each stop.`).join("  ");
+    expect(formatDescription(prose)).toHaveLength(1);
+    // Separators alone (no styled section titles) are not enough either.
+    expect(formatDescription(`${prose}  ————  ${prose}  ————  ${prose}`)).toHaveLength(1);
+  });
+
+  it("leaves short flat texts and texts with real line breaks alone", () => {
+    expect(formatDescription("𝗟𝗶𝗻𝗲𝘂𝗽 A  𝗜𝗻𝗳𝗼 B  ———— C")).toHaveLength(2); // under 600 chars: only the styled title splits off
+    expect(headingsOf(formatDescription(DAS))).toContain("Lineup");
+  });
+});
+
+describe("styled Unicode section titles", () => {
+  it("reads a styled-bold title as a heading in plain letters and keeps the body after it", () => {
+    const blocks = formatDescription("𝗟𝗶𝗻𝗲𝘂𝗽\nCEM [he/him]\nDJ TOOL [he/him]\n\n𝗔𝗱𝗺𝗶𝘀𝘀𝗶𝗼𝗻 Presale 170 DKK, door 180 DKK.");
+    expect(blocks[0]).toEqual({ type: "heading", level: "section", content: [{ type: "text", text: "Lineup" }] });
+    expect(headingsOf(blocks)).toContain("Admission");
+    expect(blockText(blocks[blocks.length - 1])).toBe("Presale 170 DKK, door 180 DKK.");
+  });
+
+  it("does not treat styled italics or a styled sentence as a heading", () => {
+    expect(headingsOf(formatDescription("𝘊𝘰𝘮𝘦 𝘧𝘰𝘳 𝘵𝘩𝘦 𝘣𝘦𝘢𝘵𝘴.\nMore text follows here, long enough to be body text."))).toEqual([]);
+    expect(headingsOf(formatDescription("𝗦𝗼𝗹𝗱 𝗼𝘂𝘁 𝗳𝗼𝗿 𝘁𝗼𝗻𝗶𝗴𝗵𝘁.\nMore text follows here, long enough to be body text."))).toEqual([]);
+  });
+
+  it("keeps every word of real texts that use them", () => {
+    keepsEveryWord(DAS, formatDescription(DAS));
+    keepsEveryWord(HANGAREN, formatDescription(HANGAREN));
+  });
+});
+
+describe("practicalTailStart", () => {
+  it("splits off a trailing practical section the source marks with practical titles; lineup stays in About", () => {
+    for (const text of [MORPHEUS, DAS]) {
+      const blocks = formatDescription(text);
+      const start = practicalTailStart(blocks);
+      expect(start).not.toBeNull();
+      const about = blocks.slice(0, start!);
+      const tail = blocks.slice(start!);
+      expect(headingsOf(about)).toContain("Lineup");
+      expect(headingsOf(tail)).toEqual(["Admission", "Vibe Vision", "Code Of Conduct", "Awareness"]);
+      expect(blockText(tail[0])).toBe("————"); // the separator before it goes with it
+    }
+  });
+
+  it("keeps the text whole when practical details are only mentioned in prose", () => {
+    expect(practicalTailStart(formatDescription(SYNTHARAX))).toBeNull();
+  });
+
+  it("keeps the text whole when the tail also has non-practical titles (Hangaren: INFO, THIS IS HOW WE PARTY)", () => {
+    expect(practicalTailStart(formatDescription(HANGAREN))).toBeNull();
+  });
+
+  it("needs two practical titles, or one explicit 'Practical information', and a real About text before it", () => {
+    const about = "A long description of the night and its artists. ".repeat(6);
+    expect(practicalTailStart(formatDescription(`${about}\n\nTickets\nPresale 100 DKK at the door.`))).toBeNull();
+    expect(practicalTailStart(formatDescription(`${about}\n\nTickets\nPresale 100 DKK.\n\nCode of conduct\nBe kind.`))).toBe(1);
+    expect(practicalTailStart(formatDescription(`${about}\n\nPractical information\nDoors at 22.`))).toBe(1);
+    expect(practicalTailStart(formatDescription("Short.\n\nTickets\n100 DKK.\n\nCode of conduct\nBe kind."))).toBeNull();
+    // A non-practical title after the practical one: keep everything together.
+    expect(practicalTailStart(formatDescription(`${about}\n\nTickets\n100 DKK.\n\nCode of conduct\nBe kind.\n\nLineup\nSomeone`))).toBeNull();
+  });
+
+  it("explicitPracticalTitle names the source's own section title", () => {
+    const blocks = formatDescription("Intro text that is long enough.\n\nPractical Information:\nDoors at 22.");
+    expect(explicitPracticalTitle(blocks[1])).toBe("Practical Information");
+    expect(explicitPracticalTitle(blocks[0])).toBeNull();
+  });
+});
+
+describe("splitLongParagraph", () => {
+  it("folds one long single paragraph at a sentence end, keeping every character", () => {
+    const blocks = formatDescription(ICONA);
+    expect(blocks).toHaveLength(1);
+    expect(previewBlockCount(blocks)).toBeNull();
+    const split = splitLongParagraph(blocks[0])!;
+    const text = (t: DescriptionInline[]) => t.map((x) => (x.type === "text" ? x.text : x.label)).join("");
+    expect(text(split.preview) + text(split.rest)).toBe(blockText(blocks[0]));
+    expect(text(split.preview).length).toBeGreaterThanOrEqual(400);
+    expect(text(split.preview)).toMatch(/[.!?…]["”’)]?$/);
+  });
+
+  it("does nothing for short paragraphs, multi-line paragraphs or text without a clean sentence end", () => {
+    expect(splitLongParagraph(formatDescription("Short text.")[0])).toBeNull();
+    expect(splitLongParagraph(formatDescription("word ".repeat(300))[0])).toBeNull();
   });
 });

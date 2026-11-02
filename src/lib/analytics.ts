@@ -1,4 +1,5 @@
 import type { BeforeSendEvent } from "@vercel/analytics/next";
+import { readAnalyticsConsent } from "./analyticsConsent";
 
 /**
  * Vercel Web Analytics sends the full page URL, including its query string,
@@ -15,4 +16,17 @@ export function stripSensitiveQueryParams(event: BeforeSendEvent): BeforeSendEve
   const url = new URL(event.url);
   url.search = "";
   return { ...event, url: url.toString() };
+}
+
+/**
+ * The beforeSend the site actually installs (consent round, 2026-10-30):
+ * drops every event unless the visitor has allowed statistics, checked at
+ * send time — so a visitor who allows and later declines stops sending from
+ * that moment, even though the already-loaded script stays in the page
+ * until the next full load. Allowed events still have their query string
+ * stripped.
+ */
+export function analyticsBeforeSend(event: BeforeSendEvent): BeforeSendEvent | null {
+  if (readAnalyticsConsent() !== "granted") return null;
+  return stripSensitiveQueryParams(event);
 }

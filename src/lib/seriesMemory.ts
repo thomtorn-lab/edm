@@ -36,11 +36,12 @@ export type SeriesHistoryEvent = Pick<
 
 /**
  * Room and area names that are not registered as venue rooms but appear as
- * the first part of many unrelated titles: Culture Box's two rooms and
+ * the first part of many unrelated titles: Culture Box's two rooms, Den
+ * Anden Side's small room (Den Anden Ende) and
  * Pumpehuset's free pop-up area. A series key equal to one of these is a
  * place, not a series.
  */
-const PLACE_NAMES_OUTSIDE_REGISTRY = ["black box", "red box", "byhaven"];
+const PLACE_NAMES_OUTSIDE_REGISTRY = ["black box", "red box", "byhaven", "den anden ende"];
 
 /** Words that never identify a series on their own: formats, occasions, genres, weekdays, months, filler. */
 const GENERIC_WORDS: ReadonlySet<string> = new Set(

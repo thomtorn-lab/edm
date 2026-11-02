@@ -25,10 +25,33 @@ const HARDCORE_KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bfrenchcore\b/i, "hardcore"],
 ];
 
+/**
+ * Jungle (genre system revision, 2026-10-24): "jungle" is also a common
+ * party/venue/brand word ("Jungle Party", "Concrete Jungle"), so it only
+ * counts next to explicit drum & bass context or as "jungle music" — never
+ * on its own. Listed AFTER the drum & bass pattern: a mixed list such as
+ * "UK Garage, Dubstep, Drum & Bass, and Jungle" (real Culture Box copy)
+ * names the broader Drum & Bass family, not a Jungle night, and the D&B
+ * span claims the shared text first. Jungle therefore resolves only when
+ * the text is about jungle itself ("jungle music") or comes from Discogs'
+ * own Jungle style.
+ */
+const DNB_TERM = String.raw`(?:d\s?&\s?b|drum\s?(?:and|&|n)\s?bass|dnb)`;
+const JUNGLE_RE = new RegExp(String.raw`\bjungle\b[\s\S]{0,40}\b${DNB_TERM}\b|\b${DNB_TERM}\b[\s\S]{0,40}\bjungle\b|\bjungle\s+music\b`, "i");
+
 const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   ...HARDCORE_KEYWORD_MAP,
   [/\bhard\s?techno\b/i, "hard-techno"],
+  // Industrial Techno (a techno subgenre) before bare "industrial": the
+  // standalone Industrial genre is the industrial/EBM line, and the two are
+  // never synonyms (genre system revision, 2026-10-24). A bare "industrial"
+  // still resolves to Industrial, but the pipeline caps its confidence so
+  // it always gets a human look (see pipeline.ts).
+  [/\bindustrial[\s-]?techno\b/i, "industrial-techno"],
   [/\bindustrial\b/i, "industrial"],
+  // Only the compound genre name — a bare "hypnotic" is a common adjective
+  // in event copy ("a hypnotic set"), never genre evidence on its own.
+  [/\bhypnotic[\s-]?techno\b/i, "hypnotic-techno"],
   [/\bmelodic\s?techno\b/i, "melodic-techno"],
   [/\bminimal\s?techno\b/i, "minimal-techno"],
   [/\btechno\b/i, "techno"],
@@ -41,6 +64,10 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\bpsy\b/i, "psytrance"],
   [/\btrance\b(?!-\w)(?!\s+state\b)/i, "trance"],
   [/\bd\s?&\s?b\b|drum\s?(and|&)\s?bass\b|\bdnb\b/i, "drum-and-bass"],
+  [JUNGLE_RE, "jungle"],
+  // Breakbeat: the genre name, or "nu skool breaks". A bare "breaks" is not
+  // used — "breaks" is an everyday word in event copy ("breaks the mould").
+  [/\bbreakbeats?\b|\bnu[\s-]?sk(?:oo|u)l\s+breaks\b/i, "breakbeat"],
   // Rawstyle before Hardstyle before Dubstep before Garage — each pair is a
   // specific-before-general precedence (Dubstep/Hardstyle/Rawstyle/Hardcore
   // automation, 2026-09-14): "rawstyle" text must resolve to rawstyle, not
@@ -50,11 +77,13 @@ const KEYWORD_MAP: [RegExp, GenreSlug][] = [
   [/\brawstyle\b|\braw\s+hardstyle\b/i, "rawstyle"],
   [/\bhardstyle\b/i, "hardstyle"],
   [/\bdubstep\b/i, "dubstep"],
-  [/\bgarage\b/i, "garage"],
+  [/\bgarage\b|\bukg\b/i, "garage"],
   [/\belectro\b/i, "electro"],
   [/\bdisco\b/i, "disco"],
-  [/\bambient\b/i, "ambient-experimental"],
-  [/\belectronica?\b[\s\S]{0,60}\bexperimental\b|\bexperimental\b[\s\S]{0,60}\belectronica?\b/i, "ambient-experimental"],
+  // Ambient / Experimental split into two genres (genre system revision,
+  // 2026-10-24); the legacy "ambient-experimental" value is never assigned.
+  [/\bambient\b/i, "ambient"],
+  [/\belectronica?\b[\s\S]{0,60}\bexperimental\b|\bexperimental\b[\s\S]{0,60}\belectronica?\b/i, "experimental"],
 ];
 
 function stripQuotedSpans(text: string): string {
@@ -349,7 +378,11 @@ const GENRE_REFINEMENTS: Partial<Record<GenreSlug, [RegExp, GenreSlug][]>> = {
     // says "hardcore techno", must promote to hardcore, not stay techno.
     [/\bhardcore\s?techno\b/i, "hardcore"],
     [/\bhard\s?techno\b/i, "hard-techno"],
-    [/\bindustrial\b/i, "industrial"],
+    // Only the explicit compound: a techno hint plus a bare "industrial"
+    // stays Techno — Industrial is a separate, standalone genre and is no
+    // longer a refinement of Techno (genre system revision, 2026-10-24).
+    [/\bindustrial[\s-]?techno\b/i, "industrial-techno"],
+    [/\bhypnotic[\s-]?techno\b/i, "hypnotic-techno"],
     [/\bmelodic\s?techno\b/i, "melodic-techno"],
     [/\bminimal\s?techno\b/i, "minimal-techno"],
   ],
@@ -366,6 +399,9 @@ const GENRE_REFINEMENTS: Partial<Record<GenreSlug, [RegExp, GenreSlug][]>> = {
   // instead came from a non-text hint (an adapter's own official-metadata
   // tag, Discogs enrichment) and only the pipeline's full relevance text
   // carries the more specific word.
+  // An "industrial" hint (e.g. a venue's own category tag) whose text says
+  // "industrial techno" is the techno subgenre, not the industrial/EBM line.
+  industrial: [[/\bindustrial[\s-]?techno\b/i, "industrial-techno"]],
   hardstyle: [[/\brawstyle\b|\braw\s+hardstyle\b/i, "rawstyle"]],
   garage: [[/\bdubstep\b/i, "dubstep"]],
 };

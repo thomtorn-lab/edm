@@ -10,14 +10,13 @@ import type { Venue } from "../types";
  * fixture data for pure-logic unit tests (normalize.test.ts, dedup.test.ts)
  * that intentionally don't need a live database connection.
  *
- * CURATED_VENUE_SLUGS (22 venues, as of the 2026-08-29 venue coverage
- * expansion) is the approved /venues highlights list (Interaction + Venue
+ * CURATED_VENUE_SLUGS (9 venues, as of the 2026-10-30 venue list
+ * update) is the approved /venues highlights list (Interaction + Venue
  * Directory Quality package). This list is a curated editorial highlight
  * reel, NOT an event-ingestion whitelist — Electronic CPH can still publish
  * qualifying events at other Copenhagen venues; being absent here never
- * blocks that. Venues not in that list (BETA2300, Gravity Copenhagen, KB18,
- * Solvang Hallen, WAREHOUSE9) remain real, event-linkable registry entries;
- * they're simply not surfaced on the curated /venues page.
+ * blocks that. Every venue not in that list remains a real, event-linkable
+ * registry entry; it's simply not surfaced on the curated /venues page.
  */
 export const VENUES: Venue[] = [
   {
@@ -129,7 +128,11 @@ export const VENUES: Venue[] = [
     address: "Refshalevej 167A, 1432 København K",
     city: "Copenhagen",
     postalCode: "1432",
-    websiteUrl: "https://werkstatt167.dk/",
+    // Corrected 2026-10-30: klubwerkstatt.dk is the venue's current
+    // official site (live-fetched; its event pages are what src-klub-werkstatt
+    // and real event source URLs point to). werkstatt167.dk is an older
+    // "Werkstatt 167" site last modified in 2022.
+    websiteUrl: "https://klubwerkstatt.dk/",
     description:
       "Bar and club on Refshaleøen inside a former engine workshop, pairing emerging local DJ bookings with touring names.",
     shortDescription:
@@ -727,7 +730,7 @@ export const VENUES: Venue[] = [
 ];
 
 /**
- * The approved /venues highlights list (21 venues), in the exact editorial
+ * The approved /venues highlights list (9 venues), in the exact editorial
  * order the overview page displays them — see /venues' own page.tsx. Kept
  * here, next to the fixtures it references, so the curated set and the
  * registry data it draws from can't silently drift apart. Extending this
@@ -744,6 +747,19 @@ export const VENUES: Venue[] = [
  * /venues/<slug>, own sitemap entry, full admin venue-selection
  * availability) — only the curated /venues highlights list drops them.
  */
+/**
+ * Venues-page criteria (2026-10-30 venue list update): the /venues list now
+ * holds exactly the nine venues below, the approved starting list. A venue
+ * qualifies only when more than 50% of its total public event programme
+ * falls primarily within Electronic CPH's 22 electronic genres — regularly
+ * hosting electronic events is not enough. Basement, Pumpehuset,
+ * Bolsjefabrikken, TAP1, VEGA and ALICE leave the list; Klub Werkstatt and
+ * Pylonen join it. The criterion applies to this page only and never limits
+ * which events are published elsewhere. Venues are never added or removed
+ * automatically: every change to this list needs separate approval. As
+ * before, every venue not listed stays a real, event-linkable registry
+ * entry with its own /venues/<slug> page.
+ */
 export const CURATED_VENUE_SLUGS: readonly string[] = [
   "culture-box",
   "hangaren",
@@ -751,13 +767,9 @@ export const CURATED_VENUE_SLUGS: readonly string[] = [
   "module",
   "jolene",
   "baggen",
-  "basement",
-  "pumpehuset",
   "poolen",
-  "bolsjefabrikken",
-  "tap1",
-  "vega",
-  "alice",
+  "klub-werkstatt",
+  "pylonen",
 ];
 
 export function getVenueBySlug(slug: string): Venue | undefined {

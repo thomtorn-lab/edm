@@ -61,7 +61,7 @@ describe("deterministicGenreFromText", () => {
 
   describe("ambient / experimental evidence quality", () => {
     it("matches bare 'ambient' unconditionally — a specific, low-ambiguity genre word", () => {
-      expect(deterministicGenreFromText("An evening of ambient soundscapes")).toBe("ambient-experimental");
+      expect(deterministicGenreFromText("An evening of ambient soundscapes")).toBe("ambient");
     });
 
     it("does NOT match a generic, non-electronic use of 'experimental' with no electronic-music context nearby (the real Ca7riel y Paco Amoroso bio text)", () => {
@@ -78,12 +78,12 @@ describe("deterministicGenreFromText", () => {
     });
 
     it("matches 'experimental' when it appears together with 'electronic' in the same text", () => {
-      expect(deterministicGenreFromText("A night of experimental electronic music and visuals")).toBe("ambient-experimental");
-      expect(deterministicGenreFromText("Electronic, ambient and experimental soundscapes")).toBe("ambient-experimental");
+      expect(deterministicGenreFromText("A night of experimental electronic music and visuals")).toBe("experimental");
+      expect(deterministicGenreFromText("Electronic, ambient and experimental soundscapes")).toBe("ambient");
     });
 
     it("matches 'experimental' near 'electronica' too", () => {
-      expect(deterministicGenreFromText("Forward-leaning experimental electronica from Berlin")).toBe("ambient-experimental");
+      expect(deterministicGenreFromText("Forward-leaning experimental electronica from Berlin")).toBe("experimental");
     });
 
     it("does not let a distant, unrelated 'electronic' elsewhere in a long bio manufacture a match", () => {
@@ -324,8 +324,8 @@ describe("refineGenreFromText (genre precision, Workstream B)", () => {
     expect(refineGenreFromText("trance", "A night of uplifting trance anthems.")).toBe("trance");
   });
 
-  it("refines a generic 'techno' category to a specific sibling when the text names one (e.g. industrial techno -> industrial)", () => {
-    expect(refineGenreFromText("techno", "An industrial techno showcase.")).toBe("industrial");
+  it("refines a generic 'techno' category to a specific sibling when the text names one (e.g. industrial techno -> industrial-techno)", () => {
+    expect(refineGenreFromText("techno", "An industrial techno showcase.")).toBe("industrial-techno");
     expect(refineGenreFromText("techno", "Melodic techno all night long.")).toBe("melodic-techno");
   });
 
@@ -413,3 +413,53 @@ describe("maskLineupNamesWithGenreKeywords — artist names are not genre eviden
     expect(mask("PAB DISCO", [])).toBe("PAB DISCO");
   });
 });
+
+// Genre system revision (2026-10-24) — test contract K1/K6 (see the PR's
+// taxonomy contract): new genres resolve only from documented, unambiguous
+// phrases; Industrial and Industrial Techno are never synonyms.
+describe("genre system revision — text classification contract (K1)", () => {
+  it.each([
+    ["An industrial techno marathon", "industrial-techno"],
+    ["Industrial-techno all night", "industrial-techno"],
+    ["Industrial and EBM club night", "industrial"],
+    ["Hypnotic techno for the long haul", "hypnotic-techno"],
+    ["Breakbeat and electro all night", "breakbeat"],
+    ["Nu skool breaks revival", "breakbeat"],
+    ["Jungle music from the 90s", "jungle"],
+    ["UK garage classics", "garage"],
+    ["UKG all night long", "garage"],
+    ["Ambient drones on the soundsystem", "ambient"],
+    ["Experimental electronic performances", "experimental"],
+    ["A night of hardcore techno", "hardcore"],
+    ["A gabber rave", "hardcore"],
+  ] as const)("%s -> %s", (text, genre) => {
+    expect(deterministicGenreFromText(text)).toBe(genre);
+  });
+
+  it.each([
+    "A hypnotic set from a long-time resident",
+    "The DJ breaks the rules with every record",
+    "Jungle Party at the zoo",
+    "Concrete Jungle summer edition",
+    "Hardcore punk matinee",
+  ])("does not resolve a genre from the ambiguous word alone: %s", (text) => {
+    expect(deterministicGenreFromText(text)).toBeNull();
+  });
+
+  it("a mixed list naming Drum & Bass and Jungle resolves to the broader Drum & Bass, not Jungle (real Culture Box copy)", () => {
+    expect(deterministicGenreFromText("spanning UK Garage, Dubstep, Drum & Bass, and Jungle")).toBe("drum-and-bass");
+  });
+
+  it("a techno hint plus a bare 'industrial' stays Techno — Industrial is no longer a techno refinement", () => {
+    expect(refineGenreFromText("techno", "Dark, industrial warehouse vibes.")).toBe("techno");
+    expect(refineGenreFromText("techno", "Hypnotic techno from Berlin.")).toBe("hypnotic-techno");
+    expect(refineGenreFromText("industrial", "Pounding industrial techno.")).toBe("industrial-techno");
+  });
+
+  it("never produces the legacy ambient-experimental value", () => {
+    for (const text of ["ambient", "experimental electronic", "ambient and experimental electronica"]) {
+      expect(deterministicGenreFromText(text)).not.toBe("ambient-experimental");
+    }
+  });
+});
+

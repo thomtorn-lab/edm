@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { FestivalRecord } from "@/lib/types";
-import { getGenre, type GenreSlug } from "@/lib/taxonomy";
+import { getGenre, matchesGenreSelection, type GenreSlug } from "@/lib/taxonomy";
 import { formatFestivalEdition } from "@/lib/festivalEdition";
 import { FilterSelect } from "./FilterSelect";
 
@@ -37,7 +37,9 @@ export default function FestivalExplorer({ festivals }: { festivals: FestivalRec
     .filter((f) => {
       if (country !== "all" && f.country !== country) return false;
       if (month !== "all" && !f.typicalMonth.startsWith(month)) return false;
-      if (genre !== "all" && !f.genres.includes(genre)) return false;
+      // Same site-wide genre rule as the event filter: a main genre also
+      // matches festivals listing one of its subgenres.
+      if (genre !== "all" && !matchesGenreSelection(f.genres, genre)) return false;
       return true;
     })
     .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));

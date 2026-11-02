@@ -28,11 +28,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/queries", () => ({
   getVenueBySlug: vi.fn(),
   getVenueById: vi.fn(),
-  getEventsForVenue: vi.fn(),
+  getUpcomingPublishedEventsForList: vi.fn(),
   getSoundcloudAvailabilityForEvents: vi.fn(async (list: unknown[]) => list.map(() => false)),
 }));
 
-const { getVenueBySlug, getVenueById, getEventsForVenue, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
+const { getVenueBySlug, getVenueById, getUpcomingPublishedEventsForList, getSoundcloudAvailabilityForEvents } = await import("@/lib/queries");
 const { default: VenueDetailPage } = await import("./page");
 
 beforeEach(() => {
@@ -41,7 +41,7 @@ beforeEach(() => {
 
 async function renderPage(venue: Venue) {
   vi.mocked(getVenueBySlug).mockResolvedValue(venue);
-  vi.mocked(getEventsForVenue).mockResolvedValue([]);
+  vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue([]);
   const element = await VenueDetailPage({ params: Promise.resolve({ slug: venue.slug }) } as never);
   render(element);
 }
@@ -120,21 +120,22 @@ describe("Venue detail page — VEGA overall-venue presentation (2026-09-11)", (
 
   it("the VEGA page aggregates Store VEGA, Lille VEGA and Ideal Bar upcoming events without double-counting, and keeps each event's own room/location label", async () => {
     vi.mocked(getVenueBySlug).mockResolvedValue(VEGA);
-    vi.mocked(getEventsForVenue).mockImplementation(async (id: string) => {
-      if (id === "v-vega") {
-        return [
-          makeEvent({ id: "e-store", venue: VEGA, title: "Store VEGA Night", subVenue: "Store VEGA" }),
-          makeEvent({ id: "e-lille", venue: VEGA, title: "Lille VEGA Night", subVenue: "Lille VEGA" }),
-        ];
-      }
-      if (id === "v-vega-ideal-bar") {
-        return [makeEvent({ id: "e-idealbar", venue: IDEAL_BAR, title: "Ideal Bar Night" })];
-      }
-      return [];
-    });
+    const byVenue: Record<string, EventWithVenue[]> = {
+      "v-vega": [
+        makeEvent({ id: "e-store", venue: VEGA, title: "Store VEGA Night", subVenue: "Store VEGA" }),
+        makeEvent({ id: "e-lille", venue: VEGA, title: "Lille VEGA Night", subVenue: "Lille VEGA" }),
+      ],
+      "v-vega-ideal-bar": [makeEvent({ id: "e-idealbar", venue: IDEAL_BAR, title: "Ideal Bar Night" })],
+    };
+    vi.mocked(getUpcomingPublishedEventsForList).mockImplementation(async (_now, venueIds) =>
+      (venueIds ?? []).flatMap((id) => byVenue[id] ?? []),
+    );
     const element = await VenueDetailPage({ params: Promise.resolve({ slug: "vega" }) } as never);
     render(element);
 
+    // One query covering the primary and its group member.
+    expect(getUpcomingPublishedEventsForList).toHaveBeenCalledTimes(1);
+    expect(getUpcomingPublishedEventsForList).toHaveBeenCalledWith(expect.any(Date), ["v-vega", "v-vega-ideal-bar"]);
     expect(screen.getByRole("heading", { level: 1, name: "VEGA" })).toBeTruthy();
     expect(screen.getByText("Store VEGA Night")).toBeTruthy();
     expect(screen.getByText("Lille VEGA Night")).toBeTruthy();
@@ -157,12 +158,12 @@ describe("Venue detail page — VEGA overall-venue presentation (2026-09-11)", (
 
     expect(permanentRedirectMock).toHaveBeenCalledWith("/venues/vega");
     // Bails out before doing any event aggregation for the redirected page.
-    expect(getEventsForVenue).not.toHaveBeenCalled();
+    expect(getUpcomingPublishedEventsForList).not.toHaveBeenCalled();
   });
 
   it("Jolene's detail heading shows the public 'Jolene (Club)' label, not its canonical 'Jolene Bar' name", async () => {
     vi.mocked(getVenueBySlug).mockResolvedValue(JOLENE);
-    vi.mocked(getEventsForVenue).mockResolvedValue([]);
+    vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue([]);
 
     const element = await VenueDetailPage({ params: Promise.resolve({ slug: "jolene" }) } as never);
     render(element);
@@ -173,7 +174,7 @@ describe("Venue detail page — VEGA overall-venue presentation (2026-09-11)", (
 
   it("an unrelated, ungrouped venue's page is unaffected — own canonical name, single-id lookup, no redirect", async () => {
     vi.mocked(getVenueBySlug).mockResolvedValue(CULTURE_BOX);
-    vi.mocked(getEventsForVenue).mockResolvedValue([]);
+    vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue([]);
     permanentRedirectMock.mockClear();
 
     const element = await VenueDetailPage({ params: Promise.resolve({ slug: "culture-box" }) } as never);
@@ -181,8 +182,8 @@ describe("Venue detail page — VEGA overall-venue presentation (2026-09-11)", (
 
     expect(screen.getByRole("heading", { level: 1, name: "Culture Box" })).toBeTruthy();
     expect(permanentRedirectMock).not.toHaveBeenCalled();
-    expect(getEventsForVenue).toHaveBeenCalledWith("v-culture-box");
-    expect(getEventsForVenue).toHaveBeenCalledTimes(1);
+    expect(getUpcomingPublishedEventsForList).toHaveBeenCalledWith(expect.any(Date), ["v-culture-box"]);
+    expect(getUpcomingPublishedEventsForList).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -202,7 +203,7 @@ describe("Venue detail page — AUDIO indicator kept (venue-provided SoundCloud 
 
   it("one batched lookup for the upcoming events, pill on the events that have links", async () => {
     vi.mocked(getVenueBySlug).mockResolvedValue(CULTURE_BOX);
-    vi.mocked(getEventsForVenue).mockResolvedValue([
+    vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue([
       makeEvent({ id: "e-with", slug: "with", venue: CULTURE_BOX, title: "Night With Links", artists: ["GUY J"] }),
       makeEvent({ id: "e-without", slug: "without", venue: CULTURE_BOX, title: "Night Without", artists: ["SOMEONE"] }),
     ]);

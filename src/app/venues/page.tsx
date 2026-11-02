@@ -1,52 +1,36 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getEventsForVenue, getVenues } from "@/lib/queries";
-import { isPastEvent } from "@/lib/datetime";
-import { CURATED_VENUE_SLUGS, getPublicVenueGroupPrimaryId, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
+import { getUpcomingEventCountsByVenue, getVenuesBySlugs } from "@/lib/queries";
+import { CURATED_VENUE_SLUGS, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import type { Venue } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Venues",
-  description: "A curated guide to Copenhagen's electronic music venues: Culture Box, Hangaren, Den Anden Side, RUST and more.",
+  description: "A curated guide to Copenhagen venues where electronic music is the main focus: Culture Box, Hangaren, Den Anden Side, MODULE and more.",
   alternates: { canonical: "/venues" },
 };
 
 export const revalidate = 0;
 
 export default async function VenuesPage() {
-  const registryVenues = await getVenues();
+  // Supabase egress work (2026-11-01): only the curated venues' rows, and
+  // one narrow query for every upcoming count, instead of the whole venues
+  // table plus a full events + venue read per listed venue.
+  const registryVenues = await getVenuesBySlugs(CURATED_VENUE_SLUGS);
   const bySlug = new Map(registryVenues.map((v) => [v.slug, v]));
 
+  // Grouped venues (VEGA overall-venue presentation, 2026-09-11):
+  // aggregate the upcoming count across the primary plus every group
+  // member (e.g. VEGA + Ideal Bar) — each id names a distinct set of
+  // events, so summing never double-counts.
+  const venueIdsFor = (venue: Venue) => [venue.id, ...(PUBLIC_VENUE_GROUPS[venue.id] ?? [])];
   const now = new Date();
-  const curated = await Promise.all(
-    CURATED_VENUE_SLUGS.map(async (slug) => {
-      const venue = bySlug.get(slug);
-      // Grouped venues (VEGA overall-venue presentation, 2026-09-11):
-      // aggregate the upcoming count across the primary plus every group
-      // member (e.g. VEGA + Ideal Bar) — each id names a distinct set of
-      // events, so summing never double-counts.
-      const groupMemberIds = venue ? (PUBLIC_VENUE_GROUPS[venue.id] ?? []) : [];
-      const upcomingCount = venue
-        ? (
-            await Promise.all([venue.id, ...groupMemberIds].map((id) => getEventsForVenue(id)))
-          )
-            .flat()
-            .filter((e) => !isPastEvent(e, now)).length
-        : null;
-      return { slug, venue, upcomingCount };
-    }),
-  );
-
-  // Every other venue page (sitemap/link hygiene, 2026-10-09): non-curated
-  // venues still have real, indexable /venues/[slug] pages listed in the
-  // sitemap, so they get a plain crawlable link here — below, and visually
-  // secondary to, the curated cards, which stay exactly as they are. Grouped
-  // members (e.g. Ideal Bar) are skipped: their URL redirects to the group's
-  // primary page.
-  const curatedSlugs = new Set(CURATED_VENUE_SLUGS);
-  const otherVenues = registryVenues
-    .filter((v) => !curatedSlugs.has(v.slug) && !getPublicVenueGroupPrimaryId(v.id))
-    .sort((a, b) => publicVenueLabel(a).localeCompare(publicVenueLabel(b), "da"));
+  const counts = await getUpcomingEventCountsByVenue(registryVenues.flatMap(venueIdsFor), now);
+  const curated = CURATED_VENUE_SLUGS.map((slug) => {
+    const venue = bySlug.get(slug);
+    const upcomingCount = venue ? venueIdsFor(venue).reduce((sum, id) => sum + (counts.get(id) ?? 0), 0) : null;
+    return { slug, venue, upcomingCount };
+  });
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -54,11 +38,10 @@ export default async function VenuesPage() {
         Venues
       </h1>
       <p className="mt-2 max-w-xl text-sm text-text-secondary">
-        A curated guide to Copenhagen venues dedicated to electronic music or regularly hosting standalone
-        electronic events.
+        A curated guide to Copenhagen venues where electronic music is the main focus.
       </p>
       <p className="mt-2 max-w-xl text-xs text-text-tertiary">
-        This is a highlights list, not a full directory — electronic events on this site may appear at other
+        This is a highlights list, not a full directory - electronic events on this site may appear at other
         Copenhagen venues too.
       </p>
 
@@ -71,26 +54,6 @@ export default async function VenuesPage() {
           ) : null,
         )}
       </ul>
-
-      {otherVenues.length > 0 && (
-        <section className="mt-10" aria-labelledby="other-venues">
-          <h2 id="other-venues" className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
-            Other venues
-          </h2>
-          <ul aria-labelledby="other-venues" className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-text-secondary">
-            {otherVenues.map((v) => (
-              <li key={v.id}>
-                <Link
-                  href={`/venues/${v.slug}`}
-                  className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
-                >
-                  {publicVenueLabel(v)}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </div>
   );
 }

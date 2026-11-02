@@ -2,7 +2,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import EventDescription from "./EventDescription";
+
+const fixture = (name: string) => readFileSync(path.join(__dirname, "..", "lib", "__fixtures__", "descriptions", name), "utf8");
 
 afterEach(cleanup);
 
@@ -69,5 +73,48 @@ describe("EventDescription — Show more / Show less", () => {
     expect(button.textContent).toBe("Show less");
     fireEvent.click(button);
     expect(folded.hasAttribute("hidden")).toBe(true);
+  });
+});
+
+describe("EventDescription — recovered structure and practical section (2026-10-30)", () => {
+  it("shows a flat admin-created text with its sections, and its practical part folded under its own toggle", () => {
+    const html = renderToString(<EventDescription text={fixture("den-anden-side-morpheus-flat.txt")} />);
+    const { container } = render(<EventDescription text={fixture("den-anden-side-morpheus-flat.txt")} />);
+    const details = container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toContain("Practical information");
+    expect(details.textContent).toContain("Presale 170 DKK");
+    expect(details.textContent).toContain("Code Of Conduct");
+    // Lineup stays in the About text, outside the practical section.
+    const lineup = [...container.querySelectorAll("h3")].find((h) => h.textContent === "Lineup")!;
+    expect(details.contains(lineup)).toBe(false);
+    // Everything is in the server-rendered HTML.
+    expect(html).toContain("The Awareness Team is at the club every weekend");
+    expect(html).toContain("Beste Hira Alina Niels Fisker");
+  });
+
+  it("uses the source's own 'Practical information' title as the toggle instead of repeating it", () => {
+    const about = "A long description of the night and its artists. ".repeat(6);
+    const { container } = render(<EventDescription text={`${about}\n\nPractical Information:\nDoors at 22. Age 18+.`} />);
+    expect(container.querySelector("summary")?.textContent).toContain("Practical Information");
+    expect(container.querySelector("details h3")).toBeNull();
+    expect(container.querySelector("details")?.textContent).toContain("Doors at 22. Age 18+.");
+  });
+
+  it("keeps a text whole when practical details only appear in prose", () => {
+    const { container } = render(<EventDescription text={fixture("den-anden-side-syntharax-prose.txt")} />);
+    expect(container.querySelector("details")).toBeNull();
+  });
+
+  it("folds one long single paragraph inside that paragraph, with the full text in the HTML", () => {
+    const text = fixture("pumpehuset-icona-pop-flat.txt");
+    const { container } = render(<EventDescription text={text} />);
+    const paragraphs = container.querySelectorAll("p");
+    expect(paragraphs).toHaveLength(1);
+    const folded = paragraphs[0].querySelector("[hidden]")!;
+    expect(folded.tagName).toBe("SPAN");
+    expect(paragraphs[0].textContent!.replace(/Show (more|less)$/, "")).toBe(text.trim());
+    fireEvent.click(container.querySelector("button")!);
+    expect(paragraphs[0].querySelector("[hidden]")).toBeNull();
   });
 });

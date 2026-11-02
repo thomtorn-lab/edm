@@ -8,7 +8,7 @@ import {
   type ArtistGenreCacheStore,
   type EventGenreEnrichmentResult,
 } from "@/lib/enrichment/genreEnrichment";
-import type { GenreSlug } from "@/lib/taxonomy";
+import { isSelectableGenre, type GenreSlug } from "@/lib/taxonomy";
 import type { ConfidenceLevel } from "@/lib/types";
 
 /**
@@ -25,6 +25,11 @@ const drizzleCacheStore: ArtistGenreCacheStore = {
       .where(eq(artistGenreCache.artistNameNormalized, artistNameNormalized))
       .limit(1);
     if (!row) return null;
+    // A cached proposal that is no longer a selectable genre (the legacy
+    // "ambient-experimental", written before the genre system revision) is
+    // treated as a cache miss, so the artist is re-looked-up under the
+    // current mapping instead of re-introducing the legacy value.
+    if (row.proposedGenre != null && !isSelectableGenre(row.proposedGenre)) return null;
     return {
       artistNameNormalized: row.artistNameNormalized,
       lookupStatus: row.lookupStatus as ArtistCacheEntry["lookupStatus"],

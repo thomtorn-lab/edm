@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { selectEventsForSubscriber, selectUpcomingEventsForNewsletter } from "./eventSelection";
 import type { EventWithVenue } from "../queries";
-import type { GenreSlug, MainGenreSlug } from "../taxonomy";
+import type { GenreSlug, GenreFilterValue } from "../taxonomy";
 
 const VENUE = {
   id: "v-test",
@@ -129,17 +129,17 @@ describe("selectEventsForSubscriber", () => {
   });
 
   it("filters to only matching events for a genre-specific selection", () => {
-    const result = selectEventsForSubscriber(windowEvents, ["house"] as MainGenreSlug[]);
+    const result = selectEventsForSubscriber(windowEvents, ["house"] as GenreFilterValue[]);
     expect(result.map((e) => e.id)).toEqual(["e-house", "e-both"]);
   });
 
   it("an event matching on its secondary genre is included (OR across both assigned genres)", () => {
-    const result = selectEventsForSubscriber(windowEvents, ["disco"] as MainGenreSlug[]);
+    const result = selectEventsForSubscriber(windowEvents, ["disco"] as GenreFilterValue[]);
     expect(result.map((e) => e.id)).toEqual(["e-both"]);
   });
 
   it("an event matching multiple of the subscriber's selected genres is included exactly once, never duplicated", () => {
-    const result = selectEventsForSubscriber(windowEvents, ["disco", "house"] as MainGenreSlug[]);
+    const result = selectEventsForSubscriber(windowEvents, ["disco", "house"] as GenreFilterValue[]);
     const ids = result.map((e) => e.id);
     expect(ids).toEqual(["e-house", "e-both"]);
     expect(new Set(ids).size).toBe(ids.length);
@@ -151,7 +151,7 @@ describe("selectEventsForSubscriber", () => {
   });
 
   it("returns an empty array (not an error) when nothing matches", () => {
-    expect(selectEventsForSubscriber(windowEvents, ["psytrance"] as MainGenreSlug[])).toEqual([]);
+    expect(selectEventsForSubscriber(windowEvents, ["psytrance"] as GenreFilterValue[])).toEqual([]);
   });
 
   it("preserves the window's chronological order", () => {

@@ -29,12 +29,13 @@ export type VenueCreationPlan =
  * text looks exactly like a venue name but must never silently become a
  * standalone venue identity: Byhaven is Pumpehuset's own pop-up area (see
  * subVenueLabel() in eventPresentation.ts), Black Box / Red Box are Culture
- * Box's two rooms, consolidated into one canonical event per night. A
+ * Box's two rooms, consolidated into one canonical event per night; Den
+ * Anden Ende is Den Anden Side's small room (src/lib/denAndenSideRooms.ts). A
  * genuinely different venue that happens to share one of these names can
  * still be created — this only requires an explicit, separate confirmation
  * rather than the normal one-step create.
  */
-const PROTECTED_SUB_VENUE_NAMES = new Set(["byhaven", "black box", "red box"].map(normalizeVenueName));
+const PROTECTED_SUB_VENUE_NAMES = new Set(["byhaven", "black box", "red box", "den anden ende"].map(normalizeVenueName));
 
 export function isProtectedSubVenueName(name: string): boolean {
   return PROTECTED_SUB_VENUE_NAMES.has(normalizeVenueName(name));
@@ -79,7 +80,7 @@ export function planVenueCreation(
       kind: "needs-confirmation",
       reason:
         `"${input.name.trim()}" is normally a sub-area/room of an existing venue, not a standalone venue ` +
-        "(Byhaven is part of Pumpehuset; Black Box/Red Box are Culture Box's rooms). " +
+        "(Byhaven is part of Pumpehuset; Black Box/Red Box are Culture Box's rooms; Den Anden Ende is Den Anden Side's small room). " +
         "Confirm explicitly if this is genuinely a different venue.",
     };
   }

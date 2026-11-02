@@ -73,11 +73,11 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 }
 
 vi.mock("@/lib/queries", () => ({
-  getPublishedEventsWithVenue: vi.fn(),
-  getVenues: vi.fn(),
+  getPublishedEventSitemapEntries: vi.fn(),
+  getVenueSitemapEntries: vi.fn(),
 }));
 
-const { getPublishedEventsWithVenue, getVenues } = await import("@/lib/queries");
+const { getPublishedEventSitemapEntries, getVenueSitemapEntries } = await import("@/lib/queries");
 
 describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
   beforeEach(() => {
@@ -93,21 +93,21 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     // The module is already imported (cached) by the previous test, but
     // module-level evaluation never calls either query function — only the
     // sitemap() function body does. Confirms no top-level/import-time DB call.
-    expect(getPublishedEventsWithVenue).not.toHaveBeenCalled();
-    expect(getVenues).not.toHaveBeenCalled();
+    expect(getPublishedEventSitemapEntries).not.toHaveBeenCalled();
+    expect(getVenueSitemapEntries).not.toHaveBeenCalled();
 
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     await sitemap();
 
-    expect(getPublishedEventsWithVenue).toHaveBeenCalledTimes(1);
-    expect(getVenues).toHaveBeenCalledTimes(1);
+    expect(getPublishedEventSitemapEntries).toHaveBeenCalledTimes(1);
+    expect(getVenueSitemapEntries).toHaveBeenCalledTimes(1);
   });
 
   it("includes every existing static route, unchanged", async () => {
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -117,20 +117,32 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     }
   });
 
-  it("includes the /genres/techno landing page exactly once, on the www origin (genre page pilot, 2026-10-09)", async () => {
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+  it("includes the approved genre landing pages (Techno, House, Trance) exactly once each, on the www origin — and no other genre", async () => {
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const urls = (await sitemap()).map((r) => r.url);
-    expect(urls.filter((u) => u === "https://www.electroniccph.com/genres/techno")).toHaveLength(1);
-    // Pilot scope: no other genre page exists yet, so none may be listed.
-    expect(urls.filter((u) => u.includes("/genres/"))).toEqual(["https://www.electroniccph.com/genres/techno"]);
+    expect(urls.filter((u) => u.includes("/genres/"))).toEqual([
+      "https://www.electroniccph.com/genres/techno",
+      "https://www.electroniccph.com/genres/house",
+      "https://www.electroniccph.com/genres/trance",
+    ]);
+  });
+
+  it("SEO QA (2026-10-30): genre entries come from the central allowlist only, and no filter-parameter URL is ever listed", async () => {
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
+    const { default: sitemap } = await import("./sitemap");
+    const { indexableGenrePagePaths } = await import("@/lib/taxonomy");
+    const urls = (await sitemap()).map((r) => r.url);
+    expect(urls.filter((u) => u.includes("/genres/"))).toEqual(indexableGenrePagePaths().map((p) => `https://www.electroniccph.com${p}`));
+    expect(urls.filter((u) => u.includes("?") || u.includes("#"))).toEqual([]);
   });
 
   it("includes mocked event URLs", async () => {
     const event = makeEvent({ slug: "mocked-event-slug" });
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([event]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([event]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -139,8 +151,8 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
 
   it("includes mocked venue URLs", async () => {
     const venue = makeVenue({ slug: "mocked-venue-slug" });
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([venue]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([venue]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -148,8 +160,8 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
   });
 
   it("lists no /festivals/[slug] URL — that route only redirects to /festivals (sitemap hygiene, 2026-10-09)", async () => {
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -165,8 +177,8 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
   it("has no duplicate URLs across static, event, venue and festival routes", async () => {
     const events = [makeEvent({ id: "e-1", slug: "event-one" }), makeEvent({ id: "e-2", slug: "event-two" })];
     const venuesFixture = [makeVenue({ id: "v-1", slug: "venue-one" }), makeVenue({ id: "v-2", slug: "venue-two" })];
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
-    vi.mocked(getVenues).mockResolvedValue(venuesFixture);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue(events);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue(venuesFixture);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -182,8 +194,8 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     // indexable (Section 3 of the addendum: "no broken event venue
     // references", "underlying venue remains valid").
     const h15 = makeVenue({ id: "v-h15", slug: "h15", name: "H15" });
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([vega, idealBar, h15]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([vega, idealBar, h15]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -193,13 +205,13 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
     expect(urls).not.toContain("https://www.electroniccph.com/venues/vega-ideal-bar");
   });
 
-  it("preserves existing URL/mapping semantics: only published events (as returned by getPublishedEventsWithVenue) become event routes, keyed by slug", async () => {
-    // getPublishedEventsWithVenue itself already filters to published=true —
+  it("preserves existing URL/mapping semantics: only published events (as returned by getPublishedEventSitemapEntries) become event routes, keyed by slug", async () => {
+    // getPublishedEventSitemapEntries itself already filters to published=true —
     // this test just proves sitemap() doesn't apply any additional filter of
     // its own (unchanged from before this render-timing-only fix).
     const published = makeEvent({ id: "e-pub", slug: "published-event" });
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([published]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([published]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
@@ -211,8 +223,8 @@ describe("sitemap — build-time DB dependency removal (2026-09-07)", () => {
 
 describe("sitemap/robots — single www origin (domain consistency, 2026-10-06)", () => {
   it("every sitemap URL and the robots.txt sitemap reference use https://www.electroniccph.com, never the redirecting bare host", async () => {
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue([]);
-    vi.mocked(getVenues).mockResolvedValue([]);
+    vi.mocked(getPublishedEventSitemapEntries).mockResolvedValue([]);
+    vi.mocked(getVenueSitemapEntries).mockResolvedValue([]);
     const { default: sitemap } = await import("./sitemap");
     const { default: robots } = await import("./robots");
     const result = await sitemap();

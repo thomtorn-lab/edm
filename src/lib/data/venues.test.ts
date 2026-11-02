@@ -15,38 +15,50 @@ import {
  * exercised at the page level — src/app/venues/page.test.tsx and
  * src/app/venues/[slug]/page.test.tsx).
  */
-describe("CURATED_VENUE_SLUGS — venues-subsite visibility decision (2026-09-11)", () => {
+describe("CURATED_VENUE_SLUGS — approved nine-venue list (2026-10-30)", () => {
+  const APPROVED = [
+    "culture-box",
+    "hangaren",
+    "den-anden-side",
+    "module",
+    "jolene",
+    "baggen",
+    "poolen",
+    "klub-werkstatt",
+    "pylonen",
+  ];
   const REMOVED = [
+    "basement",
+    "pumpehuset",
+    "bolsjefabrikken",
+    "tap1",
+    "vega",
+    "alice",
+    "vega-ideal-bar",
     "h15",
     "hotel-cecil",
-    "klub-werkstatt",
     "halvandet",
-    "pylonen",
     "underwerket",
     "mayhem",
     "odds-and-ends",
     "rust",
   ];
 
+  it("lists exactly the nine approved venues, in editorial order", () => {
+    expect(CURATED_VENUE_SLUGS).toEqual(APPROVED);
+  });
+
+  it.each(APPROVED)("'%s' is a real registry venue, so its card renders", (slug) => {
+    expect(VENUES.find((v) => v.slug === slug)).toBeDefined();
+  });
+
   it.each(REMOVED)("no longer lists '%s' as a public directory entry", (slug) => {
     expect(CURATED_VENUE_SLUGS).not.toContain(slug);
-  });
-
-  it("no longer lists the old 'vega-ideal-bar' entry", () => {
-    expect(CURATED_VENUE_SLUGS).not.toContain("vega-ideal-bar");
-  });
-
-  it("lists the new overall 'vega' entry", () => {
-    expect(CURATED_VENUE_SLUGS).toContain("vega");
   });
 
   it.each(REMOVED)("'%s' remains a real, event-linkable registry entry — removal is presentation-only, never a data deletion", (slug) => {
     const row = VENUES.find((v) => v.slug === slug);
     expect(row).toBeDefined();
-  });
-
-  it("unrelated, still-curated venues (e.g. Culture Box) are unaffected", () => {
-    expect(CURATED_VENUE_SLUGS).toContain("culture-box");
   });
 });
 

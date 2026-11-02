@@ -137,3 +137,19 @@ describe("suggestSecondaryGenre", () => {
     });
   });
 });
+
+describe("genre system revision (2026-10-24) — suggestions follow the pair rules (contract K6)", () => {
+  it("never suggests Electronic / Other as a second genre", () => {
+    expect(suggestSecondaryGenre("Techno, Electronic", "techno", "high")).not.toBe("electronic-other");
+  });
+
+  it("never suggests a main genre's own subgenre or parent", () => {
+    expect(suggestSecondaryGenre("Trance, Psytrance", "trance", "high")).toBeNull();
+    expect(suggestSecondaryGenre("Hard Techno, Techno", "hard-techno", "high")).toBeNull();
+  });
+
+  it("still suggests a genre from a different family", () => {
+    expect(suggestSecondaryGenre("Techno, House", "techno", "high")).toBe("house");
+    expect(suggestSecondaryGenre("Industrial Techno, Breakbeat", "industrial-techno", "high")).toBe("breakbeat");
+  });
+});
