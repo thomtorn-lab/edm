@@ -71,6 +71,12 @@ Overgenrer udledes altid af hierarkiet (`withDerivedParents`). De gemmes aldrig 
 - Electronic / Other kun alene.
 - Valideringen køres kun, når en gem-handling ændrer et genrefelt. Eksisterende admin-låste kombinationer bevares og blokerer ikke andre redigeringer.
 
+**Lagring og lås** (2026-11-02, `genreFieldsFromTags`, `resolveAdminGenreTags`, `GENRE_LOCK_FIELDS`):
+- `subgenres` er den autoritative genreværdi. `primaryGenre` er altid `subgenres[0]` og skrives kun via `genreFieldsFromTags` (admin, sync, Discovery Queue, admin-indsæt). Et event har altid mindst én genre.
+- Visning, filtrering, søgning, nyhedsbrev og admin-editor læser `subgenres` (`eventGenreTags`). En gemt `primaryGenre`, der afviger, ignoreres og repareres ikke stille af et urelateret gem.
+- En manuel genreændring låser hele klassifikationen (`primaryGenre` og `subgenres`). En eksisterende lås på ét af navnene beskytter begge mod sync. Ændres kun den sekundære genre, bevares hovedgenren.
+- "Add event from URL" sender kun en hovedgenre: et nyt valg erstatter hele klassifikationen og fjerner en eventuel sekundær genre (vises som note i formularen). Samme genre som i dag ændrer intet.
+
 **Automatisk klassifikation:**
 
 | Kilde | Resultat |

@@ -25,3 +25,24 @@ describe("eventMatchesQuery — genre text", () => {
     expect(eventMatchesQuery(event(["ambient-experimental"]), undefined, "ambient")).toBe(true);
   });
 });
+
+// Genre storage (2026-11-02): search matches only the genres an event shows.
+describe("eventMatchesQuery — only shown genres are searchable", () => {
+  it("a stored primaryGenre that disagrees with subgenres is not searchable", () => {
+    const inconsistent = { title: "Night", artists: [], primaryGenre: "electronic-other" as GenreSlug, subgenres: ["house", "techno"] as GenreSlug[] };
+    expect(eventMatchesQuery(inconsistent, undefined, "electronic")).toBe(false);
+    expect(eventMatchesQuery(inconsistent, undefined, "house")).toBe(true);
+    expect(eventMatchesQuery(inconsistent, undefined, "techno")).toBe(true);
+  });
+
+  it("a hidden subgenre's parent is not searchable either (Steamboi: industrial-techno hidden, Industrial + Trance shown)", () => {
+    const steamboi = { title: "Black Box", artists: [], primaryGenre: "industrial-techno" as GenreSlug, subgenres: ["industrial", "trance"] as GenreSlug[] };
+    expect(eventMatchesQuery(steamboi, undefined, "industrial techno")).toBe(false);
+    expect(eventMatchesQuery(steamboi, undefined, "techno")).toBe(false);
+    expect(eventMatchesQuery(steamboi, undefined, "industrial")).toBe(true);
+  });
+
+  it("a row with no subgenres falls back to primaryGenre", () => {
+    expect(eventMatchesQuery({ title: "Night", artists: [], primaryGenre: "techno", subgenres: [] }, undefined, "techno")).toBe(true);
+  });
+});

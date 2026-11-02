@@ -78,6 +78,8 @@ const {
   adminOverrideSourceCancellation,
   adminClearRescheduledStatus,
   applySourceSyncPatch,
+  clearManualOverride,
+  createEvent,
 } = await import("./writes");
 const { buildSyncPatch } = await import("../lib/sync");
 const { END_BEFORE_START_ERROR } = await import("../lib/datetime");
@@ -749,13 +751,13 @@ describe("applyAdminEventEdit — primaryGenre/subgenres lockstep (genre taxonom
     expect(patch.subgenres).toEqual(["electronic-other"]);
   });
 
-  it("does not override an explicitly-provided subgenres value — a caller that already sends both fields together (e.g. EventManager.tsx) keeps full control", async () => {
+  it("an explicitly-provided subgenres value is authoritative: primaryGenre is stored as subgenres[0], never a conflicting sent value (genre storage, 2026-11-02)", async () => {
     selectResults = [[{ id: "e-1", overriddenFields: [] }]];
 
     await applyAdminEventEdit("e-1", { primaryGenre: "techno", subgenres: ["melodic-techno"] });
 
     const patch = updateSetMock.mock.calls[0][0];
-    expect(patch.primaryGenre).toBe("techno");
+    expect(patch.primaryGenre).toBe("melodic-techno");
     expect(patch.subgenres).toEqual(["melodic-techno"]);
   });
 
@@ -1197,11 +1199,11 @@ describe("admin saves lock only changed or cleared fields (editorial screening, 
     expect(written).not.toHaveProperty("startDatetime");
   });
 
-  it("a genre edit still derives subgenres, and an unchanged genre on a full-form save derives nothing", async () => {
+  it("a genre edit still derives subgenres and locks the whole classification; an unchanged genre on a full-form save derives nothing", async () => {
     selectResults = [[{ ...storedEvent }]];
     await applyAdminEventEdit("e-1", addEventFromUrlPayload({ primaryGenre: "hard-techno" }));
     expect(updateSetMock.mock.calls[0][0]).toMatchObject({ primaryGenre: "hard-techno", subgenres: ["hard-techno"] });
-    expect(updateSetMock.mock.calls[0][0].overriddenFields).toEqual(["primaryGenre"]);
+    expect(updateSetMock.mock.calls[0][0].overriddenFields).toEqual(["primaryGenre", "subgenres"]);
   });
 
   // Exactly what DiscoveryQueue.tsx "Save edit" posts: every editor field.
@@ -1590,5 +1592,191 @@ describe("recordWithheldDescription — a source's Danish text kept in the chang
     expect(await recordWithheldDescription("e-1", "src-pumpehuset", DA, DA)).toBe(false);
     expect(insertValuesMock).not.toHaveBeenCalled();
     expect(updateMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Genre storage (2026-11-02): subgenres is the authoritative genre field,
+ * primaryGenre always mirrors subgenres[0], and an admin genre decision locks
+ * the whole classification. Reproduces both divergence variants found in the
+ * 2026-11-02 genre QA (3 Production events had primaryGenre ≠ subgenres[0]).
+ */
+describe("genre storage — subgenres authoritative, primaryGenre = subgenres[0], one genre lock", () => {
+  const genreRow = (overrides: Record<string, unknown> = {}) => ({
+    id: "e-genre",
+    title: "Love.Rave. - Autumn Edition",
+    description: null,
+    artists: [],
+    venueId: "v-jolene",
+    subVenue: null,
+    startDatetime: new Date("2026-11-01T14:00:00.000Z"),
+    endDatetime: null,
+    officialEventUrl: null,
+    ticketUrl: null,
+    facebookUrl: null,
+    residentAdvisorUrl: null,
+    imageUrl: null,
+    canonicalSourceId: "src-x",
+    primaryGenre: "house",
+    subgenres: ["house"],
+    overriddenFields: [] as string[],
+    adminUnpublishReason: null,
+    published: true,
+    ...overrides,
+  });
+
+  /** applyAdminEventEdit on `row`; returns the row as stored afterwards. */
+  async function adminSave(row: Record<string, unknown>, patch: Record<string, unknown>) {
+    updateSetMock.mockClear();
+    selectResults = [[{ ...row }]];
+    await applyAdminEventEdit(row.id as string, patch);
+    const written = (updateSetMock.mock.calls[0]?.[0] ?? {}) as Record<string, unknown>;
+    return { ...row, ...written };
+  }
+
+  /** A source sync that now classifies the event as `genre`; returns the row as stored afterwards. */
+  async function syncGenre(row: Record<string, unknown>, genre: string) {
+    const raw = { sourceId: "src-x", title: row.title, description: null } as unknown as Parameters<typeof buildSyncPatch>[0];
+    const target = {
+      ...row,
+      startDatetime: (row.startDatetime as Date).toISOString(),
+      endDatetime: null,
+      soldOut: false,
+      cancelled: false,
+      postponed: false,
+    } as unknown as Parameters<typeof buildSyncPatch>[2];
+    const { patch } = buildSyncPatch(raw, { resolvedVenueId: null, normalizedArtists: [], genre, genreConfidence: "high" } as never, target);
+    updateSetMock.mockClear();
+    selectResults = [[{ ...row }]];
+    const result = await applySourceSyncPatch(row.id as string, "src-x", patch);
+    const written = (updateSetMock.mock.calls[0]?.[0] ?? {}) as Record<string, unknown>;
+    return { row: { ...row, ...written }, result, proposed: patch };
+  }
+
+  it("R1 (variant A): changing only the secondary genre keeps the main genre, locks both fields, and a later sync cannot split them", async () => {
+    const afterAdmin = await adminSave(genreRow(), { primaryGenre: "house", subgenres: ["house", "techno"] });
+    expect(afterAdmin.primaryGenre).toBe("house");
+    expect(afterAdmin.subgenres).toEqual(["house", "techno"]);
+    expect(afterAdmin.overriddenFields).toEqual(["primaryGenre", "subgenres"]);
+
+    const { row, result, proposed } = await syncGenre(afterAdmin, "electronic-other");
+    expect(proposed).toMatchObject({ primaryGenre: "electronic-other", subgenres: ["electronic-other"] });
+    expect(result.applied).not.toContain("primaryGenre");
+    expect(result.skipped).toEqual(expect.arrayContaining(["primaryGenre", "subgenres"]));
+    expect(row.primaryGenre).toBe("house");
+    expect(row.subgenres).toEqual(["house", "techno"]);
+  });
+
+  it("R1b: an existing row locked under 'subgenres' only (the 8 Production rows) is protected on both fields, without rewriting its overrides", async () => {
+    const stored = genreRow({ subgenres: ["house", "techno"], overriddenFields: ["subgenres"] });
+    const { row } = await syncGenre(stored, "electronic-other");
+    expect(row.primaryGenre).toBe("house");
+    expect(row.subgenres).toEqual(["house", "techno"]);
+    expect(row.overriddenFields).toEqual(["subgenres"]);
+  });
+
+  it("R2 (variant B): Add event from URL's primaryGenre-only save locks both fields, so a sync cannot replace the shown genres", async () => {
+    const afterAdmin = await adminSave(genreRow({ primaryGenre: "techno", subgenres: ["techno"] }), { primaryGenre: "hard-techno" });
+    expect(afterAdmin).toMatchObject({ primaryGenre: "hard-techno", subgenres: ["hard-techno"] });
+    expect(afterAdmin.overriddenFields).toEqual(["primaryGenre", "subgenres"]);
+
+    const { row } = await syncGenre(afterAdmin, "trance");
+    expect(row).toMatchObject({ primaryGenre: "hard-techno", subgenres: ["hard-techno"] });
+  });
+
+  it("R2b: a primaryGenre-only save that repeats the shown main genre leaves an existing secondary genre in place and locks nothing", async () => {
+    updateSetMock.mockClear();
+    selectResults = [[genreRow({ primaryGenre: "techno", subgenres: ["techno", "house"] })]];
+    await applyAdminEventEdit("e-genre", { primaryGenre: "techno" });
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("R2c: a primaryGenre-only save with a NEW main genre is an explicit replacement — the secondary genre is removed", async () => {
+    const afterAdmin = await adminSave(genreRow({ primaryGenre: "techno", subgenres: ["techno", "house"] }), { primaryGenre: "trance" });
+    expect(afterAdmin).toMatchObject({ primaryGenre: "trance", subgenres: ["trance"] });
+  });
+
+  it("R3: a subgenres-only patch also sets primaryGenre to subgenres[0]", async () => {
+    const afterAdmin = await adminSave(genreRow(), { subgenres: ["techno", "house"] });
+    expect(afterAdmin).toMatchObject({ primaryGenre: "techno", subgenres: ["techno", "house"] });
+    expect(afterAdmin.overriddenFields).toEqual(["primaryGenre", "subgenres"]);
+  });
+
+  it("an explicit attempt to clear every genre is rejected; nothing is written", async () => {
+    selectResults = [[genreRow()]];
+    await expect(applyAdminEventEdit("e-genre", { subgenres: [] })).rejects.toThrow("An event needs at least one genre.");
+    expect(updateSetMock).not.toHaveBeenCalled();
+  });
+
+  it("an unrelated save on a row whose stored primaryGenre disagrees with its shown genres neither repairs nor locks the genre (no implicit backfill)", async () => {
+    const inconsistent = genreRow({ primaryGenre: "electronic-other", subgenres: ["house", "techno"], overriddenFields: ["subgenres"] });
+    const afterAdmin = await adminSave(inconsistent, { title: "Love.Rave. – Autumn", primaryGenre: "house", subgenres: ["house", "techno"] });
+    expect(afterAdmin.title).toBe("Love.Rave. – Autumn");
+    expect(afterAdmin.primaryGenre).toBe("electronic-other");
+    const written = updateSetMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("primaryGenre");
+    expect(written).not.toHaveProperty("subgenres");
+    expect(written.overriddenFields).toEqual(["subgenres", "title"]);
+  });
+
+  it("a real genre change on an inconsistent row stores a consistent pair (the approved manual correction path)", async () => {
+    const inconsistent = genreRow({ primaryGenre: "electronic-other", subgenres: ["house", "techno"], overriddenFields: ["subgenres"] });
+    const afterAdmin = await adminSave(inconsistent, { primaryGenre: "house", subgenres: ["house"] });
+    expect(afterAdmin).toMatchObject({ primaryGenre: "house", subgenres: ["house"] });
+    expect(afterAdmin.overriddenFields).toEqual(["subgenres", "primaryGenre"]);
+  });
+
+  it("events without a genre lock keep today's sync behaviour: a new source genre replaces both fields together", async () => {
+    const { row, result } = await syncGenre(genreRow({ primaryGenre: "house", subgenres: ["house"] }), "techno");
+    expect(result.applied).toEqual(expect.arrayContaining(["primaryGenre", "subgenres"]));
+    expect(row).toMatchObject({ primaryGenre: "techno", subgenres: ["techno"] });
+  });
+
+  it("events without a genre lock and an unchanged source genre get no genre patch (compared with the shown genre)", async () => {
+    const { proposed } = await syncGenre(genreRow({ primaryGenre: "house", subgenres: ["house", "techno"] }), "house");
+    expect(proposed).not.toHaveProperty("primaryGenre");
+    expect(proposed).not.toHaveProperty("subgenres");
+  });
+
+  it("clearManualOverride on either genre field unlocks the whole classification", async () => {
+    selectResults = [[genreRow({ overriddenFields: ["subgenres", "title"] })]];
+    await clearManualOverride("e-genre", ["primaryGenre"]);
+    expect((updateSetMock.mock.calls[0][0] as Record<string, unknown>).overriddenFields).toEqual(["title"]);
+  });
+
+  it("createEvent stores primaryGenre = subgenres[0] and never an empty subgenres (admin paste with no genre)", async () => {
+    const base = {
+      id: "e-new",
+      title: "Pasted",
+      slug: "pasted-e-new",
+      description: null,
+      artists: [],
+      startDatetime: new Date("2026-12-01T20:00:00.000Z"),
+      endDatetime: null,
+      venueId: "v-x",
+      subVenue: null,
+      genreConfidence: "low",
+      officialEventUrl: null,
+      ticketUrl: null,
+      facebookUrl: null,
+      residentAdvisorUrl: null,
+      imageUrl: null,
+      priceFrom: null,
+      currency: null,
+      soldOut: false,
+      cancelled: false,
+      published: true,
+      confidence: "low",
+      canonicalSourceId: null,
+    };
+    const inserted = () =>
+      insertValuesMock.mock.calls.find((c) => typeof c[0] === "object" && c[0] !== null && "slug" in (c[0] as object))?.[0] as Record<string, unknown>;
+
+    await createEvent({ ...base, primaryGenre: "electronic-other", subgenres: [] } as never, "admin-paste");
+    expect(inserted()).toMatchObject({ primaryGenre: "electronic-other", subgenres: ["electronic-other"] });
+
+    insertValuesMock.mockClear();
+    await createEvent({ ...base, primaryGenre: "techno", subgenres: ["house", "techno"] } as never, "admin-paste");
+    expect(inserted()).toMatchObject({ primaryGenre: "house", subgenres: ["house", "techno"] });
   });
 });

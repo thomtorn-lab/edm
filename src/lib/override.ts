@@ -1,3 +1,5 @@
+import { expandGenreLockGroup } from "./taxonomy";
+
 /**
  * Field-level manual-override protection (spec section 46; user directive
  * step 3). When an admin hand-corrects a field, that field name is recorded
@@ -52,7 +54,9 @@ export function stripOverriddenFields<T extends Record<string, unknown>>(
   incomingPatch: T,
   overriddenFields: string[],
 ): Partial<T> {
-  const protectedSet = new Set(overriddenFields);
+  // primaryGenre/subgenres are one lock (taxonomy.ts GENRE_LOCK_FIELDS): a
+  // lock stored under either name protects the whole genre classification.
+  const protectedSet = new Set(expandGenreLockGroup(overriddenFields));
   const result: Partial<T> = {};
   for (const key of Object.keys(incomingPatch) as (keyof T)[]) {
     if (protectedSet.has(key as string)) continue;

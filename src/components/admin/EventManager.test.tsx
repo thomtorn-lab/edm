@@ -1057,3 +1057,47 @@ describe("EventManager — withheld source description (2026-10-25)", () => {
     expect(screen.queryByText("Source description not shown publicly (Danish)")).toBeNull();
   });
 });
+
+describe("EventManager — genre storage (2026-11-02): edits start from the shown genres", () => {
+  afterEach(cleanup);
+
+  // Love.Rave. as stored in Production on 2026-11-02: primaryGenre diverged
+  // from the shown genres after a secondary-only edit plus a later sync.
+  const inconsistent = () => makeEvent({ primaryGenre: "electronic-other", subgenres: ["house", "techno"] });
+
+  it("pre-fills Genre and Secondary genre from subgenres, not from a disagreeing stored primaryGenre", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<EventManager events={[inconsistent()]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText("Genre") as HTMLSelectElement).value).toBe("house");
+    expect((screen.getByLabelText("Secondary genre (optional)") as HTMLSelectElement).value).toBe("techno");
+  });
+
+  it("changing only the secondary genre sends the shown main genre first, as one ordered pair", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[inconsistent()]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Secondary genre (optional)"), { target: { value: "disco" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.primaryGenre).toBe("house");
+    expect(body.patch.subgenres).toEqual(["house", "disco"]);
+  });
+
+  it("saving without touching the genre selects sends no genre fields for an inconsistent row", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[inconsistent()]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/End time/), { target: { value: "2026-12-02T06:00" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch).not.toHaveProperty("primaryGenre");
+    expect(body.patch).not.toHaveProperty("subgenres");
+  });
+});
