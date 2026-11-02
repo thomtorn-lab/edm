@@ -82,6 +82,11 @@ function label(e: DasEventSnapshot): string {
   return `${day}  ${e.id}  /events/${e.slug}  "${e.title}"  [${flags}; source ${e.canonicalSourceId ?? "admin"}]`;
 }
 
+function indent(text: string, n: number): string {
+  const pad = " ".repeat(n);
+  return text.split("\n").map((l) => pad + l).join("\n");
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.mode;
@@ -119,7 +124,11 @@ async function main() {
 
   console.log("\n=== NEEDS MANUAL REVIEW (combined lineup kept) ===");
   for (const p of plan.plans.filter((x) => x.outcome === "unresolved")) {
-    console.log(`${label(p.event)}\n    ${p.reason}${p.event.residentAdvisorUrl ? `\n    RA: ${p.event.residentAdvisorUrl}` : ""}${p.event.officialEventUrl ? `\n    source: ${p.event.officialEventUrl}` : ""}`);
+    console.log(`${label(p.event)}\n    ${p.reason}${p.event.residentAdvisorUrl ? `\n    RA: ${p.event.residentAdvisorUrl}` : ""}${p.event.officialEventUrl ? `\n    source: ${p.event.officialEventUrl}` : ""}`);    console.log(`    artists (stored order): ${p.event.artists.join(" | ") || "(none)"}`);
+    console.log(`    admin-locked fields: ${p.event.overriddenFields.join(", ") || "(none)"}`);
+    for (const [room, list] of Object.entries(p.rooms)) console.log(`    verified ${room}: ${(list ?? []).join(" | ")}`);
+    if (p.blockedPatch) console.log(`    held back by admin lock (NOT written):\n${indent(JSON.stringify(p.blockedPatch, null, 2), 6)}`);
+    console.log(`    stored description:\n${indent(p.event.description ?? "(none)", 6)}`);
   }
 
   console.log("\n=== SAME NIGHT, SEPARATE ROOM EVENTS (left separate — check whether they are one club night) ===");

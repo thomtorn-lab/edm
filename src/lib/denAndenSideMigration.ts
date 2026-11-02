@@ -40,7 +40,11 @@ export interface DasEventPlan {
   outcome: PlanOutcome;
   verdict: RoomVerdict;
   reason: string;
+  /** The verified per-room artist split (empty unless the verdict places artists in rooms). */
+  rooms: Partial<Record<string, string[]>>;
   patch: { title?: string; description?: string | null; artists?: string[]; venueId?: string };
+  /** The verified change an admin lock held back, for the manual-review report only — never written. */
+  blockedPatch?: { title?: string; description?: string | null; artists?: string[]; venueId?: string };
 }
 
 export interface SameNightGroup {
@@ -72,7 +76,7 @@ export function planEvent(event: DasEventSnapshot): DasEventPlan {
   if (s.artists.length !== event.artists.length || s.artists.some((a, i) => a !== event.artists[i])) patch.artists = s.artists;
   if (onSmallRoomVenue) patch.venueId = DEN_ANDEN_SIDE_VENUE_ID;
 
-  const base = { event, verdict: s.analysis.verdict, reason: s.analysis.reason };
+  const base = { event, verdict: s.analysis.verdict, reason: s.analysis.reason, rooms: s.analysis.rooms };
 
   if (s.analysis.verdict === "unresolved") {
     // The venue move needs no room evidence and is always safe on its own.
@@ -88,6 +92,7 @@ export function planEvent(event: DasEventSnapshot): DasEventPlan {
       outcome: "unresolved",
       reason: `room split verified (${s.analysis.verdict}), but ${locked.join(", ")} ${locked.length > 1 ? "were" : "was"} edited by an admin — not overwritten; review manually`,
       patch: onSmallRoomVenue ? { venueId: DEN_ANDEN_SIDE_VENUE_ID } : {},
+      blockedPatch: patch,
     };
   }
 
