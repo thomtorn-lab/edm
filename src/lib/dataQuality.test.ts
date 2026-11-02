@@ -98,6 +98,13 @@ describe("end times", () => {
     expect(keys(ev({ ...techno, venueId: "v-vega", startDatetime: "2026-10-30T21:00:00Z", endDatetime: "2026-10-30T23:30:00Z" }))).toEqual(["early_end_for_evening_start"]);
   });
 
+  it("reads the genre the event shows (subgenres[0]), not a disagreeing stored primaryGenre (genre storage, 2026-11-02)", () => {
+    const shownTechno = { title: "Some Artist", primaryGenre: "electronic-other" as const, subgenres: ["techno" as const], venueId: "v-module", startDatetime: "2026-10-30T19:00:00Z", endDatetime: "2026-10-30T22:30:00Z" };
+    expect(keys(ev(shownTechno))).toEqual(["early_end_for_evening_start"]);
+    const shownElectronic = { ...shownTechno, primaryGenre: "techno" as const, subgenres: ["electronic-other" as const] };
+    expect(keys(ev(shownElectronic))).toEqual([]);
+  });
+
   it("does not treat electro, ambient or generic electronic genres as club evidence on their own", () => {
     for (const primaryGenre of ["electro", "ambient-experimental", "electronic-other"] as const) {
       expect(keys(ev({ title: "Some Artist", primaryGenre, venueId: "v-module", startDatetime: "2026-10-30T21:00:00Z", endDatetime: "2026-10-30T22:30:00Z" }))).toEqual([]);
