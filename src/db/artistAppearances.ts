@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { db } from "./client";
-import { artists, eventArtists, events, eventSoundcloudLinks, soundcloudLinkBlocks, venues } from "./schema";
+import { alertFollows, artists, eventArtists, events, eventSoundcloudLinks, soundcloudLinkBlocks, venues } from "./schema";
 import { artistIdentityKey } from "../lib/artistIdentity/lineupIdentity";
 import { reconcileAppearances, type ReconcileAppearance, type ReconcileArtist, type Confidence } from "../lib/artistIdentity/reconcile";
 
@@ -74,6 +74,11 @@ export async function reconcileArtistAppearances(now: Date = new Date()): Promis
     }
     if (result.verifiedArtistIds.length > 0) {
       await tx.update(artists).set({ status: "verified", updatedAt: now }).where(inArray(artists.id, result.verifiedArtistIds));
+      // A requested artist just verified: confirmed follows count from now, so nothing already listed is mailed.
+      await tx
+        .update(alertFollows)
+        .set({ activeSince: now })
+        .where(and(inArray(alertFollows.artistId, result.verifiedArtistIds), sql`${alertFollows.activeSince} IS NOT NULL`));
     }
     for (const u of result.upserts) await upsertAppearance(tx, u, now);
   });
