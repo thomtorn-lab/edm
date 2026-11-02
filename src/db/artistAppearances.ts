@@ -158,3 +158,34 @@ export async function listReviewAppearances(now: Date = new Date()) {
     .where(and(eq(eventArtists.confidence, "review"), isNull(eventArtists.removedAt), gt(events.startDatetime, now)))
     .orderBy(events.startDatetime);
 }
+
+export interface FollowableArtist {
+  id: string;
+  displayName: string;
+  disambiguation: string | null;
+  upcomingEvents: number;
+}
+
+/**
+ * Everyone who can be followed: identities seen as performers (not
+ * excluded or rejected), plus verified ones. Requested artists are not
+ * listed publicly; only their requester sees them, on the manage page.
+ */
+export async function listFollowableArtists(now: Date = new Date()): Promise<FollowableArtist[]> {
+  const rows = await db.execute<{ id: string; display_name: string; disambiguation: string | null; upcoming: number }>(sql`
+    SELECT a.id, a.display_name, a.disambiguation,
+      COUNT(DISTINCT ea.event_id) FILTER (
+        WHERE ea.confidence IN ('high', 'confirmed') AND ea.removed_at IS NULL
+          AND e.published = true AND e.cancelled = false AND e.admin_unpublish_reason IS NULL AND e.source_cancelled_at IS NULL
+          AND COALESCE(e.end_datetime, e.start_datetime + interval '1 day') > ${now}
+      )::int AS upcoming
+    FROM artists a
+    LEFT JOIN event_artists ea ON ea.artist_id = a.id
+    LEFT JOIN events e ON e.id = ea.event_id
+    WHERE a.merged_into_id IS NULL AND a.status IN ('auto', 'verified')
+    GROUP BY a.id
+    HAVING a.status = 'verified' OR bool_or(ea.confidence IN ('high', 'confirmed', 'review'))
+    ORDER BY a.display_name
+  `);
+  return rows.rows.map((r) => ({ id: r.id, displayName: r.display_name, disambiguation: r.disambiguation, upcomingEvents: Number(r.upcoming) }));
+}

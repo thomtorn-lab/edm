@@ -10,5 +10,8 @@ import { isWellFormedToken } from "@/lib/artistAlerts/tokens";
 export async function POST(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
   if (isWellFormedToken(token)) await unsubscribeArtistAlerts(token);
+  // The manage page's own button gets a page back; one-click mail clients just get 200.
+  const form = request.headers.get("content-type")?.includes("form") ? await request.formData().catch(() => null) : null;
+  if (form?.get("from") === "manage") return NextResponse.redirect(new URL("/artists?unsubscribed=1", request.url), 303);
   return NextResponse.json({ ok: true });
 }
