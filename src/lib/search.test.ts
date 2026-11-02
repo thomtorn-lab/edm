@@ -42,7 +42,8 @@ describe("eventMatchesQuery — only shown genres are searchable", () => {
     expect(eventMatchesQuery(steamboi, undefined, "industrial")).toBe(true);
   });
 
-  it("a row with no subgenres falls back to primaryGenre", () => {
-    expect(eventMatchesQuery({ title: "Night", artists: [], primaryGenre: "techno", subgenres: [] }, undefined, "techno")).toBe(true);
+  it("a row that shows no genre matches no genre text, even with a stored primaryGenre", () => {
+    const noShownGenre = { title: "Night", artists: [], primaryGenre: "techno" as GenreSlug, subgenres: [] as GenreSlug[] };
+    expect(eventMatchesQuery(noShownGenre, undefined, "techno")).toBe(false);
   });
 });

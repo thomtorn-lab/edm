@@ -1,5 +1,5 @@
 import type { EventRecord, Venue } from "./types";
-import { eventGenreTags, getGenre, withDerivedParents } from "./taxonomy";
+import { getGenre, withDerivedParents } from "./taxonomy";
 
 /**
  * Free-text search over title, artists, lineup, venue and genre (spec
@@ -7,12 +7,13 @@ import { eventGenreTags, getGenre, withDerivedParents } from "./taxonomy";
  * parent genres (taxonomy.ts withDerivedParents), so "drum & bass" also
  * finds a Jungle event — the same hierarchy the genre filter uses. A
  * standalone genre gets no parent: "techno" never matches an
- * Industrial-only event. Only the genres the event shows count
- * (eventGenreTags reads subgenres); a stored primaryGenre that disagrees
- * with them is never searchable.
+ * Industrial-only event. Only the genres the event shows count — the same
+ * `subgenres` the event row, event page and genre filter read — so a stored
+ * primaryGenre is never searchable on its own, and a row that shows no genre
+ * matches no genre text.
  */
 export function eventMatchesQuery(
-  event: Pick<EventRecord, "title" | "artists" | "subgenres" | "primaryGenre">,
+  event: Pick<EventRecord, "title" | "artists" | "subgenres">,
   venue: Pick<Venue, "name" | "aliases"> | undefined,
   query: string,
 ): boolean {
@@ -24,7 +25,7 @@ export function eventMatchesQuery(
     ...event.artists,
     venue?.name ?? "",
     ...(venue?.aliases ?? []),
-    ...withDerivedParents(eventGenreTags(event)).map((g) => getGenre(g).label),
+    ...withDerivedParents(event.subgenres).map((g) => getGenre(g).label),
   ]
     .join(" ")
     .toLowerCase();

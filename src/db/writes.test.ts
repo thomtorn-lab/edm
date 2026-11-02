@@ -751,14 +751,13 @@ describe("applyAdminEventEdit — primaryGenre/subgenres lockstep (genre taxonom
     expect(patch.subgenres).toEqual(["electronic-other"]);
   });
 
-  it("an explicitly-provided subgenres value is authoritative: primaryGenre is stored as subgenres[0], never a conflicting sent value (genre storage, 2026-11-02)", async () => {
+  it("a primaryGenre that contradicts the subgenres sent with it is rejected, never stored (genre storage, 2026-11-02)", async () => {
     selectResults = [[{ id: "e-1", overriddenFields: [] }]];
 
-    await applyAdminEventEdit("e-1", { primaryGenre: "techno", subgenres: ["melodic-techno"] });
-
-    const patch = updateSetMock.mock.calls[0][0];
-    expect(patch.primaryGenre).toBe("melodic-techno");
-    expect(patch.subgenres).toEqual(["melodic-techno"]);
+    await expect(applyAdminEventEdit("e-1", { primaryGenre: "techno", subgenres: ["melodic-techno"] })).rejects.toThrow(
+      "primaryGenre must be the first genre in subgenres",
+    );
+    expect(updateSetMock).not.toHaveBeenCalled();
   });
 
   it("does not touch subgenres for an edit that never touches primaryGenre", async () => {

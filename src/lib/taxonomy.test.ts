@@ -405,8 +405,18 @@ describe("genre storage helpers", () => {
     it("primaryGenre alone with a new main genre replaces the whole classification", () => {
       expect(resolveAdminGenreTags(stored, { primaryGenre: "trance" })).toEqual(["trance"]);
     });
-    it("subgenres wins over a conflicting primaryGenre in the same patch", () => {
-      expect(resolveAdminGenreTags(stored, { primaryGenre: "techno", subgenres: ["melodic-techno"] })).toEqual(["melodic-techno"]);
+    it("rejects a primaryGenre that contradicts subgenres[0] in the same patch", () => {
+      expect(() => resolveAdminGenreTags(stored, { primaryGenre: "techno", subgenres: ["melodic-techno"] })).toThrow("primaryGenre must be the first genre in subgenres");
+      expect(resolveAdminGenreTags(stored, { primaryGenre: "melodic-techno", subgenres: ["melodic-techno"] })).toEqual(["melodic-techno"]);
+    });
+    it("rejects subgenres that is not a list", () => {
+      expect(() => resolveAdminGenreTags(stored, { subgenres: "techno" })).toThrow("subgenres must be a list of genres.");
+    });
+    it("a stored row with empty subgenres is read as its primaryGenre", () => {
+      const empty = { primaryGenre: "techno" as const, subgenres: [] as const };
+      expect(resolveAdminGenreTags(empty, { primaryGenre: "techno" })).toBeNull();
+      expect(resolveAdminGenreTags(empty, { primaryGenre: "techno", subgenres: ["techno"] })).toBeNull();
+      expect(resolveAdminGenreTags(empty, { primaryGenre: "techno", subgenres: ["techno", "house"] })).toEqual(["techno", "house"]);
     });
     it("compares with the shown genres, not a disagreeing stored primaryGenre", () => {
       const inconsistent = { primaryGenre: "electronic-other" as const, subgenres: ["house", "techno"] as const };

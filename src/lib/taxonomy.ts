@@ -230,14 +230,17 @@ export function eventGenreTags(event: { primaryGenre?: GenreSlug | null; subgenr
  * Which genre tags an admin save stores, or null when it leaves the shown
  * genres as they are (then nothing is written or locked).
  *   - `subgenres` in the patch is the full, ordered classification (the
- *     event editor sends [primary, secondary]); it wins over any
- *     `primaryGenre` sent alongside it.
+ *     event editor sends [primary, secondary]); a `primaryGenre` sent with
+ *     it must equal its first entry.
  *   - `primaryGenre` alone (Add event from URL's single genre field) is an
  *     explicit choice of a new main genre: it replaces the whole
  *     classification, so an existing secondary genre is removed. Sending the
  *     genre the event already shows first changes nothing.
- * An explicit attempt to clear every genre is rejected: an event always
- * keeps at least one.
+ * Rejected, so a caller error is never stored silently:
+ *   - clearing every genre (an event always keeps at least one);
+ *   - `subgenres` that is not a list;
+ *   - a `primaryGenre` that contradicts `subgenres[0]` in the same patch.
+ * Unknown or legacy values are rejected later by validateGenreTags.
  */
 export function resolveAdminGenreTags(
   stored: { primaryGenre?: GenreSlug | null; subgenres?: readonly GenreSlug[] | null },
@@ -245,6 +248,9 @@ export function resolveAdminGenreTags(
 ): GenreSlug[] | null {
   const sentSubgenres = "subgenres" in patch ? patch.subgenres : undefined;
   const sentPrimary = "primaryGenre" in patch ? patch.primaryGenre : undefined;
+  if (sentSubgenres !== undefined && sentSubgenres !== null && !Array.isArray(sentSubgenres)) {
+    throw new Error("subgenres must be a list of genres.");
+  }
   const hasSubgenres = Array.isArray(sentSubgenres) && sentSubgenres.length > 0;
   const hasPrimary = typeof sentPrimary === "string" && sentPrimary.trim() !== "";
   const clearsSubgenres = "subgenres" in patch && !hasSubgenres;
@@ -257,6 +263,9 @@ export function resolveAdminGenreTags(
   let next: GenreSlug[];
   if (hasSubgenres) {
     next = [...new Set(sentSubgenres as GenreSlug[])];
+    if (hasPrimary && sentPrimary !== next[0]) {
+      throw new Error("primaryGenre must be the first genre in subgenres — send the genres as one ordered list.");
+    }
   } else {
     if (sentPrimary === current[0]) return null;
     next = [sentPrimary as GenreSlug];
