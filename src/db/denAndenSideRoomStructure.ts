@@ -131,7 +131,7 @@ async function main() {
     console.log(`    stored description:\n${indent(p.event.description ?? "(none)", 6)}`);
   }
 
-  console.log("\n=== SAME NIGHT, SEPARATE ROOM EVENTS (left separate — check whether they are one club night) ===");
+  console.log("\n=== SAME NIGHT, SEPARATE EVENTS (left separate — check whether they are one club night) ===");
   for (const g of plan.sameNightGroups) {
     console.log(g.date);
     for (const e of g.events) console.log(`    ${label(e)}`);
