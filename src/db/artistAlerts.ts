@@ -445,6 +445,9 @@ export interface RunSummary {
 /** The whole scheduled run, under one lease so overlapping triggers never double-send. Counts only — never an email address. */
 export async function runArtistAlerts(mode: ArtistAlertsMode, send: Sender, now: Date = new Date()): Promise<RunSummary> {
   if (mode === "off") return { mode, skipped: "off" };
+  // observe: lineup reconciliation only — it writes nothing but artists and
+  // event_artists, holds no lease row, and touches no subscriber table.
+  if (mode === "observe") return { mode, reconcile: await reconcileArtistAppearances(now) };
   const lock = await acquireSyncLock("artist-alerts");
   if (!lock) return { mode, skipped: "locked" };
   try {

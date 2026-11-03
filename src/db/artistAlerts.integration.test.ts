@@ -306,4 +306,29 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     delete process.env.ARTIST_ALERTS_TEST_ALLOWLIST;
     expect(sent).toHaveLength(0);
   });
+
+  it("observe writes only artists and event_artists: no lease row, no subscriber table, no event data", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers; DELETE FROM sync_locks");
+    await addEvent("o1", "Observe Night", ["Brand New Observed Act", "Another Observed Act"], { start: evStart(100) });
+    const fingerprint = async () => {
+      const tables = (await admin.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT IN ('artists','event_artists') ORDER BY 1")).rows.map((r) => r.tablename as string);
+      const parts: string[] = [];
+      for (const t of tables) {
+        const r = await admin.query(`SELECT count(*)::text AS n, md5(COALESCE(string_agg(x::text, '|' ORDER BY x::text), '')) AS h FROM public."${t}" x`);
+        parts.push(`${t}:${r.rows[0].n}:${r.rows[0].h}`);
+      }
+      return parts.join("\n");
+    };
+    const before = await fingerprint();
+    let sends = 0;
+    const summary = await alerts.runArtistAlerts("observe", (async () => {
+      sends++;
+      return { status: "sent", resendEmailId: "x" };
+    }) as never, at(0));
+    expect(summary.reconcile?.events).toBe(1);
+    expect(summary.send).toBeUndefined();
+    expect(sends).toBe(0);
+    expect(await fingerprint()).toBe(before);
+    expect((await admin.query("SELECT count(*)::int n FROM event_artists WHERE event_id='o1'")).rows[0].n).toBe(2);
+  });
 });

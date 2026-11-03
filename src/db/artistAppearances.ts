@@ -45,17 +45,31 @@ export interface ReconcileSummary {
   verifiedArtists: number;
   upserts: number;
   byConfidence: Record<string, number>;
+  skipped?: "locked";
 }
 
+/**
+ * One transaction: the reads, the decision and the writes. A transaction-
+ * scoped advisory lock makes concurrent runs skip instead of racing (two
+ * runs could otherwise create the same new artist twice); it is released
+ * with the transaction and writes no row anywhere, so a run touches only
+ * artists and event_artists (and, after a verification, alert_follows).
+ */
 export async function reconcileArtistAppearances(now: Date = new Date()): Promise<ReconcileSummary> {
-  const [publicEvents, artistRows, appearanceRows, linkRows, blockRows, venueRows] = await Promise.all([
-    db.select({ id: events.id, title: events.title, artists: events.artists }).from(events).where(publicUpcomingEventCondition(now)),
-    db.select().from(artists),
-    db.select().from(eventArtists),
-    db.select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url }).from(eventSoundcloudLinks),
-    db.select({ url: soundcloudLinkBlocks.url }).from(soundcloudLinkBlocks),
-    db.select({ name: venues.name, aliases: venues.aliases, rooms: venues.rooms }).from(venues),
-  ]);
+  return db.transaction(async (tx) => {
+    const lock = await tx.execute<{ ok: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtext('artist-alerts-reconcile')) AS ok`);
+    if (!lock.rows[0]?.ok) return { events: 0, newArtists: 0, verifiedArtists: 0, upserts: 0, byConfidence: {}, skipped: "locked" as const };
+    return reconcileInTransaction(tx, now);
+  });
+}
+
+async function reconcileInTransaction(tx: Tx, now: Date): Promise<ReconcileSummary> {
+  const publicEvents = await tx.select({ id: events.id, title: events.title, artists: events.artists }).from(events).where(publicUpcomingEventCondition(now));
+  const artistRows = await tx.select().from(artists);
+  const appearanceRows = await tx.select().from(eventArtists);
+  const linkRows = await tx.select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url }).from(eventSoundcloudLinks);
+  const blockRows = await tx.select({ url: soundcloudLinkBlocks.url }).from(soundcloudLinkBlocks);
+  const venueRows = await tx.select({ name: venues.name, aliases: venues.aliases, rooms: venues.rooms }).from(venues);
   const blocked = new Set(blockRows.map((b) => b.url));
 
   const result = reconcileAppearances({
@@ -68,7 +82,7 @@ export async function reconcileArtistAppearances(now: Date = new Date()): Promis
     newArtistId: () => `art_${randomUUID()}`,
   });
 
-  await db.transaction(async (tx) => {
+  {
     if (result.newArtists.length > 0) {
       await tx.insert(artists).values(result.newArtists.map((a) => ({ ...a, createdAt: now, updatedAt: now }))).onConflictDoNothing();
     }
@@ -81,7 +95,7 @@ export async function reconcileArtistAppearances(now: Date = new Date()): Promis
         .where(and(inArray(alertFollows.artistId, result.verifiedArtistIds), sql`${alertFollows.activeSince} IS NOT NULL`));
     }
     for (const u of result.upserts) await upsertAppearance(tx, u, now);
-  });
+  }
 
   const byConfidence: Record<string, number> = {};
   for (const u of result.upserts) if (!u.removedAt) byConfidence[u.confidence] = (byConfidence[u.confidence] ?? 0) + 1;
