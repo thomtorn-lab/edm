@@ -62,7 +62,10 @@ export function buildAlertEmail(input: { events: AlertEmailEvent[]; manageToken:
     "",
     ...lines.flatMap(({ e, url, when }) => [`${e.artistName}: ${e.title}`, `${when} · ${e.venueName}`, url, ""]),
     `Change your artists: ${manageUrl(manageToken)}`,
-    `Unsubscribe: ${unsubscribeUrl(manageToken)}`,
+    // A link in the body is followed with GET, which never unsubscribes (link
+    // scanners); the manage page has the unsubscribe button. One-click
+    // unsubscribe stays in the List-Unsubscribe header (POST).
+    `Unsubscribe: ${manageUrl(manageToken)}`,
   ].join("\n");
 
   const rows = lines
@@ -84,7 +87,7 @@ export function buildAlertEmail(input: { events: AlertEmailEvent[]; manageToken:
     ${rows}
     <tr><td style="padding-top:20px;color:#999999;font-size:12px;">
       <a href="${escapeHtml(manageUrl(manageToken))}" style="color:#999999;">Change your artists</a> &middot;
-      <a href="${escapeHtml(unsubscribeUrl(manageToken))}" style="color:#999999;">Unsubscribe</a>
+      <a href="${escapeHtml(manageUrl(manageToken))}" style="color:#999999;">Unsubscribe</a>
     </td></tr>
   </table>
 </body>
