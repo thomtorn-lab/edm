@@ -1,9 +1,12 @@
 import { cache } from "react";
-import { and, desc, eq, gt, gte, inArray, ne, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import {
   artistYoutubePreviewCache,
+  artists as artistIdentities,
   discoveryQueue,
+  eventArtists,
   eventChangeLog,
   eventSoundcloudLinks,
   eventYoutubePreviewOverrides,
@@ -20,7 +23,7 @@ import {
   venueRowToRecord,
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
-import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
+import { selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
 import { isPastEvent } from "./datetime";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
@@ -607,32 +610,67 @@ function soundcloudLinkNotBlocked() {
   );
 }
 
+/** Appearances Artist Alerts resolved to one artist with enough confidence to show that artist's profile. */
+const SHOWN_CONFIDENCE = ["high", "confirmed"];
+
 /**
- * Venue-provided artist SoundCloud links for the event-detail page
- * (2026-10-13): this event's stored rows, unblocked, limited to its own
- * current lineup (exact names, lineup order). One narrow query; none at all
- * for an event without a lineup. Like the YouTube preview read, a failure
- * degrades to "no links", never a broken page.
+ * Profiles reused across events through Artist Alerts' identities
+ * (2026-11-03): for the given events' resolved appearances, every unblocked
+ * stored link of the same artist's other resolved appearances. One query,
+ * reading only lineup entries and URLs; selectReusedSoundcloudProfiles
+ * decides (exactly one profile per artist, single-performer entries only).
+ */
+async function reusedSoundcloudRows(eventIds: string[]) {
+  const here = alias(eventArtists, "here");
+  const other = alias(eventArtists, "other");
+  return db
+    .select({ eventId: here.eventId, lineupEntry: here.lineupEntry, otherEntry: other.lineupEntry, url: eventSoundcloudLinks.url })
+    .from(here)
+    .innerJoin(artistIdentities, and(eq(artistIdentities.id, here.artistId), isNull(artistIdentities.mergedIntoId), ne(artistIdentities.status, "rejected")))
+    .innerJoin(other, and(eq(other.artistId, here.artistId), inArray(other.confidence, SHOWN_CONFIDENCE), isNull(other.removedAt)))
+    .innerJoin(eventSoundcloudLinks, and(eq(eventSoundcloudLinks.eventId, other.eventId), eq(eventSoundcloudLinks.artistName, other.lineupEntry)))
+    .where(and(inArray(here.eventId, eventIds), inArray(here.confidence, SHOWN_CONFIDENCE), isNull(here.removedAt), soundcloudLinkNotBlocked()));
+}
+
+/**
+ * Artist SoundCloud links for the event-detail page: the venue-provided
+ * links stored for this event (2026-10-13), plus, for lineup names without
+ * one, the single verified profile Artist Alerts' identity model ties to the
+ * same artist on other events (2026-11-03). Unblocked, limited to the
+ * event's own current lineup (exact names, lineup order); the event's own
+ * link always wins. The reuse query only runs when a name lacks its own
+ * link. Like the YouTube preview read, a failure degrades to fewer or no
+ * links, never a broken page.
  */
 export async function getSoundcloudLinksForLineup(eventId: string, artists: string[]): Promise<{ name: string; url: string }[]> {
   if (artists.length === 0) return [];
+  let own: { artistName: string; url: string }[];
   try {
-    const rows = await db
+    own = await db
       .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
       .from(eventSoundcloudLinks)
       .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked()));
-    return selectLineupSoundcloudLinks(artists, rows);
   } catch (err) {
     console.error(`[soundcloud-links] lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
+  const ownNames = new Set(own.map((r) => r.artistName));
+  if (artists.every((name) => ownNames.has(name))) return selectLineupSoundcloudLinks(artists, own);
+  let reused: { artistName: string; url: string }[] = [];
+  try {
+    reused = selectReusedSoundcloudProfiles(await reusedSoundcloudRows([eventId]));
+  } catch (err) {
+    console.error(`[soundcloud-links] reuse lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // Own rows last: selectLineupSoundcloudLinks keeps the last URL per name.
+  return selectLineupSoundcloudLinks(artists, [...reused, ...own]);
 }
 
 /**
- * AUDIO indicator for event lists (homepage, venue and genre pages): ONE
- * batched query for every listed event, true exactly when that event's
- * detail page would show at least one link (same rows, same lineup rule as
- * getSoundcloudLinksForLineup). Reads only event_id and artist_name.
+ * AUDIO indicator for event lists (homepage, venue and genre pages): one
+ * batched query for every listed event's own links plus one batched reuse
+ * query, true exactly when that event's detail page would show at least one
+ * link (same rows, same rules as getSoundcloudLinksForLineup).
  */
 export async function getSoundcloudAvailabilityForEvents(list: { id: string; artists: string[] }[]): Promise<boolean[]> {
   const ids = list.filter((e) => e.artists.length > 0).map((e) => e.id);
@@ -648,11 +686,27 @@ export async function getSoundcloudAvailabilityForEvents(list: { id: string; art
     return list.map(() => false);
   }
   const namesByEvent = new Map<string, Set<string>>();
-  for (const r of rows) {
-    if (!namesByEvent.has(r.eventId)) namesByEvent.set(r.eventId, new Set());
-    namesByEvent.get(r.eventId)!.add(r.artistName);
+  const add = (eventId: string, name: string) => {
+    if (!namesByEvent.has(eventId)) namesByEvent.set(eventId, new Set());
+    namesByEvent.get(eventId)!.add(name);
+  };
+  for (const r of rows) add(r.eventId, r.artistName);
+  const has = (e: { id: string; artists: string[] }) => e.artists.some((name) => namesByEvent.get(e.id)?.has(name) ?? false);
+  const missing = list.filter((e) => e.artists.length > 0 && !has(e)).map((e) => e.id);
+  if (missing.length > 0) {
+    try {
+      const reuseRows = await reusedSoundcloudRows(missing);
+      const byEvent = new Map<string, typeof reuseRows>();
+      for (const r of reuseRows) {
+        if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, []);
+        byEvent.get(r.eventId)!.push(r);
+      }
+      for (const [eventId, eventRows] of byEvent) for (const r of selectReusedSoundcloudProfiles(eventRows)) add(eventId, r.artistName);
+    } catch (err) {
+      console.error(`[soundcloud-links] batched reuse lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  return list.map((e) => e.artists.some((name) => namesByEvent.get(e.id)?.has(name) ?? false));
+  return list.map(has);
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {

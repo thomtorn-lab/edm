@@ -253,6 +253,63 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
     expect(soundcloudQueries()).toHaveLength(0);
   });
 
+  describe("reuse through Artist Alerts identities (2026-11-03)", () => {
+    const reuseQueries = () => sent.filter((q) => /from "event_artists" "here"/i.test(q.text));
+
+    it("is skipped when every lineup name already has its own link", async () => {
+      await getSoundcloudLinksForLineup("e-1", ["GUY J", "TIM ANDRESEN"]);
+      expect(reuseQueries()).toHaveLength(0);
+    });
+
+    it("one query: resolved appearances of the same artist, high/confirmed on both sides, unmerged and not rejected, blocked links excluded", async () => {
+      await getSoundcloudLinksForLineup("e-1", ["GUY J", "Rexie Lex"]);
+      const [query, ...extra] = reuseQueries();
+      expect(extra).toHaveLength(0);
+      expect(selectedColumns(query.text)).toEqual(["event_id", "lineup_entry", "lineup_entry", "url"]);
+      expect(query.text).toMatch(/inner join "artists" on \("artists"\."id" = "here"\."artist_id" and "artists"\."merged_into_id" is null and "artists"\."status" <> \$\d+\)/);
+      expect(query.text).toMatch(/inner join "event_artists" "other" on \("other"\."artist_id" = "here"\."artist_id" and "other"\."confidence" in \(\$\d+, \$\d+\) and "other"\."removed_at" is null\)/);
+      expect(query.text).toMatch(/inner join "event_soundcloud_links" on \("event_soundcloud_links"\."event_id" = "other"\."event_id" and "event_soundcloud_links"\."artist_name" = "other"\."lineup_entry"\)/);
+      expect(query.text).toMatch(/"here"\."event_id" in \(\$\d+\) and "here"\."confidence" in \(\$\d+, \$\d+\) and "here"\."removed_at" is null/);
+      expect(query.text).toMatch(NOT_BLOCKED);
+      expect(query.values).toEqual(expect.arrayContaining(["rejected", "high", "confirmed", "e-1"]));
+    });
+
+    it("a reused profile is shown for a lineup name without its own link, in lineup order", async () => {
+      tableRows.event_artists = [{ event_id: "e-1", lineup_entry: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" }];
+      await expect(getSoundcloudLinksForLineup("e-1", ["Rexie Lex", "GUY J"])).resolves.toEqual([
+        { name: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" },
+        { name: "GUY J", url: "https://soundcloud.com/guy-j" },
+      ]);
+      delete tableRows.event_artists;
+    });
+
+    it("list pages: the reuse query only covers listed events without an own link, batched", async () => {
+      tableRows.event_artists = [{ event_id: "e-2", lineup_entry: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" }];
+      const result = await getSoundcloudAvailabilityForEvents([
+        { id: "e-1", artists: ["GUY J"] },
+        { id: "e-2", artists: ["Rexie Lex"] },
+        { id: "e-3", artists: ["Nobody"] },
+      ]);
+      expect(result).toEqual([true, true, false]);
+      const [query, ...extra] = reuseQueries();
+      expect(extra).toHaveLength(0);
+      expect(query.values).toEqual(expect.arrayContaining(["e-2", "e-3"]));
+      expect(query.values).not.toContain("e-1");
+      delete tableRows.event_artists;
+    });
+
+    it("a failing reuse read keeps the event's own links", async () => {
+      await getSoundcloudLinksForLineup("e-1", []); // no-op, keeps call order simple
+      fakeClient.query.mockImplementationOnce(async (config: { text: string } | string, values?: unknown[]) => {
+        const text = typeof config === "string" ? config : config.text;
+        sent.push({ text, values: values ?? [] });
+        return { rows: answer(text, values ?? []), rowCount: 0, fields: [] };
+      });
+      fakeClient.query.mockRejectedValueOnce(new Error("relation \"event_artists\" does not exist"));
+      await expect(getSoundcloudLinksForLineup("e-1", ["GUY J", "Rexie Lex"])).resolves.toEqual([{ name: "GUY J", url: "https://soundcloud.com/guy-j" }]);
+    });
+  });
+
   it("a failing read degrades to no links / no indicator, never an error", async () => {
     fakeClient.query.mockRejectedValueOnce(new Error("relation does not exist"));
     await expect(getSoundcloudLinksForLineup("e-1", ["GUY J"])).resolves.toEqual([]);

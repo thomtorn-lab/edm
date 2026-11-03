@@ -37,6 +37,7 @@ import {
 } from "@/lib/sync";
 import { enrichEventGenre } from "./enrichment";
 import { reconcileSourceSoundcloudLinks } from "./soundcloudLinks";
+import { inlineSoundcloudEvidenceForSync, inlineReportsForSync, type InlineObservation } from "@/lib/soundcloudEvidence/syncLinks";
 import type { GenreSlug } from "@/lib/taxonomy";
 import type { ConfidenceLevel } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -260,6 +261,11 @@ async function runSourceSyncLocked(
   // created (only adapters that report soundcloudLinkReport — Culture Box).
   // Reconciled once after the loop, see reconcileSourceSoundcloudLinks.
   const soundcloudObservations = new Map<string, SoundcloudLinkReport>();
+  // Profile links other sources write next to a lineup name in their own
+  // text ("Kromagon: soundcloud.com/aragon"), stored in the same table after
+  // the loop (src/lib/soundcloudEvidence/syncLinks.ts). Never replaces a
+  // structured report, never deletes.
+  const inlineSoundcloud: InlineObservation[] = [];
 
   for (const raw of candidates) {
     try {
@@ -334,6 +340,16 @@ async function runSourceSyncLocked(
         const existing = existingById.get(match.eventId);
         if (!existing) continue; // stale link/dedup pointer — skip rather than guess
         if (raw.soundcloudLinkReport) soundcloudObservations.set(existing.id, raw.soundcloudLinkReport);
+        {
+          // The lineup this event keeps after this sync: an admin-protected
+          // lineup as it is, otherwise the source's own (when it has one).
+          const lineup =
+            existing.overriddenFields.includes("artists") || raw.artistsGuessedFromTitle || result.normalizedArtists.length === 0
+              ? existing.artists
+              : result.normalizedArtists;
+          const records = inlineSoundcloudEvidenceForSync(raw, lineup, existing.id, [existing.description]);
+          if (records.length > 0) inlineSoundcloud.push({ eventId: existing.id, records });
+        }
         const target: SyncTargetEvent = {
           id: existing.id,
           title: existing.title,
@@ -548,6 +564,10 @@ async function runSourceSyncLocked(
         );
         created++;
         if (raw.soundcloudLinkReport) soundcloudObservations.set(eventId, raw.soundcloudLinkReport);
+        {
+          const records = inlineSoundcloudEvidenceForSync(raw, result.normalizedArtists, eventId);
+          if (records.length > 0) inlineSoundcloud.push({ eventId, records });
+        }
         if (raw.withheldDescription) {
           await recordWithheldDescription(eventId, sourceId, raw.withheldDescription, raw.description);
         }
@@ -762,6 +782,10 @@ async function runSourceSyncLocked(
       const cause = err instanceof Error && err.cause instanceof Error ? ` (cause: ${err.cause.message})` : "";
       errors.push(`${raw.title || "(untitled)"}: ${err instanceof Error ? err.message : String(err)}${cause}`);
     }
+  }
+
+  for (const [eventId, report] of inlineReportsForSync(inlineSoundcloud)) {
+    if (!soundcloudObservations.has(eventId)) soundcloudObservations.set(eventId, report);
   }
 
   // Never fails the sync: a link write problem leaves the stored links as
