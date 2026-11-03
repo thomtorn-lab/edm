@@ -11,7 +11,7 @@ import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import { shouldRecordWithheldDescription, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "../lib/withheldDescriptions";
 import type { AdminUnpublishReason, ConfidenceLevel, Venue } from "../lib/types";
-import { genreEditError, type GenreSlug } from "../lib/taxonomy";
+import { GENRE_LOCK_FIELDS, expandGenreLockGroup, genreEditError, genreFieldsFromTags, resolveAdminGenreTags, type GenreSlug } from "../lib/taxonomy";
 import type { PublishDecision } from "../lib/classification";
 import type { HoldReason } from "../lib/adapters/pipeline";
 import { classifyAdminQueueRow } from "../lib/adminQueue";
@@ -192,7 +192,31 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   // not freeze that field against later source corrections. Existing
   // overrides are kept as they are. "published" keeps its old always-applied
   // behavior because its write clears a stale admin-unpublish (below).
-  const { effectivePatch, touchedFields, cleared } = partitionAdminPatch(existing, patch, { alwaysTouched: ["published"] });
+  // Genre fields are decided as one classification, not field by field
+  // (genre storage, 2026-11-02): subgenres is authoritative and primaryGenre
+  // always mirrors subgenres[0]. A save that changes the shown genres writes
+  // and locks BOTH fields — so changing only the secondary genre keeps the
+  // chosen main genre and still protects the whole classification from sync;
+  // a save that leaves them as shown writes and locks neither. A stored
+  // primaryGenre that disagrees with subgenres is not silently repaired by
+  // an unrelated save (no implicit backfill).
+  const nonGenrePatch: EventEditPatch = { ...patch };
+  delete nonGenrePatch.primaryGenre;
+  delete nonGenrePatch.subgenres;
+  const nextGenreTags = resolveAdminGenreTags(existing as { primaryGenre: GenreSlug; subgenres: GenreSlug[] }, patch);
+  const partitioned = partitionAdminPatch(existing, nonGenrePatch, { alwaysTouched: ["published"] });
+  const effectivePatch: Partial<EventEditPatch> = { ...partitioned.effectivePatch };
+  const touchedFields = [...partitioned.touchedFields];
+  const { cleared } = partitioned;
+  if (nextGenreTags) {
+    // Classification rules (taxonomy.ts validateGenreTags) run only when the
+    // shown genres really change, on the tags that will be stored; the
+    // current tags are allowed as legacy, so an untouched legacy value may stay.
+    const error = genreEditError(nextGenreTags, [existing.primaryGenre, ...(existing.subgenres ?? [])]);
+    if (error) throw new Error(error);
+    Object.assign(effectivePatch, genreFieldsFromTags(nextGenreTags));
+    touchedFields.push(...GENRE_LOCK_FIELDS);
+  }
 
   // The end/start check runs only when this save really changes start or end,
   // and on the values that will actually be stored: an unchanged start is
@@ -207,33 +231,10 @@ export async function applyAdminEventEdit(eventId: string, patch: EventEditPatch
   if (touchedFields.length === 0) return;
   const overriddenFields = addOverriddenFields(existing.overriddenFields, touchedFields);
   const clearsAdminUnpublish = effectivePatch.published === true && existing.adminUnpublishReason != null;
-  // primaryGenre/subgenres lockstep (genre taxonomy audit, 2026-09-14): public
-  // consumers (displayGenres, the Genre filter) read subgenres only, never
-  // primaryGenre directly. The two fields are independently listed in
-  // EDITABLE_EVENT_FIELDS, so a patch could in principle touch one without
-  // the other — every existing caller already sends both together, but
-  // nothing enforced that. A patch that sets primaryGenre without also
-  // setting subgenres has subgenres derived from it here, the same way
-  // db/sync.ts and publishDiscoveryItem already keep the two in lockstep on
-  // their own write paths.
-  const derivedSubgenres =
-    effectivePatch.primaryGenre != null && !("subgenres" in patch) ? { subgenres: [effectivePatch.primaryGenre] } : {};
-
-  // Genre classification rules (taxonomy.ts validateGenreTags) — checked
-  // only when this save really changes a genre field, on the tags that
-  // will actually be stored, so an existing admin-locked combination never
-  // blocks an unrelated edit.
-  if ("primaryGenre" in effectivePatch || "subgenres" in effectivePatch) {
-    const nextTags = (derivedSubgenres.subgenres ?? effectivePatch.subgenres ?? existing.subgenres ?? []) as string[];
-    const error = genreEditError(nextTags, [existing.primaryGenre, ...(existing.subgenres ?? [])]);
-    if (error) throw new Error(error);
-  }
-
   await db
     .update(events)
     .set({
       ...effectivePatch,
-      ...derivedSubgenres,
       ...(clearsAdminUnpublish ? { adminUnpublishReason: null, adminUnpublishNote: null, adminUnpublishedAt: null } : {}),
       overriddenFields,
       manualOverride: true,
@@ -545,7 +546,9 @@ export async function clearManualOverride(eventId: string, fieldsToUnprotect: st
   const [existing] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!existing) throw new Error(`Event ${eventId} not found`);
 
-  const overriddenFields = existing.overriddenFields.filter((f) => !fieldsToUnprotect.includes(f));
+  // Unlocking either genre field unlocks the whole classification (one lock).
+  const unprotect = expandGenreLockGroup(fieldsToUnprotect);
+  const overriddenFields = existing.overriddenFields.filter((f) => !unprotect.includes(f));
 
   await db
     .update(events)
@@ -696,6 +699,10 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
   const { provenanceUrl, overriddenFields, ...eventFields } = input;
   await db.insert(events).values({
     ...eventFields,
+    // One genre truth on every create path (sync, Discovery Queue publish,
+    // admin paste): subgenres is authoritative, primaryGenre mirrors
+    // subgenres[0], and an event never starts without a genre tag.
+    ...genreFieldsFromTags(input.subgenres.length > 0 ? input.subgenres : [input.primaryGenre]),
     timezone: "Europe/Copenhagen",
     otherSourceUrls: [],
     // postponed is never known at creation time — no source has evidence

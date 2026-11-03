@@ -169,6 +169,13 @@
       "when": 1792778571190,
       "tag": "0023_event_youtube_preview_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793628869861,
+      "tag": "0024_artist_alerts",
+      "breakpoints": true
     }
   ]
 }
