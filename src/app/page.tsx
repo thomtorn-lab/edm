@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import {
   getPreviewAvailabilityForEvents,
-  getPublishedEventsWithVenue,
   getSoundcloudAvailabilityForEvents,
+  getUpcomingPublishedEventsForList,
 } from "@/lib/queries";
 import { toHomepageEvent, upcomingForHomepage } from "@/lib/homepageEvents";
 import EventExplorer from "@/components/EventExplorer";
@@ -28,7 +28,10 @@ export default async function HomePage() {
   // Only upcoming events, as the minimal HomepageEvent projection
   // (performance work, 2026-10-10): past events and fields nothing on the
   // page reads used to make up most of this page's HTML/RSC payload.
-  const events = upcomingForHomepage(await getPublishedEventsWithVenue(), now);
+  // The query itself already leaves out events that are clearly over and
+  // reads only the columns the list renders (Supabase egress work,
+  // 2026-11-01); upcomingForHomepage still applies the exact rule.
+  const events = upcomingForHomepage(await getUpcomingPublishedEventsForList(now), now);
   // Homepage VIDEO indicator (2026-09-26): batched reads for every event
   // combined (never per-event — see getPreviewAvailabilityForEvents), using
   // the exact same rule as the event-detail page (getEventYoutubePreview:

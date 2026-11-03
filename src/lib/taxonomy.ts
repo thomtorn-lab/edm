@@ -201,6 +201,96 @@ export function withDerivedParents(tags: readonly GenreSlug[]): GenreSlug[] {
 }
 
 /**
+ * Genre classification storage (2026-11-02): `subgenres` is the single
+ * source of truth for an event's genres — it is what every public surface
+ * shows, filters and searches on. `primaryGenre` is kept as a column but is
+ * only ever a mirror of `subgenres[0]`; every write path builds both fields
+ * through genreFieldsFromTags so they can never diverge, and an event always
+ * has at least one tag (Electronic / Other as the fallback).
+ */
+export const FALLBACK_GENRE: GenreSlug = "electronic-other";
+
+export function genreFieldsFromTags(tags: readonly GenreSlug[]): { primaryGenre: GenreSlug; subgenres: GenreSlug[] } {
+  const unique = [...new Set(tags)];
+  const subgenres = unique.length > 0 ? unique : [FALLBACK_GENRE];
+  return { primaryGenre: subgenres[0], subgenres };
+}
+
+/**
+ * The genres an event actually shows, in order. Reads `subgenres`; falls
+ * back to `primaryGenre` only for a row that has no subgenres at all. A
+ * stored primaryGenre that disagrees with subgenres[0] is ignored.
+ */
+export function eventGenreTags(event: { primaryGenre?: GenreSlug | null; subgenres?: readonly GenreSlug[] | null }): GenreSlug[] {
+  if (event.subgenres && event.subgenres.length > 0) return [...event.subgenres];
+  return event.primaryGenre ? [event.primaryGenre] : [];
+}
+
+/**
+ * Which genre tags an admin save stores, or null when it leaves the shown
+ * genres as they are (then nothing is written or locked).
+ *   - `subgenres` in the patch is the full, ordered classification (the
+ *     event editor sends [primary, secondary]); a `primaryGenre` sent with
+ *     it must equal its first entry.
+ *   - `primaryGenre` alone (Add event from URL's single genre field) is an
+ *     explicit choice of a new main genre: it replaces the whole
+ *     classification, so an existing secondary genre is removed. Sending the
+ *     genre the event already shows first changes nothing.
+ * Rejected, so a caller error is never stored silently:
+ *   - clearing every genre (an event always keeps at least one);
+ *   - `subgenres` that is not a list;
+ *   - a `primaryGenre` that contradicts `subgenres[0]` in the same patch.
+ * Unknown or legacy values are rejected later by validateGenreTags.
+ */
+export function resolveAdminGenreTags(
+  stored: { primaryGenre?: GenreSlug | null; subgenres?: readonly GenreSlug[] | null },
+  patch: { primaryGenre?: unknown; subgenres?: unknown },
+): GenreSlug[] | null {
+  const sentSubgenres = "subgenres" in patch ? patch.subgenres : undefined;
+  const sentPrimary = "primaryGenre" in patch ? patch.primaryGenre : undefined;
+  if (sentSubgenres !== undefined && sentSubgenres !== null && !Array.isArray(sentSubgenres)) {
+    throw new Error("subgenres must be a list of genres.");
+  }
+  const hasSubgenres = Array.isArray(sentSubgenres) && sentSubgenres.length > 0;
+  const hasPrimary = typeof sentPrimary === "string" && sentPrimary.trim() !== "";
+  const clearsSubgenres = "subgenres" in patch && !hasSubgenres;
+  const clearsPrimary = "primaryGenre" in patch && sentPrimary !== undefined && !hasPrimary;
+  if (!hasSubgenres && !hasPrimary) {
+    if (clearsSubgenres || clearsPrimary) throw new Error("An event needs at least one genre.");
+    return null;
+  }
+  const current = eventGenreTags(stored);
+  let next: GenreSlug[];
+  if (hasSubgenres) {
+    next = [...new Set(sentSubgenres as GenreSlug[])];
+    if (hasPrimary && sentPrimary !== next[0]) {
+      throw new Error("primaryGenre must be the first genre in subgenres — send the genres as one ordered list.");
+    }
+  } else {
+    if (sentPrimary === current[0]) return null;
+    next = [sentPrimary as GenreSlug];
+  }
+  const unchanged = next.length === current.length && next.every((g, i) => g === current[i]);
+  return unchanged ? null : next;
+}
+
+/**
+ * The two stored genre fields form one lock: an admin genre decision covers
+ * the whole classification, so a lock recorded under either name protects
+ * both against sync (see override.ts). Existing rows that list only one of
+ * the names are read as locking both — no stored overrides are rewritten.
+ */
+export const GENRE_LOCK_FIELDS = ["primaryGenre", "subgenres"] as const;
+
+export function expandGenreLockGroup(fields: readonly string[]): string[] {
+  const out = [...fields];
+  if (GENRE_LOCK_FIELDS.some((f) => fields.includes(f))) {
+    for (const f of GENRE_LOCK_FIELDS) if (!out.includes(f)) out.push(f);
+  }
+  return out;
+}
+
+/**
  * Old public filter values that name a SET of genres rather than one
  * genre. Each keeps exactly the meaning it had before the genre revision;
  * none is offered as a filter option (an active one shows as a hidden
@@ -345,18 +435,25 @@ export function isValidSecondaryGenre(primary: GenreSlug, candidate: GenreSlug):
 
 /**
  * THE allowlist of public, indexable genre landing pages (SEO pilot,
- * 2026-10-09; confirmed in the genre system revision: Techno only). A
- * genre never gets a page automatically — adding one here is an explicit,
- * separately approved SEO decision, and needs its own route under
- * src/app/genres/ (there is deliberately no dynamic /genres/[slug] route,
- * so every other /genres/* URL is a real HTTP 404). The sitemap's genre
- * entries and the genre-badge links are both derived from this list. A
+ * 2026-10-09; Techno, House and Trance approved 2026-10-31). A genre never
+ * gets a page automatically — adding one here is an explicit, separately
+ * approved SEO decision, and needs its editorial copy in
+ * src/lib/genrePages.ts. The single /genres/[slug] route only generates
+ * allowlisted slugs (dynamicParams = false), so every other /genres/* URL
+ * is a real HTTP 404. The sitemap's genre entries, the footer's genre
+ * links and the genre-badge links are all derived from this list. A
  * main genre's page lists the genre and its subgenres
  * (matchesGenreSelection), exactly like the homepage filter.
  */
-export const INDEXABLE_GENRE_PAGES: readonly GenreSlug[] = ["techno"];
+export const INDEXABLE_GENRE_PAGES = ["techno", "house", "trance"] as const satisfies readonly GenreSlug[];
+export type IndexableGenre = (typeof INDEXABLE_GENRE_PAGES)[number];
 
 const GENRES_WITH_PAGES: ReadonlySet<GenreSlug> = new Set<GenreSlug>(INDEXABLE_GENRE_PAGES);
+
+/** The allowlisted genre a `/genres/[slug]` URL segment names, or null (→ 404). */
+export function indexableGenreForUrlSlug(urlSlug: string): IndexableGenre | null {
+  return INDEXABLE_GENRE_PAGES.find((slug) => getGenre(slug).urlSlug === urlSlug) ?? null;
+}
 
 /** Every approved genre page path, for the sitemap. */
 export function indexableGenrePagePaths(): string[] {

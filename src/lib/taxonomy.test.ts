@@ -5,7 +5,11 @@ import {
   NEWSLETTER_GENRE_OPTIONS,
   VISUAL_GROUPS,
   displayGenres,
+  eventGenreTags,
+  expandGenreLockGroup,
   genreEditError,
+  genreFieldsFromTags,
+  resolveAdminGenreTags,
   genreFilterUrlValue,
   genreLabelPagePath,
   genrePagePath,
@@ -326,9 +330,11 @@ describe("classification rules (K3) — validateGenreTags", () => {
 });
 
 describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
-  it("only Techno has a landing page so far", () => {
+  it("only the allowlisted genres (Techno, House, Trance) have a landing page", () => {
     expect(genrePagePath("techno")).toBe("/genres/techno");
-    for (const g of GENRES.filter((m) => m.slug !== "techno")) expect(genrePagePath(g.slug), g.slug).toBeNull();
+    expect(genrePagePath("house")).toBe("/genres/house");
+    expect(genrePagePath("trance")).toBe("/genres/trance");
+    for (const g of GENRES.filter((m) => !["techno", "house", "trance"].includes(m.slug))) expect(genrePagePath(g.slug), g.slug).toBeNull();
   });
 
   it("a genre badge only ever links to the page for that exact genre (same meaning as the homepage filter)", () => {
@@ -338,9 +344,11 @@ describe("genre landing page helpers (Techno pilot, 2026-10-09)", () => {
     }
   });
 
-  it("genreLabelPagePath links only the plain Techno label, never a subgenre label", () => {
+  it("genreLabelPagePath links only the plain labels of genres with a page, never a subgenre label", () => {
     expect(genreLabelPagePath("techno")).toBe("/genres/techno");
-    for (const slug of ["melodic-techno", "minimal-techno", "industrial", "hard-techno", "house"] as GenreSlug[]) {
+    expect(genreLabelPagePath("house")).toBe("/genres/house");
+    expect(genreLabelPagePath("trance")).toBe("/genres/trance");
+    for (const slug of ["melodic-techno", "minimal-techno", "industrial", "hard-techno", "deep-house", "psytrance"] as GenreSlug[]) {
       expect(genreLabelPagePath(slug), slug).toBeNull();
     }
   });
@@ -361,5 +369,63 @@ describe("newsletter genre values (N)", () => {
   it("old values keep their meaning: Techno still covers Melodic and Minimal Techno; Garage / Bass still covers UK Garage and Dubstep", () => {
     expect(matchesGenreSelection(["melodic-techno"], "techno")).toBe(true);
     expect(matchesGenreSelection(["dubstep"], "garage-bass")).toBe(true);
+  });
+});
+
+// Genre storage (2026-11-02): subgenres authoritative, primaryGenre = subgenres[0].
+describe("genre storage helpers", () => {
+  it("genreFieldsFromTags mirrors subgenres[0] into primaryGenre, dedupes, and never returns an empty list", () => {
+    expect(genreFieldsFromTags(["house", "techno"])).toEqual({ primaryGenre: "house", subgenres: ["house", "techno"] });
+    expect(genreFieldsFromTags(["techno", "techno"])).toEqual({ primaryGenre: "techno", subgenres: ["techno"] });
+    expect(genreFieldsFromTags([])).toEqual({ primaryGenre: "electronic-other", subgenres: ["electronic-other"] });
+  });
+
+  it("eventGenreTags reads subgenres and ignores a disagreeing primaryGenre; falls back to primaryGenre only when subgenres is empty", () => {
+    expect(eventGenreTags({ primaryGenre: "electronic-other", subgenres: ["house", "techno"] })).toEqual(["house", "techno"]);
+    expect(eventGenreTags({ primaryGenre: "techno", subgenres: [] })).toEqual(["techno"]);
+    expect(eventGenreTags({ primaryGenre: null, subgenres: null })).toEqual([]);
+  });
+
+  it("expandGenreLockGroup: either genre name locks both; other fields untouched", () => {
+    expect(expandGenreLockGroup(["subgenres"])).toEqual(["subgenres", "primaryGenre"]);
+    expect(expandGenreLockGroup(["primaryGenre", "title"])).toEqual(["primaryGenre", "title", "subgenres"]);
+    expect(expandGenreLockGroup(["title"])).toEqual(["title"]);
+  });
+
+  describe("resolveAdminGenreTags", () => {
+    const stored = { primaryGenre: "house" as const, subgenres: ["house", "techno"] as const };
+    it("a secondary-only change keeps the main genre", () => {
+      expect(resolveAdminGenreTags(stored, { primaryGenre: "house", subgenres: ["house", "disco"] })).toEqual(["house", "disco"]);
+    });
+    it("unchanged shown genres return null (nothing written or locked)", () => {
+      expect(resolveAdminGenreTags(stored, { primaryGenre: "house", subgenres: ["house", "techno"] })).toBeNull();
+      expect(resolveAdminGenreTags(stored, { primaryGenre: "house" })).toBeNull();
+      expect(resolveAdminGenreTags(stored, { title: "x" } as never)).toBeNull();
+    });
+    it("primaryGenre alone with a new main genre replaces the whole classification", () => {
+      expect(resolveAdminGenreTags(stored, { primaryGenre: "trance" })).toEqual(["trance"]);
+    });
+    it("rejects a primaryGenre that contradicts subgenres[0] in the same patch", () => {
+      expect(() => resolveAdminGenreTags(stored, { primaryGenre: "techno", subgenres: ["melodic-techno"] })).toThrow("primaryGenre must be the first genre in subgenres");
+      expect(resolveAdminGenreTags(stored, { primaryGenre: "melodic-techno", subgenres: ["melodic-techno"] })).toEqual(["melodic-techno"]);
+    });
+    it("rejects subgenres that is not a list", () => {
+      expect(() => resolveAdminGenreTags(stored, { subgenres: "techno" })).toThrow("subgenres must be a list of genres.");
+    });
+    it("a stored row with empty subgenres is read as its primaryGenre", () => {
+      const empty = { primaryGenre: "techno" as const, subgenres: [] as const };
+      expect(resolveAdminGenreTags(empty, { primaryGenre: "techno" })).toBeNull();
+      expect(resolveAdminGenreTags(empty, { primaryGenre: "techno", subgenres: ["techno"] })).toBeNull();
+      expect(resolveAdminGenreTags(empty, { primaryGenre: "techno", subgenres: ["techno", "house"] })).toEqual(["techno", "house"]);
+    });
+    it("compares with the shown genres, not a disagreeing stored primaryGenre", () => {
+      const inconsistent = { primaryGenre: "electronic-other" as const, subgenres: ["house", "techno"] as const };
+      expect(resolveAdminGenreTags(inconsistent, { primaryGenre: "house", subgenres: ["house", "techno"] })).toBeNull();
+      expect(resolveAdminGenreTags(inconsistent, { primaryGenre: "house" })).toBeNull();
+    });
+    it("rejects clearing every genre", () => {
+      expect(() => resolveAdminGenreTags(stored, { subgenres: [] })).toThrow("An event needs at least one genre.");
+      expect(() => resolveAdminGenreTags(stored, { primaryGenre: null })).toThrow("An event needs at least one genre.");
+    });
   });
 });

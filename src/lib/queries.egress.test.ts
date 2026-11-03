@@ -65,6 +65,12 @@ const {
   getSoundcloudLinksForLineup,
   getSoundcloudAvailabilityForEvents,
   getRecentSyncIdentityChanges,
+  getPublishedEventSitemapEntries,
+  getVenueSitemapEntries,
+  getVenuesBySlugs,
+  getUpcomingPublishedEventsForList,
+  getUpcomingEventCountsByVenue,
+  UPCOMING_PREFILTER_LOOKBACK_MS,
 } = await import("./queries");
 
 /** A complete row for `table` with type-appropriate defaults, keyed by DB column name. */
@@ -286,5 +292,161 @@ describe("admin data-quality change lookup (getRecentSyncIdentityChanges)", () =
         createdAt: "2026-10-14T12:29:49.000Z",
       },
     ]);
+  });
+});
+
+/**
+ * Supabase egress work, 2026-11-01. Production pg_stat_statements (79 days)
+ * showed full events/venues reads as the largest result sets; these pin the
+ * narrowed SQL for the sitemap, the public event lists and /venues.
+ */
+const eventQueries = () => sent.filter((q) => /from "events"/i.test(q.text));
+// Columns that only admin, sync or the event-detail page use — never the lists.
+const ADMIN_OR_DETAIL_ONLY_EVENT_COLUMNS = [
+  "timezone",
+  "genre_confidence",
+  "image_url",
+  "currency",
+  "cancelled",
+  "time_changed",
+  "published",
+  "admin_unpublish_reason",
+  "admin_unpublish_note",
+  "admin_unpublished_at",
+  "source_cancelled_at",
+  "source_cancelled_by_source_id",
+  "source_cancellation_evidence",
+  "manual_override",
+  "confidence",
+  "created_at",
+  "updated_at",
+  "last_source_check",
+  "last_changed",
+];
+
+describe("sitemap reads only the fields its entries use", () => {
+  it("events: slug + updated_at of published events, joined to venues so the event set is unchanged", async () => {
+    tableRows.events = [
+      { ...event("e-1", "v-vega"), updated_at: "2026-10-21 08:30:00+00" },
+      { ...event("e-hidden", "v-vega"), published: false },
+    ];
+
+    const entries = await getPublishedEventSitemapEntries();
+
+    expect(entries).toEqual([{ slug: "e-1", updatedAt: "2026-10-21T08:30:00.000Z" }]);
+    const [query, ...extra] = eventQueries();
+    expect(extra).toHaveLength(0);
+    expect(selectedColumns(query.text)).toEqual(["slug", "updated_at"]);
+    expect(query.text).toMatch(/inner join "venues" on "venues"\."id" = "events"\."venue_id"/i);
+    expect(query.text).toMatch(/where "events"\."published" = \$1/i);
+    expect(query.values).toEqual([true]);
+  });
+
+  it("venues: id + slug only, in the same name order getVenues used", async () => {
+    const entries = await getVenueSitemapEntries();
+
+    expect(entries.map((v) => v.id).sort()).toEqual(["v-culture-box", "v-hangaren", "v-vega"]);
+    const [query] = venueQueries();
+    expect(selectedColumns(query.text)).toEqual(["id", "slug"]);
+    expect(query.text).toMatch(/order by "venues"\."name"/i);
+  });
+});
+
+describe("/venues reads only the curated venues and one narrow count query", () => {
+  it("getVenuesBySlugs asks for exactly the given slugs", async () => {
+    const result = await getVenuesBySlugs(["v-vega", "v-hangaren"]);
+
+    expect(result.map((v) => v.id).sort()).toEqual(["v-hangaren", "v-vega"]);
+    const [query] = venueQueries();
+    expect(query.text).toMatch(/where "venues"\."slug" in \(\$1, \$2\)/i);
+    expect(query.values).toEqual(["v-vega", "v-hangaren"]);
+  });
+
+  it("getUpcomingEventCountsByVenue: one query, three columns, and past events still excluded by isPastEvent", async () => {
+    const now = new Date("2026-10-20T12:00:00.000Z");
+    tableRows.events = [
+      event("e-1", "v-vega"),
+      event("e-2", "v-vega"),
+      event("e-3", "v-hangaren"),
+      // Over by isPastEvent (no end: ends 06:00 the day after its nightlife day) — never counted.
+      { ...event("e-past", "v-vega"), start_datetime: "2026-10-18 20:00:00+00" },
+    ];
+
+    const counts = await getUpcomingEventCountsByVenue(["v-vega", "v-hangaren", "v-culture-box"], now);
+
+    expect(Object.fromEntries(counts)).toEqual({ "v-vega": 2, "v-hangaren": 1 });
+    const [query, ...extra] = eventQueries();
+    expect(extra).toHaveLength(0);
+    expect(venueQueries()).toHaveLength(0);
+    expect(selectedColumns(query.text)).toEqual(["venue_id", "start_datetime", "end_datetime"]);
+    expect(query.text).toMatch(/"events"\."venue_id" in \(\$2, \$3, \$4\)/i);
+    expect(query.text).toMatch(/\("events"\."start_datetime" >= \$5 or "events"\."end_datetime" > \$6\)/i);
+    expect(query.values.slice(4)).toEqual([new Date(now.getTime() - UPCOMING_PREFILTER_LOOKBACK_MS).toISOString(), now.toISOString()]);
+  });
+
+  it("no venues → no query", async () => {
+    await expect(getUpcomingEventCountsByVenue([], new Date())).resolves.toEqual(new Map());
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("public event lists (homepage, genre and venue pages) read upcoming events with list columns only", () => {
+  const now = new Date("2026-10-20T12:00:00.000Z");
+
+  it("filters published + upcoming candidates in SQL and never selects admin/detail-only columns", async () => {
+    await getUpcomingPublishedEventsForList(now);
+
+    const [query, ...extra] = eventQueries();
+    expect(extra).toHaveLength(0);
+    const columns = selectedColumns(query.text);
+    for (const column of ADMIN_OR_DETAIL_ONLY_EVENT_COLUMNS) expect(columns).not.toContain(column);
+    expect(columns).toEqual(
+      expect.arrayContaining(["id", "slug", "title", "description", "artists", "start_datetime", "end_datetime", "venue_id", "primary_genre", "subgenres"]),
+    );
+    expect(query.text).toMatch(
+      /where \("events"\."published" = \$1 and \("events"\."start_datetime" >= \$2 or "events"\."end_datetime" > \$3\)\)/i,
+    );
+    expect(query.values).toEqual([true, new Date(now.getTime() - UPCOMING_PREFILTER_LOOKBACK_MS).toISOString(), now.toISOString()]);
+  });
+
+  it("reads only the five venue fields the rows show, for the referenced venues only", async () => {
+    const result = await getUpcomingPublishedEventsForList(now);
+
+    expect(result.map((e) => e.id)).toEqual(["e-1", "e-2", "e-3"]);
+    const [venueQuery, ...extra] = venueQueries();
+    expect(extra).toHaveLength(0);
+    expect(selectedColumns(venueQuery.text).sort()).toEqual(["address", "aliases", "id", "name", "slug"]);
+    expect([...venueQuery.values].sort()).toEqual(["v-hangaren", "v-vega"]);
+  });
+
+  it("maps values exactly as eventRowToRecord + withAboutKind did (ISO dates, labels-only About text → null, unresolvable venue skipped)", async () => {
+    tableRows.events = [
+      { ...event("e-1", "v-vega"), end_datetime: "2026-10-21 04:00:00+00", description: "A long night of techno." },
+      { ...event("e-labels", "v-vega"), description: "Praktisk info:." },
+      event("e-orphan", "v-missing"),
+    ];
+
+    const result = await getUpcomingPublishedEventsForList(now);
+
+    expect(result.map((e) => e.id)).toEqual(["e-1", "e-labels"]);
+    expect(result[0]).toMatchObject({
+      startDatetime: "2026-10-20T20:00:00.000Z",
+      endDatetime: "2026-10-21T04:00:00.000Z",
+      description: "A long night of techno.",
+      primaryGenre: "techno",
+      venue: { id: "v-vega", slug: "v-vega", name: "VEGA", address: "VEGA street 1", aliases: [] },
+    });
+    expect(result[1].description).toBeNull();
+  });
+
+  it("venue pages: narrowed to the given venue ids in the same single query; empty list → no query", async () => {
+    await getUpcomingPublishedEventsForList(now, ["v-vega", "v-vega-ideal-bar"]);
+    const [query] = eventQueries();
+    expect(query.text).toMatch(/"events"\."venue_id" in \(\$4, \$5\)/i);
+    expect(query.values.slice(3)).toEqual(["v-vega", "v-vega-ideal-bar"]);
+
+    sent.length = 0;
+    await expect(getUpcomingPublishedEventsForList(now, [])).resolves.toEqual([]);
+    expect(sent).toHaveLength(0);
   });
 });

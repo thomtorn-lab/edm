@@ -7,13 +7,13 @@ import type { GenreSlug } from "@/lib/taxonomy";
 import type { Venue } from "@/lib/types";
 
 vi.mock("@/lib/queries", () => ({
-  getPublishedEventsWithVenue: vi.fn(),
+  getUpcomingPublishedEventsForList: vi.fn(),
   getPreviewAvailabilityForEvents: vi.fn(),
   getSoundcloudAvailabilityForEvents: vi.fn(),
 }));
 vi.mock("@/components/NewsletterSignupForm", () => ({ default: () => null }));
 
-const { getPublishedEventsWithVenue, getPreviewAvailabilityForEvents, getSoundcloudAvailabilityForEvents } = await import(
+const { getUpcomingPublishedEventsForList, getPreviewAvailabilityForEvents, getSoundcloudAvailabilityForEvents } = await import(
   "@/lib/queries"
 );
 const { default: HomePage } = await import("./page");
@@ -66,7 +66,7 @@ describe("homepage — server-side upcoming filter and projection", () => {
   ];
 
   it("hands EventExplorer only the not-yet-past events, as projected objects", async () => {
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
+    vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue(events);
     vi.mocked(getPreviewAvailabilityForEvents).mockResolvedValue([true, false]);
     vi.mocked(getSoundcloudAvailabilityForEvents).mockResolvedValue([false, true]);
     const element = await HomePage();
@@ -93,7 +93,7 @@ describe("homepage — server-side upcoming filter and projection", () => {
   });
 
   it("server-renders every upcoming event's row and link, and none of the past ones", async () => {
-    vi.mocked(getPublishedEventsWithVenue).mockResolvedValue(events);
+    vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue(events);
     vi.mocked(getPreviewAvailabilityForEvents).mockResolvedValue([false, false]);
     vi.mocked(getSoundcloudAvailabilityForEvents).mockResolvedValue([false, false]);
     const html = renderToStaticMarkup(await HomePage());
