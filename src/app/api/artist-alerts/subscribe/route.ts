@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requestArtistAlerts } from "@/db/artistAlerts";
-import { artistAlertsMode, emailAllowed, subscriptionsEnabled } from "@/lib/artistAlerts/config";
-import { buildConfirmEmail } from "@/lib/artistAlerts/emailContent";
+import { ARTIST_ALERTS_REPLY_TO, artistAlertsMode, emailAllowed, subscriptionsEnabled } from "@/lib/artistAlerts/config";
+import { buildConfirmEmail, buildManageLinkEmail } from "@/lib/artistAlerts/emailContent";
 import { parseIdList, parseRequests } from "@/lib/artistAlerts/requestParsing";
 import { sendEmail } from "@/lib/email";
 import { getClientIp, isRateLimited } from "@/lib/rateLimit";
@@ -36,10 +36,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await requestArtistAlerts({ email, artistIds, requests });
-    if (result.confirmToken) {
-      const content = buildConfirmEmail({ confirmToken: result.confirmToken, artistNames: result.artistNames });
-      await sendEmail({ to: email, subject: content.subject, text: content.text });
-    }
+    // Same answer either way; only the email differs. A confirmed address gets
+    // its manage link (artists change there at once), anyone else the
+    // double opt-in confirmation.
+    const content = result.manageToken
+      ? buildManageLinkEmail({ manageToken: result.manageToken })
+      : result.confirmToken
+        ? buildConfirmEmail({ confirmToken: result.confirmToken, artistNames: result.artistNames })
+        : null;
+    if (content) await sendEmail({ to: email, subject: content.subject, text: content.text, replyTo: ARTIST_ALERTS_REPLY_TO });
   } catch (err) {
     console.error("artist alerts subscribe failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Something went wrong. Please try again later." }, { status: 502 });

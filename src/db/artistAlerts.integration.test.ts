@@ -243,8 +243,9 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     expect(view!.follows.map((f) => [f.displayName, f.state])).toEqual([["Small Horse", "active"]]);
 
     // A name that does not exist yet becomes a requested artist and waits for verification.
-    const r2 = await alerts.requestArtistAlerts({ email: "fan4@example.test", artistIds: [], requests: [{ name: "Brand New DJ", profileUrl: "https://example.com/x" }] }, at(1));
-    const m2 = (await alerts.confirmArtistAlerts(r2.confirmToken!, at(1)))!.manageToken;
+    // Already confirmed: further artists are requested from the manage page.
+    const m2 = (await alerts.confirmArtistAlerts(r.confirmToken!, at(0.5)))!.manageToken;
+    expect(await alerts.updateFollowsByManageToken(m2, { add: [], remove: [], requests: [{ name: "Brand New DJ", profileUrl: "https://example.com/x" }] }, at(1))).toBe(true);
     const v2 = await alerts.getManageView(m2);
     expect(v2!.follows.find((f) => f.displayName === "Brand New DJ")!.state).toBe("awaiting_verification");
     const reqId = await artistId("brand new dj");
@@ -330,5 +331,23 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     expect(sends).toBe(0);
     expect(await fingerprint()).toBe(before);
     expect((await admin.query("SELECT count(*)::int n FROM event_artists WHERE event_id='o1'")).rows[0].n).toBe(2);
+  });
+
+  it("a confirmed address using the public form again gets its manage link; nothing is added", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers");
+    await addEvent("m1", "Manage Night", ["Daria Kolosova", "Gerd Janson"], { start: evStart(100) });
+    await alerts.runArtistAlerts("observe", (async () => ({ status: "sent", resendEmailId: "x" })) as never, at(0));
+    const manageToken = await subscribe("again@example.test", ["daria kolosova"], [], 0.5);
+    const again = await alerts.requestArtistAlerts({ email: "Again@Example.test", artistIds: [await artistId("gerd janson")], requests: [] }, at(1));
+    expect(again.confirmToken).toBeUndefined();
+    expect(again.manageToken).toBe(manageToken);
+    const view = await alerts.getManageView(manageToken);
+    expect(view!.follows.map((f) => f.displayName)).toEqual(["Daria Kolosova"]);
+    // The manage page still adds artists directly, with no new confirmation.
+    expect(await alerts.updateFollowsByManageToken(manageToken, { add: [await artistId("gerd janson")], remove: [], requests: [] }, at(1))).toBe(true);
+    expect((await alerts.getManageView(manageToken))!.follows.map((f) => [f.displayName, f.state])).toEqual([
+      ["Daria Kolosova", "active"],
+      ["Gerd Janson", "active"],
+    ]);
   });
 });

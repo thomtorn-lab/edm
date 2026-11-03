@@ -137,6 +137,7 @@ export type SendListEmailInput = {
   idempotencyKey: string;
   /** One-click unsubscribe target for List-Unsubscribe / List-Unsubscribe-Post. */
   listUnsubscribeUrl: string;
+  replyTo?: string;
 };
 
 /**
@@ -159,6 +160,7 @@ export async function sendListEmail(input: SendListEmailInput): Promise<SendNews
         subject: input.subject,
         html: input.html,
         text: input.text,
+        ...(input.replyTo ? { replyTo: input.replyTo } : {}),
         headers: {
           "List-Unsubscribe": `<${input.listUnsubscribeUrl}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

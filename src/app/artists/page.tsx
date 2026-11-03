@@ -25,6 +25,9 @@ export default async function ArtistsPage({ searchParams }: { searchParams: Prom
       <p className="mt-2 max-w-xl text-sm text-text-secondary">
         Follow the artists you care about. When a new event with one of them is listed on Electronic CPH, we send you one short email.
       </p>
+      <p className="mt-2 max-w-xl text-xs text-text-tertiary">
+        Already getting Artist Alerts? Use &ldquo;Change your artists&rdquo; in any of our emails to add or remove artists.
+      </p>
       {unsubscribed && (
         <p role="status" className="mt-4 text-sm text-text-secondary">
           You&rsquo;re unsubscribed and your data is deleted.

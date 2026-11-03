@@ -6,7 +6,7 @@ import { alertDeliveries, alertEmails, alertFollows, alertSubscribers, artists, 
 import { publicUpcomingEventCondition, reconcileArtistAppearances, type ReconcileSummary } from "./artistAppearances";
 import { artistIdentityKey } from "../lib/artistIdentity/lineupIdentity";
 import { cleanArtistDisplayName } from "../lib/enrichment/genreEnrichment";
-import { ARTIST_ALERTS_CONSENT_VERSION, LIMITS, alertTiming, emailAllowed, type AlertTiming, type ArtistAlertsMode } from "../lib/artistAlerts/config";
+import { ARTIST_ALERTS_CONSENT_VERSION, ARTIST_ALERTS_REPLY_TO, LIMITS, alertTiming, emailAllowed, type AlertTiming, type ArtistAlertsMode } from "../lib/artistAlerts/config";
 import { generateToken, hashToken, manageTokenFor } from "../lib/artistAlerts/tokens";
 import { buildAlertEmail, normalizeProfileUrl, unsubscribeUrl, type AlertEmailEvent } from "../lib/artistAlerts/emailContent";
 import { planEmail } from "../lib/artistAlerts/planning";
@@ -26,8 +26,10 @@ export interface ArtistRequestInput {
 }
 
 export interface SignupResult {
-  /** Present when a confirmation email should be sent now. */
+  /** Present when a confirmation email should be sent now (new or still unconfirmed address). */
   confirmToken?: string;
+  /** Present when the address is already confirmed: email it its manage link instead. */
+  manageToken?: string;
   artistNames: string[];
 }
 
@@ -111,7 +113,11 @@ export async function requestArtistAlerts(
     await db.insert(alertSubscribers).values({ id, email, status: "pending", manageTokenHash: hashToken(manageTokenFor(id)), createdAt: now }).onConflictDoNothing();
     [sub] = await db.select().from(alertSubscribers).where(eq(alertSubscribers.email, email)).limit(1);
   }
-  const artistNames = await addFollows(sub.id, input.artistIds, input.requests, null, now);
+  // Already confirmed: nothing changes from the public form. The address is
+  // emailed its manage link, where artists are added or removed at once — the
+  // link itself proves the inbox, exactly as before.
+  const confirmed = sub.status === "confirmed";
+  const artistNames = confirmed ? [] : await addFollows(sub.id, input.artistIds, input.requests, null, now);
 
   const windowStart = new Date(now.getTime() - 86_400_000);
   const sentToday = sub.lastConfirmEmailAt && sub.lastConfirmEmailAt > windowStart ? sub.confirmEmailsSent : 0;
@@ -122,6 +128,10 @@ export async function requestArtistAlerts(
     .where(gt(alertSubscribers.lastConfirmEmailAt, new Date(now.getTime() - 3_600_000)));
   if (lastHour >= LIMITS.maxConfirmEmailsPerHourGlobal) return { artistNames };
 
+  if (confirmed) {
+    await db.update(alertSubscribers).set({ confirmEmailsSent: sentToday + 1, lastConfirmEmailAt: now }).where(eq(alertSubscribers.id, sub.id));
+    return { manageToken: manageTokenFor(sub.id), artistNames };
+  }
   const confirmToken = generateToken();
   await db
     .update(alertSubscribers)
@@ -285,6 +295,7 @@ async function sendEmailRow(row: typeof alertEmails.$inferSelect, send: Sender, 
     text: row.textBody,
     idempotencyKey: row.idempotencyKey,
     listUnsubscribeUrl: unsubscribeUrl(manageTokenFor(row.subscriberId)),
+    replyTo: ARTIST_ALERTS_REPLY_TO,
   });
   if (result.status === "sent") {
     await db.update(alertEmails).set({ status: "sent", sentAt: now, resendEmailId: result.resendEmailId }).where(eq(alertEmails.id, row.id));
