@@ -347,7 +347,10 @@ async function runSourceSyncLocked(
             existing.overriddenFields.includes("artists") || raw.artistsGuessedFromTitle || result.normalizedArtists.length === 0
               ? existing.artists
               : result.normalizedArtists;
-          const records = inlineSoundcloudEvidenceForSync(raw, lineup, existing.id, [existing.description]);
+          // The stored description is the source's text only while no admin
+          // has edited it; an edited one is admin text, never source evidence.
+          const storedSourceText = existing.overriddenFields.includes("description") ? null : existing.description;
+          const records = inlineSoundcloudEvidenceForSync(raw, lineup, existing.id, [storedSourceText]);
           if (records.length > 0) inlineSoundcloud.push({ eventId: existing.id, records });
         }
         const target: SyncTargetEvent = {

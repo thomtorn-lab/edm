@@ -2381,6 +2381,12 @@ describe("Source-provided SoundCloud links in a source's own text (2026-11-03) â
     );
   });
 
+  it("an admin-edited stored description is admin text, never source evidence: nothing stored from it", async () => {
+    matchExistingNight({ description: "SEID (Frikvens Syndikatet) https://soundcloud.com/seid1312", artists: ["SEID"], overriddenFields: ["artists", "description"] });
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artists: [] })])));
+    expect(reconcileSourceSoundcloudLinks).not.toHaveBeenCalled();
+  });
+
   it("a duo, a B2B side, two profiles for one name, or title-guessed names: nothing stored", async () => {
     for (const [artists, text, extra] of [
       [["Lulla-Li & Nihility"], "Lulla-Li & Nihility: https://soundcloud.com/nihility_forest", {}],
