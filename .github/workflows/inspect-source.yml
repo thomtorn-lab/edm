@@ -62,6 +62,8 @@ on:
           - migration-status
           - artist-genre-cache
           - review-discogs-measure
+          - artist-identity-audit
+          - artist-identity-audit-check
       source_id:
         description: 'Source id, e.g. "src-hangaren" (required for every mode except inventory/lock-status/reachability/db-integrity/venue-blocks/event-integrity/text-leakage-audit/cancellation-audit/link-role-audit/admin-queue-audit/ignore-persistence-audit/genre-taxonomy-audit with no source scoping; must match src-[a-z0-9-]+)'
         required: false
@@ -162,8 +164,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify DATABASE_URL secret is configured (skipped for reachability/youtube-preview-dry-run modes with no DB access)
-        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' }}
+      - name: Verify DATABASE_URL secret is configured (skipped for reachability/youtube-preview-dry-run modes with no DB access, and for artist-identity-audit, which never receives DATABASE_URL)
+        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' && !startsWith(inputs.mode, 'artist-identity-audit') }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -176,12 +178,13 @@ jobs:
         run: npm ci
 
       - name: Write DATABASE_URL for the diagnostic script
-        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' }}
+        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' && !startsWith(inputs.mode, 'artist-identity-audit') }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
 
       - name: Run inspection
+        if: ${{ !startsWith(inputs.mode, 'artist-identity-audit') }}
         env:
           BILLETTO_ACCESS_KEY_ID: ${{ secrets.BILLETTO_ACCESS_KEY_ID }}
           BILLETTO_ACCESS_KEY_SECRET: ${{ secrets.BILLETTO_ACCESS_KEY_SECRET }}
@@ -244,6 +247,40 @@ jobs:
           else
             node --env-file=.env.local --import tsx src/db/inspectSource.ts "${args[@]}"
           fi
+
+      # Artist Alerts identity audit (Phase A step 1, 2026-10-24) — a
+      # separate, report-only CLI with its own connection, deliberately not
+      # routed through inspectSource.ts: it receives ONLY the dedicated
+      # read-only reporting role (DATABASE_URL_REPORT_RO), never
+      # DATABASE_URL, and src/db/reportReadOnlyConnection.ts refuses to run
+      # unless both the transaction and the role are verified unable to
+      # write. No other input is used; no external service is called.
+      - name: Run artist identity audit (dedicated read-only role)
+        if: ${{ startsWith(inputs.mode, 'artist-identity-audit') }}
+        timeout-minutes: 10
+        env:
+          DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
+          INPUT_MODE: ${{ inputs.mode }}
+        run: |
+          if [ -z "${DATABASE_URL_REPORT_RO:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL_REPORT_RO is not set. This mode only runs on the dedicated read-only reporting role and never falls back to DATABASE_URL."
+            exit 1
+          fi
+          # artist-identity-audit-check: prove the connection and role only, read no data.
+          if [ "$INPUT_MODE" = "artist-identity-audit-check" ]; then
+            node --import tsx src/db/artistIdentityAuditCli.ts --check-only
+          else
+            node --import tsx src/db/artistIdentityAuditCli.ts --out=artist-identity-audit.json
+          fi
+
+      - name: Upload artist identity audit report
+        if: ${{ always() && inputs.mode == 'artist-identity-audit' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: artist-identity-audit
+          path: artist-identity-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload saved body as artifact
         if: ${{ inputs.save_body_path != '' }}
