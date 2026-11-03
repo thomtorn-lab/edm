@@ -2332,6 +2332,87 @@ describe("Venue-provided SoundCloud links (Culture Box, 2026-10-13) — reconcil
   });
 });
 
+describe("Source-provided SoundCloud links in a source's own text (2026-11-03) — stored like Culture Box's, never deleting", () => {
+  function matchExistingNight(overrides: Record<string, unknown> = {}) {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([existingCultureBoxEvent({ id: "e-night", artists: ["GUY J", "TIM ANDRESEN"], ...overrides })]);
+    const once = (result: unknown[]) =>
+      ({
+        from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }),
+      }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once([{ eventId: "e-night", sourceUrl: "https://culture-box.com/event/some-other-night" }]))
+      .mockImplementationOnce(() => once([]))
+      .mockImplementationOnce(() => once([]));
+  }
+  const night = (overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent => ({
+    ...rawCandidate,
+    title: "Some Other Night",
+    artists: ["GUY J", "TIM ANDRESEN"],
+    officialEventUrl: "https://culture-box.com/event/some-other-night",
+    sourceUrl: "https://culture-box.com/events/",
+    ...overrides,
+  });
+
+  it("a lineup line 'Name: soundcloud.com/x' becomes a stored link, without documenting absence", async () => {
+    matchExistingNight();
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ lineupSourceText: "LINE-UP:\nGUY J: https://soundcloud.com/guy-j -\nTIM ANDRESEN" })])));
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith(
+      "src-culture-box",
+      new Map([["e-night", { links: [{ name: "GUY J", url: "https://soundcloud.com/guy-j" }], absenceDocumented: false }]]),
+    );
+  });
+
+  it("an admin-protected lineup is used as it is: a link for a name the admin removed is never stored", async () => {
+    matchExistingNight({ artists: ["GUY J"], overriddenFields: ["artists"] });
+    const text = "GUY J: https://soundcloud.com/guy-j\nTIM ANDRESEN: https://soundcloud.com/tim-andresen";
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ lineupSourceText: text })])));
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith(
+      "src-culture-box",
+      new Map([["e-night", { links: [{ name: "GUY J", url: "https://soundcloud.com/guy-j" }], absenceDocumented: false }]]),
+    );
+  });
+
+  it("the stored description counts too (Pylonen keeps the links there after an admin publish)", async () => {
+    matchExistingNight({ description: "SEID (Frikvens Syndikatet) https://soundcloud.com/seid1312", artists: ["SEID"], overriddenFields: ["artists"] });
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artists: [] })])));
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith(
+      "src-culture-box",
+      new Map([["e-night", { links: [{ name: "SEID", url: "https://soundcloud.com/seid1312" }], absenceDocumented: false }]]),
+    );
+  });
+
+  it("an admin-edited stored description is admin text, never source evidence: nothing stored from it", async () => {
+    matchExistingNight({ description: "SEID (Frikvens Syndikatet) https://soundcloud.com/seid1312", artists: ["SEID"], overriddenFields: ["artists", "description"] });
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artists: [] })])));
+    expect(reconcileSourceSoundcloudLinks).not.toHaveBeenCalled();
+  });
+
+  it("a duo, a B2B side, two profiles for one name, or title-guessed names: nothing stored", async () => {
+    for (const [artists, text, extra] of [
+      [["Lulla-Li & Nihility"], "Lulla-Li & Nihility: https://soundcloud.com/nihility_forest", {}],
+      [["Ingvil B2B DJ Void"], "DJ Void https://soundcloud.com/djvoid", {}],
+      [["Krypto"], "Krypto: https://soundcloud.com/psykrypp https://soundcloud.com/krypto-2", {}],
+      [["GUY J"], "GUY J: https://soundcloud.com/guy-j", { artistsGuessedFromTitle: true }],
+    ] as const) {
+      vi.mocked(reconcileSourceSoundcloudLinks).mockClear();
+      matchExistingNight({ artists: [...artists], overriddenFields: ["artists"] });
+      await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artists: [...artists], lineupSourceText: text, ...extra })])));
+      expect(reconcileSourceSoundcloudLinks).not.toHaveBeenCalled();
+    }
+  });
+
+  it("a structured report (Culture Box) is passed through untouched; text links never add to it", async () => {
+    matchExistingNight();
+    const report = { links: [{ name: "GUY J", url: "https://soundcloud.com/guy-j" }], absenceDocumented: true };
+    await runSourceSync(
+      "src-culture-box",
+      "Culture Box",
+      fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: report, description: "TIM ANDRESEN: https://soundcloud.com/tim-andresen" })])),
+    );
+    expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([["e-night", report]]));
+  });
+});
+
 describe("KultuNaut title-guessed artists and Discogs (2026-10-23)", () => {
   const kultunaut = (overrides: Partial<RawCandidateEvent>): RawCandidateEvent => ({
     ...rawCandidate,
