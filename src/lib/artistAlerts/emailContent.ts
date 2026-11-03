@@ -118,6 +118,25 @@ ${names ? `<p>Artists: ${escapeHtml(names)}</p>` : ""}
   return { subject: "Confirm your Electronic CPH artist alerts", html, text };
 }
 
+/** For an address that already gets Artist Alerts and used the public form again: its manage link, nothing else. */
+export function buildManageLinkEmail(input: { manageToken: string }): EmailContent {
+  const url = manageUrl(input.manageToken);
+  const text = [
+    "You already get Electronic CPH artist alerts at this address.",
+    "",
+    "Add or remove artists here (no new confirmation needed):",
+    url,
+    "",
+    "If you didn't ask for this, you can ignore this email.",
+  ].join("\n");
+  const html = `<!doctype html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;">
+<p>You already get Electronic CPH artist alerts at this address.</p>
+<p><a href="${escapeHtml(url)}">Add or remove your artists</a> (no new confirmation needed).</p>
+<p style="color:#666;font-size:12px;">If you didn't ask for this, you can ignore this email.</p>
+</body></html>`;
+  return { subject: "Your Electronic CPH artist alerts", html, text };
+}
+
 /** A requester's identification link: a SoundCloud profile or a Spotify artist page, normalised; anything else is refused. Never fetched. */
 export function normalizeProfileUrl(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.trim() === "") return null;

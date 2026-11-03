@@ -39,7 +39,29 @@ describe("POST /api/artist-alerts/subscribe", () => {
     const res = await (await route()).POST(post("https://x.test/api/artist-alerts/subscribe", { email: "a@example.test", artistIds: [ARTIST, "not-an-id"] }));
     expect(await res.json()).toEqual({ ok: true });
     expect(requestArtistAlerts).toHaveBeenCalledWith({ email: "a@example.test", artistIds: [ARTIST], requests: [] });
-    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "a@example.test", subject: "Confirm your Electronic CPH artist alerts" }));
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "a@example.test", subject: "Confirm your Electronic CPH artist alerts", replyTo: "hello@electroniccph.com" }),
+    );
+  });
+
+  it("an already confirmed address gets its manage link instead of a new confirmation, with the same answer", async () => {
+    process.env.ARTIST_ALERTS_MODE = "live";
+    requestArtistAlerts.mockResolvedValue({ manageToken: "m".repeat(43), artistNames: [] });
+    const res = await (await route()).POST(post("https://x.test/api/artist-alerts/subscribe", { email: "a@example.test", artistIds: [ARTIST] }));
+    expect(await res.json()).toEqual({ ok: true });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const sent = sendEmail.mock.calls[0][0];
+    expect(sent.subject).toBe("Your Electronic CPH artist alerts");
+    expect(sent.text).toContain(`/artists/manage?token=${"m".repeat(43)}`);
+    expect(sent.replyTo).toBe("hello@electroniccph.com");
+  });
+
+  it("sends nothing when the per-address limit applied, with the same answer", async () => {
+    process.env.ARTIST_ALERTS_MODE = "live";
+    requestArtistAlerts.mockResolvedValue({ artistNames: [] });
+    const res = await (await route()).POST(post("https://x.test/api/artist-alerts/subscribe", { email: "a@example.test", artistIds: [ARTIST] }));
+    expect(await res.json()).toEqual({ ok: true });
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it("test mode: other addresses get the same answer and nothing is stored or sent", async () => {

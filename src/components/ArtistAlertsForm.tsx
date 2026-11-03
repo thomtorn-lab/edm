@@ -55,17 +55,20 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
   const [company, setCompany] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [requestOpen, setRequestOpen] = useState(false);
 
   const matches = useMemo(() => {
     const q = normalize(query);
     const pool = artists.filter((a) => !followedIds.has(a.id) && !selected.some((s) => s.id === a.id));
-    if (!q) return pool.filter((a) => a.upcomingEvents > 0).slice(0, 24);
+    // Search-only: no default list, so the page works however many artists exist.
+    if (!q) return [];
     return pool.filter((a) => normalize(a.displayName).includes(q)).slice(0, 24);
     // followedIds is derived from props and stable for this render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artists, query, selected]);
 
   const nothingFound = query.trim().length >= 2 && matches.length === 0;
+  const showRequest = requestOpen || nothingFound || requestName !== "";
   const chosenCount = selected.length + requests.length;
 
   function addRequest() {
@@ -75,6 +78,7 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
     setRequestName("");
     setRequestUrl("");
     setQuery("");
+    setRequestOpen(false);
   }
 
   async function submit(path: string, body: Record<string, unknown>, successMessage: string) {
@@ -113,7 +117,7 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
     await submit(
       "/api/artist-alerts/subscribe",
       { email, company, artistIds: selected.map((s) => s.id), requests },
-      "Check your email and confirm — your alerts start once you do.",
+      "Check your email. New here: confirm from the email, and your alerts start. Already getting Artist Alerts: the email has a link to add or remove artists — no new confirmation needed.",
     );
   }
 
@@ -168,7 +172,33 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
           autoComplete="off"
           className={`${INPUT} mt-2`}
         />
-        {!query && <p className="mt-2 text-xs text-text-tertiary">Showing artists with upcoming events. Search to find anyone who has played here.</p>}
+        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          {!query && <p className="text-xs text-text-tertiary">Type an artist&rsquo;s name to find them.</p>}
+          {!showRequest && (
+            <button type="button" onClick={() => setRequestOpen(true)} className="text-xs text-text-secondary underline hover:text-text-primary">
+              Artist not on Electronic CPH yet? Request them
+            </button>
+          )}
+        </div>
+        {showRequest && (
+          <div className="mt-3 rounded border border-border p-3">
+            <p className="text-sm text-text-secondary">
+              Can&rsquo;t find the artist? Ask us to add them. A SoundCloud or Spotify link helps us find the right one.
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <input aria-label="Artist name" value={requestName || query} onChange={(e) => setRequestName(e.target.value)} className={INPUT} maxLength={80} />
+              <input aria-label="SoundCloud or Spotify link (optional)" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)} placeholder="SoundCloud or Spotify link (optional)" className={INPUT} maxLength={300} />
+              <button
+                type="button"
+                className={BUTTON}
+                onClick={() => (props.mode === "manage" ? saveManage({ requests: [{ name: requestName.trim() || query.trim(), profileUrl: requestUrl.trim() }] }) : addRequest())}
+              >
+                Request
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-text-tertiary">Requested artists only start sending alerts once we have confirmed who they are.</p>
+          </div>
+        )}
         <ul className="mt-2">
           {matches.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-3 border-b border-border py-2">
@@ -192,25 +222,6 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
           ))}
         </ul>
 
-        {(nothingFound || requestName) && (
-          <div className="mt-4 rounded border border-border p-3">
-            <p className="text-sm text-text-secondary">
-              Can&rsquo;t find the artist? Ask us to add them. A SoundCloud or Spotify link helps us find the right one.
-            </p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-              <input aria-label="Artist name" value={requestName || query} onChange={(e) => setRequestName(e.target.value)} className={INPUT} maxLength={80} />
-              <input aria-label="SoundCloud or Spotify link (optional)" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)} placeholder="SoundCloud or Spotify link (optional)" className={INPUT} maxLength={300} />
-              <button
-                type="button"
-                className={BUTTON}
-                onClick={() => (props.mode === "manage" ? saveManage({ requests: [{ name: requestName.trim() || query.trim(), profileUrl: requestUrl.trim() }] }) : addRequest())}
-              >
-                Request
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-text-tertiary">Requested artists only start sending alerts once we have confirmed who they are.</p>
-          </div>
-        )}
       </section>
 
       {props.mode === "signup" && (

@@ -1,7 +1,7 @@
 /**
  * Artist Alerts settings (2026-11-02). One switch, ARTIST_ALERTS_MODE:
  * - "off" (default, also any unknown value): every Artist Alerts route answers
- *   404/503, nothing is reconciled or sent, the Artists link is hidden;
+ *   404/503, nothing is reconciled or sent;
  * - "observe": the scheduled run reconciles lineups only — no subscriber data,
  *   no email;
  * - "test": signup and sending work only for addresses on
@@ -66,6 +66,9 @@ export function alertTiming(env: Record<string, string | undefined> = process.en
 }
 
 export const ARTIST_ALERTS_CONSENT_VERSION = "2026-11-02";
+
+/** Replies to any Artist Alerts email go to the site's ordinary inbox; the sending address itself stays send.electroniccph.com. */
+export const ARTIST_ALERTS_REPLY_TO = "hello@electroniccph.com";
 
 export const ARTIST_ALERTS_CONSENT_PURPOSE =
   "To email you when a new event with an artist you follow is listed on Electronic CPH. Only for the artists you choose; no newsletter. You can change your artists or unsubscribe at any time from the link in every email.";
