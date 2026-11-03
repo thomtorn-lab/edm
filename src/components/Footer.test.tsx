@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import Footer from "./Footer";
 
 afterEach(cleanup);
@@ -43,5 +43,50 @@ describe("Footer — genre links", () => {
       ["House", "/genres/house"],
       ["Trance", "/genres/trance"],
     ]);
+  });
+});
+
+// Footer redesign (2026-11-03): two labelled link groups, identity text and
+// the footer's own back-to-top button.
+describe("Footer — redesign structure", () => {
+  it("shows the identity text", () => {
+    render(<Footer />);
+    expect(screen.getByText("Electronic CPH")).toBeTruthy();
+    expect(screen.getByText("An independent index of electronic music events in Copenhagen.")).toBeTruthy();
+  });
+
+  it("keeps the primary links, in order, in the Footer nav", () => {
+    render(<Footer />);
+    const nav = screen.getByRole("navigation", { name: "Footer" });
+    expect(within(nav).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["Events", "/"],
+      ["Venues", "/venues"],
+      ["Festivals", "/festivals"],
+      ["Techno", "/genres/techno"],
+      ["House", "/genres/house"],
+      ["Trance", "/genres/trance"],
+    ]);
+  });
+
+  it("keeps the information links in their own nav", () => {
+    render(<Footer />);
+    const nav = screen.getByRole("navigation", { name: "Footer information" });
+    const links = within(nav).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")]);
+    expect(links).toEqual(
+      expect.arrayContaining([
+        ["About", "/about"],
+        ["Suggest an event", "/suggest-event"],
+        ["Contact", "/contact"],
+        ["Privacy", "/privacy"],
+      ]),
+    );
+  });
+
+  it("has a labelled back-to-top button that smooth-scrolls to the top", () => {
+    const scrollTo = vi.fn();
+    window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+    render(<Footer />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 });
