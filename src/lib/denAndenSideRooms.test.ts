@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   analyzeRooms,
+  hasRoomSplit,
   isDenAndenSideVenueName,
   readGeneratedBreakdown,
   stripDenAndenSideRoomPrefix,
@@ -245,5 +246,102 @@ describe("structureDenAndenSideRooms", () => {
       "Den Anden Ende": "Nygma, Mikkelbarsxe",
     });
     expect(readGeneratedBreakdown("Den Anden Side\nAxeltorv 5", ["A"])).toBeNull();
+  });
+});
+
+// Stored source text of "Søstre i Trance - Soup of the Night" (2026-11-28,
+// HvadErPå): the source's own room headings, with a non-artist line inside
+// the main-room list.
+const SOSTRE = {
+  title: "Søstre i Trance - Soup of the Night",
+  artists: ["Elektroengel", "Filen b2b Signe Alarcón", "Quip Tone Beatz + Chilly Tone Beatz ( Live )", "Asta Fugazi b2b My Gander"],
+  description: [
+    "As the days grow darker and the nights stretch longer, soup season is upon us.",
+    "",
+    "𝗟𝗶𝗻𝗲𝘂𝗽",
+    "𝘋𝘦𝘯 𝘈𝘯𝘥𝘦𝘯 𝘚𝘪𝘥𝘦 ( 𝘍𝘰𝘳𝘦𝘴𝘵 𝘛𝘳𝘢𝘯𝘤𝘦)",
+    "Elektroengel [she/her]",
+    "Filen b2b Signe Alarcon [she/her]",
+    "Quip Tone Beatz + Chilly Tone Beatz ( Live ) [she/her]",
+    "a secret morning concoction awaits.. [she/her]",
+    "",
+    "𝘋𝘦𝘯 𝘈𝘯𝘥𝘦𝘯 𝘌𝘯𝘥𝘦 ( 𝘗𝘴𝘺, 𝘛𝘦𝘬, 𝘛𝘦𝘬𝘯𝘰 )",
+    "Asta Fugazi b2b My Gander all night [she/her | she/her]",
+    "",
+    "Artwork by Filen",
+    "",
+    PRACTICAL_TAIL,
+  ].join("\n"),
+  venueName: "Den Anden Side",
+};
+
+// Shape of the stored GAGxDAS text (2026-09-19): "◈ room ◈" section
+// headings, then one bio paragraph per artist.
+const GAGXDAS = {
+  title: "GAGxDAS: THREE YEARS",
+  artists: ["Lorenzo Raganzini", "Elliott Taguchi", "steamboi", "ASTA MARI", "Metovic"],
+  description: [
+    "◈ Den Anden Side ◈",
+    "Hypnotic, Techno",
+    "",
+    "☆ Lorenzo Raganzini [he/him]",
+    "",
+    "Lorenzo Raganzini is an Italian techno artist.",
+    "",
+    "☆ Elliott Taguchi [he/him]",
+    "",
+    "Copenhagen-based DJ and co-founder of the collective Postyr.",
+    "",
+    "☆ steamboi [they/them]",
+    "steamboi are a Copenhagen-based DJ and resident at GAG at Den Anden Side.",
+    "",
+    "◈ Den Anden Ende ◈",
+    "Bounce, Trance",
+    "",
+    "☆ ASTA MARI [she/her]",
+    "With a sharp ear for track selection.",
+    "",
+    "☆ Metovic [he/him]",
+    "METOVIC always brings his high energy trance & techno sets.",
+    "",
+    PRACTICAL_TAIL,
+  ].join("\n"),
+  venueName: "Den Anden Side",
+};
+
+describe("source text that already shows the split under its own room headings", () => {
+  it("is kept as it is when its lineup section has a non-artist line — the lineup is never shown twice (Søstre i Trance)", () => {
+    const s = structureDenAndenSideRooms(SOSTRE);
+    expect(s.analysis.verdict).toBe("two-rooms");
+    expect(s.analysis.rooms).toEqual({
+      "Den Anden Side": ["Elektroengel", "Filen b2b Signe Alarcón", "Quip Tone Beatz + Chilly Tone Beatz ( Live )"],
+      "Den Anden Ende": ["Asta Fugazi b2b My Gander"],
+    });
+    expect(s.description).toBe(SOSTRE.description);
+    expect(s.description!.split("Elektroengel").length - 1).toBe(1);
+    expect(s.description!.split("Asta Fugazi").length - 1).toBe(1);
+    expect(s.changed).toBe(false);
+    expect(hasRoomSplit(s.description, s.artists)).toBe(true);
+  });
+
+  it("reads ◈ section headings across the bio paragraphs under them (GAGxDAS)", () => {
+    const s = structureDenAndenSideRooms(GAGXDAS);
+    expect(s.analysis.verdict).toBe("two-rooms");
+    expect(s.analysis.rooms).toEqual({
+      "Den Anden Side": ["Lorenzo Raganzini", "Elliott Taguchi", "steamboi"],
+      "Den Anden Ende": ["ASTA MARI", "Metovic"],
+    });
+    expect(s.description).toBe(GAGXDAS.description);
+    expect(s.artists).toEqual(GAGXDAS.artists);
+  });
+
+  it("still flags a ◈ section whose bio names an artist from the other room", () => {
+    const description = GAGXDAS.description.replace("With a sharp ear for track selection.", "She often plays b2b with Elliott Taguchi.");
+    expect(analyzeRooms({ ...GAGXDAS, description }).verdict).toBe("unresolved");
+  });
+
+  it("a plain heading (no ◈) still ends its list at a blank line", () => {
+    const description = "Den Anden Side\nA1\n\nA2\n\nDen Anden Ende\nB1";
+    expect(analyzeRooms({ title: "X", description, artists: ["A1", "A2", "B1"] }).verdict).toBe("unresolved");
   });
 });
