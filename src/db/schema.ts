@@ -7,6 +7,7 @@ import {
   primaryKey,
   unique,
   jsonb,
+  index,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -697,3 +698,148 @@ export const newsletterSends = pgTable(
   },
   (table) => [unique().on(table.isoWeek, table.subscriberId)],
 );
+
+/**
+ * Artist Alerts (2026-11-02). Stable artist identities, owned by Artist
+ * Alerts; other enrichments (SoundCloud) contribute evidence, never a second
+ * key. One row per performer, found by artistIdentityKey() of a lineup name
+ * (src/lib/artistIdentity/lineupIdentity.ts). `nameKey` is deliberately not
+ * unique: two different artists may share a name, and only an admin may
+ * split or merge identities (mergedIntoId keeps follows working).
+ */
+export const artists = pgTable(
+  "artists",
+  {
+    id: text("id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    nameKey: text("name_key").notNull(),
+    /** "auto" (seen in a lineup) | "verified" (admin) | "requested" (asked for by a subscriber, not yet confirmed) | "rejected". */
+    status: text("status").notNull().default("auto"),
+    /** Optional public profile a requester or admin gave for identification (Spotify/SoundCloud URL). Never fetched. */
+    profileUrl: text("profile_url"),
+    /** Short text telling same-named artists apart, e.g. "DK, techno". */
+    disambiguation: text("disambiguation"),
+    mergedIntoId: text("merged_into_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("artists_name_key_idx").on(table.nameKey)],
+);
+
+/**
+ * One row per (event, performer key): the reconciler's observation of a
+ * lineup appearance (src/db/artistAppearances.ts). State-based: every run
+ * recomputes it from events.artists, so a missed run only delays alerts.
+ *
+ * `visibleSince` is set once, the first time the appearance is seen on a
+ * publicly listed event, and never reset — a later republish or a lineup
+ * entry that disappears and returns is not "new". `confirmedAt` is when the
+ * appearance first reached confidence high/confirmed. An alert needs
+ * confirmedAt within the safety hold after visibleSince, so a late admin
+ * confirmation never produces a historical alert.
+ */
+export const eventArtists = pgTable(
+  "event_artists",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    nameKey: text("name_key").notNull(),
+    /** Null while the identity is unresolved (review). */
+    artistId: text("artist_id").references(() => artists.id),
+    lineupEntry: text("lineup_entry").notNull(),
+    displayName: text("display_name").notNull(),
+    /** "high" | "confirmed" (admin) | "review" | "excluded" (not a performer) | "rejected" (admin). */
+    confidence: text("confidence").notNull(),
+    reason: text("reason"),
+    visibleSince: timestamp("visible_since", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.eventId, table.nameKey] }), index("event_artists_artist_idx").on(table.artistId)],
+);
+
+/**
+ * Artist Alerts subscribers — separate from newsletter_subscribers on
+ * purpose (different purpose and consent). No account: hashed tokens are
+ * the whole auth model. Unsubscribing deletes the row; every follow,
+ * request, delivery and email cascades with it.
+ */
+export const alertSubscribers = pgTable("alert_subscribers", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  /** "pending" until double opt-in, then "confirmed". */
+  status: text("status").notNull().default("pending"),
+  confirmTokenHash: text("confirm_token_hash").unique(),
+  manageTokenHash: text("manage_token_hash").notNull().unique(),
+  consentVersion: text("consent_version"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  confirmEmailsSent: integer("confirm_emails_sent").notNull().default(0),
+  lastConfirmEmailAt: timestamp("last_confirm_email_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Followed artists. `activeSince` is null until the follow is confirmed by
+ * email; alerts only cover appearances that became visible after it, so
+ * following an artist never mails about events that were already listed.
+ */
+export const alertFollows = pgTable(
+  "alert_follows",
+  {
+    subscriberId: text("subscriber_id")
+      .notNull()
+      .references(() => alertSubscribers.id, { onDelete: "cascade" }),
+    artistId: text("artist_id")
+      .notNull()
+      .references(() => artists.id, { onDelete: "cascade" }),
+    activeSince: timestamp("active_since", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.subscriberId, table.artistId] }), index("alert_follows_artist_idx").on(table.artistId)],
+);
+
+/** One alert per (subscriber, event), ever — the primary key is the duplicate guard. */
+export const alertDeliveries = pgTable(
+  "alert_deliveries",
+  {
+    subscriberId: text("subscriber_id")
+      .notNull()
+      .references(() => alertSubscribers.id, { onDelete: "cascade" }),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    artistId: text("artist_id").notNull(),
+    /** "pending" | "emailed" | "dropped" (no longer relevant when its turn came). */
+    status: text("status").notNull().default("pending"),
+    emailId: text("email_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.subscriberId, table.eventId] })],
+);
+
+/**
+ * One row per alert email. The content is built once, when the row is
+ * created, and every retry resends exactly it with the same Resend
+ * idempotency key. A row still unconfirmed past Resend's 24h key window is
+ * marked "stale_unconfirmed" and never retried automatically.
+ */
+export const alertEmails = pgTable("alert_emails", {
+  id: text("id").primaryKey(),
+  subscriberId: text("subscriber_id")
+    .notNull()
+    .references(() => alertSubscribers.id, { onDelete: "cascade" }),
+  /** "pending" | "sent" | "stale_unconfirmed". */
+  status: text("status").notNull().default("pending"),
+  recipientEmail: text("recipient_email").notNull(),
+  subject: text("subject").notNull(),
+  html: text("html").notNull(),
+  textBody: text("text_body").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  resendEmailId: text("resend_email_id"),
+  firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
