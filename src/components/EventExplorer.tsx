@@ -268,7 +268,6 @@ function EventExplorerList({
   // STARTED" / "a session just ENDED") from inside a single effect without
   // a second effect or extra state to hold the previous value.
   const wasFilteredRef = useRef(false);
-  const [showBackToTop, setShowBackToTop] = useState(false);
 
   // `now` starts from serverNow (always correct — see its doc comment
   // above), then gets replaced with the visitor's own browser clock once
@@ -784,48 +783,6 @@ function EventExplorerList({
     };
   }, [groups]);
 
-  // Both the month nav and long single-month listings can scroll the page
-  // far enough that the site header/H1 (ordinary in-flow content above this
-  // component — only the search/filter/month-nav bar here is sticky) is no
-  // longer visible, with no way back except dragging the scrollbar. Surfaced
-  // as its own small, independent scroll listener — deliberately not reusing
-  // the month-tracking effect above, which only runs once there are 2+
-  // months — so this works regardless of month count.
-  //
-  // Calibrated to the header+H1 block's own height (Production fix,
-  // 2026-09-12), not an arbitrary round number: that combined block
-  // measures ~160-190px tall across mobile/desktop widths, so this fires
-  // shortly after it has actually scrolled out of view. The previous value
-  // (480px) was roughly 2.5-3x that height, so the button stayed hidden
-  // through a long stretch of scrolling — including after a single
-  // month-nav click to a nearby month, or a moderate manual scroll — during
-  // which the header/H1 were already gone with no way back, which is
-  // exactly the "not visible/useful" Production report this fixes.
-  const BACK_TO_TOP_THRESHOLD = 240;
-  useEffect(() => {
-    function handleScroll() {
-      setShowBackToTop(window.scrollY > BACK_TO_TOP_THRESHOLD);
-    }
-    handleScroll();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  function handleBackToTop() {
-    // Smooth (unlike handleMonthNavClick's own instant jump, which replaces
-    // a native #hash anchor jump and matches that browser default) — this
-    // button is a deliberate, visible "return to the top" action, so an
-    // animated scroll is the more legible affordance for it (Back-to-top
-    // control, 2026-09-11). Doesn't touch isProgrammaticScrollRef/the
-    // month-nav pin: scroll-spy keeps updating activeMonthKey normally
-    // throughout, correctly landing on the first month once the scroll
-    // reaches the top, exactly as an ordinary manual scroll-up would.
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    if (window.location.hash) {
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-    }
-  }
-
   const activeDrawerFilterCount = (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0);
   const draftDrawerFilterCount = (draftGenre !== "all" ? 1 : 0) + (draftVenueId !== "all" ? 1 : 0);
 
@@ -1200,46 +1157,6 @@ function EventExplorerList({
         )}
       </div>
 
-      {showBackToTop && (
-        // Visual prominence + iPhone/Safari first-tap fix (Production,
-        // 2026-09-12):
-        // - bg-surface-accent (deep, muted purple — see its own token doc
-        //   comment in globals.css) replaces the near-black bg-surface-1,
-        //   and the icon defaults to text-text-primary (near-white) instead
-        //   of the muted text-text-secondary, so the button reads clearly
-        //   against busy event content without becoming a bright/saturated
-        //   accent surface. border-accent-dim/60 gives it a touch more
-        //   definition than the plain neutral border.
-        // - Mobile bottom offset raised from ~1rem to ~5rem: iOS Safari
-        //   reserves a strip along the very bottom of the viewport to
-        //   reveal its own auto-hidden toolbar on tap, and a fixed control
-        //   sitting inside that strip can have its first tap "stolen" by
-        //   the browser chrome instead of reaching the page. Moving the
-        //   button clearly above that strip is the standard fix — no
-        //   viewport/zoom changes, no custom touch handling, nothing that
-        //   interferes with any browser gesture. Desktop (sm:) positioning
-        //   is unchanged; this is a mobile-Safari-specific browser chrome
-        //   behavior, not a desktop concern.
-        <button
-          type="button"
-          onClick={handleBackToTop}
-          aria-label="Back to top"
-          className="fixed bottom-[max(5rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-accent-dim/60 bg-surface-accent/95 text-text-primary shadow-lg backdrop-blur transition-colors hover:text-accent-strong sm:bottom-6 sm:right-6"
-        >
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
-            aria-hidden="true"
-          >
-            <path d="M8 12.5V3.5M4 7.5 8 3.5l4 4" />
-          </svg>
-        </button>
-      )}
     </div>
   );
 }
