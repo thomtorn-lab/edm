@@ -188,3 +188,20 @@ describe("partitionAdminPatch", () => {
     expect(patch).toEqual({ title: "U" });
   });
 });
+
+// Genre storage (2026-11-02): primaryGenre/subgenres are one lock.
+describe("stripOverriddenFields — the genre fields are one lock", () => {
+  const proposed = { primaryGenre: "trance", subgenres: ["trance"], title: "New title" };
+
+  it("a lock stored as 'subgenres' only strips both genre fields", () => {
+    expect(stripOverriddenFields(proposed, ["subgenres"])).toEqual({ title: "New title" });
+  });
+
+  it("a lock stored as 'primaryGenre' only strips both genre fields", () => {
+    expect(stripOverriddenFields(proposed, ["primaryGenre"])).toEqual({ title: "New title" });
+  });
+
+  it("no genre lock: both genre fields pass, other locks unaffected", () => {
+    expect(stripOverriddenFields(proposed, ["title"])).toEqual({ primaryGenre: "trance", subgenres: ["trance"] });
+  });
+});

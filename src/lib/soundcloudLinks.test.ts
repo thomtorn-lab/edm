@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSoundcloudLinkChanges, selectLineupSoundcloudLinks, storedArtistName, type StoredSoundcloudLink } from "./soundcloudLinks";
+import { planSoundcloudLinkChanges, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles, storedArtistName, type StoredSoundcloudLink } from "./soundcloudLinks";
 import type { ArtistSoundcloudLink, SoundcloudLinkReport } from "./adapters/types";
 
 const GUY_J = { name: "GUY J", url: "https://soundcloud.com/guy-j" };
@@ -108,5 +108,37 @@ describe("selectLineupSoundcloudLinks — what a page shows", () => {
 
   it("a name repeated in the lineup is listed once", () => {
     expect(selectLineupSoundcloudLinks(["GUY J", "GUY J"], rows)).toEqual([GUY_J]);
+  });
+});
+
+describe("selectReusedSoundcloudProfiles — one artist's verified profile reused across events (Artist Alerts identities)", () => {
+  const REXIE = "https://soundcloud.com/rexie_lex";
+
+  it("an artist with exactly one profile on its other appearances gets it here, under this event's lineup name", () => {
+    expect(
+      selectReusedSoundcloudProfiles([
+        { lineupEntry: "Rexie Lex", otherEntry: "REXIE LEX", url: REXIE },
+        { lineupEntry: "Rexie Lex", otherEntry: "REXIE LEX", url: REXIE }, // same profile on two other nights
+      ]),
+    ).toEqual([{ artistName: "Rexie Lex", url: REXIE }]);
+  });
+
+  it("an artist with two different profiles gets none (LELE/LeLe shape)", () => {
+    expect(
+      selectReusedSoundcloudProfiles([
+        { lineupEntry: "LELE", otherEntry: "LELE", url: "https://soundcloud.com/user-442274348" },
+        { lineupEntry: "LELE", otherEntry: "LeLe", url: "https://soundcloud.com/user-339333395" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("a B2B entry, here or on the other event, never gets or gives a single artist's profile", () => {
+    expect(selectReusedSoundcloudProfiles([{ lineupEntry: "NAT b2b YOON", otherEntry: "YOON", url: "https://soundcloud.com/yoon" }])).toEqual([]);
+    expect(selectReusedSoundcloudProfiles([{ lineupEntry: "YOON", otherEntry: "NAT b2b YOON", url: "https://soundcloud.com/yoon" }])).toEqual([]);
+  });
+
+  it("the event's own link always wins over a reused one", () => {
+    const reused = selectReusedSoundcloudProfiles([{ lineupEntry: "GUY J", otherEntry: "GUY J", url: "https://soundcloud.com/old" }]);
+    expect(selectLineupSoundcloudLinks(["GUY J"], [...reused, { artistName: "GUY J", url: GUY_J.url }])).toEqual([GUY_J]);
   });
 });

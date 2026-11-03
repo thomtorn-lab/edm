@@ -20,6 +20,10 @@ name: Audit Published Events Window (Read-Only)
 # stored genre). It is a CURRENT recomputation, not the historical publish
 # decision, and changes nothing. See src/db/auditRelevance.ts.
 #
+# Also prints a genre-field consistency section: events whose primaryGenre
+# differs from subgenres[0] (subgenres is what the site shows) or that store
+# no subgenres. Report only; see findGenreFieldMismatches.
+#
 # Window: from_date 00:00 → the morning after to_date at 06:00 (Copenhagen),
 # plus multi-day events already running. Edge rows are flagged, not dropped.
 # Logic and tests: src/db/auditEventsWindow.ts / auditEventsWindow.test.ts.

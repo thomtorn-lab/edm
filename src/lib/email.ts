@@ -127,3 +127,54 @@ export async function sendNewsletterEmail(input: SendNewsletterEmailInput): Prom
     return { status: "ambiguous" };
   }
 }
+
+export type SendListEmailInput = {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  /** Reused verbatim on every retry of the same email (Resend dedupes within 24h). */
+  idempotencyKey: string;
+  /** One-click unsubscribe target for List-Unsubscribe / List-Unsubscribe-Post. */
+  listUnsubscribeUrl: string;
+  replyTo?: string;
+};
+
+/**
+ * Artist Alerts send (2026-11-02). Same Resend account, domain and key as
+ * the contact form and the newsletter, but its own function so the
+ * newsletter's code path stays untouched. Every non-success outcome is
+ * "ambiguous": the caller keeps the email pending and retries it with the
+ * same idempotency key.
+ */
+export async function sendListEmail(input: SendListEmailInput): Promise<SendNewsletterEmailResult> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.CONTACT_FROM_EMAIL;
+  if (!apiKey || !from) throw new Error("Email is not configured: set RESEND_API_KEY, CONTACT_FROM_EMAIL.");
+  const resend = new Resend(apiKey);
+  try {
+    const { data, error } = await resend.emails.send(
+      {
+        from,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+        ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+        headers: {
+          "List-Unsubscribe": `<${input.listUnsubscribeUrl}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+      },
+      { idempotencyKey: input.idempotencyKey },
+    );
+    if (error || !data) {
+      console.error("artist alert send: Resend reported an error", error?.message);
+      return { status: "ambiguous" };
+    }
+    return { status: "sent", resendEmailId: data.id };
+  } catch (err) {
+    console.error("artist alert send: request failed (kept pending, safe to retry)", err instanceof Error ? err.message : err);
+    return { status: "ambiguous" };
+  }
+}

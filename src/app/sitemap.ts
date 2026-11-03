@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getPublishedEventsWithVenue, getVenues } from "@/lib/queries";
+import { getPublishedEventSitemapEntries, getVenueSitemapEntries } from "@/lib/queries";
 import { getPublicVenueGroupPrimaryId } from "@/lib/data/venues";
 import { SITE_URL } from "@/lib/siteUrl";
 import { indexableGenrePagePaths } from "@/lib/taxonomy";
@@ -37,7 +37,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.1 },
   ];
 
-  const [publishedEvents, venues] = await Promise.all([getPublishedEventsWithVenue(), getVenues()]);
+  // Only the fields the entries below use (Supabase egress work,
+  // 2026-11-01): slug + updatedAt per published event, id + slug per venue —
+  // same rows and order as the full reads they replace.
+  const [publishedEvents, venues] = await Promise.all([getPublishedEventSitemapEntries(), getVenueSitemapEntries()]);
 
   const eventRoutes: MetadataRoute.Sitemap = publishedEvents.map((event) => ({
     url: `${SITE_URL}/events/${event.slug}`,

@@ -40,7 +40,11 @@ export interface DasEventPlan {
   outcome: PlanOutcome;
   verdict: RoomVerdict;
   reason: string;
+  /** The verified per-room artist split (empty unless the verdict places artists in rooms). */
+  rooms: Partial<Record<string, string[]>>;
   patch: { title?: string; description?: string | null; artists?: string[]; venueId?: string };
+  /** The verified change an admin lock held back, for the manual-review report only — never written. */
+  blockedPatch?: { title?: string; description?: string | null; artists?: string[]; venueId?: string };
 }
 
 export interface SameNightGroup {
@@ -50,7 +54,7 @@ export interface SameNightGroup {
 
 export interface DasMigrationPlan {
   plans: DasEventPlan[];
-  /** Separate events on one night in different rooms — possibly one club night; never merged automatically. */
+  /** Separate events on one night — possibly one club night across both rooms; never merged automatically. */
   sameNightGroups: SameNightGroup[];
   counts: { reviewed: number; update: number; unchanged: number; unresolved: number };
 }
@@ -72,7 +76,7 @@ export function planEvent(event: DasEventSnapshot): DasEventPlan {
   if (s.artists.length !== event.artists.length || s.artists.some((a, i) => a !== event.artists[i])) patch.artists = s.artists;
   if (onSmallRoomVenue) patch.venueId = DEN_ANDEN_SIDE_VENUE_ID;
 
-  const base = { event, verdict: s.analysis.verdict, reason: s.analysis.reason };
+  const base = { event, verdict: s.analysis.verdict, reason: s.analysis.reason, rooms: s.analysis.rooms };
 
   if (s.analysis.verdict === "unresolved") {
     // The venue move needs no room evidence and is always safe on its own.
@@ -88,6 +92,7 @@ export function planEvent(event: DasEventSnapshot): DasEventPlan {
       outcome: "unresolved",
       reason: `room split verified (${s.analysis.verdict}), but ${locked.join(", ")} ${locked.length > 1 ? "were" : "was"} edited by an admin — not overwritten; review manually`,
       patch: onSmallRoomVenue ? { venueId: DEN_ANDEN_SIDE_VENUE_ID } : {},
+      blockedPatch: patch,
     };
   }
 
@@ -104,9 +109,12 @@ function copenhagenDate(iso: string): string {
 export function planDenAndenSideMigration(events: DasEventSnapshot[]): DasMigrationPlan {
   const plans = events.map(planEvent);
 
-  // Nights with more than one live event, where one sits in the small room
-  // and another does not: RA lists such rooms as separate events with their
-  // own tickets, so they are only flagged, never merged.
+  // Nights with more than one live event: RA and the club often list each
+  // room as its own event, so they are only flagged, never merged. Every such
+  // night is flagged, not only those where one event already reads as
+  // small-room-only: a small-room night announced in prose ("taking over Den
+  // Anden Ende") is unresolved, and its main-room partner would otherwise be
+  // missed (2026-10-31 Zeitgeist: Immortal + Zeitgeist invites).
   const byNight = new Map<string, DasEventSnapshot[]>();
   for (const p of plans) {
     if (p.event.cancelled) continue;
@@ -115,11 +123,7 @@ export function planDenAndenSideMigration(events: DasEventSnapshot[]): DasMigrat
   }
   const sameNightGroups: SameNightGroup[] = [];
   for (const [date, group] of byNight) {
-    if (group.length < 2) continue;
-    const roomOf = (e: DasEventSnapshot) => plans.find((p) => p.event.id === e.id)!;
-    const small = group.some((e) => roomOf(e).verdict === "small-room-only");
-    const other = group.some((e) => roomOf(e).verdict !== "small-room-only");
-    if (small && other) sameNightGroups.push({ date, events: group });
+    if (group.length >= 2) sameNightGroups.push({ date, events: group });
   }
   sameNightGroups.sort((a, b) => a.date.localeCompare(b.date));
 

@@ -281,284 +281,17 @@ describe("EventExplorer month heading — reference purple token (Round 14: no n
   });
 });
 
-describe("EventExplorer — Back to top", () => {
-  // The site header/H1 live above this component (see app/page.tsx) and are
-  // ordinary in-flow content, not sticky — only this component's own
-  // search/filter/month-nav bar is sticky. Clicking a later month (or any
-  // long scroll) can push the header/H1 fully out of view with no way back
-  // except a manual drag-scroll. This button is the fix; jsdom has no real
-  // layout so it can't assert pixel visibility of the header/H1 itself
-  // (verified separately in a real browser), but it can assert the button's
-  // own presence/absence and behavior precisely.
-  //
-  // Threshold calibration (Production fix, 2026-09-12): the header+H1 block
-  // measures ~160-190px tall against the real compiled site CSS across
-  // mobile/desktop widths — the previous 480px threshold was ~2.5-3x that,
-  // so the button stayed hidden through a long stretch of scrolling
-  // (including after a single nearby month-nav click) during which the
-  // header/H1 were already gone with no way back. 300px below is
-  // comfortably past the new 240px threshold on any viewport actually seen.
-  it("is not rendered at the initial, unscrolled top of the page", () => {
+// Back to top moved to the site footer (2026-11-03): one control on every
+// page instead of a second, floating one here. See FooterBackToTopButton.
+describe("EventExplorer — no floating Back to top", () => {
+  it("does not render its own Back to top button, even when scrolled far down", () => {
     render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
+
+    setScrollY(2000);
+    fireEvent.scroll(window);
 
     expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
-  });
-
-  it("appears once the page is scrolled down past the threshold", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-  });
-
-  it("disappears again once scrolled back near the top", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-
-    setScrollY(0);
-    fireEvent.scroll(window);
-    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
-  });
-
-  it("scrolls to the true top SMOOTHLY and clears a stale month hash when activated (2026-09-11: was an instant jump, now animated)", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    // Simulate having navigated via month nav first (sets the hash).
-    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
-    expect(window.location.hash).toBe("#month-2026-09");
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
-
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
-    expect(window.location.hash).toBe("");
-  });
-
-  it("is a real, keyboard-activatable button (not a div) with an accessible name", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    const button = screen.getByRole("button", { name: "Back to top" });
-    expect(button.tagName).toBe("BUTTON");
-    expect(button.getAttribute("type")).toBe("button");
-
-    // A native <button type="button"> activates on both click AND keyboard
-    // Enter/Space per the HTML spec (the browser dispatches the same click
-    // event either way) — this is what makes the element itself the
-    // keyboard-accessibility guarantee, not any extra JS in this component.
-    fireEvent.click(button);
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
-  });
-
-  it("works independent of month count — appears on scroll even with a single month", () => {
-    render(<EventExplorer events={[AUG_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-  });
-
-  it("respects the mobile safe-area inset at the bottom edge, raised above the ~1rem baseline (iPhone/Safari first-tap fix, 2026-09-12: same env(safe-area-inset-bottom) pattern already used by the mobile filters sheet, but with the base offset lifted well clear of Safari's toolbar-reveal strip)", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    const button = screen.getByRole("button", { name: "Back to top" });
-    expect(button.className).toContain("bottom-[max(5rem,env(safe-area-inset-bottom))]");
-    expect(button.className).not.toContain("bottom-[max(1rem,env(safe-area-inset-bottom))]");
-  });
-
-  it("Production visibility fix, 2026-09-12: uses the more prominent deep-purple surface token and a near-white icon, not the previous near-black/muted-grey treatment", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    const button = screen.getByRole("button", { name: "Back to top" });
-    const classes = button.className.split(/\s+/);
-    expect(classes).toContain("bg-surface-accent/95");
-    expect(classes).not.toContain("bg-surface-1/95");
-    expect(classes).toContain("text-text-primary");
-    expect(classes).not.toContain("text-text-secondary");
-    expect(classes).toContain("border-accent-dim/60");
-    expect(classes).not.toContain("border-border-strong");
-    // Still understated, not a bright/saturated accent surface — no solid
-    // full-accent background or border (border-accent-dim/60, asserted
-    // above, is the intentionally muted one).
-    expect(classes).not.toContain("bg-accent");
-    expect(classes).not.toContain("border-accent");
-  });
-
-  it("desktop positioning is unchanged by the visibility/mobile-tap fix — still sm:bottom-6/sm:right-6", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    const button = screen.getByRole("button", { name: "Back to top" });
-    expect(button.className).toContain("sm:bottom-6");
-    expect(button.className).toContain("sm:right-6");
-  });
-
-  it("the click/tap handler is unaffected by the styling and positioning changes — still calls window.scrollTo({ top: 0, behavior: 'smooth' })", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
-
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
-  });
-
-  it("sits at a lower stacking layer (z-40) than the mobile filters sheet (z-50), so an open sheet always covers it rather than the reverse", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-
-    const button = screen.getByRole("button", { name: "Back to top" });
-    expect(button.className).toContain("z-40");
-  });
-
-  it("does not change Month nav's own click-to-scroll/highlight behavior — clicking a month still works normally after Back to top exists", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
-
-    expect(screen.getByRole("link", { name: "Sep" }).className).toContain("text-accent");
-    expect(screen.getByRole("link", { name: "Aug" }).className).not.toContain("text-accent");
-    expect(window.location.hash).toBe("#month-2026-09");
-  });
-
-  it("using Back to top after a month-nav jump leaves scroll-spy free to reflect the top of the page — no leftover pin from the month click", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
-    // Let the month click's own scroll-settle pin (isProgrammaticScrollRef)
-    // expire naturally, exactly as it would well before a real user could
-    // scroll back down and reach for Back to top.
-    vi.advanceTimersByTime(200);
-
-    setScrollY(600);
-    fireEvent.scroll(window);
-    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
-
-    // The IntersectionObserver mock reports Aug as the section back in view
-    // once scrolled to the top — this must not be blocked by the month
-    // click's own settle-timer pin, which only that click itself arms.
-    latestObserver().trigger("2026-08");
-    expect(screen.getByRole("link", { name: "Aug" }).className).toContain("text-accent");
-  });
-
-  it("Production fix, 2026-09-12: appears at the new, lower calibrated threshold (240px) — the old 480px threshold stayed hidden through this exact range, well after the header/H1 had already scrolled out of view", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(200);
-    fireEvent.scroll(window);
-    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
-
-    setScrollY(260);
-    fireEvent.scroll(window);
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-  });
-
-  it("appears after a month-navigation click alone, once the resulting scroll position is reported — a moderate jump (well below the old 480px threshold) is enough under the new calibration", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    fireEvent.click(screen.getByRole("link", { name: "Sep" }));
-    // jsdom's scrollIntoView is a no-op, so the resulting real-browser
-    // scroll position is simulated directly — 300px is a plausible jump to
-    // a nearby month, comfortably below the old 480px threshold (which
-    // would have kept the button hidden here) but above the new one.
-    setScrollY(300);
-    fireEvent.scroll(window);
-
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-  });
-
-  it("still appears and works correctly while a filter is active", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    const genreSelect = screen.getByLabelText("Genre") as HTMLSelectElement;
-    fireEvent.change(genreSelect, { target: { value: "techno" } });
-
-    setScrollY(300);
-    fireEvent.scroll(window);
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
-  });
-
-  it("scrolls to the true document top, not merely to the sticky filter/month-nav bar — window.scrollTo is called with top: 0, the same target regardless of scroll depth", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(5000); // deep in the list, far past any sticky element's own offset
-    fireEvent.scroll(window);
-    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
-
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
-  });
-
-  it("carries distinct mobile vs desktop positioning classes, so it never collides with the mobile search/Filters row or the desktop control row", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(300);
-    fireEvent.scroll(window);
-
-    const button = screen.getByRole("button", { name: "Back to top" });
-    // Mobile: closer to the edge (bottom-[...]/right-4); desktop (sm:):
-    // slightly further in (sm:bottom-6/sm:right-6) — both fixed at the
-    // bottom-right corner, well clear of the sticky top bar and the
-    // bottom-anchored mobile filters sheet trigger.
-    expect(button.className).toContain("right-4");
-    expect(button.className).toContain("sm:bottom-6");
-    expect(button.className).toContain("sm:right-6");
-  });
-
-  it("the mobile filters sheet, at a higher z-layer, still fully covers Back to top when both would otherwise be visible at once", () => {
-    render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
-    vi.runOnlyPendingTimers();
-
-    setScrollY(300);
-    fireEvent.scroll(window);
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
-
-    const backToTop = screen.getByRole("button", { name: "Back to top" });
-    const sheet = screen.getByRole("dialog", { name: "Filters" });
-    expect(Number(sheet.parentElement?.className.match(/z-(\d+)/)?.[1])).toBeGreaterThan(
-      Number(backToTop.className.match(/z-(\d+)/)?.[1])
-    );
   });
 });
 
@@ -836,8 +569,10 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
   // twice even though the filter predicate checks two array elements.
   const HOUSE_DISCO_EVENT = {
     ...makeEvent("2026-08-14T20:00:00.000Z"),
-    primaryGenre: "house" as GenreSlug,
-    subgenres: ["house", "disco"] as GenreSlug[],
+    // Deep House (not House itself): a "House" badge now links to
+    // /genres/house, which would split the joined genre text in two.
+    primaryGenre: "deep-house" as GenreSlug,
+    subgenres: ["deep-house", "disco"] as GenreSlug[],
   };
 
   // EventRow renders both genres as one joined string ("House · Disco") in a
@@ -859,27 +594,27 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
     expect(queryCardText("House")).toBeNull();
   });
 
-  it("a two-genre event (House · Disco) is discoverable under the House filter", () => {
+  it("a two-genre event (Deep House · Disco) is discoverable under the House filter", () => {
     render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("house");
-    expect(cardText("House · Disco")).toBeTruthy();
+    expect(cardText("Deep House · Disco")).toBeTruthy();
   });
 
-  it("the same two-genre event (House · Disco) is also discoverable under the Disco filter", () => {
+  it("the same two-genre event (Deep House · Disco) is also discoverable under the Disco filter", () => {
     render(<EventExplorer events={[...ALL_EVENTS, HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("disco");
-    expect(cardText("House · Disco")).toBeTruthy();
+    expect(cardText("Deep House · Disco")).toBeTruthy();
   });
 
   it("a two-genre event never appears twice in the list under either of its own genre filters", () => {
     render(<EventExplorer events={[HOUSE_DISCO_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);
     vi.runOnlyPendingTimers();
     selectGenre("house");
-    expect(allCardText("House · Disco")).toHaveLength(1);
+    expect(allCardText("Deep House · Disco")).toHaveLength(1);
     selectGenre("disco");
-    expect(allCardText("House · Disco")).toHaveLength(1);
+    expect(allCardText("Deep House · Disco")).toHaveLength(1);
   });
 });
 

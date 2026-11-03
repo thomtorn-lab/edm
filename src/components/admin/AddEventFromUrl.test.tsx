@@ -140,3 +140,40 @@ describe("AddEventFromUrl — direct handoff to the exact created row (Section 5
     expect(screen.queryByText(/already be a pending Discovery Queue candidate/)).toBeNull();
   });
 });
+
+// Genre storage (2026-11-02): on a just-published event, a different genre
+// here replaces the whole classification (any secondary genre is removed).
+describe("AddEventFromUrl — changing the genre of a published event is an explicit replacement", () => {
+  const publishedResponse = () =>
+    discoveryExtractResponse({
+      result: { ...discoveryExtractResponse().result, genre: "techno", genreConfidence: "high", decision: "auto_publish" },
+      persisted: { kind: "event", id: "e-abc12345" },
+      category: undefined,
+    });
+
+  it("shows no note while the genre is the one Analyze stored", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => publishedResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    await analyze(fetchMock);
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("explains that a new genre replaces the whole classification and removes any secondary genre", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => publishedResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    await analyze(fetchMock);
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    const note = screen.getByRole("note");
+    expect(note.textContent).toContain("Saving sets House as the event’s only genre");
+    expect(note.textContent).toContain("removes any secondary genre");
+    expect(note.textContent).toContain("protects the genres from source sync");
+  });
+
+  it("shows no note on a Discovery Queue candidate (not yet an event)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => discoveryExtractResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    await analyze(fetchMock);
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+});

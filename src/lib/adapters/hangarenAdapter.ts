@@ -293,6 +293,9 @@ export function parseHangarenEventsHtml(html: string, sourceUrl = HANGAREN_EVENT
         title,
         description,
         artists: finalArtists,
+        // The lineup lines as the venue wrote them, profile links included
+        // (source-provided SoundCloud evidence); `artists` has them stripped.
+        lineupSourceText: lineupStartIdx !== -1 ? lines.slice(lineupStartIdx).join("\n") : null,
         startDatetime,
         endDatetime,
         venueName: HANGAREN_VENUE_NAME,

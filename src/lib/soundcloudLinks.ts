@@ -1,5 +1,6 @@
 import type { SoundcloudLinkReport } from "./adapters/types";
 import { dedupeArtistList } from "./normalize";
+import { splitLineupEntry } from "./artistIdentity/lineupIdentity";
 
 /**
  * Pure logic for venue-provided artist SoundCloud links (2026-10-13): what a
@@ -97,5 +98,29 @@ export function selectLineupSoundcloudLinks(
     const url = urlByName.get(name);
     if (url && !out.some((l) => l.name === name)) out.push({ name, url });
   }
+  return out;
+}
+
+/**
+ * Profiles reused across events through Artist Alerts' identities
+ * (2026-11-03). Input: for each of this event's appearances that resolved to
+ * an artist (confidence high/confirmed), every unblocked stored link of that
+ * same artist's other high/confirmed appearances. A profile is reused for
+ * the lineup entry only when that artist has exactly one profile across all
+ * of them; both entries must be one performer (a B2B entry is never shown a
+ * single artist's profile). Returns rows in the shape
+ * selectLineupSoundcloudLinks takes; the event's own link still wins there.
+ */
+export function selectReusedSoundcloudProfiles(
+  rows: { lineupEntry: string; otherEntry: string; url: string }[],
+): { artistName: string; url: string }[] {
+  const urlsByEntry = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (splitLineupEntry(r.lineupEntry).length !== 1 || splitLineupEntry(r.otherEntry).length !== 1) continue;
+    if (!urlsByEntry.has(r.lineupEntry)) urlsByEntry.set(r.lineupEntry, new Set());
+    urlsByEntry.get(r.lineupEntry)!.add(r.url);
+  }
+  const out: { artistName: string; url: string }[] = [];
+  for (const [artistName, urls] of urlsByEntry) if (urls.size === 1) out.push({ artistName, url: [...urls][0] });
   return out;
 }

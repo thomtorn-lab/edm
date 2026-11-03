@@ -1,8 +1,12 @@
-import { and, desc, eq, gte, inArray, ne, notExists, sql } from "drizzle-orm";
+import { cache } from "react";
+import { and, desc, eq, gt, gte, inArray, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import {
   artistYoutubePreviewCache,
+  artists as artistIdentities,
   discoveryQueue,
+  eventArtists,
   eventChangeLog,
   eventSoundcloudLinks,
   eventYoutubePreviewOverrides,
@@ -19,10 +23,13 @@ import {
   venueRowToRecord,
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
-import { selectLineupSoundcloudLinks } from "./soundcloudLinks";
+import { selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
+import { isPastEvent } from "./datetime";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
+import type { GenreSlug } from "./taxonomy";
+import type { EventRowFields, EventRowVenue } from "./homepageEvents";
 import type { EventChangeEntry } from "./dataQuality";
 import { latestWithheldByEvent, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "./withheldDescriptions";
 
@@ -48,9 +55,35 @@ export async function getVenues(): Promise<Venue[]> {
   return rows.map(venueRowToRecord);
 }
 
-export async function getVenueBySlug(slug: string): Promise<Venue | undefined> {
+/**
+ * Memoized per server request with React `cache` (Supabase egress work,
+ * 2026-11-01): /venues/[slug] calls this from both generateMetadata and the
+ * page, which used to send the same query twice per view. Outside a React
+ * server request (scripts, route handlers, tests) `cache` simply calls
+ * through, so every other caller behaves exactly as before.
+ */
+export const getVenueBySlug = cache(async (slug: string): Promise<Venue | undefined> => {
   const [row] = await db.select().from(venues).where(eq(venues.slug, slug)).limit(1);
   return row ? venueRowToRecord(row) : undefined;
+});
+
+/**
+ * Only the venues /venues actually lists (its curated slugs), instead of the
+ * whole venues table (Supabase egress work, 2026-11-01). Full rows: the page
+ * shows each venue's address and descriptions.
+ */
+export async function getVenuesBySlugs(slugs: readonly string[]): Promise<Venue[]> {
+  if (slugs.length === 0) return [];
+  const rows = await db.select().from(venues).where(inArray(venues.slug, [...slugs])).orderBy(venues.name);
+  return rows.map(venueRowToRecord);
+}
+
+/**
+ * The two columns the sitemap needs per venue, in the same order getVenues
+ * returns them (Supabase egress work, 2026-11-01).
+ */
+export async function getVenueSitemapEntries(): Promise<{ id: string; slug: string }[]> {
+  return db.select({ id: venues.id, slug: venues.slug }).from(venues).orderBy(venues.name);
 }
 
 export async function getVenueById(id: string): Promise<Venue | undefined> {
@@ -145,7 +178,174 @@ export async function getPublishedEventsWithVenue(): Promise<EventWithVenue[]> {
   return withAboutKind(await attachVenue(rows));
 }
 
-export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVenue | undefined> {
+/**
+ * The sitemap's per-event fields (Supabase egress work, 2026-11-01): slug and
+ * updatedAt for every published event, instead of whole event rows plus
+ * their venues. The inner join keeps the exact set getPublishedEventsWithVenue
+ * returned — an event whose venue can't be resolved never reached the sitemap
+ * (attachVenue skips it) and still doesn't. updatedAt is ISO, as in
+ * eventRowToRecord.
+ */
+export async function getPublishedEventSitemapEntries(): Promise<{ slug: string; updatedAt: string }[]> {
+  const rows = await db
+    .select({ slug: events.slug, updatedAt: events.updatedAt })
+    .from(events)
+    .innerJoin(venues, eq(venues.id, events.venueId))
+    .where(eq(events.published, true));
+  return rows.map((r) => ({ slug: r.slug, updatedAt: r.updatedAt.toISOString() }));
+}
+
+/**
+ * How far back the SQL pre-filter for "not yet over" looks (Supabase egress
+ * work, 2026-11-01). It only has to be a SUPERSET of what isPastEvent
+ * (src/lib/datetime.ts) keeps, because every caller still applies
+ * isPastEvent itself afterwards:
+ * - an event with a trustworthy end (end > start) is over exactly when
+ *   end <= now, so `end_datetime > now` keeps every such event still running;
+ * - an event without one ends at 06:00 Copenhagen time after its nightlife
+ *   day, at most ~25 hours after its start (DST included), so any event that
+ *   started within the last 3 days is kept.
+ * An event is therefore only left out when it is already past by isPastEvent.
+ * Covered by queries.upcomingPrefilter.test.ts.
+ */
+export const UPCOMING_PREFILTER_LOOKBACK_MS = 3 * 24 * 3_600_000;
+
+export function upcomingCandidateCondition(now: Date): SQL {
+  return or(
+    gte(events.startDatetime, new Date(now.getTime() - UPCOMING_PREFILTER_LOOKBACK_MS)),
+    gt(events.endDatetime, now),
+  )!;
+}
+
+/**
+ * What the public event lists (homepage, genre pages, venue pages) render
+ * per event: the EventRow fields plus primaryGenre, with the five venue
+ * fields EventRow shows.
+ */
+export type ListEvent = EventRowFields & { primaryGenre: GenreSlug; venue: EventRowVenue };
+
+const listEventColumns = {
+  id: events.id,
+  slug: events.slug,
+  title: events.title,
+  description: events.description,
+  artists: events.artists,
+  startDatetime: events.startDatetime,
+  endDatetime: events.endDatetime,
+  venueId: events.venueId,
+  subVenue: events.subVenue,
+  primaryGenre: events.primaryGenre,
+  subgenres: events.subgenres,
+  officialEventUrl: events.officialEventUrl,
+  ticketUrl: events.ticketUrl,
+  facebookUrl: events.facebookUrl,
+  residentAdvisorUrl: events.residentAdvisorUrl,
+  otherSourceUrls: events.otherSourceUrls,
+  canonicalSourceId: events.canonicalSourceId,
+  overriddenFields: events.overriddenFields,
+  priceFrom: events.priceFrom,
+  soldOut: events.soldOut,
+  postponed: events.postponed,
+  dateChanged: events.dateChanged,
+};
+
+const listVenueColumns = {
+  id: venues.id,
+  slug: venues.slug,
+  name: venues.name,
+  address: venues.address,
+  aliases: venues.aliases,
+};
+
+/**
+ * Published events that are not over yet, for the public event lists
+ * (Supabase egress work, 2026-11-01). Replaces getPublishedEventsWithVenue
+ * on the homepage, the genre pages and the venue pages, which read every
+ * published event ever (past ones included) with every column, plus every
+ * referenced venue's full row, and then dropped the past events in code.
+ *
+ * Same result for the page: the SQL pre-filter is a superset of
+ * isPastEvent (see UPCOMING_PREFILTER_LOOKBACK_MS) and callers keep applying
+ * isPastEvent themselves; values are converted exactly as eventRowToRecord
+ * does; an event without a resolvable venue is skipped, as in attachVenue;
+ * and the description gets the same About-text treatment as withAboutKind
+ * (a labels-only text becomes null). `venueIds` narrows it to those venues.
+ */
+export async function getUpcomingPublishedEventsForList(now: Date, venueIds?: readonly string[]): Promise<ListEvent[]> {
+  if (venueIds && venueIds.length === 0) return [];
+  const conditions = [eq(events.published, true), upcomingCandidateCondition(now)];
+  if (venueIds) conditions.push(inArray(events.venueId, [...venueIds]));
+  const rows = await db.select(listEventColumns).from(events).where(and(...conditions));
+  if (rows.length === 0) return [];
+
+  const referencedVenueIds = [...new Set(rows.map((row) => row.venueId))];
+  const venueRows = await db.select(listVenueColumns).from(venues).where(inArray(venues.id, referencedVenueIds));
+  const venueById = new Map(venueRows.map((v) => [v.id, v]));
+
+  const result: ListEvent[] = [];
+  for (const row of rows) {
+    const venue = venueById.get(row.venueId);
+    if (!venue) continue; // an event with no resolvable venue never reaches the public site
+    result.push({
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      description: classifyAboutText(row.description) === "empty" ? null : row.description,
+      artists: row.artists,
+      startDatetime: row.startDatetime.toISOString(),
+      endDatetime: row.endDatetime?.toISOString() ?? null,
+      subVenue: row.subVenue,
+      primaryGenre: row.primaryGenre as GenreSlug,
+      subgenres: row.subgenres as GenreSlug[],
+      officialEventUrl: row.officialEventUrl,
+      ticketUrl: row.ticketUrl,
+      facebookUrl: row.facebookUrl,
+      residentAdvisorUrl: row.residentAdvisorUrl,
+      otherSourceUrls: row.otherSourceUrls,
+      canonicalSourceId: row.canonicalSourceId,
+      overriddenFields: row.overriddenFields,
+      priceFrom: row.priceFrom,
+      soldOut: row.soldOut,
+      postponed: row.postponed,
+      dateChanged: row.dateChanged,
+      venue: { id: venue.id, slug: venue.slug, name: venue.name, address: venue.address, aliases: venue.aliases },
+    });
+  }
+  return result;
+}
+
+/**
+ * Upcoming published events per venue, for the /venues overview's counts
+ * (Supabase egress work, 2026-11-01). One query reading three columns,
+ * instead of one full getEventsForVenue read (events + venue rows) per
+ * listed venue and group member. Counted with the exact isPastEvent rule
+ * the page used before; the SQL pre-filter only drops events that rule
+ * already treats as past (see UPCOMING_PREFILTER_LOOKBACK_MS). Venues with
+ * no upcoming events are absent from the map.
+ */
+export async function getUpcomingEventCountsByVenue(venueIds: readonly string[], now: Date): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (venueIds.length === 0) return counts;
+  const rows = await db
+    .select({ venueId: events.venueId, startDatetime: events.startDatetime, endDatetime: events.endDatetime })
+    .from(events)
+    .where(and(eq(events.published, true), inArray(events.venueId, [...venueIds]), upcomingCandidateCondition(now)));
+  for (const row of rows) {
+    const timing = { startDatetime: row.startDatetime.toISOString(), endDatetime: row.endDatetime?.toISOString() ?? null };
+    if (isPastEvent(timing, now)) continue;
+    counts.set(row.venueId, (counts.get(row.venueId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Memoized per server request with React `cache` (Supabase egress work,
+ * 2026-11-01): /events/[slug] calls this from both generateMetadata and the
+ * page, which used to send the event query and its venue query twice per
+ * view. Outside a React server request (calendar.ics, scripts, tests)
+ * `cache` simply calls through, so those callers behave exactly as before.
+ */
+export const getEventBySlugWithVenue = cache(async (slug: string): Promise<EventWithVenue | undefined> => {
   const rows = await db
     .select()
     .from(events)
@@ -153,7 +353,7 @@ export async function getEventBySlugWithVenue(slug: string): Promise<EventWithVe
     .limit(1);
   const withVenue = withAboutKind(await attachVenue(rows));
   return withVenue[0];
-}
+});
 
 /**
  * All `source_event_links` rows for one event (public source-link
@@ -410,32 +610,67 @@ function soundcloudLinkNotBlocked() {
   );
 }
 
+/** Appearances Artist Alerts resolved to one artist with enough confidence to show that artist's profile. */
+const SHOWN_CONFIDENCE = ["high", "confirmed"];
+
 /**
- * Venue-provided artist SoundCloud links for the event-detail page
- * (2026-10-13): this event's stored rows, unblocked, limited to its own
- * current lineup (exact names, lineup order). One narrow query; none at all
- * for an event without a lineup. Like the YouTube preview read, a failure
- * degrades to "no links", never a broken page.
+ * Profiles reused across events through Artist Alerts' identities
+ * (2026-11-03): for the given events' resolved appearances, every unblocked
+ * stored link of the same artist's other resolved appearances. One query,
+ * reading only lineup entries and URLs; selectReusedSoundcloudProfiles
+ * decides (exactly one profile per artist, single-performer entries only).
+ */
+async function reusedSoundcloudRows(eventIds: string[]) {
+  const here = alias(eventArtists, "here");
+  const other = alias(eventArtists, "other");
+  return db
+    .select({ eventId: here.eventId, lineupEntry: here.lineupEntry, otherEntry: other.lineupEntry, url: eventSoundcloudLinks.url })
+    .from(here)
+    .innerJoin(artistIdentities, and(eq(artistIdentities.id, here.artistId), isNull(artistIdentities.mergedIntoId), ne(artistIdentities.status, "rejected")))
+    .innerJoin(other, and(eq(other.artistId, here.artistId), inArray(other.confidence, SHOWN_CONFIDENCE), isNull(other.removedAt)))
+    .innerJoin(eventSoundcloudLinks, and(eq(eventSoundcloudLinks.eventId, other.eventId), eq(eventSoundcloudLinks.artistName, other.lineupEntry)))
+    .where(and(inArray(here.eventId, eventIds), inArray(here.confidence, SHOWN_CONFIDENCE), isNull(here.removedAt), soundcloudLinkNotBlocked()));
+}
+
+/**
+ * Artist SoundCloud links for the event-detail page: the venue-provided
+ * links stored for this event (2026-10-13), plus, for lineup names without
+ * one, the single verified profile Artist Alerts' identity model ties to the
+ * same artist on other events (2026-11-03). Unblocked, limited to the
+ * event's own current lineup (exact names, lineup order); the event's own
+ * link always wins. The reuse query only runs when a name lacks its own
+ * link. Like the YouTube preview read, a failure degrades to fewer or no
+ * links, never a broken page.
  */
 export async function getSoundcloudLinksForLineup(eventId: string, artists: string[]): Promise<{ name: string; url: string }[]> {
   if (artists.length === 0) return [];
+  let own: { artistName: string; url: string }[];
   try {
-    const rows = await db
+    own = await db
       .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
       .from(eventSoundcloudLinks)
       .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked()));
-    return selectLineupSoundcloudLinks(artists, rows);
   } catch (err) {
     console.error(`[soundcloud-links] lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
+  const ownNames = new Set(own.map((r) => r.artistName));
+  if (artists.every((name) => ownNames.has(name))) return selectLineupSoundcloudLinks(artists, own);
+  let reused: { artistName: string; url: string }[] = [];
+  try {
+    reused = selectReusedSoundcloudProfiles(await reusedSoundcloudRows([eventId]));
+  } catch (err) {
+    console.error(`[soundcloud-links] reuse lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // Own rows last: selectLineupSoundcloudLinks keeps the last URL per name.
+  return selectLineupSoundcloudLinks(artists, [...reused, ...own]);
 }
 
 /**
- * AUDIO indicator for event lists (homepage, venue and genre pages): ONE
- * batched query for every listed event, true exactly when that event's
- * detail page would show at least one link (same rows, same lineup rule as
- * getSoundcloudLinksForLineup). Reads only event_id and artist_name.
+ * AUDIO indicator for event lists (homepage, venue and genre pages): one
+ * batched query for every listed event's own links plus one batched reuse
+ * query, true exactly when that event's detail page would show at least one
+ * link (same rows, same rules as getSoundcloudLinksForLineup).
  */
 export async function getSoundcloudAvailabilityForEvents(list: { id: string; artists: string[] }[]): Promise<boolean[]> {
   const ids = list.filter((e) => e.artists.length > 0).map((e) => e.id);
@@ -451,11 +686,27 @@ export async function getSoundcloudAvailabilityForEvents(list: { id: string; art
     return list.map(() => false);
   }
   const namesByEvent = new Map<string, Set<string>>();
-  for (const r of rows) {
-    if (!namesByEvent.has(r.eventId)) namesByEvent.set(r.eventId, new Set());
-    namesByEvent.get(r.eventId)!.add(r.artistName);
+  const add = (eventId: string, name: string) => {
+    if (!namesByEvent.has(eventId)) namesByEvent.set(eventId, new Set());
+    namesByEvent.get(eventId)!.add(name);
+  };
+  for (const r of rows) add(r.eventId, r.artistName);
+  const has = (e: { id: string; artists: string[] }) => e.artists.some((name) => namesByEvent.get(e.id)?.has(name) ?? false);
+  const missing = list.filter((e) => e.artists.length > 0 && !has(e)).map((e) => e.id);
+  if (missing.length > 0) {
+    try {
+      const reuseRows = await reusedSoundcloudRows(missing);
+      const byEvent = new Map<string, typeof reuseRows>();
+      for (const r of reuseRows) {
+        if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, []);
+        byEvent.get(r.eventId)!.push(r);
+      }
+      for (const [eventId, eventRows] of byEvent) for (const r of selectReusedSoundcloudProfiles(eventRows)) add(eventId, r.artistName);
+    } catch (err) {
+      console.error(`[soundcloud-links] batched reuse lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  return list.map((e) => e.artists.some((name) => namesByEvent.get(e.id)?.has(name) ?? false));
+  return list.map(has);
 }
 
 export async function getEventsForVenue(venueId: string): Promise<EventWithVenue[]> {

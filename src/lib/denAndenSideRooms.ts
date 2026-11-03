@@ -180,11 +180,16 @@ function headingLabel(text: string): string | null {
     .replace(/\s+(?:at|in|i|på)$/i, "")
     .replace(/^[(\s]+|[\s)]+$/g, "")
     .trim();
-  if (!t) return null;
+  if (!t || !/[\p{L}\p{N}]/u.test(t)) return null; // "◈ Den Anden Side ◈" — decoration, not a label
   if (MAIN_ROOM_SYNONYM_RE.test(t) || SMALL_ROOM_SYNONYM_RE.test(t)) return null;
   if (/^(?:room|rum|floor|stage|scene)\s*\d*$/i.test(t)) return null;
   return t;
 }
+
+// "◈ Den Anden Side ◈" (GAGxDAS, INTELL): a section heading over one bio
+// paragraph per artist, so its room runs past blank lines, up to the next
+// room heading, separator or practical heading.
+const DECORATED_HEADING_RE = /^[◈◆◇❖]/u;
 
 function isUnnamedRoomHeading(line: string): boolean {
   const plain = plainLine(line);
@@ -231,6 +236,18 @@ export function readGeneratedBreakdown(description: string | null, artists: stri
     found[heading.match(BLOCK_HEADING_RE)![1] as DasRoom] = list;
   }
   return Object.keys(found).length > 0 ? found : null;
+}
+
+/**
+ * Whether a description carries a verified room split: the blocks this
+ * module writes, or the source's own per-room headings (which are kept as
+ * they are when they can't be replaced cleanly — see placeBreakdown).
+ */
+export function hasRoomSplit(description: string | null, artists: string[]): boolean {
+  if (readGeneratedBreakdown(description, artists)) return true;
+  if (!description || artists.length === 0) return false;
+  const { verdict } = analyzeRooms({ title: "", description, artists });
+  return verdict === "two-rooms" || verdict === "small-room-only" || verdict === "main-room-only";
 }
 
 /** Display text of a source lineup line: styled letters folded (NFKC keeps "é", "ø"). */
@@ -333,6 +350,14 @@ function placeBreakdown(description: string | null, analysis: RoomAnalysis, arti
     return [head, blocks(region.entries, region.labels), tail].filter(Boolean).join("\n\n");
   }
 
+  // The source already shows the split under its own heading for every
+  // room, but its section can't be replaced cleanly (a non-artist line such
+  // as "a secret morning concoction awaits..", or bio paragraphs): keep it
+  // as it is rather than show the lineup a second time.
+  if (description && ROOM_ORDER.filter((r) => analysis.rooms[r]).every((r) => lines.some((l) => roomHeading(l)?.room === r))) {
+    return description;
+  }
+
   const breakdown = blocks(analysis.rooms);
   if (!description?.trim()) return breakdown;
   let cut = -1;
@@ -389,10 +414,13 @@ export function analyzeRooms(input: RoomInput): RoomAnalysis {
   let headingCount = 0;
   let current: DasRoom | null = null;
   let sawArtistUnderCurrent = false;
+  let sectionHeading = false;
   for (const raw of (description ?? "").split("\n")) {
     const line = raw.trim();
     if (!line) {
-      if (sawArtistUnderCurrent) current = null; // a blank line ends a room's list (not one right after its heading)
+      // A blank line ends a room's list (not one right after its heading,
+      // and not inside a ◈ section of bio paragraphs).
+      if (sawArtistUnderCurrent && !sectionHeading) current = null;
       continue;
     }
     if (SEPARATOR_RE.test(plainLine(line)) || isPracticalHeading(line)) {
@@ -404,6 +432,7 @@ export function analyzeRooms(input: RoomInput): RoomAnalysis {
       headingCount++;
       current = heading.room;
       sawArtistUnderCurrent = false;
+      sectionHeading = DECORATED_HEADING_RE.test(plainLine(line));
       if (heading.inline) {
         for (const a of artists) {
           if (lineMentions(heading.inline, a)) {

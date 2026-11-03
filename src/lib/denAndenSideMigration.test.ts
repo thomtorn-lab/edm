@@ -89,4 +89,13 @@ describe("planDenAndenSideMigration", () => {
     expect(plan.sameNightGroups[0].date).toBe("2026-11-06");
     expect(plan.sameNightGroups[0].events.map((e) => e.id).sort()).toEqual(["main", "small"]);
   });
+
+  it("flags a same-night pair even when the small-room event is only announced in prose", () => {
+    const plan = planDenAndenSideMigration([
+      ev({ id: "main", title: "Zeitgeist: Immortal", artists: ["A"], description: "Lineup\nA\n\nGuests take over Den Anden Ende.", startDatetime: "2026-10-31T21:59:00.000Z" }),
+      ev({ id: "prose", title: "Zeitgeist invites", artists: ["B"], description: "B is taking over Den Anden Ende.", startDatetime: "2026-10-31T21:59:00.000Z" }),
+    ]);
+    expect(plan.sameNightGroups).toHaveLength(1);
+    expect(plan.sameNightGroups[0].events.map((e) => e.id).sort()).toEqual(["main", "prose"]);
+  });
 });

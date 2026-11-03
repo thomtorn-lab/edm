@@ -8,7 +8,7 @@
  * Reads DATABASE_URL from the environment and never prints it.
  */
 import { Client } from "pg";
-import { buildAuditWindow, runEventsWindowAudit, type EventsWindowReport } from "./auditEventsWindow";
+import { buildAuditWindow, findGenreFieldMismatches, runEventsWindowAudit, type EventsWindowReport } from "./auditEventsWindow";
 import { RELEVANCE_RECHECK_LIMITATIONS } from "./auditRelevance";
 
 function readArg(name: string): string {
@@ -33,6 +33,15 @@ export function printReport(report: EventsWindowReport): void {
   const manualGenre = report.events.filter((e) => e.genreManuallySet.length > 0);
   console.log(`\n== Genre set manually by an admin (${manualGenre.length}) — editorial decisions, never change automatically ==`);
   for (const e of manualGenre) console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${e.primaryGenre}; ${e.subgenres.join("+")}; manual: ${e.genreManuallySet.join(", ")}]`);
+
+  const genreMismatches = findGenreFieldMismatches(report.events);
+  console.log(
+    `\n== Genre field mismatch: primaryGenre ≠ subgenres[0] (${genreMismatches.length}) — subgenres is what the site shows; report only, nothing changed ==`,
+  );
+  for (const m of genreMismatches) {
+    const lock = m.genreManuallySet.length > 0 ? m.genreManuallySet.join(", ") : "none";
+    console.log(`  ${m.id}  ${m.startLocal}  ${m.title}  [primaryGenre: ${m.primaryGenre}; subgenres: ${m.subgenres.join("+") || "(none)"}; manual: ${lock}; ${m.reason}]`);
+  }
 
   const doubtful = report.events.filter((e) => e.relevanceRecheck && e.relevanceRecheck.relevance !== "strong");
   console.log(

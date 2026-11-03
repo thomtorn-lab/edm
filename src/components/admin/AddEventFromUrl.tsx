@@ -8,6 +8,7 @@ import type { PipelineResult } from "@/lib/adapters/pipeline";
 import type { AdminQueueCategory } from "@/lib/adminQueue";
 import { ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { getGenre, isGenreSlug } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 
 interface ExtractResponse {
@@ -62,6 +63,9 @@ export default function AddEventFromUrl() {
   const [endLocal, setEndLocal] = useState("");
   const [venueNameText, setVenueNameText] = useState("");
   const [genre, setGenre] = useState("");
+  // The genre Analyze stored on a just-published event — a different pick
+  // here is an explicit new main genre (see the note under the editor).
+  const [analyzedGenre, setAnalyzedGenre] = useState("");
   const [artists, setArtists] = useState("");
   const [officialEventUrl, setOfficialEventUrl] = useState("");
   const [ticketUrl, setTicketUrl] = useState("");
@@ -96,6 +100,7 @@ export default function AddEventFromUrl() {
         setEndLocal(raw.endDatetime ? toLocalInput(raw.endDatetime) : "");
         setVenueNameText(raw.venueName ?? "");
         setGenre(result.genre ?? "");
+        setAnalyzedGenre(result.genre ?? "");
         setArtists(result.normalizedArtists.join(", "));
         setOfficialEventUrl(raw.officialEventUrl ?? "");
         setTicketUrl(raw.ticketUrl ?? "");
@@ -301,6 +306,13 @@ export default function AddEventFromUrl() {
               free={free}
               onFreeChange={setFree}
             />
+            {data.persisted.kind === "event" && genre && genre !== analyzedGenre && (
+              <p id="analyze-genre-replace-note" role="note" className="text-[11px] text-status-warn">
+                Saving sets {isGenreSlug(genre) ? getGenre(genre).label : genre} as the event&rsquo;s only genre: it replaces the whole genre classification, removes any
+                secondary genre, and protects the genres from source sync. To keep or add a secondary genre, edit the event
+                under &ldquo;All events&rdquo; instead.
+              </p>
+            )}
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"

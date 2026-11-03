@@ -1,13 +1,13 @@
 import type { RawCandidateEvent } from "./adapters/types";
 import type { ConfidenceLevel } from "./types";
-import type { GenreSlug } from "./taxonomy";
+import { eventGenreTags, genreFieldsFromTags, type GenreSlug } from "./taxonomy";
 import { getCopenhagenParts } from "./datetime";
 import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
 import { resolveByCanonicalPriority, type PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
 import { usableDiscoveryDescription } from "./descriptionQuality";
-import { DEN_ANDEN_SIDE_VENUE_ID, isDenAndenSideRoomsEnabled, readGeneratedBreakdown } from "./denAndenSideRooms";
+import { DEN_ANDEN_SIDE_VENUE_ID, hasRoomSplit, isDenAndenSideRoomsEnabled } from "./denAndenSideRooms";
 
 /**
  * Sync-time merge decisions (spec section 46 / user directive step 3, task
@@ -31,6 +31,10 @@ export interface SyncTargetEvent {
   residentAdvisorUrl: string | null;
   imageUrl: string | null;
   primaryGenre: GenreSlug | null;
+  /** The event's shown genres — the authoritative genre field (taxonomy.ts
+   *  genreFieldsFromTags). Optional only so older callers keep compiling;
+   *  without it primaryGenre stands in. */
+  subgenres?: GenreSlug[];
   /** Whichever source this event currently treats as canonical — used only
    *  to weigh officialEventUrl merge precedence (see buildSyncPatch); not
    *  otherwise touched by this module. */
@@ -146,9 +150,14 @@ export function buildSyncPatch(
     patch.residentAdvisorUrl = raw.residentAdvisorUrl;
   }
   if (raw.imageUrl && raw.imageUrl !== existing.imageUrl) patch.imageUrl = raw.imageUrl;
-  if (resolved.genre && !resolved.genreFromTitleGuessedArtists && resolved.genre !== existing.primaryGenre) {
-    patch.primaryGenre = resolved.genre;
-    patch.subgenres = [resolved.genre];
+  // Compared with the genre the event actually shows (subgenres[0]), never a
+  // stale primaryGenre. Both fields are proposed together; a genre lock on
+  // either name strips both (override.ts), so a sync can never split them.
+  const shownPrimaryGenre = eventGenreTags(existing)[0] ?? null;
+  if (resolved.genre && !resolved.genreFromTitleGuessedArtists && resolved.genre !== shownPrimaryGenre) {
+    const fields = genreFieldsFromTags([resolved.genre]);
+    patch.primaryGenre = fields.primaryGenre;
+    patch.subgenres = fields.subgenres;
   }
 
   let dateChanged = false;
@@ -225,8 +234,8 @@ export function buildSyncPatch(
  */
 function keepDenAndenSideRoomSplit(patch: Record<string, unknown>, raw: RawCandidateEvent, existing: SyncTargetEvent): void {
   if (!isDenAndenSideRoomsEnabled() || existing.venueId !== DEN_ANDEN_SIDE_VENUE_ID) return;
-  if (!readGeneratedBreakdown(existing.description, existing.artists)) return;
-  if (readGeneratedBreakdown(raw.description, raw.artists)) return;
+  if (!hasRoomSplit(existing.description, existing.artists)) return;
+  if (hasRoomSplit(raw.description, raw.artists)) return;
   delete patch.title;
   delete patch.description;
   if (Array.isArray(patch.artists)) {

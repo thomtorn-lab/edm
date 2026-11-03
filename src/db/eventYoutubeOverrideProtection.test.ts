@@ -47,6 +47,14 @@ describe("event_youtube_preview_overrides — who can touch it", () => {
     }
   });
 
+  it("the read-only report guard only lists the table for a SELECT-access check", () => {
+    const guard = files.find((f) => f.path === "db/reportReadOnlyGuard.ts")!.text;
+    const mentions = guard.split("\n").filter((line) => /event_youtube_preview_overrides/.test(line) && !/^\s*(\*|\/\/)/.test(line));
+    // REPORT_TABLES (SELECT check) and SHARED_REPORT_RO_TABLES (the role's SELECT grant list).
+    expect(mentions).toEqual([`  { schema: "public", name: "event_youtube_preview_overrides", optional: true },`, `  "public.event_youtube_preview_overrides",`]);
+    expect(guard).not.toMatch(/\b(INSERT\s+INTO|UPDATE\s+\w|DELETE\s+FROM)\b/i);
+  });
+
   it("the display query only selects from it — never inserts, updates or deletes", () => {
     const queries = files.find((f) => f.path === "lib/queries.ts")!.text;
     expect(queries).not.toMatch(/\.(insert|update|delete)\(\s*eventYoutubePreviewOverrides/);
