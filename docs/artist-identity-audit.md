@@ -18,7 +18,7 @@ subscriber or newsletter data.
 The mode never receives `DATABASE_URL`. It reads only the secret
 `DATABASE_URL_REPORT_RO`, the shared reporting role `report_ro`. It uses the
 shared guard `src/db/reportReadOnlyGuard.ts`, a byte-identical copy of #141's
-commit cdc6985. Replace the copy with the shared module once that is on main.
+commit caa1379. Replace the copy with the shared module once that is on main.
 Setting up the role, including the pre-check for SECURITY DEFINER functions,
 is described in one place: #141's
 `docs/youtube-preview-risk-report-readonly-role.md`. Its GRANT covers all
@@ -28,9 +28,9 @@ Before the first data query the CLI:
 
 1. opens `BEGIN READ ONLY` and verifies `transaction_read_only = on`;
 2. proves from the catalogs that the role cannot write anywhere. The rules are
-   #141's: no elevated attributes, no role membership, no write or ownership
-   on any table, sequence, schema or the database, and no executable SECURITY
-   DEFINER function;
+   #141's: no elevated attributes, no role membership, no write, MAINTAIN
+   (PostgreSQL 17+) or ownership on any table, sequence, schema or the
+   database, and no executable SECURITY DEFINER function;
 3. proves SELECT on each of its eight tables, with no row-level security that
    could hide rows.
 

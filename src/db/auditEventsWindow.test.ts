@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildAuditWindow,
   edgeFlagsFor,
   findDuplicateCandidates,
+  findGenreFieldMismatches,
   READ_ONLY_TX_STATEMENTS,
   runEventsWindowAudit,
   shortenDescription,
@@ -404,5 +405,61 @@ describe.skipIf(!TEST_DB)("against a real Postgres (AUDIT_TEST_DATABASE_URL)", (
       await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {});
       await client.end();
     }
+  });
+});
+
+describe("findGenreFieldMismatches — read-only genre-field consistency (2026-11-02)", () => {
+  const ev = (o: Partial<Parameters<typeof findGenreFieldMismatches>[0][number]>) => ({
+    id: "e-x",
+    startLocal: "2026-11-01 15:00",
+    title: "Night",
+    primaryGenre: "house",
+    subgenres: ["house"],
+    genreManuallySet: [] as ("primaryGenre" | "subgenres")[],
+    ...o,
+  });
+
+  it("lists events whose primaryGenre differs from subgenres[0] (the three Production rows found on 2026-11-02)", () => {
+    const found = findGenreFieldMismatches([
+      ev({ id: "e-3bd81f88", title: "Love.Rave. - Autumn Edition", primaryGenre: "electronic-other", subgenres: ["house", "techno"], genreManuallySet: ["subgenres"] }),
+      ev({ id: "e-a2b5cf47", title: "Black Box: STEAMBOI", primaryGenre: "industrial-techno", subgenres: ["industrial", "trance"], genreManuallySet: ["subgenres"] }),
+      ev({ id: "e-ok", primaryGenre: "techno", subgenres: ["techno", "house"] }),
+    ]);
+    expect(found.map((m) => [m.id, m.reason])).toEqual([
+      ["e-3bd81f88", "primary_differs_from_first_subgenre"],
+      ["e-a2b5cf47", "primary_differs_from_first_subgenre"],
+    ]);
+    expect(found[0]).toMatchObject({ primaryGenre: "electronic-other", subgenres: ["house", "techno"], genreManuallySet: ["subgenres"] });
+  });
+
+  it("lists an event with no subgenres at all", () => {
+    expect(findGenreFieldMismatches([ev({ subgenres: [] })]).map((m) => m.reason)).toEqual(["no_subgenres"]);
+  });
+
+  it("consistent events produce no lines", () => {
+    expect(findGenreFieldMismatches([ev({}), ev({ primaryGenre: "trance", subgenres: ["trance", "techno"] })])).toEqual([]);
+  });
+
+  it("the CLI prints the section, with a zero count when everything is consistent", async () => {
+    const { printReport } = await import("./auditEventsWindowCli");
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => void lines.push(a.join(" ")));
+    try {
+      printReport({
+        window: { from: "2026-11-01", to: "2026-11-01", startUtc: "x", endUtc: "y" },
+        totalPublishedInWindow: 1,
+        countBySource: [],
+        completenessCheck: "ok",
+        events: [
+          { ...ev({ primaryGenre: "electronic-other", subgenres: ["house", "techno"], genreManuallySet: ["subgenres"] }), edgeFlags: [], descriptionReadsDanish: false, withheldSourceDescription: null } as never,
+        ],
+        duplicateCandidates: [],
+      } as never);
+    } finally {
+      spy.mockRestore();
+    }
+    const header = lines.find((l) => l.includes("Genre field mismatch"));
+    expect(header).toContain("(1)");
+    expect(lines.some((l) => l.includes("e-x") && l.includes("primaryGenre: electronic-other; subgenres: house+techno; manual: subgenres"))).toBe(true);
   });
 });

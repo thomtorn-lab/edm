@@ -1,0 +1,57 @@
+name: Artist Alerts
+
+# Scheduled Artist Alerts run: POST /api/artist-alerts/run on the deployed
+# app (reconcile lineups -> plan deliveries -> send -> retention). Same
+# auth/trigger pattern as every sync workflow (x-sync-token,
+# x-vercel-protection-bypass) and the same three repository secrets/variable
+# — nothing new to configure.
+#
+# Safe to schedule before launch: the endpoint does nothing while
+# ARTIST_ALERTS_MODE is unset/"off", only reconciles lineups in "observe",
+# and only emails in "test" (allowlisted addresses) or "live". The run is
+# state-based, so a skipped or late schedule only delays alerts — the next
+# run catches up. The response contains counts only, never an address.
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artist-alerts
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger Artist Alerts run
+        env:
+          SYNC_BASE_URL: ${{ vars.SYNC_BASE_URL }}
+          SYNC_TRIGGER_TOKEN: ${{ secrets.SYNC_TRIGGER_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -u
+          if [ -z "${SYNC_BASE_URL}" ] || [ -z "${SYNC_TRIGGER_TOKEN}" ] || [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::SYNC_BASE_URL, SYNC_TRIGGER_TOKEN and VERCEL_AUTOMATION_BYPASS_SECRET must be set (see sync-hangaren.yml)."
+            exit 1
+          fi
+          http_code=$(curl -sS \
+            --retry 2 --retry-delay 15 --retry-all-errors \
+            --max-time 120 \
+            -o /tmp/artist-alerts-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sync-token: ${SYNC_TRIGGER_TOKEN}" \
+            -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+            "${SYNC_BASE_URL}/api/artist-alerts/run")
+          echo "HTTP status: ${http_code}"
+          cat /tmp/artist-alerts-response.json
+          echo
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Artist Alerts run returned HTTP ${http_code}."
+            exit 1
+          fi

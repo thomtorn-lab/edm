@@ -6,6 +6,7 @@ import type { EventWithVenue } from "@/lib/queries";
 import type { AdminUnpublishReason, Venue } from "@/lib/types";
 import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { eventGenreTags } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 import EventYoutubePanel from "./EventYoutubePanel";
 
@@ -47,15 +48,15 @@ function EventRow({ event, venues, withheldDescription }: { event: EventWithVenu
   const [title, setTitle] = useState(event.title);
   const [venueId, setVenueId] = useState(event.venueId);
   const [subVenue, setSubVenue] = useState(event.subVenue ?? "");
-  const [primaryGenre, setPrimaryGenre] = useState(event.primaryGenre);
-  // Max-two-genres-per-event (2026-10-05): the event's own existing second
-  // distinct slug, if any — not event.subgenres[1], since legacy/seed data
-  // isn't guaranteed to store primary first. Falls back to "" (no secondary)
-  // when subgenres holds only the primary genre, which is every event today
-  // outside of a handful of pre-existing multi-genre fixtures.
-  const [secondaryGenre, setSecondaryGenre] = useState(
-    event.subgenres.find((g) => g !== event.primaryGenre) ?? ""
-  );
+  // Genre storage (2026-11-02): the editor starts from the genres the event
+  // actually shows — subgenres is authoritative, primaryGenre only mirrors
+  // subgenres[0] — so a row whose stored primaryGenre disagrees with its
+  // shown genres is edited as shown, never as the hidden value.
+  const shownGenres = eventGenreTags(event);
+  const shownPrimaryGenre = shownGenres[0] ?? event.primaryGenre;
+  const shownSecondaryGenre = shownGenres.find((g) => g !== shownPrimaryGenre) ?? "";
+  const [primaryGenre, setPrimaryGenre] = useState(shownPrimaryGenre);
+  const [secondaryGenre, setSecondaryGenre] = useState<string>(shownSecondaryGenre);
   const [artists, setArtists] = useState(event.artists.join(", "));
   const [description, setDescription] = useState(event.description ?? "");
   const [officialEventUrl, setOfficialEventUrl] = useState(event.officialEventUrl ?? "");
@@ -212,15 +213,12 @@ function EventRow({ event, venues, withheldDescription }: { event: EventWithVenu
       if (venueId !== event.venueId) patch.venueId = venueId;
       const subVenueTrimmed = subVenue.trim();
       if (subVenueTrimmed !== (event.subVenue ?? "")) patch.subVenue = subVenueTrimmed || null;
-      // Max-two-genres-per-event (2026-10-05): primaryGenre and subgenres are
-      // always sent together, matching the pre-existing lockstep convention
-      // this file already had for a primary-only change — this just extends
-      // it to also cover a secondary-only change, so writes.ts's own
-      // primaryGenre-without-subgenres safety net (which would otherwise
-      // derive subgenres = [primaryGenre] and silently drop a manually-set
-      // secondary) never has a reason to fire from this form.
-      const currentSecondaryGenre = event.subgenres.find((g) => g !== event.primaryGenre) ?? "";
-      if (primaryGenre !== event.primaryGenre || secondaryGenre !== currentSecondaryGenre) {
+      // The genre pair is sent as one ordered classification ([primary,
+      // secondary]) whenever either select differs from what the event
+      // shows. The server (writes.ts applyAdminEventEdit) stores both fields
+      // and locks the whole classification, so changing only the secondary
+      // genre keeps this main genre and protects both from sync.
+      if (primaryGenre !== shownPrimaryGenre || secondaryGenre !== shownSecondaryGenre) {
         patch.primaryGenre = primaryGenre;
         patch.subgenres = secondaryGenre && secondaryGenre !== primaryGenre ? [primaryGenre, secondaryGenre] : [primaryGenre];
       }

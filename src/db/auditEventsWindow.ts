@@ -285,6 +285,44 @@ export function toScreeningEvent(row: WindowEventRow, window: AuditWindow, withh
   };
 }
 
+/**
+ * Genre-field consistency check (read-only QA, 2026-11-02). The approved
+ * genre model stores subgenres as the authoritative genre field and
+ * primaryGenre as a mirror of subgenres[0]. This lists every event in the
+ * window where the two disagree, or where no genre is stored at all, so a
+ * divergence shows up in the regular QA. Report only; nothing is changed.
+ */
+export interface GenreFieldMismatch {
+  id: string;
+  startLocal: string;
+  title: string;
+  primaryGenre: string;
+  subgenres: string[];
+  genreManuallySet: ("primaryGenre" | "subgenres")[];
+  reason: "primary_differs_from_first_subgenre" | "no_subgenres";
+}
+
+export function findGenreFieldMismatches(
+  events: Pick<ScreeningEvent, "id" | "startLocal" | "title" | "primaryGenre" | "subgenres" | "genreManuallySet">[],
+): GenreFieldMismatch[] {
+  const out: GenreFieldMismatch[] = [];
+  for (const e of events) {
+    const reason =
+      e.subgenres.length === 0 ? "no_subgenres" : e.subgenres[0] !== e.primaryGenre ? "primary_differs_from_first_subgenre" : null;
+    if (!reason) continue;
+    out.push({
+      id: e.id,
+      startLocal: e.startLocal,
+      title: e.title,
+      primaryGenre: e.primaryGenre,
+      subgenres: e.subgenres,
+      genreManuallySet: e.genreManuallySet,
+      reason,
+    });
+  }
+  return out;
+}
+
 export interface DuplicateCandidatePair {
   a: string;
   b: string;

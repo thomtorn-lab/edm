@@ -1,5 +1,5 @@
 import type { EventRecord } from "./types";
-import type { GenreSlug } from "./taxonomy";
+import { eventGenreTags, type GenreSlug } from "./taxonomy";
 import { getCopenhagenParts, isPastEvent } from "./datetime";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 
@@ -52,7 +52,8 @@ export interface EventChangeEntry {
 export type DataQualityEvent = Pick<
   EventRecord,
   "id" | "title" | "startDatetime" | "endDatetime" | "published" | "canonicalSourceId" | "artists" | "primaryGenre" | "venueId"
->;
+> &
+  Partial<Pick<EventRecord, "subgenres">>;
 
 export interface EventDataQualityReport<T extends DataQualityEvent = DataQualityEvent> {
   event: T;
@@ -126,9 +127,11 @@ function formatLocalTime(iso: string): string {
 function clubNightEvidence(event: DataQualityEvent, startLocalHour: number): string | null {
   const text = `${event.title} ${event.artists.join(" ")}`;
   if (hasExplicitDjOrRaveSignal(text) || CLUB_FORMAT_RE.test(text)) return "DJ / rave / club-night wording";
-  if (DANCEFLOOR_GENRES.has(event.primaryGenre)) {
-    if (CLUB_VENUE_IDS.has(event.venueId)) return `${event.primaryGenre} at a club venue`;
-    if (startLocalHour >= LATE_START_LOCAL_HOUR) return `${event.primaryGenre}, starting late`;
+  // The genre the event shows first (subgenres is authoritative).
+  const shownGenre = eventGenreTags(event)[0];
+  if (shownGenre && DANCEFLOOR_GENRES.has(shownGenre)) {
+    if (CLUB_VENUE_IDS.has(event.venueId)) return `${shownGenre} at a club venue`;
+    if (startLocalHour >= LATE_START_LOCAL_HOUR) return `${shownGenre}, starting late`;
   }
   return null;
 }
