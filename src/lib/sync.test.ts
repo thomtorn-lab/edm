@@ -1945,6 +1945,20 @@ describe("buildSyncPatch — Den Anden Side room split is kept (2026-10-27)", ()
     expect(patch.description).toBeUndefined();
   });
 
+  it("keeps a split shown under the source's own room headings, too", () => {
+    const ownHeadings = target({
+      ...existing,
+      description: "Intro.\n\nLineup\nDen Anden Side\nA1\nA2\nsecret guest\n\nDen Anden Ende\nB1",
+    });
+    const { patch } = buildSyncPatch(
+      raw({ sourceId: "src-billetto", title: "GAG x DAS (tickets)", description: "Intro.", artists: ["B1", "A1", "A2"], venueName: "Den Anden Side" }),
+      { ...das, normalizedArtists: ["B1", "A1", "A2"] },
+      ownHeadings,
+    );
+    expect(patch.description).toBeUndefined();
+    expect(patch.artists).toBeUndefined();
+  });
+
   it("a source that itself gives a (corrected) split still updates", () => {
     const corrected = "Intro.\n\nDen Anden Side\nA1\n\nDen Anden Ende\nA2, B1";
     const { patch } = buildSyncPatch(
