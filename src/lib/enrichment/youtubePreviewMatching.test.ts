@@ -6,6 +6,7 @@ import {
   countBilledNames,
   normalizeArtistName,
   VERIFY_STALE_DAYS,
+  MAX_SEARCH_RESULTS,
   type ArtistPreviewCacheEntry,
   type ArtistPreviewCacheStore,
   type YoutubePreviewClient,
@@ -144,6 +145,64 @@ describe("matchArtistYoutubePreview — Rule A", () => {
     expect(result.status).toBe("accepted");
     expect(result.channelTitle).toBe("Boiler Room");
     expect(client.searchCalls).toEqual(["Octave One dj set", "Octave One live"]);
+  });
+
+  it.each([
+    ["HÖR BERLIN", "Fabian Krooss | HÖR - Nov 3 / 2025"],
+    ["Cercle", "Fabian Krooss live at Château de Chambord, France for Cercle"],
+    ["Mixmag", "Fabian Krooss | Mixmag Lab LDN"],
+    ["Keep Hush", "Fabian Krooss | Keep Hush Live Berlin"],
+  ])("accepts a set on the trusted live channel %s (owner decision 2026-11-03)", async (channelTitle, title) => {
+    const client = fakeYoutubeClient({
+      search: { "Fabian Krooss dj set": [video({ videoId: "t1", channelTitle, title })] },
+      details: { t1: details({ videoId: "t1", durationSeconds: 3600 }) },
+    });
+    const result = await matchArtistYoutubePreview("Fabian Krooss", client);
+    expect(result).toMatchObject({ status: "accepted", videoId: "t1", channelTitle });
+  });
+
+  it("a look-alike of a trusted live channel never qualifies (exact channel name only)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Fabian Krooss dj set": [video({ videoId: "t2", channelTitle: "Cercle Fan Uploads", title: "Fabian Krooss for Cercle" })],
+        "Fabian Krooss live": [video({ videoId: "t2", channelTitle: "Mixmag Archive", title: "Fabian Krooss | Mixmag" })],
+      },
+      details: { t2: details({ videoId: "t2", durationSeconds: 3600 }) },
+    });
+    expect((await matchArtistYoutubePreview("Fabian Krooss", client)).status).toBe("abstain");
+    expect(client.detailsCalls).toHaveLength(0);
+  });
+
+  it("the short-continuation guard also protects the new trusted channels (Benji vs \"Benji B\")", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benji dj set": [video({ videoId: "t3", channelTitle: "HÖR BERLIN", title: "Benji B | HÖR - Mar 1 / 2025" })],
+        "Benji live": [video({ videoId: "t3", channelTitle: "HÖR BERLIN", title: "Benji B | HÖR - Mar 1 / 2025" })],
+      },
+      details: { t3: details({ videoId: "t3", durationSeconds: 3600 }) },
+    });
+    expect((await matchArtistYoutubePreview("Benji", client)).status).toBe("abstain");
+  });
+
+  it("asks YouTube for 15 results per search — same 100-unit cost, more candidates", async () => {
+    const asked: number[] = [];
+    const client = fakeYoutubeClient({});
+    const recording = { ...client, async searchVideos(q: string, n: number) { asked.push(n); return client.searchVideos(q, n); } };
+    await matchArtistYoutubePreview("Nobody Here", recording);
+    expect(asked).toEqual([15, 15]);
+    expect(MAX_SEARCH_RESULTS).toBe(15);
+  });
+
+  it("verifies all eligible candidates from one search in a single batched details call", async () => {
+    const items = Array.from({ length: 12 }, (_, i) => video({ videoId: `c${i}`, channelTitle: "Eric Prydz", title: `Eric Prydz live ${i}`, publishedAt: `2020-01-${String(i + 1).padStart(2, "0")}T00:00:00Z` }));
+    const client = fakeYoutubeClient({
+      search: { "Eric Prydz dj set": items },
+      details: Object.fromEntries(items.map((v) => [v.videoId, details({ videoId: v.videoId, durationSeconds: 3600 })])),
+    });
+    const result = await matchArtistYoutubePreview("Eric Prydz", client);
+    expect(client.detailsCalls).toHaveLength(1);
+    expect(client.detailsCalls[0]).toHaveLength(12);
+    expect(result.videoId).toBe("c11"); // still the newest safe candidate
   });
 
   it("abstains on a generic/common-word name even with an exact same-named channel", async () => {

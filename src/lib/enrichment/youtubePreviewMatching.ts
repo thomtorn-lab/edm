@@ -80,7 +80,11 @@ export interface YoutubePreviewClient {
 }
 
 export const MATCH_RULE = "A" as const;
-const MAX_SEARCH_RESULTS = 5;
+// 15, not 5 (owner decision 2026-11-03): a search.list call costs 100 units
+// whatever maxResults is, and the eligible candidates are verified in ONE
+// batched videos.list call (1 unit, up to 50 ids) — so looking further down
+// the ranking finds more safe candidates at no extra quota.
+export const MAX_SEARCH_RESULTS = 15;
 export const MIN_DURATION_SECONDS = 20 * 60;
 const ACCEPTED_TTL_DAYS = 90;
 const ABSTAIN_TTL_DAYS = 30;
@@ -89,13 +93,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Globally-recognized third-party channels validated in the feasibility
- * audit — exact list from the approved decision, never extended here
- * without a fresh audit finding ("only additional channels if they were
- * already proven in the audit and are structurally equivalent"). Exact
- * (normalized) match only — no substring/fuzzy containment, so "Not
- * Tomorrowland Fanpage" never qualifies.
+ * audit, plus the live-set channels HÖR Berlin, Cercle, Mixmag and Keep Hush
+ * (owner decision 2026-11-03) — never extended here without an explicit
+ * decision. Exact (normalized) match only — no substring/fuzzy containment,
+ * so "Not Tomorrowland Fanpage" or "Cercle Fan" never qualifies. A trusted
+ * channel still needs the exact artist name in the title and passes the
+ * short-continuation guard (checkTrustedChannelSuffix).
  */
-export const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air"]);
+export const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air", "hör berlin", "cercle", "mixmag", "keep hush"]);
 
 /**
  * The three generic/common-word collisions the audit actually surfaced
