@@ -186,8 +186,8 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
               Can&rsquo;t find the artist? Ask us to add them. A SoundCloud or Spotify link helps us find the right one.
             </p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-              <input aria-label="Artist name" value={requestName || query} onChange={(e) => setRequestName(e.target.value)} className={INPUT} maxLength={80} />
-              <input aria-label="SoundCloud or Spotify link (optional)" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)} placeholder="SoundCloud or Spotify link (optional)" className={INPUT} maxLength={300} />
+              <input aria-label="Artist name" value={requestName || query} onChange={(e) => setRequestName(e.target.value)} className={`${INPUT} sm:w-44 sm:flex-none`} maxLength={80} />
+              <input aria-label="Spotify or SoundCloud URL (optional)" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)} placeholder="Spotify or SoundCloud URL (optional)" className={`${INPUT} sm:flex-1`} maxLength={300} />
               <button
                 type="button"
                 className={BUTTON}
