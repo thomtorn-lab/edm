@@ -664,7 +664,22 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
          FROM source_event_links l JOIN events e ON e.id = l.event_id WHERE l.source_url = ANY($1)`,
         [urls],
       );
+      const dupIds = evidenceDetail.map((d) => d.duplicateOfEventId).filter((id): id is string => typeof id === "string");
+      const dupEvents = await client.query(
+        `SELECT id, title, start_datetime, end_datetime, published, overridden_fields FROM events WHERE id = ANY($1)`,
+        [dupIds],
+      );
       for (const d of evidenceDetail) {
+        const dup = dupEvents.rows.find((r) => r.id === d.duplicateOfEventId);
+        d.matchedEvent = dup
+          ? {
+              id: dup.id,
+              published: dup.published,
+              startCopenhagen: formatCopenhagenWallClock(new Date(dup.start_datetime as string).toISOString()),
+              endCopenhagen: dup.end_datetime ? formatCopenhagenWallClock(new Date(dup.end_datetime as string).toISOString()) : null,
+              overriddenFields: dup.overridden_fields,
+            }
+          : null;
         const row = dq.rows.find((r) => r.source_url === d.sourceUrl);
         d.discoveryQueue = row
           ? {
