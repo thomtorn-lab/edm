@@ -8,6 +8,7 @@ import { classifyAdminQueueRow, mapPendingDiscoveryQueueForDedup } from "@/lib/a
 import { findBestDuplicateMatch } from "@/lib/dedup";
 import { isResidentAdvisorUrl } from "@/lib/links";
 import type { RawCandidateEvent } from "@/lib/adapters/types";
+import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
 
 /**
  * Best-effort metadata extraction for the "Add event from URL" admin tool
@@ -160,6 +161,7 @@ export async function POST(request: NextRequest) {
       },
       "admin-paste",
     );
+    reconcileArtistsSoon();
     return NextResponse.json({ raw, result, persisted: { kind: "event", id: eventId }, duplicateDiscoveryQueueId });
   }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminRepublishEvent } from "@/db/writes";
+import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
 
 /**
  * "Publish Again" (admin unpublish/cancellation safety, 2026-09-06) —
@@ -12,6 +13,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   try {
     await adminRepublishEvent(id);
+    reconcileArtistsSoon();
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Publish failed" }, { status: 400 });

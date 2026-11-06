@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { applyAdminEventEdit } from "@/db/writes";
 import { isEditableEventField } from "@/lib/override";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
 
 /**
  * URL-shaped fields validated on this route (event-level link editing,
@@ -73,6 +74,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   try {
     await applyAdminEventEdit(id, cleaned);
+    reconcileArtistsSoon();
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Edit failed" }, { status: 400 });

@@ -145,8 +145,12 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
   async function subscribe(email: string, keys: string[], requests: { name: string; profileUrl?: string }[] = [], hours = 0) {
     const ids = await Promise.all(keys.map(artistId));
     const r = await alerts.requestArtistAlerts({ email, artistIds: ids, requests }, at(hours));
-    const c = await alerts.confirmArtistAlerts(r.confirmToken!, at(hours));
+    const c = await alerts.confirmArtistAlerts(confirmTokenOf(r), at(hours));
     return c!.manageToken;
+  }
+  function confirmTokenOf(r: Awaited<ReturnType<typeof alerts.requestArtistAlerts>>): string {
+    if (r.outcome !== "confirm") throw new Error(`expected a confirmation, got ${r.outcome}`);
+    return r.confirmToken;
   }
 
   it("end to end: new event, lineup addition, one alert per event, nothing for events listed before the follow", async () => {
@@ -220,7 +224,7 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     await runAt(0);
     const id = await artistId("enna");
     const r = await alerts.requestArtistAlerts({ email: "fan3@example.test", artistIds: [id], requests: [] }, at(-10));
-    await alerts.confirmArtistAlerts(r.confirmToken!, at(-10));
+    await alerts.confirmArtistAlerts(confirmTokenOf(r), at(-10));
     await runAt(1);
     expect((await admin.query("SELECT confidence FROM event_artists WHERE name_key='enna'")).rows[0].confidence).toBe("review");
     // Confirmed 5h after it became visible: outside the 2h hold.
@@ -236,16 +240,16 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers");
     await addEvent("r1", "Request Night", ["Small Horse", "Host"], { start: evStart(300) });
     await runAt(0);
-    const r = await alerts.requestArtistAlerts({ email: "fan4@example.test", artistIds: [], requests: [{ name: "Small Horse", profileUrl: "https://soundcloud.com/small-horse" }] }, at(0.5));
-    await alerts.confirmArtistAlerts(r.confirmToken!, at(0.5));
-    const view = await alerts.getManageView((await alerts.confirmArtistAlerts(r.confirmToken!, at(0.5)))!.manageToken);
-    // "Small Horse" already exists from the lineup, so the request follows it directly.
+    const r = await alerts.requestArtistAlerts({ email: "fan4@example.test", artistIds: [], requests: [{ name: "Small Horse" }] }, at(0.5));
+    await alerts.confirmArtistAlerts(confirmTokenOf(r), at(0.5));
+    const view = await alerts.getManageView((await alerts.confirmArtistAlerts(confirmTokenOf(r), at(0.5)))!.manageToken);
+    // "Small Horse" already exists from the lineup, so a request without a profile link follows it directly.
     expect(view!.follows.map((f) => [f.displayName, f.state])).toEqual([["Small Horse", "active"]]);
 
     // A name that does not exist yet becomes a requested artist and waits for verification.
     // Already confirmed: further artists are requested from the manage page.
-    const m2 = (await alerts.confirmArtistAlerts(r.confirmToken!, at(0.5)))!.manageToken;
-    expect(await alerts.updateFollowsByManageToken(m2, { add: [], remove: [], requests: [{ name: "Brand New DJ", profileUrl: "https://example.com/x" }] }, at(1))).toBe(true);
+    const m2 = (await alerts.confirmArtistAlerts(confirmTokenOf(r), at(0.5)))!.manageToken;
+    expect(await alerts.updateFollowsByManageToken(m2, { add: [], remove: [], requests: [{ name: "Brand New DJ", profileUrl: "https://example.com/x" }] }, at(1))).toMatchObject({ ok: true });
     const v2 = await alerts.getManageView(m2);
     expect(v2!.follows.find((f) => f.displayName === "Brand New DJ")!.state).toBe("awaiting_verification");
     const reqId = await artistId("brand new dj");
@@ -255,7 +259,7 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     await runAt(2);
     await runAt(5);
     expect(sent.some((m) => m.text.includes("Before Verify"))).toBe(false);
-    expect(await alerts.resolveRequestedArtist_admin(reqId, { verify: true }, at(6))).toBe(true);
+    expect(await alerts.resolveRequestedArtist_admin(reqId, { verify: true }, at(6))).toMatchObject({ outcome: "approved", artistName: "Brand New DJ" });
     await runAt(7);
     await runAt(10);
     expect(sent.some((m) => m.text.includes("Before Verify"))).toBe(false); // visible before verification
@@ -339,15 +343,133 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     await alerts.runArtistAlerts("observe", (async () => ({ status: "sent", resendEmailId: "x" })) as never, at(0));
     const manageToken = await subscribe("again@example.test", ["daria kolosova"], [], 0.5);
     const again = await alerts.requestArtistAlerts({ email: "Again@Example.test", artistIds: [await artistId("gerd janson")], requests: [] }, at(1));
-    expect(again.confirmToken).toBeUndefined();
-    expect(again.manageToken).toBe(manageToken);
+    expect(again).toEqual({ outcome: "manage", manageToken, picks: { artistIds: [await artistId("gerd janson")], requests: [] } });
     const view = await alerts.getManageView(manageToken);
     expect(view!.follows.map((f) => f.displayName)).toEqual(["Daria Kolosova"]);
     // The manage page still adds artists directly, with no new confirmation.
-    expect(await alerts.updateFollowsByManageToken(manageToken, { add: [await artistId("gerd janson")], remove: [], requests: [] }, at(1))).toBe(true);
+    expect(await alerts.updateFollowsByManageToken(manageToken, { add: [await artistId("gerd janson")], remove: [], requests: [] }, at(1))).toMatchObject({ ok: true });
     expect((await alerts.getManageView(manageToken))!.follows.map((f) => [f.displayName, f.state])).toEqual([
       ["Daria Kolosova", "active"],
       ["Gerd Janson", "active"],
     ]);
+  });
+  it("manage link: only a confirmed address gets one, and each counts toward the daily email limit", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers");
+    await addEvent("l1", "Link Night", ["Daria Kolosova"], { start: evStart(100) });
+    await alerts.runArtistAlerts("observe", (async () => ({ status: "sent", resendEmailId: "x" })) as never, at(0));
+    expect(await alerts.requestManageLink("nobody@example.test", at(1))).toBeNull();
+    expect((await admin.query("SELECT count(*)::int n FROM alert_subscribers")).rows[0].n).toBe(0); // nothing stored for an unknown address
+    const pending = await alerts.requestArtistAlerts({ email: "pending@example.test", artistIds: [await artistId("daria kolosova")], requests: [] }, at(1));
+    expect(pending.outcome).toBe("confirm");
+    expect(await alerts.requestManageLink("pending@example.test", at(1))).toBeNull(); // not confirmed: no manage link
+    const token = await subscribe("linked@example.test", ["daria kolosova"], [], 1); // email 1 of 3 today
+    expect(await alerts.requestManageLink(" Linked@Example.test ", at(2))).toEqual({ manageToken: token }); // 2
+    expect(await alerts.requestManageLink("linked@example.test", at(3))).toEqual({ manageToken: token }); // 3
+    expect(await alerts.requestManageLink("linked@example.test", at(4))).toBeNull(); // limit reached
+    expect((await alerts.requestArtistAlerts({ email: "linked@example.test", artistIds: [], requests: [{ name: "X Y" }] }, at(4))).outcome).toBe("limited");
+    expect(await alerts.requestManageLink("linked@example.test", at(28))).toEqual({ manageToken: token }); // a day after the last one
+  });
+
+  it("artist requests: one shared request, one admin notice, approval makes every confirmed requester follow", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers; DELETE FROM artists WHERE status = 'requested'");
+    const sc = "https://soundcloud.com/kolsch";
+    const a = await alerts.requestArtistAlerts({ email: "req-a@example.test", artistIds: [], requests: [{ name: "Kölsch", profileUrl: sc }] }, at(0));
+    expect((await admin.query("SELECT count(*)::int n FROM artists WHERE status='requested'")).rows[0].n).toBe(1);
+    const ca = await alerts.confirmArtistAlerts(confirmTokenOf(a), at(0));
+    expect(ca!.newRequests.map((r) => [r.displayName, r.profileUrl])).toEqual([["Kölsch", sc]]); // first confirmed requester: admin notice
+    expect((await alerts.confirmArtistAlerts(confirmTokenOf(a), at(0)))!.newRequests).toEqual([]); // confirming again: none
+
+    // A second person asks for the same artist (no link): same request, no second notice.
+    const b = await alerts.requestArtistAlerts({ email: "req-b@example.test", artistIds: [], requests: [{ name: "KÖLSCH" }] }, at(1));
+    expect((await alerts.confirmArtistAlerts(confirmTokenOf(b), at(1)))!.newRequests).toEqual([]);
+    // Someone who never confirms is kept but gets no result email.
+    await alerts.requestArtistAlerts({ email: "req-c@example.test", artistIds: [], requests: [{ name: "Kölsch" }] }, at(1));
+    expect((await admin.query("SELECT count(*)::int n FROM artists WHERE status='requested'")).rows[0].n).toBe(1);
+
+    const listed = await alerts.listRequestedArtists();
+    expect(listed.map((r) => [r.displayName, r.followers])).toEqual([["Kölsch", 2]]);
+    const reqId = listed[0].id;
+    const { manageTokenFor } = await import("../lib/artistAlerts/tokens");
+    const follows = async (email: string) => {
+      const sub = (await admin.query("SELECT id FROM alert_subscribers WHERE email=$1", [email])).rows[0];
+      return (await alerts.getManageView(manageTokenFor(sub.id)))!.follows.map((f) => [f.displayName, f.state]);
+    };
+    expect(await follows("req-a@example.test")).toEqual([["Kölsch", "awaiting_verification"]]);
+
+    const result = await alerts.resolveRequestedArtist_admin(reqId, { verify: true }, at(2));
+    expect(result!.outcome).toBe("approved");
+    expect(result!.artistName).toBe("Kölsch");
+    expect(result!.recipients.map((r) => r.email).sort()).toEqual(["req-a@example.test", "req-b@example.test"]);
+    expect(await follows("req-a@example.test")).toEqual([["Kölsch", "active"]]);
+    expect(await follows("req-c@example.test")).toEqual([["Kölsch", "awaiting_confirmation"]]); // still waits for their own confirmation
+    expect(await alerts.resolveRequestedArtist_admin(reqId, { verify: true }, at(3))).toBeNull(); // no second approval, no second email
+    expect(await alerts.listRequestedArtists()).toEqual([]);
+  });
+
+  it("artist requests: rejecting removes the pending follow; linking moves requesters to the existing artist", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers; DELETE FROM artists WHERE status = 'requested'");
+    await addEvent("k1", "Known Night", ["Gerd Janson"], { start: evStart(100) });
+    await alerts.runArtistAlerts("observe", (async () => ({ status: "sent", resendEmailId: "x" })) as never, at(0));
+    const gerd = await artistId("gerd janson");
+    // A namesake with a different profile than the artist already on the site becomes its own request.
+    const t = await subscribe("link@example.test", [], [{ name: "Gerd Janson", profileUrl: "https://soundcloud.com/gerd-other" }], 0);
+    const [req] = await alerts.listRequestedArtists();
+    expect(req.existing.map((e) => e.id)).toEqual([gerd]);
+    const linked = await alerts.resolveRequestedArtist_admin(req.id, { linkTo: gerd }, at(1));
+    expect(linked).toMatchObject({ outcome: "approved", artistName: "Gerd Janson" });
+    expect((await alerts.getManageView(t))!.follows.map((f) => [f.artistId, f.state])).toEqual([[gerd, "active"]]);
+
+    const t2 = await subscribe("reject@example.test", [], [{ name: "Nobody Real" }], 1);
+    const [req2] = await alerts.listRequestedArtists();
+    const rejected = await alerts.resolveRequestedArtist_admin(req2.id, { reject: true }, at(2));
+    expect(rejected).toMatchObject({ outcome: "rejected", artistName: "Nobody Real" });
+    expect(rejected!.recipients).toHaveLength(1);
+    expect((await alerts.getManageView(t2))!.follows).toEqual([]);
+    expect(await alerts.listRequestedArtists()).toEqual([]);
+  });
+
+  it("counts every public upcoming event an artist is billed on, including appearances in review", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers");
+    await addEvent("u1", "One", ["Daria Kolosova"], { start: evStart(100) });
+    await addEvent("u2", "Two", ["Daria Kolosova"], { start: evStart(200) });
+    await addEvent("u3", "Hidden", ["Daria Kolosova"], { start: evStart(200), published: false });
+    await addEvent("u4", "Short", ["ENNA"], { start: evStart(100) });
+    await alerts.runArtistAlerts("observe", (async () => ({ status: "sent", resendEmailId: "x" })) as never, at(0));
+    const listed = await appearances.listFollowableArtists(at(0));
+    expect(listed.find((a) => a.displayName === "Daria Kolosova")!.upcomingEvents).toBe(2);
+    expect(listed.find((a) => a.displayName === "ENNA")!.upcomingEvents).toBe(1); // short name: in review, still billed
+  });
+  it("an unpublished-then-published event with a followed short name: the admin is told once, at first visibility", async () => {
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers");
+    await addEvent("y0", "Earlier", ["Ayla", "Host"], { start: evStart(300) });
+    await alerts.runArtistAlerts("observe", (async () => ({ status: "sent", resendEmailId: "x" })) as never, at(0));
+    await subscribe("ayla-fan@example.test", ["ayla"], [], 1);
+    // Created unpublished (the normal admin flow): not public, so nothing is seen yet.
+    await addEvent("y1", "Headline Flip", ["Ayla", "Host"], { start: evStart(300), published: false });
+    const notices: { eventId: string; displayName: string }[][] = [];
+    const onFollowedReview = async (items: { eventId: string; displayName: string }[]) => void notices.push(items);
+    await appearances.reconcileArtistAppearances(at(2), { onFollowedReview });
+    expect(notices).toEqual([]);
+    await admin.query("UPDATE events SET published = true WHERE id = 'y1'");
+    const summary = await appearances.reconcileArtistAppearances(at(3), { onFollowedReview });
+    expect(summary.followedReview).toBe(1);
+    expect(notices.flat().map((n) => [n.eventId, n.displayName])).toEqual([["y1", "Ayla"]]); // "Host" is not followed; y0 was seen before
+    await appearances.reconcileArtistAppearances(at(4), { onFollowedReview });
+    expect(notices).toHaveLength(1); // once per appearance
+    expect((await admin.query("SELECT visible_since FROM event_artists WHERE event_id='y1' AND name_key='ayla'")).rows[0].visible_since).toEqual(at(3));
+    // Confirmed within the hold: the alert goes out once.
+    sent.length = 0;
+    await appearances.decideAppearance("y1", "ayla", "confirmed");
+    await admin.query("UPDATE event_artists SET confirmed_at = $1 WHERE event_id='y1' AND name_key='ayla'", [at(4)]);
+    await runAt(5.5);
+    await runAt(6);
+    expect(sent.filter((m) => m.text.includes("Headline Flip"))).toHaveLength(1);
+    // Unpublish and publish again: no second alert.
+    await admin.query("UPDATE events SET published = false WHERE id = 'y1'");
+    await runAt(7);
+    await admin.query("UPDATE events SET published = true WHERE id = 'y1'");
+    await runAt(8);
+    await runAt(12);
+    expect(sent.filter((m) => m.text.includes("Headline Flip"))).toHaveLength(1);
   });
 });

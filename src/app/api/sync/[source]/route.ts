@@ -11,6 +11,7 @@ import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kult
 import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvaderpaaAdapter";
 import { createPylonenAdapter, PYLONEN_SOURCE_ID } from "@/lib/adapters/pylonenAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
+import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
 
 /**
  * Scheduling entry point (task 5): an external scheduler (cron, GitHub
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ so
   }
 
   const summary = await runSourceSync(entry.sourceId, entry.displayName, entry.create());
+  reconcileArtistsSoon();
 
   // ok/skipped_concurrent are 200s — a concurrent-run skip is expected,
   // benign behavior, not something a scheduler should alert on. failed/

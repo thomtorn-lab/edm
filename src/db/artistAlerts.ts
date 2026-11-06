@@ -9,6 +9,7 @@ import { cleanArtistDisplayName } from "../lib/enrichment/genreEnrichment";
 import { ARTIST_ALERTS_CONSENT_VERSION, ARTIST_ALERTS_REPLY_TO, LIMITS, alertTiming, emailAllowed, type AlertTiming, type ArtistAlertsMode } from "../lib/artistAlerts/config";
 import { generateToken, hashToken, manageTokenFor } from "../lib/artistAlerts/tokens";
 import { buildAlertEmail, normalizeProfileUrl, unsubscribeUrl, type AlertEmailEvent } from "../lib/artistAlerts/emailContent";
+import { notifyAdminOfFollowedReview } from "../lib/artistAlerts/notify";
 import { planEmail } from "../lib/artistAlerts/planning";
 import type { SendListEmailInput } from "../lib/email";
 import type { SendNewsletterEmailResult } from "../lib/email";
@@ -25,40 +26,85 @@ export interface ArtistRequestInput {
   profileUrl?: string | null;
 }
 
-export interface SignupResult {
-  /** Present when a confirmation email should be sent now (new or still unconfirmed address). */
-  confirmToken?: string;
-  /** Present when the address is already confirmed: email it its manage link instead. */
-  manageToken?: string;
-  artistNames: string[];
-}
+export type SignupResult =
+  /** New or still unconfirmed address: send the double opt-in confirmation. */
+  | { outcome: "confirm"; confirmToken: string; artistNames: string[] }
+  /**
+   * Already confirmed: nothing changes yet. Send the manage link, carrying the
+   * visitor's picks so the manage page can add them in one click — no follow
+   * changes before the inbox is proven, and nothing stored meanwhile.
+   */
+  | { outcome: "manage"; manageToken: string; picks: { artistIds: string[]; requests: ArtistRequestInput[] } }
+  /** This address already got the daily maximum of emails. Any address the form is used for counts, so saying so reveals nothing. */
+  | { outcome: "limited" }
+  /** The global hourly cap on these emails was reached. */
+  | { outcome: "busy" };
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/** Resolves a requested name: an existing followable or requested artist with the same key, else a new "requested" one. */
+/**
+ * Resolves a requested name to one artist row, so the same artist is never
+ * both followed and requested, and several requesters share one request:
+ * - without a profile link: the one existing followable artist with that
+ *   name, else the open request for it, else a new request;
+ * - with a profile link: an artist (followable or requested) already known
+ *   by that same link, else a new request — even if a same-named artist
+ *   exists, since a different profile can document a different artist (the
+ *   admin links the two if they turn out to be the same).
+ */
 async function resolveRequestedArtist(req: ArtistRequestInput, now: Date): Promise<{ id: string; displayName: string; requested: boolean } | null> {
   const displayName = cleanArtistDisplayName(req.name).slice(0, 80);
   const key = artistIdentityKey(displayName);
   if (key.length < 2) return null;
+  const profileUrl = normalizeProfileUrl(req.profileUrl);
   const existing = await db
-    .select({ id: artists.id, displayName: artists.displayName, status: artists.status })
+    .select({ id: artists.id, displayName: artists.displayName, status: artists.status, profileUrl: artists.profileUrl })
     .from(artists)
     .where(and(eq(artists.nameKey, key), isNull(artists.mergedIntoId), inArray(artists.status, ["auto", "verified", "requested"])));
   const followable = existing.filter((a) => a.status !== "requested");
-  if (followable.length === 1) return { id: followable[0].id, displayName: followable[0].displayName, requested: false };
-  const requested = existing.find((a) => a.status === "requested");
-  if (requested && followable.length === 0) return { id: requested.id, displayName: requested.displayName, requested: true };
+  const requested = existing.filter((a) => a.status === "requested");
+  if (profileUrl) {
+    const sameProfile = existing.find((a) => a.profileUrl === profileUrl);
+    if (sameProfile) return { id: sameProfile.id, displayName: sameProfile.displayName, requested: sameProfile.status === "requested" };
+  } else {
+    if (followable.length === 1) return { id: followable[0].id, displayName: followable[0].displayName, requested: false };
+    if (followable.length === 0 && requested.length > 0) return { id: requested[0].id, displayName: requested[0].displayName, requested: true };
+  }
   const id = `art_${randomUUID()}`;
-  await db.insert(artists).values({ id, displayName, nameKey: key, status: "requested", profileUrl: normalizeProfileUrl(req.profileUrl), createdAt: now, updatedAt: now });
+  await db.insert(artists).values({ id, displayName, nameKey: key, status: "requested", profileUrl, createdAt: now, updatedAt: now });
   return { id, displayName, requested: true };
 }
 
-async function addFollows(subscriberId: string, artistIds: string[], requests: ArtistRequestInput[], activeSince: Date | null, now: Date): Promise<string[]> {
+export interface NewRequestNotice {
+  artistId: string;
+  displayName: string;
+  profileUrl: string | null;
+}
+
+/**
+ * Requested artists among `artistIds` that now have exactly one active
+ * (confirmed) follower — i.e. the request just became real and the admin
+ * has not been told yet. Later requesters of the same artist add no notice,
+ * and an unconfirmed signup never notifies anyone.
+ */
+async function freshlyActiveRequests(artistIds: string[]): Promise<NewRequestNotice[]> {
+  if (artistIds.length === 0) return [];
+  const rows = await db
+    .select({ artistId: artists.id, displayName: artists.displayName, profileUrl: artists.profileUrl, active: count(alertFollows.subscriberId) })
+    .from(artists)
+    .innerJoin(alertFollows, and(eq(alertFollows.artistId, artists.id), sql`${alertFollows.activeSince} IS NOT NULL`))
+    .where(and(inArray(artists.id, artistIds), eq(artists.status, "requested")))
+    .groupBy(artists.id);
+  return rows.filter((r) => Number(r.active) === 1).map(({ artistId, displayName, profileUrl }) => ({ artistId, displayName, profileUrl }));
+}
+
+async function addFollows(subscriberId: string, artistIds: string[], requests: ArtistRequestInput[], activeSince: Date | null, now: Date): Promise<{ names: string[]; addedIds: string[] }> {
   const [{ value: current }] = await db.select({ value: count() }).from(alertFollows).where(eq(alertFollows.subscriberId, subscriberId));
   let room = LIMITS.maxFollowsPerSubscriber - current;
   const names: string[] = [];
+  const addedIds: string[] = [];
   const valid = artistIds.length
     ? await db
         .select({ id: artists.id, displayName: artists.displayName })
@@ -89,18 +135,21 @@ async function addFollows(subscriberId: string, artistIds: string[], requests: A
       .values({ subscriberId, artistId: a.id, activeSince, createdAt: now })
       .onConflictDoNothing()
       .returning({ artistId: alertFollows.artistId });
-    if (inserted.length > 0) room--;
+    if (inserted.length > 0) {
+      room--;
+      addedIds.push(a.id);
+    }
     names.push(a.displayName);
   }
-  return names;
+  return { names, addedIds };
 }
 
 /**
- * Public signup. Always answered with the same generic response by the
- * route, whatever happens here. New and existing addresses alike get a
- * confirmation email; nothing becomes active until it is confirmed, so
- * nobody can add artists to someone else's alerts without their inbox.
- * Returns no confirmToken when a rate limit applies.
+ * Public signup. The route answers new and confirmed addresses the same way;
+ * only the email differs. A new or unconfirmed address gets pending follows
+ * and a confirmation; a confirmed one gets nothing changed and its manage
+ * link with the picks. Either way nobody can change someone else's alerts
+ * without their inbox. Counted against the per-address daily email limit.
  */
 export async function requestArtistAlerts(
   input: { email: string; artistIds: string[]; requests: ArtistRequestInput[] },
@@ -113,44 +162,74 @@ export async function requestArtistAlerts(
     await db.insert(alertSubscribers).values({ id, email, status: "pending", manageTokenHash: hashToken(manageTokenFor(id)), createdAt: now }).onConflictDoNothing();
     [sub] = await db.select().from(alertSubscribers).where(eq(alertSubscribers.email, email)).limit(1);
   }
-  // Already confirmed: nothing changes from the public form. The address is
-  // emailed its manage link, where artists are added or removed at once — the
-  // link itself proves the inbox, exactly as before.
-  const confirmed = sub.status === "confirmed";
-  const artistNames = confirmed ? [] : await addFollows(sub.id, input.artistIds, input.requests, null, now);
+  const limit = await emailAllowance(sub, now);
+  if (limit !== "ok") return { outcome: limit };
 
-  const windowStart = new Date(now.getTime() - 86_400_000);
-  const sentToday = sub.lastConfirmEmailAt && sub.lastConfirmEmailAt > windowStart ? sub.confirmEmailsSent : 0;
-  if (sentToday >= LIMITS.maxConfirmEmailsPerAddressPerDay) return { artistNames };
+  if (sub.status === "confirmed") {
+    await countEmailSent(sub, now);
+    return { outcome: "manage", manageToken: manageTokenFor(sub.id), picks: { artistIds: input.artistIds, requests: input.requests } };
+  }
+  const { names } = await addFollows(sub.id, input.artistIds, input.requests, null, now);
+  const confirmToken = generateToken();
+  await db
+    .update(alertSubscribers)
+    .set({ confirmTokenHash: hashToken(confirmToken) })
+    .where(eq(alertSubscribers.id, sub.id));
+  await countEmailSent(sub, now);
+  return { outcome: "confirm", confirmToken, artistNames: names };
+}
+
+type SubscriberRow = typeof alertSubscribers.$inferSelect;
+
+function emailsSentToday(sub: SubscriberRow, now: Date): number {
+  return sub.lastConfirmEmailAt && sub.lastConfirmEmailAt > new Date(now.getTime() - 86_400_000) ? sub.confirmEmailsSent : 0;
+}
+
+/** Per-address daily limit and global hourly cap for emails requested through the public forms. */
+async function emailAllowance(sub: SubscriberRow, now: Date): Promise<"ok" | "limited" | "busy"> {
+  if (emailsSentToday(sub, now) >= LIMITS.maxConfirmEmailsPerAddressPerDay) return "limited";
   const [{ value: lastHour }] = await db
     .select({ value: count() })
     .from(alertSubscribers)
     .where(gt(alertSubscribers.lastConfirmEmailAt, new Date(now.getTime() - 3_600_000)));
-  if (lastHour >= LIMITS.maxConfirmEmailsPerHourGlobal) return { artistNames };
+  return lastHour >= LIMITS.maxConfirmEmailsPerHourGlobal ? "busy" : "ok";
+}
 
-  if (confirmed) {
-    await db.update(alertSubscribers).set({ confirmEmailsSent: sentToday + 1, lastConfirmEmailAt: now }).where(eq(alertSubscribers.id, sub.id));
-    return { manageToken: manageTokenFor(sub.id), artistNames };
-  }
-  const confirmToken = generateToken();
+async function countEmailSent(sub: SubscriberRow, now: Date): Promise<void> {
   await db
     .update(alertSubscribers)
-    .set({ confirmTokenHash: hashToken(confirmToken), confirmEmailsSent: sentToday + 1, lastConfirmEmailAt: now })
+    .set({ confirmEmailsSent: emailsSentToday(sub, now) + 1, lastConfirmEmailAt: now })
     .where(eq(alertSubscribers.id, sub.id));
-  return { confirmToken, artistNames };
+}
+
+/**
+ * "Manage Artist Alerts" form: a confirmed address gets its manage link.
+ * Unknown and unconfirmed addresses get nothing and are not counted, so the
+ * route answers every address the same way.
+ */
+export async function requestManageLink(emailInput: string, now: Date = new Date()): Promise<{ manageToken: string } | null> {
+  const [sub] = await db.select().from(alertSubscribers).where(eq(alertSubscribers.email, normalizeEmail(emailInput))).limit(1);
+  if (!sub || sub.status !== "confirmed") return null;
+  if ((await emailAllowance(sub, now)) !== "ok") return null;
+  await countEmailSent(sub, now);
+  return { manageToken: manageTokenFor(sub.id) };
 }
 
 /** Double opt-in (POST from the confirm page only). Activates every follow still waiting. Idempotent. */
-export async function confirmArtistAlerts(confirmToken: string, now: Date = new Date()): Promise<{ manageToken: string } | null> {
+export async function confirmArtistAlerts(confirmToken: string, now: Date = new Date()): Promise<{ manageToken: string; newRequests: NewRequestNotice[] } | null> {
   const [sub] = await db.select().from(alertSubscribers).where(eq(alertSubscribers.confirmTokenHash, hashToken(confirmToken))).limit(1);
   if (!sub) return null;
-  await db.transaction(async (tx) => {
+  const activated = await db.transaction(async (tx) => {
     if (sub.status !== "confirmed") {
       await tx.update(alertSubscribers).set({ status: "confirmed", confirmedAt: now, consentVersion: ARTIST_ALERTS_CONSENT_VERSION }).where(eq(alertSubscribers.id, sub.id));
     }
-    await tx.update(alertFollows).set({ activeSince: now }).where(and(eq(alertFollows.subscriberId, sub.id), isNull(alertFollows.activeSince)));
+    return tx
+      .update(alertFollows)
+      .set({ activeSince: now })
+      .where(and(eq(alertFollows.subscriberId, sub.id), isNull(alertFollows.activeSince)))
+      .returning({ artistId: alertFollows.artistId });
   });
-  return { manageToken: manageTokenFor(sub.id) };
+  return { manageToken: manageTokenFor(sub.id), newRequests: await freshlyActiveRequests(activated.map((a) => a.artistId)) };
 }
 
 async function subscriberByManageToken(manageToken: string) {
@@ -184,19 +263,19 @@ export async function getManageView(manageToken: string): Promise<ManageView | n
   };
 }
 
-/** Manage page: the link itself proves inbox ownership, so changes take effect at once. */
+/** Manage page: the link itself proves inbox ownership, so changes take effect at once. Existing follows are never replaced, only added to or removed by name. */
 export async function updateFollowsByManageToken(
   manageToken: string,
   change: { add: string[]; remove: string[]; requests: ArtistRequestInput[] },
   now: Date = new Date(),
-): Promise<boolean> {
+): Promise<{ ok: true; newRequests: NewRequestNotice[] } | null> {
   const sub = await subscriberByManageToken(manageToken);
-  if (!sub || sub.status !== "confirmed") return false;
+  if (!sub || sub.status !== "confirmed") return null;
   if (change.remove.length) {
     await db.delete(alertFollows).where(and(eq(alertFollows.subscriberId, sub.id), inArray(alertFollows.artistId, change.remove)));
   }
-  await addFollows(sub.id, change.add, change.requests, now, now);
-  return true;
+  const { addedIds } = await addFollows(sub.id, change.add, change.requests, now, now);
+  return { ok: true, newRequests: await freshlyActiveRequests(addedIds) };
 }
 
 /** Immediate erasure: follows, deliveries and emails cascade with the row. */
@@ -205,19 +284,45 @@ export async function unsubscribeArtistAlerts(manageToken: string): Promise<bool
   return rows.length > 0;
 }
 
-/** Admin: resolve a requested artist. Follows start counting from now, so no historical alerts. */
-export async function resolveRequestedArtist_admin(artistId: string, action: { verify: true } | { linkTo: string } | { reject: true }, now: Date = new Date()): Promise<boolean> {
+export interface ResolvedRequest {
+  outcome: "approved" | "rejected";
+  /** The artist the requesters now follow (approved), or the requested name (rejected). */
+  artistName: string;
+  /** Confirmed subscribers whose request this was — one result email each. */
+  recipients: { subscriberId: string; email: string }[];
+}
+
+/**
+ * Admin: resolve a requested artist. Every requester's follow is kept and
+ * handled together: approving (verify, or link to the existing artist it
+ * turned out to be) makes them follow it from now on — so nothing already
+ * listed triggers an alert — and rejecting removes the pending follow.
+ * Confirmed requesters are returned for their single result email;
+ * unconfirmed ones get none (their address is not confirmed yet).
+ */
+export async function resolveRequestedArtist_admin(
+  artistId: string,
+  action: { verify: true } | { linkTo: string } | { reject: true },
+  now: Date = new Date(),
+): Promise<ResolvedRequest | null> {
   return db.transaction(async (tx) => {
     const [a] = await tx.select().from(artists).where(and(eq(artists.id, artistId), eq(artists.status, "requested"))).limit(1);
-    if (!a) return false;
+    if (!a) return null;
+    const followers = await tx
+      .select({ subscriberId: alertFollows.subscriberId, activeSince: alertFollows.activeSince, email: alertSubscribers.email, subStatus: alertSubscribers.status })
+      .from(alertFollows)
+      .innerJoin(alertSubscribers, eq(alertSubscribers.id, alertFollows.subscriberId))
+      .where(eq(alertFollows.artistId, artistId));
+    const recipients = followers.filter((f) => f.activeSince !== null && f.subStatus === "confirmed").map(({ subscriberId, email }) => ({ subscriberId, email }));
+
     if ("verify" in action) {
       await tx.update(artists).set({ status: "verified", updatedAt: now }).where(eq(artists.id, artistId));
-      // Confirmed follows start counting from now; unconfirmed ones stay unconfirmed.
       await tx.update(alertFollows).set({ activeSince: now }).where(and(eq(alertFollows.artistId, artistId), sql`${alertFollows.activeSince} IS NOT NULL`));
-    } else if ("linkTo" in action) {
-      const [target] = await tx.select().from(artists).where(and(eq(artists.id, action.linkTo), inArray(artists.status, [...FOLLOWABLE]))).limit(1);
-      if (!target) return false;
-      const followers = await tx.select().from(alertFollows).where(eq(alertFollows.artistId, artistId));
+      return { outcome: "approved", artistName: a.displayName, recipients };
+    }
+    if ("linkTo" in action) {
+      const [target] = await tx.select().from(artists).where(and(eq(artists.id, action.linkTo), inArray(artists.status, [...FOLLOWABLE]), isNull(artists.mergedIntoId))).limit(1);
+      if (!target) return null;
       for (const f of followers) {
         await tx
           .insert(alertFollows)
@@ -226,21 +331,38 @@ export async function resolveRequestedArtist_admin(artistId: string, action: { v
       }
       await tx.delete(alertFollows).where(eq(alertFollows.artistId, artistId));
       await tx.update(artists).set({ mergedIntoId: target.id, status: "rejected", updatedAt: now }).where(eq(artists.id, artistId));
-    } else {
-      await tx.update(artists).set({ status: "rejected", updatedAt: now }).where(eq(artists.id, artistId));
+      return { outcome: "approved", artistName: target.displayName, recipients };
     }
-    return true;
+    await tx.delete(alertFollows).where(eq(alertFollows.artistId, artistId));
+    await tx.update(artists).set({ status: "rejected", updatedAt: now }).where(eq(artists.id, artistId));
+    return { outcome: "rejected", artistName: a.displayName, recipients };
   });
 }
 
+/** Open requests for the admin page, with how many confirmed subscribers wait on each and same-named artists already on the site (to link a duplicate). */
 export async function listRequestedArtists() {
-  return db
-    .select({ id: artists.id, displayName: artists.displayName, profileUrl: artists.profileUrl, createdAt: artists.createdAt, followers: count(alertFollows.subscriberId) })
+  const requests = await db
+    .select({
+      id: artists.id,
+      displayName: artists.displayName,
+      nameKey: artists.nameKey,
+      profileUrl: artists.profileUrl,
+      createdAt: artists.createdAt,
+      followers: sql<number>`count(${alertFollows.subscriberId}) FILTER (WHERE ${alertFollows.activeSince} IS NOT NULL)`,
+    })
     .from(artists)
     .leftJoin(alertFollows, eq(alertFollows.artistId, artists.id))
     .where(eq(artists.status, "requested"))
     .groupBy(artists.id)
     .orderBy(artists.createdAt);
+  const keys = [...new Set(requests.map((r) => r.nameKey))];
+  const matches = keys.length
+    ? await db
+        .select({ id: artists.id, displayName: artists.displayName, nameKey: artists.nameKey, profileUrl: artists.profileUrl })
+        .from(artists)
+        .where(and(inArray(artists.nameKey, keys), inArray(artists.status, [...FOLLOWABLE]), isNull(artists.mergedIntoId)))
+    : [];
+  return requests.map((r) => ({ ...r, followers: Number(r.followers), existing: matches.filter((m) => m.nameKey === r.nameKey) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -462,7 +584,7 @@ export async function runArtistAlerts(mode: ArtistAlertsMode, send: Sender, now:
   const lock = await acquireSyncLock("artist-alerts");
   if (!lock) return { mode, skipped: "locked" };
   try {
-    const reconcile = await reconcileArtistAppearances(now);
+    const reconcile = await reconcileArtistAppearances(now, { onFollowedReview: notifyAdminOfFollowedReview });
     const summary: RunSummary = { mode, reconcile, retention: await sweepArtistAlertsRetention(now) };
     if (mode === "test" || mode === "live") {
       const timing = alertTiming();
