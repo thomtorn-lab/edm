@@ -103,6 +103,26 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air", "hör berlin", "cercle", "mixmag", "keep hush"]);
 
 /**
+ * The four live channels added 2026-11-03 qualify only with their own
+ * channel id, not just their name — channel names are not unique on
+ * YouTube. Each id was verified 2026-11-06 against the YouTube Data API
+ * (videos.list on one of the channel's own uploads returned this id with
+ * this exact channel name).
+ */
+export const PINNED_TRUSTED_CHANNEL_IDS: ReadonlyMap<string, string> = new Map([
+  ["hör berlin", "UCmfF7JZv26UUKyRedViGIlw"],
+  ["cercle", "UCPKT_csvP72boVX0XrMtagQ"],
+  ["mixmag", "UCQdCIrTpkhEH5Z8KPsn7NvQ"],
+  ["keep hush", "UCQAnY_suiNH0MvdTHk5GiBA"],
+]);
+
+function isTrustedChannel(channelNormalized: string, channelId: string): boolean {
+  if (!TRUSTED_CHANNELS.has(channelNormalized)) return false;
+  const pinned = PINNED_TRUSTED_CHANNEL_IDS.get(channelNormalized);
+  return pinned === undefined || pinned === channelId;
+}
+
+/**
  * The three generic/common-word collisions the audit actually surfaced
  * (Nat -> HÖR Berlin's own "NAT" resident, unconfirmed; Jersey -> "jersey
  * club" the genre, not an artist; Utopia -> a same-named "UTOPIA" brand
@@ -258,7 +278,7 @@ export function checkStructuralEligibility(cleanedName: string, normalized: stri
   }
   const channelNormalized = item.channelTitle.trim().toLowerCase();
   const ownChannel = channelNormalized === normalized;
-  const trustedChannel = TRUSTED_CHANNELS.has(channelNormalized);
+  const trustedChannel = isTrustedChannel(channelNormalized, item.channelId);
 
   const acceptTrusted = (): StructuralCheck => {
     const suffixCheck = checkTrustedChannelSuffix(item.title, cleanedName, item.channelTitle);

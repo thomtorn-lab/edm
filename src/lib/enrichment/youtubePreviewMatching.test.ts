@@ -148,17 +148,37 @@ describe("matchArtistYoutubePreview — Rule A", () => {
   });
 
   it.each([
-    ["HÖR BERLIN", "Fabian Krooss | HÖR - Nov 3 / 2025"],
-    ["Cercle", "Fabian Krooss live at Château de Chambord, France for Cercle"],
-    ["Mixmag", "Fabian Krooss | Mixmag Lab LDN"],
-    ["Keep Hush", "Fabian Krooss | Keep Hush Live Berlin"],
-  ])("accepts a set on the trusted live channel %s (owner decision 2026-11-03)", async (channelTitle, title) => {
+    ["HÖR BERLIN", "UCmfF7JZv26UUKyRedViGIlw", "Fabian Krooss | HÖR - Nov 3 / 2025"],
+    ["Cercle", "UCPKT_csvP72boVX0XrMtagQ", "Fabian Krooss live at Château de Chambord, France for Cercle"],
+    ["Mixmag", "UCQdCIrTpkhEH5Z8KPsn7NvQ", "Fabian Krooss | Mixmag Lab LDN"],
+    ["Keep Hush", "UCQAnY_suiNH0MvdTHk5GiBA", "Fabian Krooss | Keep Hush Live Berlin"],
+  ])("accepts a set on the trusted live channel %s with its verified channel id", async (channelTitle, channelId, title) => {
     const client = fakeYoutubeClient({
-      search: { "Fabian Krooss dj set": [video({ videoId: "t1", channelTitle, title })] },
+      search: { "Fabian Krooss dj set": [video({ videoId: "t1", channelTitle, channelId, title })] },
       details: { t1: details({ videoId: "t1", durationSeconds: 3600 }) },
     });
     const result = await matchArtistYoutubePreview("Fabian Krooss", client);
     expect(result).toMatchObject({ status: "accepted", videoId: "t1", channelTitle });
+  });
+
+  it.each(["HÖR BERLIN", "Cercle", "Mixmag", "Keep Hush"])("a channel merely NAMED %s, with another channel id, never qualifies", async (channelTitle) => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Fabian Krooss dj set": [video({ videoId: "t4", channelTitle, channelId: "UCimpostor000000000000", title: "Fabian Krooss | Live Set" })],
+        "Fabian Krooss live": [],
+      },
+      details: { t4: details({ videoId: "t4", durationSeconds: 3600 }) },
+    });
+    expect((await matchArtistYoutubePreview("Fabian Krooss", client)).status).toBe("abstain");
+    expect(client.detailsCalls).toHaveLength(0);
+  });
+
+  it("the original four trusted channels are still matched by name", async () => {
+    const client = fakeYoutubeClient({
+      search: { "Fabian Krooss dj set": [video({ videoId: "t5", channelTitle: "Boiler Room", channelId: "any", title: "Fabian Krooss | Boiler Room Berlin" })] },
+      details: { t5: details({ videoId: "t5", durationSeconds: 3600 }) },
+    });
+    expect((await matchArtistYoutubePreview("Fabian Krooss", client)).status).toBe("accepted");
   });
 
   it("a look-alike of a trusted live channel never qualifies (exact channel name only)", async () => {
@@ -176,8 +196,8 @@ describe("matchArtistYoutubePreview — Rule A", () => {
   it("the short-continuation guard also protects the new trusted channels (Benji vs \"Benji B\")", async () => {
     const client = fakeYoutubeClient({
       search: {
-        "Benji dj set": [video({ videoId: "t3", channelTitle: "HÖR BERLIN", title: "Benji B | HÖR - Mar 1 / 2025" })],
-        "Benji live": [video({ videoId: "t3", channelTitle: "HÖR BERLIN", title: "Benji B | HÖR - Mar 1 / 2025" })],
+        "Benji dj set": [video({ videoId: "t3", channelTitle: "HÖR BERLIN", channelId: "UCmfF7JZv26UUKyRedViGIlw", title: "Benji B | HÖR - Mar 1 / 2025" })],
+        "Benji live": [video({ videoId: "t3", channelTitle: "HÖR BERLIN", channelId: "UCmfF7JZv26UUKyRedViGIlw", title: "Benji B | HÖR - Mar 1 / 2025" })],
       },
       details: { t3: details({ videoId: "t3", durationSeconds: 3600 }) },
     });
