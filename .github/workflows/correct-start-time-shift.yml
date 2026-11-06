@@ -1,0 +1,82 @@
+name: Correct Start Time Shift
+
+# One-time, human-triggered correction of the eight published events whose
+# start time was shifted one hour early by the admin Discovery Queue editor
+# bug fixed in PR #190 — see src/db/startTimeShiftCorrection.ts for the exact
+# rows, values and safety checks. Same shape as den-anden-side-rooms.yml:
+#   - workflow_dispatch only; "plan" (default) and "verify" are read-only.
+#   - "apply" requires the confirmation string, runs in one transaction,
+#     re-checks every row under a row lock and writes nothing if any row
+#     differs from the reviewed state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '"plan" (read-only, default), "apply" (writes) or "verify" (read-only)'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - verify
+        default: plan
+      confirm:
+        description: "apply mode only: type CORRECT-8-START-TIMES to confirm writing to Production."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: correct-start-time-shift
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify DATABASE_URL secret is configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL is not set (Settings > Secrets and variables > Actions > Secrets)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write DATABASE_URL for the script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
+
+      - name: Run start-time correction
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          args=(--mode="$INPUT_MODE")
+          [ -n "$INPUT_CONFIRM" ] && args+=(--confirm="$INPUT_CONFIRM")
+          node --env-file=.env.local --import tsx src/db/startTimeShiftCorrection.ts "${args[@]}" | tee report.txt
+          {
+            echo '```'
+            sed -n '/=== SUMMARY ===/,$p' report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove local env file
+        if: always()
+        run: rm -f .env.local
