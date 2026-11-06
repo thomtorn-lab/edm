@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSoundcloudLinkChanges, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles, storedArtistName, type StoredSoundcloudLink } from "./soundcloudLinks";
+import { matchStoredLinksByIdentityKey, planSoundcloudLinkChanges, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles, storedArtistName, type StoredSoundcloudLink } from "./soundcloudLinks";
 import type { ArtistSoundcloudLink, SoundcloudLinkReport } from "./adapters/types";
 
 const GUY_J = { name: "GUY J", url: "https://soundcloud.com/guy-j" };
@@ -140,5 +140,27 @@ describe("selectReusedSoundcloudProfiles — one artist's verified profile reuse
   it("the event's own link always wins over a reused one", () => {
     const reused = selectReusedSoundcloudProfiles([{ lineupEntry: "GUY J", otherEntry: "GUY J", url: "https://soundcloud.com/old" }]);
     expect(selectLineupSoundcloudLinks(["GUY J"], [...reused, { artistName: "GUY J", url: GUY_J.url }])).toEqual([GUY_J]);
+  });
+});
+
+describe("historical venue links by identity key (2026-11-06): exactly one profile, same key", () => {
+  const here = [{ eventId: "e-now", lineupEntry: "B From E", nameKey: "b from e" }];
+  const reuse = (stored: { artistName: string; url: string }[], viaAppearances: { eventId: string; lineupEntry: string; otherEntry: string; url: string }[] = []) =>
+    selectReusedSoundcloudProfiles([...viaAppearances, ...matchStoredLinksByIdentityKey(here, stored)]);
+
+  it("a past Culture Box night's link for the same key is reused (case differs)", () => {
+    expect(reuse([{ artistName: "B FROM E", url: "https://soundcloud.com/bfrome" }])).toEqual([{ artistName: "B From E", url: "https://soundcloud.com/bfrome" }]);
+  });
+
+  it("two different profiles for the key, historical or via appearances: nothing", () => {
+    expect(reuse([{ artistName: "B FROM E", url: "https://soundcloud.com/bfrome" }, { artistName: "B From E", url: "https://soundcloud.com/other" }])).toEqual([]);
+    expect(
+      reuse([{ artistName: "B FROM E", url: "https://soundcloud.com/bfrome" }], [{ eventId: "e-now", lineupEntry: "B From E", otherEntry: "B From E", url: "https://soundcloud.com/other" }]),
+    ).toEqual([]);
+  });
+
+  it("a stored name with another key is ignored; a B2B stored entry never gives a profile", () => {
+    expect(reuse([{ artistName: "B FROM EAST", url: "https://soundcloud.com/x" }])).toEqual([]);
+    expect(reuse([{ artistName: "B FROM E b2b NAT", url: "https://soundcloud.com/x" }])).toEqual([]);
   });
 });
