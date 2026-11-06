@@ -1853,6 +1853,24 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
     );
   });
 
+  it("6b. a PARTIAL fetch is recorded as the source's lastError (health 'degraded') and returned in errors, naming what could not be read — never a silent 'ok' (HvadErPå coverage gap, 2026-11-06)", async () => {
+    const adapter: SourceAdapter = {
+      sourceId: "src-hvaderpaa",
+      fetchCandidates: () => Promise.resolve([rawCandidate]),
+      lastFetchWasComplete: () => false,
+      lastFetchProblems: () => ["MODULE programme not read: HTTP 429"],
+    };
+    const summary = await runSourceSync("src-hvaderpaa", "HvadErPå", adapter);
+
+    const { touchSourceSyncStats } = await import("./writes");
+    expect(touchSourceSyncStats).toHaveBeenCalledWith(
+      "src-hvaderpaa",
+      expect.objectContaining({ success: true, complete: false, error: expect.stringContaining("MODULE programme not read: HTTP 429") }),
+    );
+    expect(summary.outcome).toBe("ok");
+    expect(summary.errors).toEqual([expect.stringContaining("Incomplete fetch: 1 page(s)")]);
+  });
+
   it("7. once the venue is registered, the NEXT normal sync resolves it, re-evaluates the pipeline, and resolves the prior pending row as published — no manual edit, no manual event creation, no Billetto-specific code", async () => {
     const raahuset: Venue[] = [
       {

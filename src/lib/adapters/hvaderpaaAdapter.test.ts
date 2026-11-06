@@ -539,6 +539,48 @@ describe("createHvaderpaaAdapter (end-to-end fetchCandidates, mocked fetch)", ()
     expect(candidates).toHaveLength(1);
     expect(candidates[0]!.title).toBe("Order Of Magnitude: Quake");
     expect(adapter.lastFetchWasComplete!()).toBe(false);
+    expect(adapter.lastFetchProblems!()).toEqual([expect.stringContaining("event page not read (Den Anden Side)")]);
+  });
+
+  // MODULE/Jolene/Baggen coverage gap (2026-11-06): a rate-limited (429)
+  // venue page used to be given up on at once, dropping that venue's whole
+  // programme from the sync.
+  it("retries a rate-limited (429) venue page instead of dropping that venue's programme", async () => {
+    let moduleAttempts = 0;
+    const mockFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url === "https://hvaderpaa.dk/da/spillested/module-koebenhavn/") {
+        moduleAttempts++;
+        if (moduleAttempts === 1) return new Response("slow down", { status: 429, headers: { "retry-after": "0" } });
+        return new Response(
+          `<script type="application/ld+json">{"@type":"ItemList","numberOfItems":1,"itemListElement":[{"@type":"ListItem","position":1,"url":"https://hvaderpaa.dk/da/event/21354/","name":"x"}]}</script>`,
+          { status: 200 },
+        );
+      }
+      if (url.includes("/spillested/")) return new Response(`<script type="application/ld+json">{"@type":"ItemList","numberOfItems":0,"itemListElement":[]}</script>`, { status: 200 });
+      if (url === "https://hvaderpaa.dk/da/event/21354/") return new Response(fixture("hvaderpaa-event-21354"), { status: 200 });
+      return new Response("not found", { status: 404 });
+    };
+
+    const adapter = createHvaderpaaAdapter(mockFetch, 1, 0);
+    const candidates = await adapter.fetchCandidates();
+    expect(moduleAttempts).toBe(2);
+    expect(candidates).toHaveLength(1);
+    expect(adapter.lastFetchWasComplete!()).toBe(true);
+    expect(adapter.lastFetchProblems!()).toEqual([]);
+  });
+
+  it("reports a venue page that stays unavailable as an incomplete fetch, naming the venue", async () => {
+    const mockFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url === "https://hvaderpaa.dk/da/spillested/module-koebenhavn/") return new Response("slow down", { status: 429 });
+      if (url.includes("/spillested/")) return new Response(`<script type="application/ld+json">{"@type":"ItemList","numberOfItems":0,"itemListElement":[]}</script>`, { status: 200 });
+      return new Response("not found", { status: 404 });
+    };
+    const adapter = createHvaderpaaAdapter(mockFetch, 1, 0);
+    await adapter.fetchCandidates();
+    expect(adapter.lastFetchWasComplete!()).toBe(false);
+    expect(adapter.lastFetchProblems!()).toEqual([expect.stringContaining("MODULE programme not read: HvadErPå venue page (MODULE) responded with HTTP 429")]);
   });
 });
 

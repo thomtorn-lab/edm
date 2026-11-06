@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publishDiscoveryItem } from "@/db/writes";
+import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -10,6 +11,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   }
   try {
     const eventId = await publishDiscoveryItem(id, venueId);
+    reconcileArtistsSoon();
     return NextResponse.json({ ok: true, eventId });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Publish failed" }, { status: 400 });

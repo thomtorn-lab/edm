@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArtistAlertsForm from "@/components/ArtistAlertsForm";
 import { listFollowableArtists } from "@/db/artistAppearances";
@@ -23,10 +24,14 @@ export default async function ArtistsPage({ searchParams }: { searchParams: Prom
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-tight text-accent sm:text-4xl">Artists</h1>
       <p className="mt-2 max-w-xl text-sm text-text-secondary">
-        Follow the artists you care about. When a new event with one of them is listed on Electronic CPH, we send you one short email.
+        Follow your favourite artists. We&rsquo;ll email you when a new event with one of them is listed on Electronic CPH.
       </p>
       <p className="mt-2 max-w-xl text-xs text-text-tertiary">
-        Already getting Artist Alerts? Use &ldquo;Change your artists&rdquo; in any of our emails to add or remove artists.
+        Already getting Artist Alerts?{" "}
+        <Link href="/artists/manage" className="underline hover:text-text-secondary">
+          Manage your artists
+        </Link>
+        .
       </p>
       {unsubscribed && (
         <p role="status" className="mt-4 text-sm text-text-secondary">

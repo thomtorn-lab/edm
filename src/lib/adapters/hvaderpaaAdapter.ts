@@ -429,11 +429,26 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** HTTP statuses worth retrying: request timeout, rate limiting and server errors. Any other 4xx won't fix itself. */
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+/** Wait before the next attempt: the server's own Retry-After (seconds, capped at 15s) when given, else a growing backoff. */
+function retryWaitMs(res: Response | null, attempt: number, retryDelayMs: number): number {
+  const retryAfter = Number(res?.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter, 15) * 1000;
+  return retryDelayMs * attempt;
+}
+
+const MAX_ATTEMPTS = 3;
+
 async function fetchWithRetry(fetchImpl: typeof fetch, url: string, retryDelayMs: number, label: string): Promise<Response> {
   let lastError: string | null = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response | null = null;
     try {
-      const res = await fetchImpl(url, {
+      res = await fetchImpl(url, {
         signal: AbortSignal.timeout(15_000),
         headers: {
           "user-agent": "NattefrekvensBot/1.0 (+https://nattefrekvens.dk/about; first-party sync)",
@@ -442,13 +457,17 @@ async function fetchWithRetry(fetchImpl: typeof fetch, url: string, retryDelayMs
       });
       if (res.ok) return res;
       lastError = `${label} responded with HTTP ${res.status}`;
-      if (res.status < 500) break;
+      // Rate limiting (429) used to end the attempt immediately like any
+      // other 4xx, silently dropping a whole venue's programme for that sync
+      // (MODULE/Jolene/Baggen coverage gap, 2026-11-06).
+      if (!isRetryableStatus(res.status)) break;
     } catch (err) {
       lastError = `${label} fetch failed: ${err instanceof Error ? err.message : String(err)}`;
     }
-    if (attempt === 1) {
-      console.error(`[hvaderpaa-adapter] attempt 1 failed (${lastError}), retrying once in ${retryDelayMs}ms`);
-      await delay(retryDelayMs);
+    if (attempt < MAX_ATTEMPTS) {
+      const waitMs = retryWaitMs(res, attempt, retryDelayMs);
+      console.error(`[hvaderpaa-adapter] attempt ${attempt} failed (${lastError}), retrying in ${waitMs}ms`);
+      await delay(waitMs);
     }
   }
   throw new Error(`${lastError} (after retry)`);
@@ -466,11 +485,13 @@ async function fetchWithRetry(fetchImpl: typeof fetch, url: string, retryDelayMs
  */
 export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDelayMs = 2_000, politenessDelayMs = 250): SourceAdapter {
   let lastFetchComplete = true;
+  let lastFetchProblems: string[] = [];
 
   return {
     sourceId: HVADERPAA_SOURCE_ID,
     async fetchCandidates(): Promise<RawCandidateEvent[]> {
       lastFetchComplete = true;
+      lastFetchProblems = [];
       const eventUrls = new Map<string, string>(); // url -> venue name it was discovered under, for logging only
       // Venue-level supporting evidence (see this module's own doc comment
       // "VENUE-LEVEL SUPPORTING EVIDENCE") — the venue page is already
@@ -487,8 +508,10 @@ export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDel
           for (const item of items) eventUrls.set(item.url, venue.canonicalName);
           venueDescriptions.set(venue.canonicalName, parseVenuePlaceDescription(html));
         } catch (err) {
-          console.error(`[hvaderpaa-adapter] venue page failed (${venue.canonicalName}): ${err instanceof Error ? err.message : String(err)}`);
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[hvaderpaa-adapter] venue page failed (${venue.canonicalName}): ${message}`);
           lastFetchComplete = false;
+          lastFetchProblems.push(`${venue.canonicalName} programme not read: ${message}`);
         }
         if (politenessDelayMs > 0) await delay(politenessDelayMs);
       }
@@ -505,8 +528,10 @@ export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDel
           }
           results.push(candidate);
         } catch (err) {
-          console.error(`[hvaderpaa-adapter] skipping ${eventUrl}: ${err instanceof Error ? err.message : String(err)}`);
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[hvaderpaa-adapter] skipping ${eventUrl}: ${message}`);
           lastFetchComplete = false;
+          lastFetchProblems.push(`event page not read (${venueLabel}): ${message}`);
         }
         if (politenessDelayMs > 0) await delay(politenessDelayMs);
       }
@@ -514,6 +539,9 @@ export function createHvaderpaaAdapter(fetchImpl: typeof fetch = fetch, retryDel
     },
     lastFetchWasComplete(): boolean {
       return lastFetchComplete;
+    },
+    lastFetchProblems(): string[] {
+      return lastFetchProblems;
     },
   };
 }

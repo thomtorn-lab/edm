@@ -7,7 +7,7 @@ import type { Venue } from "@/lib/types";
 import { getGenre } from "@/lib/taxonomy";
 import { resolveVenue } from "@/lib/normalize";
 import { isProtectedSubVenueName } from "@/lib/venueCreation";
-import { formatFullDateLabel, formatIsoDateForInput, formatTimeLabel } from "@/lib/format";
+import { copenhagenDateTimeInputToIso, formatFullDateLabel, formatTimeLabel, toCopenhagenDateTimeInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 
@@ -44,9 +44,9 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
   const [venueId, setVenueId] = useState(guessedVenue?.venue.id ?? "");
 
   const [title, setTitle] = useState(item.probableTitle);
-  const [startLocal, setStartLocal] = useState(item.probableStart ? toLocalInput(item.probableStart) : "");
+  const [startLocal, setStartLocal] = useState(item.probableStart ? toCopenhagenDateTimeInput(item.probableStart) : "");
   const [dateTouched, setDateTouched] = useState(false);
-  const [endLocal, setEndLocal] = useState(item.probableEnd ? toLocalInput(item.probableEnd) : "");
+  const [endLocal, setEndLocal] = useState(item.probableEnd ? toCopenhagenDateTimeInput(item.probableEnd) : "");
   const [endTouched, setEndTouched] = useState(false);
   const [officialEventUrl, setOfficialEventUrl] = useState(item.probableOfficialEventUrl ?? "");
   const [ticketUrl, setTicketUrl] = useState(item.probableTicketUrl ?? "");
@@ -192,8 +192,8 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
       probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
       probableFree: free,
     };
-    if (startLocal) patch.probableStart = new Date(startLocal).toISOString();
-    if (endLocal) patch.probableEnd = new Date(endLocal).toISOString();
+    if (startLocal) patch.probableStart = copenhagenDateTimeInputToIso(startLocal);
+    if (endLocal) patch.probableEnd = copenhagenDateTimeInputToIso(endLocal);
     else if (endTouched) patch.probableEnd = null; // explicitly cleared
     const ok = await callPatch(`/api/admin/discovery/${item.id}`, patch, router, setBusy, setError);
     if (ok) setEditing(false);
@@ -477,10 +477,6 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
       {error && <p className="mt-2 text-xs text-status-bad">{error}</p>}
     </li>
   );
-}
-
-function toLocalInput(iso: string): string {
-  return formatIsoDateForInput(iso) + "T" + iso.slice(11, 16);
 }
 
 async function callPost(

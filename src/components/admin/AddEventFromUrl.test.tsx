@@ -92,7 +92,8 @@ describe("AddEventFromUrl — Analyze result is editable (Section 4: 'the admin 
     const [path, options] = saveMock.mock.calls[0];
     expect(path).toBe("/api/admin/discovery/dq-abc12345");
     const { patch } = JSON.parse((options as { body: string }).body);
-    expect(patch.probableStart).toBe(new Date("2026-10-05T21:00").toISOString());
+    // The field is Copenhagen wall-clock time (CEST, UTC+2), whatever the browser timezone.
+    expect(patch.probableStart).toBe("2026-10-05T19:00:00.000Z");
     expect(patch.probableVenueName).toBe("VEGA");
   });
 
