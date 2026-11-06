@@ -17,6 +17,11 @@ interface FollowedArtist {
   state: "active" | "awaiting_confirmation" | "awaiting_verification" | "not_found";
 }
 
+interface RequestPick {
+  name: string;
+  profileUrl?: string | null;
+}
+
 type Status = "idle" | "submitting" | "success" | "error";
 
 const INPUT =
@@ -27,9 +32,9 @@ const QUIET_BUTTON = "shrink-0 rounded border border-border-strong px-2.5 py-1 t
 
 const STATE_LABEL: Record<FollowedArtist["state"], string> = {
   active: "Following",
-  awaiting_confirmation: "Awaiting confirmation",
-  awaiting_verification: "Awaiting verification",
-  not_found: "Could not be verified",
+  awaiting_confirmation: "Not confirmed yet",
+  awaiting_verification: "Pending",
+  not_found: "Couldn't be added",
 };
 
 function normalize(s: string): string {
@@ -43,7 +48,11 @@ function normalize(s: string): string {
  * and posts to /api/artist-alerts/subscribe; in "manage" mode it edits the
  * subscriber's follows through the token from their email.
  */
-export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode: "signup" } | { artists: ArtistOption[]; mode: "manage"; token: string; followed: FollowedArtist[] }) {
+export default function ArtistAlertsForm(
+  props:
+    | { artists: ArtistOption[]; mode: "signup" }
+    | { artists: ArtistOption[]; mode: "manage"; token: string; followed: FollowedArtist[]; picks?: { artists: ArtistOption[]; requests: RequestPick[] } },
+) {
   const { artists } = props;
   const followedIds = new Set(props.mode === "manage" ? props.followed.map((f) => f.artistId) : []);
   const [query, setQuery] = useState("");
@@ -70,11 +79,37 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
   const nothingFound = query.trim().length >= 2 && matches.length === 0;
   const showRequest = requestOpen || nothingFound || requestName !== "";
   const chosenCount = selected.length + requests.length;
+  const [requestError, setRequestError] = useState<string | null>(null);
 
-  function addRequest() {
+  /**
+   * One artist is either followed or requested, never both: a request whose
+   * name matches an artist already on the site (or already chosen) is only
+   * accepted with a profile link, which marks it as a different artist of
+   * the same name.
+   */
+  function requestProblem(name: string, profileUrl: string): string | null {
+    if (name.length < 2) return "Enter the artist's name.";
+    const key = normalize(name);
+    const followedNames = props.mode === "manage" ? props.followed.map((f) => normalize(f.displayName)) : [];
+    if (followedNames.includes(key) || requests.some((r) => normalize(r.name) === key)) return `You already have ${name} on your list.`;
+    if (!profileUrl && (artists.some((a) => normalize(a.displayName) === key) || selected.some((a) => normalize(a.displayName) === key))) {
+      return `${name} is already on Electronic CPH — search for them above. If you mean a different artist with the same name, add their Spotify or SoundCloud link.`;
+    }
+    return null;
+  }
+
+  function onRequest() {
     const name = requestName.trim() || query.trim();
-    if (name.length < 2 || requests.length >= 10) return;
-    setRequests([...requests, { name, profileUrl: requestUrl.trim() }]);
+    const profileUrl = requestUrl.trim();
+    const problem = requestProblem(name, profileUrl);
+    setRequestError(problem);
+    if (problem) return;
+    if (props.mode === "manage") {
+      void saveManage({ requests: [{ name, profileUrl }] });
+      return;
+    }
+    if (requests.length >= 10) return;
+    setRequests([...requests, { name, profileUrl }]);
     setRequestName("");
     setRequestUrl("");
     setQuery("");
@@ -117,15 +152,19 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
     await submit(
       "/api/artist-alerts/subscribe",
       { email, company, artistIds: selected.map((s) => s.id), requests },
-      "Check your email. New here: confirm from the email, and your alerts start. Already getting Artist Alerts: the email has a link to add or remove artists — no new confirmation needed.",
+      "Check your inbox. If you're new, confirm your email to start your alerts. If you already get Artist Alerts, use the link in the email to add these artists.",
     );
   }
 
-  async function saveManage(change: { add?: string[]; remove?: string[]; requests?: { name: string; profileUrl: string }[] }) {
+  async function saveManage(change: { add?: string[]; remove?: string[]; requests?: RequestPick[] }) {
     if (props.mode !== "manage") return;
     const ok = await submit("/api/artist-alerts/manage", { token: props.token, add: [], remove: [], requests: [], ...change }, "Saved.");
-    if (ok) window.location.reload();
+    // Reload without the picks in the URL, so they are not offered again.
+    if (ok) window.location.replace(`/artists/manage?token=${encodeURIComponent(props.token)}`);
   }
+
+  const picks = props.mode === "manage" ? props.picks : undefined;
+  const pickCount = (picks?.artists.length ?? 0) + (picks?.requests.length ?? 0);
 
   if (props.mode === "signup" && status === "success") {
     return (
@@ -137,6 +176,24 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
 
   return (
     <div className="mt-6 space-y-6">
+      {picks && pickCount > 0 && (
+        <section className="rounded border border-accent p-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Artists you picked</h2>
+          <p className="mt-2 text-sm text-text-primary">
+            {[...picks.artists.map((a) => a.displayName), ...picks.requests.map((r) => `${r.name} (request)`)].join(", ")}
+          </p>
+          <button
+            type="button"
+            disabled={status === "submitting"}
+            className={`${BUTTON} mt-3`}
+            onClick={() => saveManage({ add: picks.artists.map((a) => a.id), requests: picks.requests })}
+          >
+            {pickCount === 1 ? "Add this artist" : `Add these ${pickCount} artists`}
+          </button>
+          <p className="mt-2 text-xs text-text-tertiary">They&rsquo;re added to the artists you already follow.</p>
+        </section>
+      )}
+
       {props.mode === "manage" && (
         <section>
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Your artists</h2>
@@ -167,36 +224,44 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
           id="artist-search"
           type="search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setRequestError(null);
+          }}
           placeholder="Search artists"
           autoComplete="off"
           className={`${INPUT} mt-2`}
         />
         <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           {!query && <p className="text-xs text-text-tertiary">Type an artist&rsquo;s name to find them.</p>}
-          {!showRequest && (
+          {query.trim() !== "" && !showRequest && (
             <button type="button" onClick={() => setRequestOpen(true)} className="text-xs text-text-secondary underline hover:text-text-primary">
-              Artist not on Electronic CPH yet? Request them
+              Can&rsquo;t find them? Request an artist
             </button>
           )}
         </div>
         {showRequest && (
           <div className="mt-3 rounded border border-border p-3">
             <p className="text-sm text-text-secondary">
-              Can&rsquo;t find the artist? Ask us to add them. A SoundCloud or Spotify link helps us find the right one.
+              Ask us to add an artist. A Spotify or SoundCloud link helps us find the right one.
             </p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-              <input aria-label="Artist name" value={requestName || query} onChange={(e) => setRequestName(e.target.value)} className={`${INPUT} sm:w-44 sm:flex-none`} maxLength={80} />
+              <input aria-label="Artist name" placeholder="Artist name" value={requestName || query} onChange={(e) => setRequestName(e.target.value)} className={`${INPUT} sm:w-44 sm:flex-none`} maxLength={80} />
               <input aria-label="Spotify or SoundCloud URL (optional)" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)} placeholder="Spotify or SoundCloud URL (optional)" className={`${INPUT} sm:flex-1`} maxLength={300} />
               <button
                 type="button"
                 className={BUTTON}
-                onClick={() => (props.mode === "manage" ? saveManage({ requests: [{ name: requestName.trim() || query.trim(), profileUrl: requestUrl.trim() }] }) : addRequest())}
+                onClick={onRequest}
               >
                 Request
               </button>
             </div>
-            <p className="mt-2 text-xs text-text-tertiary">Requested artists only start sending alerts once we have confirmed who they are.</p>
+            {requestError && (
+              <p role="alert" className="mt-2 text-xs text-status-bad">
+                {requestError}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-text-tertiary">Requests show as Pending. Alerts start once we&rsquo;ve added the artist, and we&rsquo;ll email you when that happens.</p>
           </div>
         )}
         <ul className="mt-2">
@@ -238,7 +303,7 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
               {requests.map((r, i) => (
                 <li key={`r${i}`}>
                   <button type="button" className={QUIET_BUTTON} onClick={() => setRequests(requests.filter((_, j) => j !== i))} aria-label={`Remove request ${r.name}`}>
-                    {r.name} (requested) ×
+                    {r.name} (request) ×
                   </button>
                 </li>
               ))}
@@ -261,8 +326,7 @@ export default function ArtistAlertsForm(props: { artists: ArtistOption[]; mode:
             </button>
           </div>
           <p className="text-xs text-text-tertiary">
-            We email you when a new event with one of your artists is listed — nothing else. Confirm by email first; unsubscribe any time from
-            the link in every email.
+            We only email you when a new event with one of your artists is listed. Every email has a link to change your artists or unsubscribe.
           </p>
         </form>
       )}

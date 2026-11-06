@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { artistAlertsMode } from "@/lib/artistAlerts/config";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 import { INDEXABLE_GENRE_PAGES, genrePagePath, getGenre } from "@/lib/taxonomy";
 import FooterBackToTopButton from "./FooterBackToTopButton";
@@ -84,6 +85,10 @@ export default function Footer() {
                   <li><Link href="/#newsletter-email" className={LINK}>Newsletter</Link></li>
                 )}
                 <li><Link href="/suggest-event" className={LINK}>Suggest an event</Link></li>
+                {/* Public launch only: hidden while Artist Alerts is in its closed test. */}
+                {artistAlertsMode() === "live" && (
+                  <li><Link href="/artists/manage" className={LINK}>Manage Artist Alerts</Link></li>
+                )}
                 <li><Link href="/contact" className={LINK}>Contact</Link></li>
                 <li><Link href="/privacy" className={LINK}>Privacy</Link></li>
               </ul>
