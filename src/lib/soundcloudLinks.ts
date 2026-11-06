@@ -1,6 +1,6 @@
 import type { SoundcloudLinkReport } from "./adapters/types";
 import { dedupeArtistList } from "./normalize";
-import { splitLineupEntry } from "./artistIdentity/lineupIdentity";
+import { artistIdentityKey, splitLineupEntry } from "./artistIdentity/lineupIdentity";
 
 /**
  * Pure logic for venue-provided artist SoundCloud links (2026-10-13): what a
@@ -123,4 +123,20 @@ export function selectReusedSoundcloudProfiles(
   const out: { artistName: string; url: string }[] = [];
   for (const [artistName, urls] of urlsByEntry) if (urls.size === 1) out.push({ artistName, url: [...urls][0] });
   return out;
+}
+
+/**
+ * Stored venue links whose name has exactly the appearance's identity key
+ * (2026-11-06), as reuse rows for selectReusedSoundcloudProfiles. The caller
+ * only passes appearances of an artist whose key no other active artist
+ * shares, and narrows `stored` by case-insensitive name; the key match here
+ * is the exact one.
+ */
+export function matchStoredLinksByIdentityKey(
+  appearances: { eventId: string; lineupEntry: string; nameKey: string }[],
+  stored: { artistName: string; url: string }[],
+): { eventId: string; lineupEntry: string; otherEntry: string; url: string }[] {
+  return appearances.flatMap((a) =>
+    stored.filter((s) => artistIdentityKey(s.artistName) === a.nameKey).map((s) => ({ eventId: a.eventId, lineupEntry: a.lineupEntry, otherEntry: s.artistName, url: s.url })),
+  );
 }

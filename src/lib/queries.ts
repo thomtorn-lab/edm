@@ -23,7 +23,7 @@ import {
   venueRowToRecord,
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
-import { selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
+import { matchStoredLinksByIdentityKey, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
 import { isPastEvent } from "./datetime";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
@@ -615,21 +615,54 @@ const SHOWN_CONFIDENCE = ["high", "confirmed"];
 
 /**
  * Profiles reused across events through Artist Alerts' identities
- * (2026-11-03): for the given events' resolved appearances, every unblocked
- * stored link of the same artist's other resolved appearances. One query,
- * reading only lineup entries and URLs; selectReusedSoundcloudProfiles
- * decides (exactly one profile per artist, single-performer entries only).
+ * (2026-11-03): for the given events' resolved appearances (high/confirmed),
+ * every unblocked stored venue link of the same artist, found two ways:
+ *   - through the artist's other resolved appearances (same artist id);
+ *   - by identity key on any event, past ones included (2026-11-06): venue
+ *     links stored before Artist Alerts began reconciling (it only covers
+ *     upcoming events) have no appearance row. Only for an artist whose key
+ *     no other active artist shares, so the key names exactly one identity.
+ * selectReusedSoundcloudProfiles then decides: exactly one profile per
+ * artist across all of these, single-performer entries only.
  */
 async function reusedSoundcloudRows(eventIds: string[]) {
   const here = alias(eventArtists, "here");
   const other = alias(eventArtists, "other");
-  return db
+  const viaAppearances = await db
     .select({ eventId: here.eventId, lineupEntry: here.lineupEntry, otherEntry: other.lineupEntry, url: eventSoundcloudLinks.url })
     .from(here)
     .innerJoin(artistIdentities, and(eq(artistIdentities.id, here.artistId), isNull(artistIdentities.mergedIntoId), ne(artistIdentities.status, "rejected")))
     .innerJoin(other, and(eq(other.artistId, here.artistId), inArray(other.confidence, SHOWN_CONFIDENCE), isNull(other.removedAt)))
     .innerJoin(eventSoundcloudLinks, and(eq(eventSoundcloudLinks.eventId, other.eventId), eq(eventSoundcloudLinks.artistName, other.lineupEntry)))
     .where(and(inArray(here.eventId, eventIds), inArray(here.confidence, SHOWN_CONFIDENCE), isNull(here.removedAt), soundcloudLinkNotBlocked()));
+
+  const sameKey = alias(artistIdentities, "same_key");
+  const unique = await db
+    .select({ eventId: here.eventId, lineupEntry: here.lineupEntry, nameKey: here.nameKey })
+    .from(here)
+    .innerJoin(artistIdentities, and(eq(artistIdentities.id, here.artistId), isNull(artistIdentities.mergedIntoId), ne(artistIdentities.status, "rejected")))
+    .where(
+      and(
+        inArray(here.eventId, eventIds),
+        inArray(here.confidence, SHOWN_CONFIDENCE),
+        isNull(here.removedAt),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(sameKey)
+            .where(and(eq(sameKey.nameKey, here.nameKey), ne(sameKey.id, artistIdentities.id), isNull(sameKey.mergedIntoId), ne(sameKey.status, "rejected"))),
+        ),
+      ),
+    );
+  if (unique.length === 0) return viaAppearances;
+
+  // Narrowed in SQL by case-insensitive name, then matched exactly on the identity key.
+  const lowered = [...new Set(unique.map((u) => u.lineupEntry.toLowerCase()))];
+  const historical = await db
+    .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
+    .from(eventSoundcloudLinks)
+    .where(and(inArray(sql`lower(${eventSoundcloudLinks.artistName})`, lowered), soundcloudLinkNotBlocked()));
+  return [...viaAppearances, ...matchStoredLinksByIdentityKey(unique, historical)];
 }
 
 /**

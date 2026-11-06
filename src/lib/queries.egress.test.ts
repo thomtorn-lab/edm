@@ -261,17 +261,21 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
       expect(reuseQueries()).toHaveLength(0);
     });
 
-    it("one query: resolved appearances of the same artist, high/confirmed on both sides, unmerged and not rejected, blocked links excluded", async () => {
+    it("two queries: the artist's other resolved appearances, and the artist's identity key when no other active artist shares it", async () => {
       await getSoundcloudLinksForLineup("e-1", ["GUY J", "Rexie Lex"]);
-      const [query, ...extra] = reuseQueries();
+      const [viaAppearances, unique, ...extra] = reuseQueries();
       expect(extra).toHaveLength(0);
-      expect(selectedColumns(query.text)).toEqual(["event_id", "lineup_entry", "lineup_entry", "url"]);
-      expect(query.text).toMatch(/inner join "artists" on \("artists"\."id" = "here"\."artist_id" and "artists"\."merged_into_id" is null and "artists"\."status" <> \$\d+\)/);
-      expect(query.text).toMatch(/inner join "event_artists" "other" on \("other"\."artist_id" = "here"\."artist_id" and "other"\."confidence" in \(\$\d+, \$\d+\) and "other"\."removed_at" is null\)/);
-      expect(query.text).toMatch(/inner join "event_soundcloud_links" on \("event_soundcloud_links"\."event_id" = "other"\."event_id" and "event_soundcloud_links"\."artist_name" = "other"\."lineup_entry"\)/);
-      expect(query.text).toMatch(/"here"\."event_id" in \(\$\d+\) and "here"\."confidence" in \(\$\d+, \$\d+\) and "here"\."removed_at" is null/);
-      expect(query.text).toMatch(NOT_BLOCKED);
-      expect(query.values).toEqual(expect.arrayContaining(["rejected", "high", "confirmed", "e-1"]));
+      expect(selectedColumns(viaAppearances.text)).toEqual(["event_id", "lineup_entry", "lineup_entry", "url"]);
+      expect(viaAppearances.text).toMatch(/inner join "artists" on \("artists"\."id" = "here"\."artist_id" and "artists"\."merged_into_id" is null and "artists"\."status" <> \$\d+\)/);
+      expect(viaAppearances.text).toMatch(/inner join "event_artists" "other" on \("other"\."artist_id" = "here"\."artist_id" and "other"\."confidence" in \(\$\d+, \$\d+\) and "other"\."removed_at" is null\)/);
+      expect(viaAppearances.text).toMatch(/inner join "event_soundcloud_links" on \("event_soundcloud_links"\."event_id" = "other"\."event_id" and "event_soundcloud_links"\."artist_name" = "other"\."lineup_entry"\)/);
+      expect(viaAppearances.text).toMatch(/"here"\."event_id" in \(\$\d+\) and "here"\."confidence" in \(\$\d+, \$\d+\) and "here"\."removed_at" is null/);
+      expect(viaAppearances.text).toMatch(NOT_BLOCKED);
+      expect(viaAppearances.values).toEqual(expect.arrayContaining(["rejected", "high", "confirmed", "e-1"]));
+      expect(selectedColumns(unique.text)).toEqual(["event_id", "lineup_entry", "name_key"]);
+      expect(unique.text).toMatch(
+        /not exists \(select 1 from "artists" "same_key" where \("same_key"\."name_key" = "here"\."name_key" and "same_key"\."id" <> "artists"\."id" and "same_key"\."merged_into_id" is null and "same_key"\."status" <> \$\d+\)\)/,
+      );
     });
 
     it("a reused profile is shown for a lineup name without its own link, in lineup order", async () => {
@@ -291,11 +295,28 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
         { id: "e-3", artists: ["Nobody"] },
       ]);
       expect(result).toEqual([true, true, false]);
-      const [query, ...extra] = reuseQueries();
-      expect(extra).toHaveLength(0);
-      expect(query.values).toEqual(expect.arrayContaining(["e-2", "e-3"]));
-      expect(query.values).not.toContain("e-1");
+      const queries = reuseQueries();
+      expect(queries).toHaveLength(2); // one batched query per path, never one per event
+      for (const query of queries) {
+        expect(query.values).toEqual(expect.arrayContaining(["e-2", "e-3"]));
+        expect(query.values).not.toContain("e-1");
+      }
       delete tableRows.event_artists;
+    });
+
+    it("historical venue links: one batched lookup by case-insensitive name, blocked links excluded", async () => {
+      tableRows.event_artists = [{ event_id: "e-1", lineup_entry: "B From E", name_key: "b from e", url: "https://soundcloud.com/bfrome" }];
+      await getSoundcloudLinksForLineup("e-1", ["B From E"]);
+      const lookups = sent.filter((q) => /from "event_soundcloud_links" where \(lower\("event_soundcloud_links"\."artist_name"\) in/.test(q.text));
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0].values[0]).toBe("b from e");
+      expect(lookups[0].text).toMatch(NOT_BLOCKED);
+      delete tableRows.event_artists;
+    });
+
+    it("no lookup by key when no appearance qualifies", async () => {
+      await getSoundcloudLinksForLineup("e-1", ["GUY J", "Nobody"]);
+      expect(sent.filter((q) => /lower\("event_soundcloud_links"\."artist_name"\)/.test(q.text))).toHaveLength(0);
     });
 
     it("a failing reuse read keeps the event's own links", async () => {
