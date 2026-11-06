@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import ArtistVideoPreview, { videoPlayerTitle, youtubeEmbedUrl } from "./ArtistVideoPreview";
+import ArtistVideoPreview, { videoPlayerTitle, youtubeEmbedUrl, youtubeThumbnailUrl } from "./ArtistVideoPreview";
 
 /** The YouTube iframe's accessible name (2026-10-24). */
 describe("videoPlayerTitle", () => {
@@ -47,12 +47,43 @@ describe("ArtistVideoPreview click-to-load", () => {
   const GOOGLE_URL = /(?:https?:)?\/\/[^/\s"']*(?:youtube|youtu\.be|ytimg|googlevideo|google|gstatic|doubleclick|ggpht)/i;
 
   function renderPreview(videoTitle: string | null = "Eric Prydz DJ Set") {
-    return render(<ArtistVideoPreview artistName="Eric Prydz" eventTitle="Night" videoId="abc123XYZ" videoTitle={videoTitle} />);
+    return render(<ArtistVideoPreview artistName="Eric Prydz" eventTitle="Night" videoId="abcdefghijk" videoTitle={videoTitle} />);
   }
 
-  it("renders no iframe, image, script or embed before the visitor presses play", () => {
+  it("renders no iframe, script or embed before the visitor presses play — only the thumbnail image", () => {
     const { container } = renderPreview();
-    expect(container.querySelector("iframe, img, script, object, embed, video, link, source, picture")).toBeNull();
+    expect(container.querySelector("iframe, script, object, embed, video, link, source, picture")).toBeNull();
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+  });
+
+  it("serves the thumbnail from our own domain (/_next/image), never straight from YouTube", () => {
+    const { container } = renderPreview();
+    const img = container.querySelector("img")!;
+    const sources = [img.getAttribute("src") ?? "", ...(img.getAttribute("srcset") ?? "").split(",").map((s) => s.trim().split(" ")[0])].filter(Boolean);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const src of sources) {
+      const url = new URL(src, window.location.href);
+      expect(url.origin).toBe(window.location.origin); // the page's own origin, never i.ytimg.com
+      expect(url.pathname).toBe("/_next/image");
+      expect(url.searchParams.get("url")).toBe("https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg");
+    }
+    expect(img.getAttribute("alt")).toBe(""); // decorative — the button carries the name
+    expect(img.className).toContain("object-cover"); // 16:9 box crops the 4:3 thumbnail's black bars
+  });
+
+  it("builds no thumbnail for anything that is not a real video id", () => {
+    expect(youtubeThumbnailUrl("abcdefghijk")).toBe("https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg");
+    expect(youtubeThumbnailUrl("a/b?c")).toBeNull();
+    expect(youtubeThumbnailUrl("tooShort")).toBeNull();
+    const { container } = render(<ArtistVideoPreview artistName="X" eventTitle="Night" videoId="bad id" videoTitle={null} />);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("falls back to the plain black button if the thumbnail cannot load", () => {
+    const { container } = renderPreview();
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Play YouTube video/ })).toBeTruthy();
   });
 
   it("puts no YouTube/Google URL in any attribute before play", () => {
@@ -70,9 +101,9 @@ describe("ArtistVideoPreview click-to-load", () => {
     renderPreview();
     const button = screen.getByRole("button", { name: "Play YouTube video: Eric Prydz DJ Set" });
     const notice = document.getElementById(button.getAttribute("aria-describedby")!);
-    expect(notice?.textContent).toContain("loads the video from YouTube (Google)");
+    expect(notice?.textContent).toContain("Playing loads YouTube (Google)");
     expect(notice?.textContent).toContain("receives your IP address");
-    expect(notice?.textContent).toContain("may store information on your device");
+    expect(notice?.textContent).toContain("may store data on your device");
     expect(screen.getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe("/privacy");
   });
 
@@ -90,7 +121,7 @@ describe("ArtistVideoPreview click-to-load", () => {
 
     const iframes = container.querySelectorAll("iframe");
     expect(iframes).toHaveLength(1);
-    expect(iframes[0].getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1");
+    expect(iframes[0].getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abcdefghijk?autoplay=1");
     expect(iframes[0].getAttribute("title")).toBe("YouTube video: Eric Prydz DJ Set");
     expect(iframes[0].getAttribute("allow")).toContain("autoplay");
     expect(iframes[0].getAttribute("referrerpolicy")).toBe("strict-origin-when-cross-origin");

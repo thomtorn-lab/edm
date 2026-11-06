@@ -97,7 +97,9 @@ export default function PrivacyPage() {
       <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
         <p>
           Some event pages offer a YouTube video for one of the artists. Nothing is loaded from YouTube until
-          you press the video&rsquo;s play button. When you do, the video is loaded from YouTube in its
+          you press the video&rsquo;s play button. The preview picture shown before that is fetched by our
+          hosting provider and served from our own website, so your browser does not contact YouTube for it.
+          When you press play, the video is loaded from YouTube in its
           privacy-enhanced mode: Google receives your IP address and information about your browser, and may
           store information on your device. By pressing play you consent to this for that video (GDPR Art.
           6(1)(a)); we don&rsquo;t remember the choice, so each video asks again. What Google does with the

@@ -52,6 +52,18 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  /**
+   * "Get a taste" video thumbnails (2026-11-06, src/components/ArtistVideoPreview.tsx):
+   * served through /_next/image so the visitor's browser never contacts
+   * YouTube before pressing play. Exactly one remote path is allowed —
+   * YouTube's thumbnail files, no query string — so the optimizer cannot be
+   * used for anything else. Thumbnails do not change, hence the 31-day cache.
+   */
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "i.ytimg.com", port: "", pathname: "/vi/**", search: "" }],
+    qualities: [75],
+    minimumCacheTTL: 2678400,
+  },
   async headers() {
     return [
       {
