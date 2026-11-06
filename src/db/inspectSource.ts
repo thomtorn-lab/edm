@@ -777,11 +777,22 @@ async function modeSoundcloudDiscogsDryRun(_client: Client, args: Record<string,
   const discogs = await import("@/lib/enrichment/discogsClient");
   const { assessDiscogsSoundcloud, soundcloudProfilesFromUrls } = await import("@/lib/soundcloudEvidence/discogsCandidate");
 
-  const pause = () => new Promise((resolve) => setTimeout(resolve, 2600)); // < 25 requests/min
+  const pause = (ms = 3000) => new Promise((resolve) => setTimeout(resolve, ms)); // < 25 requests/min
+  // Discogs' unauthenticated window is tighter from shared runner IPs: one wait-and-retry on HTTP 429.
+  const withRetry = async <T>(call: () => Promise<T>): Promise<T> => {
+    await pause();
+    try {
+      return await call();
+    } catch (err) {
+      if (!(err instanceof Error && /HTTP 429/.test(err.message))) throw err;
+      await pause(65_000);
+      return call();
+    }
+  };
   const paced = {
-    searchArtist: async (n: string) => (await pause(), discogs.searchArtist(n)),
-    getArtistReleaseIds: async (id: number, limit: number) => (await pause(), discogs.getArtistReleaseIds(id, limit)),
-    getReleaseGenres: async (id: number) => (await pause(), discogs.getReleaseGenres(id)),
+    searchArtist: (n: string) => withRetry(() => discogs.searchArtist(n)),
+    getArtistReleaseIds: (id: number, limit: number) => withRetry(() => discogs.getArtistReleaseIds(id, limit)),
+    getReleaseGenres: (id: number) => withRetry(() => discogs.getReleaseGenres(id)),
   };
   const memory = new Map<string, Awaited<ReturnType<typeof getOrLookupArtistGenre>>>();
   const cache = { get: async (k: string) => memory.get(k) ?? null, set: async (e: Awaited<ReturnType<typeof getOrLookupArtistGenre>>) => void memory.set(e.artistNameNormalized, e) };
@@ -794,8 +805,8 @@ async function modeSoundcloudDiscogsDryRun(_client: Client, args: Record<string,
       let urls: string[] | null = null;
       let displayName: string | null = null;
       if (entry.lookupStatus === "found" && entry.discogsArtistId) {
-        await pause();
-        urls = await discogs.getArtistUrls(entry.discogsArtistId);
+        const artistId = entry.discogsArtistId;
+        urls = await withRetry(() => discogs.getArtistUrls(artistId));
         const profiles = soundcloudProfilesFromUrls(urls);
         if (profiles.length === 1) {
           const res = await fetch(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(profiles[0])}`, { signal: AbortSignal.timeout(8000) });
