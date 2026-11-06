@@ -717,6 +717,29 @@ describe("EventManager — unified event create/edit model (2026-09-08): start d
     expect(body.patch.startDatetime).toBe("2026-10-05T19:00:00.000Z"); // 21:00 Copenhagen (CEST)
   });
 
+  // Regression (MODULE / Den Anden Side time-shift, 2026-11-06): editing
+  // genre or title on a published event must never send a start/end change.
+  it.each([
+    ["winter time (CET)", "2026-11-06T22:59:00.000Z", "2026-11-07T07:00:00.000Z", "2026-11-06T23:59"],
+    ["summer time (CEST)", "2026-09-12T21:59:00.000Z", "2026-09-13T06:00:00.000Z", "2026-09-12T23:59"],
+  ])("shows Copenhagen time and sends no start/end change when only genre and title are edited — %s", async (_label, start, end, shown) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EventManager events={[makeEvent({ startDatetime: start, endDatetime: end })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Date &amp; time|Date & time/) as HTMLInputElement).value).toBe(shown);
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Renamed night" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.patch.title).toBe("Renamed night");
+    expect(body.patch).not.toHaveProperty("startDatetime");
+    expect(body.patch).not.toHaveProperty("endDatetime");
+  });
+
   it("pre-fills the start date field from the event's own startDatetime", () => {
     vi.stubGlobal("fetch", vi.fn());
     render(<EventManager events={[makeEvent({ startDatetime: "2026-09-20T20:00:00.000Z" })]} venues={VENUES} />);

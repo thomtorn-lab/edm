@@ -393,18 +393,23 @@ describe("DiscoveryQueue — End time / Ticket URL / FREE fields in the real pre
   it.each([
     ["winter time (CET)", "2026-11-06T22:59:00.000Z", "2026-11-07T07:00:00.000Z", "2026-11-06T23:59"],
     ["summer time (CEST)", "2026-09-12T21:59:00.000Z", "2026-09-13T06:00:00.000Z", "2026-09-12T23:59"],
-  ])("shows Copenhagen time and leaves start/end unchanged when saving other fields — %s", async (_label, start, end, shown) => {
+  ])("shows Copenhagen time and leaves start/end unchanged when saving genre, title and other fields — %s", async (_label, start, end, shown) => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box", probableStart: start, probableEnd: end })]} venues={VENUES} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect((screen.getByLabelText(/Date & time/) as HTMLInputElement).value).toBe(shown);
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Renamed night" } });
     fireEvent.click(screen.getByLabelText(/Free entry/));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const { patch } = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(patch.predictedGenre).toBe("house");
+    expect(patch.probableTitle).toBe("Renamed night");
+    // Sent unchanged, so the server's changed/unchanged split records no time override.
     expect(patch.probableStart).toBe(start);
     expect(patch.probableEnd).toBe(end);
   });
