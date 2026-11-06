@@ -24,6 +24,10 @@ const MONITORED_SOURCE_IDS = [
   "src-alice",
   "src-billetto",
   "src-gravity",
+  // Both report incomplete fetches (lastFetchWasComplete), which sync now
+  // records as lastError -> "degraded" (HvadErPå coverage gap, 2026-11-06).
+  "src-hvaderpaa",
+  "src-kultunaut",
 ];
 
 async function main() {

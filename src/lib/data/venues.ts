@@ -1,6 +1,21 @@
 import type { Venue } from "../types";
 
 /**
+ * The four venues ElectronicCPH always treats as editorially relevant
+ * (MODULE, Den Anden Side, Hangaren, Culture Box): an event that really
+ * takes place at one of them is never rejected by relevance filtering just
+ * because its genre is missing or uncertain. It still goes through every
+ * other check (required fields, dedup, cancellation, source publish policy)
+ * and reaches a human in Needs Review rather than being auto-published on
+ * the venue alone — see computeDecision in src/lib/adapters/pipeline.ts.
+ */
+export const EDITORIAL_PRIORITY_VENUE_IDS: ReadonlySet<string> = new Set(["v-module", "v-den-anden-side", "v-hangaren", "v-culture-box"]);
+
+export function isEditorialPriorityVenue(venueId: string | null | undefined): boolean {
+  return venueId != null && EDITORIAL_PRIORITY_VENUE_IDS.has(venueId);
+}
+
+/**
  * Canonical venue fixtures. Aliases absorb spelling/capitalization variants
  * seen across sources so the same physical venue never fragments into
  * multiple entries (spec section 37).

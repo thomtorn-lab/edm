@@ -238,4 +238,10 @@ export interface SourceAdapter {
    * genuinely no-longer-offered by the source.
    */
   lastFetchWasComplete?(): boolean;
+  /**
+   * Short, human-readable reasons the most recent fetch was incomplete (one
+   * per page/record that could not be read), for the source's lastError.
+   * Optional; only meaningful alongside lastFetchWasComplete() === false.
+   */
+  lastFetchProblems?(): string[];
 }

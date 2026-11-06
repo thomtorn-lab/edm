@@ -8,6 +8,7 @@ import type { PipelineResult } from "@/lib/adapters/pipeline";
 import type { AdminQueueCategory } from "@/lib/adminQueue";
 import { ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { copenhagenDateTimeInputToIso, toCopenhagenDateTimeInput } from "@/lib/format";
 import { getGenre, isGenreSlug } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 
@@ -30,12 +31,6 @@ function CheckRow({ label, ok, note }: { label: string; ok: boolean | "unknown";
       {note && <span className="text-text-tertiary">— {note}</span>}
     </div>
   );
-}
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /**
@@ -96,8 +91,8 @@ export default function AddEventFromUrl() {
         const { raw, result } = json as ExtractResponse;
         setTitle(raw.title);
         setDescription(raw.description ?? "");
-        setStartLocal(raw.startDatetime ? toLocalInput(raw.startDatetime) : "");
-        setEndLocal(raw.endDatetime ? toLocalInput(raw.endDatetime) : "");
+        setStartLocal(raw.startDatetime ? toCopenhagenDateTimeInput(raw.startDatetime) : "");
+        setEndLocal(raw.endDatetime ? toCopenhagenDateTimeInput(raw.endDatetime) : "");
         setVenueNameText(raw.venueName ?? "");
         setGenre(result.genre ?? "");
         setAnalyzedGenre(result.genre ?? "");
@@ -159,8 +154,8 @@ export default function AddEventFromUrl() {
             probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
             probableFree: free,
           };
-      if (startLocal) patch[isEvent ? "startDatetime" : "probableStart"] = isEvent ? new Date(startLocal).toISOString() : new Date(startLocal).toISOString();
-      if (endLocal) patch[isEvent ? "endDatetime" : "probableEnd"] = new Date(endLocal).toISOString();
+      if (startLocal) patch[isEvent ? "startDatetime" : "probableStart"] = copenhagenDateTimeInputToIso(startLocal);
+      if (endLocal) patch[isEvent ? "endDatetime" : "probableEnd"] = copenhagenDateTimeInputToIso(endLocal);
       if (!isEvent) patch.probableFree = free;
 
       const res = await fetch(path, {

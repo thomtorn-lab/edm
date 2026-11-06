@@ -182,6 +182,13 @@ async function runSourceSyncLocked(
   // candidate — freshness only needs to know "was this row touched by THIS
   // sync", not sub-second ordering within it.
   const fetchComplete = adapter.lastFetchWasComplete?.() ?? true;
+  // An incomplete fetch means real programme pages were skipped this run, so
+  // their events were not discovered. It used to be logged to the console
+  // only — the sync still reported "ok" with no errors and source health
+  // stayed "ok" (HvadErPå MODULE/Jolene/Baggen coverage gap, 2026-11-06).
+  // Recorded as the source's lastError (health "degraded", shown in admin and
+  // by monitor-source-health) without failing the sync itself.
+  const incompleteFetchMessage = fetchComplete ? null : describeIncompleteFetch(adapter.lastFetchProblems?.() ?? []);
   const seenAt = new Date();
 
   const [venues, existingEventRows, links, pendingDiscovery, ignoredDiscovery] = await Promise.all([
@@ -822,13 +829,38 @@ async function runSourceSyncLocked(
       success: true,
       eventsFound: candidates.length,
       eventsUpdated: updated,
-      error: writeSummary.lastErrorMessage,
+      error: [incompleteFetchMessage, writeSummary.lastErrorMessage].filter(Boolean).join(" | "),
       complete: fetchComplete,
       completeSyncAt: seenAt,
     });
     return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
   }
 
-  await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated, complete: fetchComplete, completeSyncAt: seenAt });
-  return { sourceId, outcome: "ok", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
+  if (incompleteFetchMessage) console.error(`[sync] "${sourceId}" ${incompleteFetchMessage}`);
+  await touchSourceSyncStats(sourceId, {
+    success: true,
+    eventsFound: candidates.length,
+    eventsUpdated: updated,
+    error: incompleteFetchMessage,
+    complete: fetchComplete,
+    completeSyncAt: seenAt,
+  });
+  return {
+    sourceId,
+    outcome: "ok",
+    candidatesFound: candidates.length,
+    created,
+    updated,
+    queuedForReview,
+    unpublished,
+    errors: incompleteFetchMessage ? [incompleteFetchMessage] : errors,
+  };
+}
+
+/** "Incomplete fetch: 2 page(s) could not be read — MODULE programme not read: …; …" (first 3 reasons). */
+function describeIncompleteFetch(problems: string[]): string {
+  if (problems.length === 0) return "Incomplete fetch: some source pages could not be read this run.";
+  const shown = problems.slice(0, 3).join("; ");
+  const more = problems.length > 3 ? ` (+${problems.length - 3} more)` : "";
+  return `Incomplete fetch: ${problems.length} page(s) could not be read — ${shown}${more}`;
 }

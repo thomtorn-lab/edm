@@ -5,7 +5,7 @@ import { resolveVenue } from "@/lib/normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "@/lib/dedup";
 import { isDiscoveryRowCurrent, classifyVenueBlock } from "@/lib/sync";
 import { buildApiKeypairHeader } from "@/lib/adapters/billettoAdapter";
-import { isPastEvent } from "@/lib/datetime";
+import { isPastEvent, getCopenhagenParts } from "@/lib/datetime";
 import { isTrustedElectronicSource } from "@/lib/data/sources";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
@@ -91,6 +91,15 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
     else out[body.slice(0, eq)] = body.slice(eq + 1);
   }
   return out;
+}
+
+/** "2026-11-06 23:00 (UTC+1)" — an instant's Europe/Copenhagen wall clock and its offset, for time audits. */
+function formatCopenhagenWallClock(iso: string): string {
+  const d = new Date(iso);
+  const p = getCopenhagenParts(d);
+  const offsetHours = Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - Math.floor(d.getTime() / 60_000) * 60_000) / 3_600_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)} (UTC+${offsetHours})`;
 }
 
 function section(title: string) {
@@ -545,11 +554,26 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
     if (titleFilter && (matchAllTitles || raw.title.toLowerCase().includes(titleFilter))) {
       evidenceDetail.push({
         title: raw.title,
+        sourceUrl: raw.sourceUrl,
+        // Timing as the adapter produced it (UTC instant) plus its
+        // Europe/Copenhagen wall-clock reading — the two values a
+        // source-vs-ElectronicCPH time comparison needs (MODULE/Den Anden
+        // Side time-shift audit, 2026-11-06).
+        startDatetime: raw.startDatetime,
+        startCopenhagen: raw.startDatetime ? formatCopenhagenWallClock(raw.startDatetime) : null,
+        endDatetime: raw.endDatetime,
+        endCopenhagen: raw.endDatetime ? formatCopenhagenWallClock(raw.endDatetime) : null,
+        residentAdvisorUrl: raw.residentAdvisorUrl ?? null,
+        resolvedVenueId: result.resolvedVenueId,
+        duplicateOfEventId: result.duplicateOfEventId,
+        duplicateConfidence: result.duplicateConfidence,
         venue: raw.venueName,
         artists: raw.artists,
         genreHint: raw.genreHint,
         genreConfidenceHint: raw.genreConfidenceHint,
-        description: raw.description,
+        // Omitted for the "*" (every candidate) dump so a large source's
+        // full time/queue audit still fits in one job log.
+        description: matchAllTitles ? undefined : raw.description,
         decision: result.decision,
         holdReason: result.holdReason,
         genre: result.genre,
@@ -625,6 +649,65 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   section(`Unresolved venues (${unresolvedVenues.size} distinct)`);
   console.log(JSON.stringify([...unresolvedVenues.entries()].map(([venue, count]) => ({ venue, count })), null, 2));
   if (titleFilter) {
+    // What ElectronicCPH already holds for each matching candidate (any
+    // status): its Discovery Queue row (first registered = created_at) and,
+    // via source_event_links, the canonical event's stored times and which
+    // fields an admin has locked — so "never discovered / pending / ignored /
+    // published / manually corrected" can be read off one run.
+    const urls = evidenceDetail.map((d) => d.sourceUrl as string);
+    if (urls.length > 0) {
+      const dq = await client.query(
+        `SELECT source_url, status, hold_reason, overall_confidence, predicted_genre, probable_start, probable_end, created_at, last_seen_at, resolved_at
+         FROM discovery_queue WHERE source_url = ANY($1)`,
+        [urls],
+      );
+      const links = await client.query(
+        `SELECT l.source_url, e.id, e.title, e.start_datetime, e.end_datetime, e.published, e.overridden_fields, e.created_at
+         FROM source_event_links l JOIN events e ON e.id = l.event_id WHERE l.source_url = ANY($1)`,
+        [urls],
+      );
+      const dupIds = evidenceDetail.map((d) => d.duplicateOfEventId).filter((id): id is string => typeof id === "string");
+      const dupEvents = await client.query(
+        `SELECT id, title, start_datetime, end_datetime, published, overridden_fields FROM events WHERE id = ANY($1)`,
+        [dupIds],
+      );
+      for (const d of evidenceDetail) {
+        const dup = dupEvents.rows.find((r) => r.id === d.duplicateOfEventId);
+        d.matchedEvent = dup
+          ? {
+              id: dup.id,
+              published: dup.published,
+              startCopenhagen: formatCopenhagenWallClock(new Date(dup.start_datetime as string).toISOString()),
+              endCopenhagen: dup.end_datetime ? formatCopenhagenWallClock(new Date(dup.end_datetime as string).toISOString()) : null,
+              overriddenFields: dup.overridden_fields,
+            }
+          : null;
+        const row = dq.rows.find((r) => r.source_url === d.sourceUrl);
+        d.discoveryQueue = row
+          ? {
+              status: row.status,
+              holdReason: row.hold_reason,
+              overallConfidence: row.overall_confidence,
+              predictedGenre: row.predicted_genre,
+              probableStartCopenhagen: row.probable_start ? formatCopenhagenWallClock(new Date(row.probable_start as string).toISOString()) : null,
+              firstRegisteredAt: row.created_at ? new Date(row.created_at as string).toISOString() : null,
+              lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at as string).toISOString() : null,
+              resolvedAt: row.resolved_at ? new Date(row.resolved_at as string).toISOString() : null,
+            }
+          : null;
+        d.linkedEvents = links.rows
+          .filter((r) => r.source_url === d.sourceUrl)
+          .map((r) => ({
+            id: r.id,
+            title: r.title,
+            published: r.published,
+            startCopenhagen: formatCopenhagenWallClock(new Date(r.start_datetime as string).toISOString()),
+            endCopenhagen: r.end_datetime ? formatCopenhagenWallClock(new Date(r.end_datetime as string).toISOString()) : null,
+            overriddenFields: r.overridden_fields,
+            createdAt: new Date(r.created_at as string).toISOString(),
+          }));
+      }
+    }
     section(`Evidence detail for --title="${args.title}" (${evidenceDetail.length} matches) — full source text + verdict, any decision bucket`);
     console.log(JSON.stringify(evidenceDetail, null, 2));
   }
