@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EventWithVenue } from "@/lib/queries";
 import type { AdminUnpublishReason, Venue } from "@/lib/types";
-import { formatRowDateLabel, formatTimeLabel, formatIsoDateForInput } from "@/lib/format";
+import { copenhagenDateTimeInputToIso, formatRowDateLabel, formatTimeLabel, toCopenhagenDateTimeInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { eventGenreTags } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
@@ -63,9 +63,9 @@ function EventRow({ event, venues, withheldDescription }: { event: EventWithVenu
   const [ticketUrl, setTicketUrl] = useState(event.ticketUrl ?? "");
   const [facebookUrl, setFacebookUrl] = useState(event.facebookUrl ?? "");
   const [residentAdvisorUrl, setResidentAdvisorUrl] = useState(event.residentAdvisorUrl ?? "");
-  const [startLocal, setStartLocal] = useState(toLocalInput(event.startDatetime));
+  const [startLocal, setStartLocal] = useState(toCopenhagenDateTimeInput(event.startDatetime));
   const [startTouched, setStartTouched] = useState(false);
-  const [endLocal, setEndLocal] = useState(event.endDatetime ? toLocalInput(event.endDatetime) : "");
+  const [endLocal, setEndLocal] = useState(event.endDatetime ? toCopenhagenDateTimeInput(event.endDatetime) : "");
   const [endTouched, setEndTouched] = useState(false);
   const [free, setFree] = useState(event.priceFrom === 0);
   const [soldOut, setSoldOut] = useState(event.soldOut);
@@ -230,13 +230,13 @@ function EventRow({ event, venues, withheldDescription }: { event: EventWithVenu
       if (facebookUrlTrimmed !== (event.facebookUrl ?? "")) patch.facebookUrl = facebookUrlTrimmed || null;
       if (residentAdvisorUrlTrimmed !== (event.residentAdvisorUrl ?? "")) patch.residentAdvisorUrl = residentAdvisorUrlTrimmed || null;
       // Gated on startTouched (not a value comparison, unlike most other
-      // fields here): a datetime-local round trip through toLocalInput and
-      // back via `new Date(...).toISOString()` isn't guaranteed byte-
+      // fields here): a datetime-local round trip through toCopenhagenDateTimeInput
+      // and back via copenhagenDateTimeInputToIso isn't guaranteed byte-
       // identical to the originally stored ISO string, so comparing values
       // alone could send an unwanted no-op patch on every save even when
       // the admin never touched this field.
-      if (startTouched && startLocal) patch.startDatetime = new Date(startLocal).toISOString();
-      const newEndIso = endLocal ? new Date(endLocal).toISOString() : null;
+      if (startTouched && startLocal) patch.startDatetime = copenhagenDateTimeInputToIso(startLocal);
+      const newEndIso = endLocal ? copenhagenDateTimeInputToIso(endLocal) : null;
       if (newEndIso !== event.endDatetime) patch.endDatetime = newEndIso;
       const newPriceFrom = free ? 0 : event.priceFrom === 0 ? null : undefined;
       if (newPriceFrom !== undefined && newPriceFrom !== event.priceFrom) patch.priceFrom = newPriceFrom;
@@ -450,10 +450,6 @@ function EventRow({ event, venues, withheldDescription }: { event: EventWithVenu
 }
 
 const inputCls = "mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary";
-
-function toLocalInput(iso: string): string {
-  return formatIsoDateForInput(iso) + "T" + formatTimeLabel(iso);
-}
 
 function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
   return (

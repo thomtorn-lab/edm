@@ -397,7 +397,7 @@ describe("EventManager — end time (admin/manual-event work package, 2026-08-24
       ),
     );
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.patch.endDatetime).toBe(new Date("2026-09-21T06:00").toISOString());
+    expect(body.patch.endDatetime).toBe("2026-09-21T04:00:00.000Z"); // 06:00 Copenhagen (CEST)
   });
 
   it("never invents an end time when the field is left untouched", async () => {
@@ -714,7 +714,7 @@ describe("EventManager — unified event create/edit model (2026-09-08): start d
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.patch.startDatetime).toBe(new Date("2026-10-05T21:00").toISOString());
+    expect(body.patch.startDatetime).toBe("2026-10-05T19:00:00.000Z"); // 21:00 Copenhagen (CEST)
   });
 
   it("pre-fills the start date field from the event's own startDatetime", () => {

@@ -571,7 +571,9 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
         artists: raw.artists,
         genreHint: raw.genreHint,
         genreConfidenceHint: raw.genreConfidenceHint,
-        description: raw.description,
+        // Omitted for the "*" (every candidate) dump so a large source's
+        // full time/queue audit still fits in one job log.
+        description: matchAllTitles ? undefined : raw.description,
         decision: result.decision,
         holdReason: result.holdReason,
         genre: result.genre,
