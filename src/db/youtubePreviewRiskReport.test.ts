@@ -301,23 +301,15 @@ describe("youtube-preview-risk-report-readonly.yml", () => {
     .filter((line) => !line.trimStart().startsWith("#"))
     .join("\n");
 
-  it("only runs on manual dispatch, or once on the exact label on PR #141 from this repository", () => {
-    expect(yaml).toMatch(/^on:\n {2}workflow_dispatch:\n {2}pull_request:\n {4}types: \[labeled\]\n\n/m);
-    expect(yaml).not.toMatch(/^\s*(schedule|push|pull_request_target|workflow_run):/m);
-    expect(yaml).toContain("github.event_name == 'workflow_dispatch' ||");
-    expect(yaml).toContain("((github.event.label.name == 'run-youtube-risk-report' ||");
-    expect(yaml).toContain("github.event.label.name == 'check-report-ro-connection') &&");
-    expect(yaml).toContain("github.event.pull_request.number == 141 &&");
-    expect(yaml).toContain("github.event.pull_request.head.repo.full_name == github.repository)");
+  it("only runs on manual dispatch (the one-off PR label trigger is gone again)", () => {
+    expect(yaml).toMatch(/^on:\n {2}workflow_dispatch:\n\n/m);
+    expect(yaml).not.toMatch(/^\s*(schedule|push|pull_request|pull_request_target|workflow_run):/m);
+    expect(yaml).not.toContain("github.event.label");
   });
 
   it("passes only DATABASE_URL_REPORT_RO, and only to the secret check and the report step — never DATABASE_URL", () => {
     expect([...yaml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1])).toEqual(["DATABASE_URL_REPORT_RO", "DATABASE_URL_REPORT_RO"]);
     expect(yaml).not.toMatch(/\bDATABASE_URL\b(?!_REPORT_RO)/);
-  });
-
-  it("the connection-check label runs --check-only, everything else the full report", () => {
-    expect(yaml).toContain('if [ "${REPORT_LABEL:-}" = "check-report-ro-connection" ]; then\n            node --import tsx src/db/youtubePreviewRiskReportCli.ts --check-only\n          else');
   });
 
   it("stops before installing anything when the secret is missing", () => {

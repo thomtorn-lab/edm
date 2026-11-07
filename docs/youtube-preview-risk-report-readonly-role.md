@@ -185,11 +185,12 @@ check.
 
 ### 5. Confirm the connection without reading data (needs approval)
 
-The label `check-report-ro-connection` on PR #141 runs the workflow with
-`--check-only`. It does the same read-only transaction and the same role proof
-as the report, prints the role it logged in as, and rolls back. No data table
-is queried. Use it to confirm that the secret really logs in as `report_ro`
-before any audit reads data.
+`node --import tsx src/db/youtubePreviewRiskReportCli.ts --check-only` (with
+`DATABASE_URL_REPORT_RO` set) does the same read-only transaction and the same
+role proof as the report, prints the role it logged in as, and rolls back. No
+data table is queried. It was run once against Production on 2026-11-01 (PR
+#141), which confirmed `report_ro`. The full report runs from Actions →
+"YouTube Preview Risk Report (Read-Only)" → Run workflow.
 
 ### 6. Between audits
 
