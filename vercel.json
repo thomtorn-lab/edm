@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/sync/hangaren", "schedule": "0 */6 * * *" },
+    { "path": "/api/sync/alice", "schedule": "5 */6 * * *" },
+    { "path": "/api/sync/poolen", "schedule": "15 */6 * * *" },
+    { "path": "/api/sync/gravity", "schedule": "20 */6 * * *" },
+    { "path": "/api/sync/culture-box", "schedule": "30 */6 * * *" },
+    { "path": "/api/sync/kultunaut", "schedule": "35 */6 * * *" },
+    { "path": "/api/sync/pylonen", "schedule": "40 */6 * * *" },
+    { "path": "/api/sync/billetto", "schedule": "45 */6 * * *" },
+    { "path": "/api/sync/pumpehuset", "schedule": "50 */6 * * *" },
+    { "path": "/api/sync/hvaderpaa", "schedule": "55 */6 * * *" },
+    { "path": "/api/artist-alerts/run", "schedule": "17,47 * * * *" }
+  ]
+}

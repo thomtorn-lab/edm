@@ -24,6 +24,7 @@ afterEach(() => {
   delete process.env.ARTIST_ALERTS_MODE;
   delete process.env.ARTIST_ALERTS_TEST_ALLOWLIST;
   delete process.env.SYNC_TRIGGER_TOKEN;
+  delete process.env.CRON_SECRET;
   delete process.env.CONTACT_RECIPIENT_EMAIL;
 });
 
@@ -168,6 +169,20 @@ describe("POST /api/artist-alerts/run", () => {
     const res = await POST(post("https://x.test/run", undefined, { "x-sync-token": "secret" }));
     expect(await res.json()).toEqual({ mode: "observe", reconcile: { events: 3 } });
     expect(runArtistAlerts).toHaveBeenCalledWith("observe", expect.any(Function));
+  });
+
+  it("GET is Vercel Cron's call: accepts only Authorization: Bearer CRON_SECRET", async () => {
+    process.env.CRON_SECRET = "cron-secret";
+    process.env.ARTIST_ALERTS_MODE = "observe";
+    runArtistAlerts.mockResolvedValue({ mode: "observe" });
+    const { GET } = await import("./run/route");
+    const get = (headers: Record<string, string>) => new NextRequest("https://x.test/run", { method: "GET", headers });
+    expect((await GET(get({}))).status).toBe(401);
+    expect((await GET(get({ authorization: "Bearer wrong" }))).status).toBe(401);
+    expect(runArtistAlerts).not.toHaveBeenCalled();
+    const res = await GET(get({ authorization: "Bearer cron-secret" }));
+    expect(res.status).toBe(200);
+    expect(runArtistAlerts).toHaveBeenCalledTimes(1);
   });
 });
 

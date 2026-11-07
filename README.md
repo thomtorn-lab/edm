@@ -181,7 +181,7 @@ src/proxy.ts                             HTTP Basic Auth gate for /admin + /api/
 src/db/inspectSource.ts                  Permanent read-only source diagnostics (see
                                           SOURCE_ONBOARDING.md), wrapped by inspect-source.yml
 scripts/scaffold-source.mjs              New-source adapter/test/workflow scaffold generator
-.github/workflows/sync-hangaren.yml      Actual cron trigger — see "Scheduling" below
+.github/workflows/sync-hangaren.yml      Manual trigger; the schedule is vercel.json — see "Scheduling"
 .github/workflows/inspect-source.yml     Permanent read-only source diagnostic workflow
 .github/workflows/validate-source.yml    Permanent source-branch validation workflow
 SOURCE_ONBOARDING.md                     The end-to-end process for adding a new source
@@ -303,30 +303,32 @@ None of them are ever sent to the browser.
 
 ## Scheduling
 
-`.github/workflows/sync-hangaren.yml` calls `POST /api/sync/hangaren` and
-`.github/workflows/sync-culture-box.yml` calls `POST /api/sync/culture-box` on a schedule — both
-sources refresh automatically once deployed and configured, no manual trigger required. The two
-workflows are identical in structure/safety model; only the endpoint, cron offset and concurrency
-group differ.
+Vercel Cron (`vercel.json`, requires the Vercel Pro plan) is the only scheduler. It calls
+`GET /api/sync/<source>` for every wired source every 6 hours, staggered across the hour (Hangaren
+at :00, ALICE :05, Poolen :15, Gravity :20, Culture Box :30, KultuNaut :35, Pylonen :40, Billetto
+:45, Pumpehuset :50, HvadErPå :55; all UTC), and `GET /api/artist-alerts/run` at :17 and :47 every
+hour. The `sync-*.yml` and `artist-alerts.yml` GitHub workflows no longer have a schedule; they stay
+for manual `workflow_dispatch` runs (POST with `x-sync-token`), e.g. to retry after a fix. GitHub's
+own scheduled runs proved too unreliable (Artist Alerts ran ~4 times a day instead of 48).
 
-- **Frequency**: every 6 hours for both — Hangaren at `cron: "0 */6 * * *"`, Culture Box at
-  `cron: "30 */6 * * *"` (offset by 30 minutes purely to spread load across two separate GitHub
-  Actions jobs; not a correctness requirement, since each source has its own advisory lock key —
-  see "Concurrent runs" below). Matches `syncFrequency` in `src/lib/data/sources.ts` for
-  `src-hangaren` and `src-culture-box`. Both are also runnable on demand via their workflow's
-  `workflow_dispatch` trigger (e.g. to retry after fixing something).
-- **Retry behavior**: three layers, deliberately not aggressive at any one of them. (1) Each
-  workflow's `curl` retries the HTTP call itself up to 3 times (15s apart) for transient network
-  issues reaching the deployment. (2) The adapter (`hangarenAdapter.ts` / `cultureBoxAdapter.ts`)
+- **Auth**: `src/lib/scheduledRequestAuth.ts` accepts either Vercel Cron's
+  `Authorization: Bearer $CRON_SECRET` or the manual workflows' `x-sync-token: $SYNC_TRIGGER_TOKEN`.
+  `CRON_SECRET` must be set as a Production environment variable in Vercel.
+- **Timeouts**: both routes set `maxDuration = 300` (the longest sync, Pumpehuset, takes ~141s).
+- **Overlap**: a sync for a source that is already running returns `skipped_concurrent` (per-source
+  advisory lock); Artist Alerts skips when its own lock is held, and every send carries an
+  idempotency key, so a double trigger never double-sends.
+- **Retry behavior**: deliberately not aggressive. Vercel Cron does not retry a failed call. (1) A
+  manual workflow's `curl` retries the HTTP call itself up to 3 times (15s apart). (2) The adapter (`hangarenAdapter.ts` / `cultureBoxAdapter.ts`)
   retries its own fetch once after a 2s delay — one blip shouldn't flag a healthy source as failed.
   (3) Beyond that, a persistently failing source is left for the next scheduled run 6h later (or a
   manual `workflow_dispatch`) rather than retried in a tight loop.
 - **Failure logging**: every sync outcome is written to `sources.lastError`/`lastSuccessfulSync`
   in Postgres (visible on `/admin`) regardless of how it was triggered. The API route also returns
   a non-2xx status for `failed` and `zero_events` outcomes specifically (never for a normal
-  `ok` or a benign `skipped_concurrent`), so the calling workflow run itself goes red in GitHub
-  Actions' own history/notifications — that's the externally-visible failure log, not just a
-  console line inside the process.
+  `ok` or a benign `skipped_concurrent`), so the failure shows in Vercel's cron logs (or as a red run
+  for a manual workflow). A source left degraded or stale also turns the hourly
+  `monitor-source-health.yml` run red.
 - **Secrets**: `SYNC_TRIGGER_TOKEN` must be set twice — as a GitHub Actions repository *secret*
   (so the workflow can send it) and as an environment variable on the actual deployment (so the
   route can check it); the workflow also needs a repository *variable* `SYNC_BASE_URL` pointing at
