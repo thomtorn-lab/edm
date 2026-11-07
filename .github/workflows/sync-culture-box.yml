@@ -24,8 +24,7 @@ name: Sync Culture Box
 # instead of silently doing nothing.
 
 on:
-  schedule:
-    - cron: "30 */6 * * *"
+  # Scheduled by Vercel Cron (vercel.json); this workflow is for manual runs only.
   workflow_dispatch: {} # manual re-trigger, e.g. to retry after a fix
 
 # Prevents two runs of this workflow from ever calling the endpoint at the

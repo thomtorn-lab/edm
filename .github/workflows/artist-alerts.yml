@@ -1,6 +1,6 @@
 name: Artist Alerts
 
-# Scheduled Artist Alerts run: POST /api/artist-alerts/run on the deployed
+# Manual Artist Alerts run (the schedule is Vercel Cron, vercel.json): POST /api/artist-alerts/run on the deployed
 # app (reconcile lineups -> plan deliveries -> send -> retention). Same
 # auth/trigger pattern as every sync workflow (x-sync-token,
 # x-vercel-protection-bypass) and the same three repository secrets/variable
@@ -13,8 +13,7 @@ name: Artist Alerts
 # run catches up. The response contains counts only, never an address.
 
 on:
-  schedule:
-    - cron: "17,47 * * * *"
+  # Scheduled by Vercel Cron (vercel.json); this workflow is for manual runs only.
   workflow_dispatch: {}
 
 permissions:
