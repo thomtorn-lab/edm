@@ -358,7 +358,9 @@ export async function runApply(paceBatchSize: number, runLimit: number, artistFi
       const result = await getOrMatchArtistYoutubePreview(raw, drizzleCacheStore, youtubeClient);
       if (result.status === "accepted") accepted++;
       else abstained++;
-      console.log(`  [${result.status.toUpperCase()}] "${raw}"${result.videoId ? ` -> ${result.videoId}` : ""}`);
+      console.log(
+        `  [${result.status.toUpperCase()}] "${raw}"${result.videoId ? ` -> https://www.youtube.com/watch?v=${result.videoId} "${result.videoTitle ?? ""}" (channel: ${result.channelTitle ?? "?"})` : ""}`,
+      );
       consecutiveFailures = 0;
     } catch (err) {
       failed++;
