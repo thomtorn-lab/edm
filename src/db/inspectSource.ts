@@ -761,6 +761,76 @@ async function decodeResponseBody(res: Response): Promise<string> {
  * against Production as many times as needed without warming/polluting it
  * (a real cache warm only ever happens via src/db/writes.ts::createEvent).
  */
+/**
+ * SoundCloud via Discogs dry run (2026-11-06): for each given artist, the
+ * existing Discogs identity lookup (getOrLookupArtistGenre with an in-memory
+ * cache — never the artist_genre_cache table), the Discogs artist's own
+ * listed URLs, and SoundCloud's public oEmbed display name for the single
+ * profile, assessed by assessDiscogsSoundcloud. No DB connection, nothing
+ * stored, nothing linked. Paced under Discogs' unauthenticated 25/min limit.
+ */
+async function modeSoundcloudDiscogsDryRun(_client: Client, args: Record<string, string | boolean>) {
+  const artistsRaw = typeof args.artists === "string" ? args.artists : null;
+  if (!artistsRaw) throw new Error('soundcloud-discogs-dry-run requires --artists="Artist One, Artist Two, ..."');
+  const names = artistsRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 40);
+  const { getOrLookupArtistGenre } = await import("@/lib/enrichment/genreEnrichment");
+  const discogs = await import("@/lib/enrichment/discogsClient");
+  const { assessDiscogsSoundcloud, soundcloudProfilesFromUrls } = await import("@/lib/soundcloudEvidence/discogsCandidate");
+
+  const pause = (ms = 3000) => new Promise((resolve) => setTimeout(resolve, ms)); // < 25 requests/min
+  // Discogs' unauthenticated window is tighter from shared runner IPs: one wait-and-retry on HTTP 429.
+  const withRetry = async <T>(call: () => Promise<T>): Promise<T> => {
+    await pause();
+    try {
+      return await call();
+    } catch (err) {
+      if (!(err instanceof Error && /HTTP 429/.test(err.message))) throw err;
+      await pause(65_000);
+      return call();
+    }
+  };
+  const paced = {
+    searchArtist: (n: string) => withRetry(() => discogs.searchArtist(n)),
+    getArtistReleaseIds: (id: number, limit: number) => withRetry(() => discogs.getArtistReleaseIds(id, limit)),
+    getReleaseGenres: (id: number) => withRetry(() => discogs.getReleaseGenres(id)),
+  };
+  const memory = new Map<string, Awaited<ReturnType<typeof getOrLookupArtistGenre>>>();
+  const cache = { get: async (k: string) => memory.get(k) ?? null, set: async (e: Awaited<ReturnType<typeof getOrLookupArtistGenre>>) => void memory.set(e.artistNameNormalized, e) };
+
+  section(`SoundCloud via Discogs dry run — ${names.length} artist(s), in-memory only, nothing stored`);
+  const tally = { verifiable: 0, uncertain: 0, missing: 0, failed: 0 };
+  for (const name of names) {
+    try {
+      const entry = await getOrLookupArtistGenre(name, cache, paced);
+      let urls: string[] | null = null;
+      let displayName: string | null = null;
+      if (entry.lookupStatus === "found" && entry.discogsArtistId) {
+        const artistId = entry.discogsArtistId;
+        urls = await withRetry(() => discogs.getArtistUrls(artistId));
+        const profiles = soundcloudProfilesFromUrls(urls);
+        if (profiles.length === 1) {
+          const res = await fetch(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(profiles[0])}`, { signal: AbortSignal.timeout(8000) });
+          if (res.ok) displayName = ((await res.json()) as { author_name?: string }).author_name ?? null;
+        }
+      }
+      const a = assessDiscogsSoundcloud({
+        name,
+        lookupStatus: entry.lookupStatus as "found" | "not_found" | "ambiguous",
+        identityConfidence: entry.identityConfidence as "medium" | "low" | null,
+        discogsUrls: urls,
+        soundcloudDisplayName: displayName,
+      });
+      tally[a.verdict]++;
+      console.log(`${a.verdict.toUpperCase().padEnd(10)} "${name}" discogs=${entry.discogsArtistId ?? "-"} identity=${entry.identityConfidence ?? "-"} profile=${a.profileUrl ?? "-"} soundcloudName=${displayName ? JSON.stringify(displayName) : "-"} | ${a.reason}`);
+    } catch (err) {
+      tally.failed++;
+      console.log(`FAILED     "${name}" | ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  section("Summary");
+  console.log(JSON.stringify(tally));
+}
+
 async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, string | boolean>) {
   const artistsRaw = typeof args.artists === "string" ? args.artists : null;
   if (!artistsRaw) throw new Error("youtube-preview-dry-run requires --artists=\"Artist One, Artist Two, ...\"");
@@ -3069,11 +3139,16 @@ async function main() {
     await modeYoutubePreviewDryRun(null as unknown as Client, args);
     return;
   }
+  if (mode === "soundcloud-discogs-dry-run") {
+    // No DB connection needed — Discogs + SoundCloud oEmbed reads, nothing stored.
+    await modeSoundcloudDiscogsDryRun(null as unknown as Client, args);
+    return;
+  }
 
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, soundcloud-discogs-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
     );
     process.exit(1);
   }
