@@ -17,7 +17,7 @@ import type { ConfidenceLevel } from "@/lib/types";
  * `db`/Discogs directly for genre enrichment — mirrors the
  * pure-lib/I-O-db split used everywhere else in this codebase.
  */
-const drizzleCacheStore: ArtistGenreCacheStore = {
+export const drizzleCacheStore: ArtistGenreCacheStore = {
   async get(artistNameNormalized) {
     const [row] = await db
       .select()

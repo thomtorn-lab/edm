@@ -195,6 +195,12 @@ describe("inspect-source.yml — existing diagnostic modes and flags are preserv
     expect(runInspect({ mode: "youtube-preview-dry-run" }).nodeFlags).toEqual(["--import", "tsx"]);
   });
 
+  it("soundcloud-discogs-dry-run never gets the database: no .env.local, artists passed verbatim", () => {
+    const r = runInspect({ mode: "soundcloud-discogs-dry-run", dedup_artists: "Paul Van Dyk, ¥ØU$UK€ ¥UK1MAT$U" });
+    expect(r.nodeFlags).toEqual(["--import", "tsx"]);
+    expect(r.args).toEqual(["--mode=soundcloud-discogs-dry-run", "--artists=Paul Van Dyk, ¥ØU$UK€ ¥UK1MAT$U"]);
+  });
+
   it("empty inputs add no flags (only --mode, plus the default limit)", () => {
     expect(runInspect({ mode: "inventory", limit: "20" }).args).toEqual(["--mode=inventory", "--limit=20"]);
   });

@@ -38,6 +38,8 @@ import {
 import { enrichEventGenre } from "./enrichment";
 import { reconcileSourceSoundcloudLinks } from "./soundcloudLinks";
 import { inlineSoundcloudEvidenceForSync, inlineReportsForSync, type InlineObservation } from "@/lib/soundcloudEvidence/syncLinks";
+import { discogsLookupCandidates } from "@/lib/soundcloudEvidence/discogsSoundcloud";
+import { resolveDiscogsSoundcloud } from "./discogsSoundcloud";
 import type { GenreSlug } from "@/lib/taxonomy";
 import type { ConfidenceLevel } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -273,6 +275,8 @@ async function runSourceSyncLocked(
   // the loop (src/lib/soundcloudEvidence/syncLinks.ts). Never replaces a
   // structured report, never deletes.
   const inlineSoundcloud: InlineObservation[] = [];
+  // This run's lineups, for the bounded Discogs -> SoundCloud lookups after the loop.
+  const syncedLineups: { title: string; artists: string[] }[] = [];
 
   for (const raw of candidates) {
     try {
@@ -359,6 +363,7 @@ async function runSourceSyncLocked(
           const storedSourceText = existing.overriddenFields.includes("description") ? null : existing.description;
           const records = inlineSoundcloudEvidenceForSync(raw, lineup, existing.id, [storedSourceText]);
           if (records.length > 0) inlineSoundcloud.push({ eventId: existing.id, records });
+          syncedLineups.push({ title: existing.title, artists: [...lineup] });
         }
         const target: SyncTargetEvent = {
           id: existing.id,
@@ -577,6 +582,7 @@ async function runSourceSyncLocked(
         {
           const records = inlineSoundcloudEvidenceForSync(raw, result.normalizedArtists, eventId);
           if (records.length > 0) inlineSoundcloud.push({ eventId, records });
+          syncedLineups.push({ title: raw.title, artists: [...result.normalizedArtists] });
         }
         if (raw.withheldDescription) {
           await recordWithheldDescription(eventId, sourceId, raw.withheldDescription, raw.description);
@@ -809,6 +815,20 @@ async function runSourceSyncLocked(
     } catch (err) {
       console.error(`[sync] "${sourceId}" SoundCloud link update failed`, err instanceof Error ? err.message : err);
     }
+  }
+
+  // Discogs as a supplementary SoundCloud source (2026-11-07): at most two
+  // artists per run that actually need Discogs, cache-first; never fails the
+  // sync. See src/db/discogsSoundcloud.ts.
+  try {
+    const linkedNames = new Set([...soundcloudObservations.values()].flatMap((r) => r.links.map((l) => l.name)));
+    const candidates = discogsLookupCandidates(syncedLineups, linkedNames);
+    if (candidates.length > 0) {
+      const summary = await resolveDiscogsSoundcloud(candidates, 2);
+      if (summary.lookedUp > 0) console.log(`[sync] "${sourceId}" Discogs SoundCloud lookups: ${JSON.stringify(summary)}`);
+    }
+  } catch (err) {
+    console.error(`[sync] "${sourceId}" Discogs SoundCloud lookups failed`, err instanceof Error ? err.message : err);
   }
 
   // Fires only after every DB write above has finished — bounded-concurrency
