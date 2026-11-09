@@ -314,6 +314,15 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
       delete tableRows.event_artists;
     });
 
+    it("Discogs-verified profiles: read from the Discogs cache, found + medium identity only", async () => {
+      tableRows.event_artists = [{ event_id: "e-1", lineup_entry: "Sub Zero Project", name_key: "sub zero project", url: null }];
+      await getSoundcloudLinksForLineup("e-1", ["Sub Zero Project"]);
+      const q = sent.find((x) => /from "artist_genre_cache"/.test(x.text));
+      expect(q?.text).toMatch(/"artist_genre_cache"\."lookup_status" = \$\d+ and "artist_genre_cache"\."identity_confidence" = \$\d+/);
+      expect(q?.values).toEqual(expect.arrayContaining(["sub zero project", "found", "medium"]));
+      delete tableRows.event_artists;
+    });
+
     it("no lookup by key when no appearance qualifies", async () => {
       await getSoundcloudLinksForLineup("e-1", ["GUY J", "Nobody"]);
       expect(sent.filter((q) => /lower\("event_soundcloud_links"\."artist_name"\)/.test(q.text))).toHaveLength(0);

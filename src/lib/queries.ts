@@ -3,6 +3,7 @@ import { and, desc, eq, gt, gte, inArray, isNull, ne, notExists, or, sql, type S
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import {
+  artistGenreCache,
   artistYoutubePreviewCache,
   artists as artistIdentities,
   discoveryQueue,
@@ -24,6 +25,7 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { matchStoredLinksByIdentityKey, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
+import { discogsCacheKey, verifiedDiscogsProfile } from "./soundcloudEvidence/discogsSoundcloud";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
 import { isPastEvent } from "./datetime";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
@@ -622,6 +624,8 @@ const SHOWN_CONFIDENCE = ["high", "confirmed"];
  *     links stored before Artist Alerts began reconciling (it only covers
  *     upcoming events) have no appearance row. Only for an artist whose key
  *     no other active artist shares, so the key names exactly one identity.
+ *   - from Discogs (2026-11-07): the profile the Discogs integration's cache
+ *     verified for the same unique key (src/lib/soundcloudEvidence/discogsSoundcloud.ts).
  * selectReusedSoundcloudProfiles then decides: exactly one profile per
  * artist across all of these, single-performer entries only.
  */
@@ -662,7 +666,28 @@ async function reusedSoundcloudRows(eventIds: string[]) {
     .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
     .from(eventSoundcloudLinks)
     .where(and(inArray(sql`lower(${eventSoundcloudLinks.artistName})`, lowered), soundcloudLinkNotBlocked()));
-  return [...viaAppearances, ...matchStoredLinksByIdentityKey(unique, historical)];
+
+  // Discogs-verified profiles (2026-11-07) for the same unique appearances,
+  // from the Discogs integration's own cache; blocked URLs excluded.
+  const cacheKeyOf = new Map(unique.map((u) => [u.lineupEntry, discogsCacheKey(u.lineupEntry)]));
+  const discogsRows = await db
+    .select({ key: artistGenreCache.artistNameNormalized, lookupStatus: artistGenreCache.lookupStatus, identityConfidence: artistGenreCache.identityConfidence, evidence: artistGenreCache.evidence })
+    .from(artistGenreCache)
+    .where(and(inArray(artistGenreCache.artistNameNormalized, [...new Set(cacheKeyOf.values())]), eq(artistGenreCache.lookupStatus, "found"), eq(artistGenreCache.identityConfidence, "medium")));
+  const discogsProfileByKey = new Map(discogsRows.flatMap((r) => {
+    const url = verifiedDiscogsProfile(r);
+    return url ? [[r.key, url] as const] : [];
+  }));
+  const blockedDiscogs =
+    discogsProfileByKey.size === 0
+      ? new Set<string>()
+      : new Set((await db.select({ url: soundcloudLinkBlocks.url }).from(soundcloudLinkBlocks).where(inArray(soundcloudLinkBlocks.url, [...discogsProfileByKey.values()]))).map((b) => b.url));
+  const viaDiscogs = unique.flatMap((u) => {
+    const url = discogsProfileByKey.get(cacheKeyOf.get(u.lineupEntry)!);
+    return url && !blockedDiscogs.has(url) ? [{ eventId: u.eventId, lineupEntry: u.lineupEntry, otherEntry: u.lineupEntry, url }] : [];
+  });
+
+  return [...viaAppearances, ...matchStoredLinksByIdentityKey(unique, historical), ...viaDiscogs];
 }
 
 /**
