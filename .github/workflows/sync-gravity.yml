@@ -17,8 +17,7 @@ name: Sync Gravity
 # Pumpehuset (:50).
 
 on:
-  schedule:
-    - cron: "20 */6 * * *"
+  # Scheduled by Vercel Cron (vercel.json); this workflow is for manual runs only.
   workflow_dispatch: {} # manual re-trigger, e.g. to retry after a fix
 
 concurrency:
