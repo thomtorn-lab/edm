@@ -2,13 +2,14 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import AnalyticsConsentSettings from "@/components/AnalyticsConsentSettings";
+import { artistAlertsMode, subscriptionsEnabled } from "@/lib/artistAlerts/config";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 
 /**
  * Privacy page (GDPR review, 2026-10-30). Describes what the site does,
- * verified in code, plus facts the owner confirmed: hosting on Vercel's free
- * Hobby plan (which comes with no data processing addendum — the page states
- * the plan and makes no compliance claim about it), Vercel Web Analytics
+ * verified in code, plus facts the owner confirmed: hosting on Vercel's Pro
+ * plan (since 2026-11; the page states the plan and makes no compliance
+ * claim about it), Vercel Web Analytics
  * only after consent
  * (src/components/PrivacyAwareAnalytics.tsx, AnalyticsConsentSettings), the
  * session-storage "back to list" record, YouTube videos loaded only after
@@ -16,7 +17,9 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
  * Contact/Suggest-an-event sent via Resend to our @electroniccph.com inbox
  * (mail hosting at Simply.com) and deleted
  * after 6 months, the Supabase database in the EU (Paris), and artist data
- * built from public listings.
+ * built from public listings. The Artist Alerts section (2026-11-09) shows
+ * whenever Artist Alerts takes signups (ARTIST_ALERTS_MODE test or live);
+ * its retention periods are LIMITS in src/lib/artistAlerts/config.ts.
  *
  * Deliberately not stated, because it can't be verified from here:
  * retention of Vercel's and Resend's own logs, and whether Vercel's
@@ -39,6 +42,7 @@ function SectionHeading({ children }: { children: ReactNode }) {
 }
 
 export default function PrivacyPage() {
+  const artistAlerts = subscriptionsEnabled(artistAlertsMode());
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
@@ -170,16 +174,46 @@ export default function PrivacyPage() {
         </>
       )}
 
+      {artistAlerts && (
+        <>
+          <SectionHeading>Artist Alerts</SectionHeading>
+          <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
+            <p>
+              If you sign up for Artist Alerts, we store your email address, the artists you follow, any artists
+              you ask us to add (name and an optional Spotify or SoundCloud link), and when you confirmed. We use
+              this only to email you when a new event with one of your artists is listed.
+            </p>
+            <p>
+              The legal basis is your consent, given by confirming via the link we email you. You can change your
+              artists or unsubscribe at any time from the link in every Artist Alerts email.
+            </p>
+            <p>
+              Unsubscribing deletes your email address and your followed artists immediately. A signup that is
+              never confirmed is deleted after 7 days. We keep a short record of each alert sent for 30 days, or until
+              the event has taken place if that is later, to avoid duplicate alerts and troubleshoot delivery, then
+              delete it automatically.
+            </p>
+            <p>
+              Sending is handled by Resend as our email processor. We do not use open or click tracking in Artist
+              Alerts emails.
+            </p>
+          </div>
+        </>
+      )}
+
       <SectionHeading>Service providers and transfers</SectionHeading>
       <div className="mt-2 space-y-3 text-sm leading-relaxed text-text-secondary">
         <p>We use these providers:</p>
         <ul className="list-disc space-y-1 pl-5">
-          <li>Vercel Inc. (USA) — hosting and visitor statistics, on Vercel&rsquo;s free Hobby plan</li>
+          <li>Vercel Inc. (USA) — hosting and visitor statistics, on Vercel&rsquo;s Pro plan</li>
           <li>
             Supabase — the database for event information, hosted in the EU (Paris), under Supabase&rsquo;s data
             processing addendum
           </li>
-          <li>Resend Inc. (USA) — sending Contact and Suggest-an-event messages to our inbox</li>
+          <li>
+            Resend Inc. (USA) — sending Contact and Suggest-an-event messages to our inbox
+            {artistAlerts && ", and sending Artist Alerts emails"}
+          </li>
           <li>Simply.com — hosting of our @electroniccph.com email inbox</li>
         </ul>
         <p>
