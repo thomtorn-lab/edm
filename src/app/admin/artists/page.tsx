@@ -15,7 +15,7 @@ export default async function AdminArtistsPage() {
       <div className="mt-6">
         <ArtistReview
           appearances={appearances.map((a) => ({ ...a, start: a.startDatetime.toISOString() }))}
-          requests={requests.map((r) => ({ id: r.id, displayName: r.displayName, profileUrl: r.profileUrl, followers: Number(r.followers) }))}
+          requests={requests.map((r) => ({ id: r.id, displayName: r.displayName, profileUrl: r.profileUrl, followers: r.followers, existing: r.existing }))}
         />
       </div>
     </div>

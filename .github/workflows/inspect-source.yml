@@ -56,6 +56,7 @@ on:
           - ignore-persistence-audit
           - genre-taxonomy-audit
           - youtube-preview-dry-run
+          - soundcloud-discogs-dry-run
           - youtube-preview-backfill-plan
           - youtube-preview-backlog-projection
           - youtube-preview-cache-row
@@ -111,7 +112,7 @@ on:
         description: "Candidate title (dedup-simulate mode), or a case-insensitive title substring filter (event-integrity/link-role-audit modes, optional — omit to inspect every published event)"
         required: false
       dedup_artists:
-        description: 'Candidate artists, comma-separated, e.g. "Artist A, Artist B" (dedup-simulate mode), or the artist list to run the real Rule A matcher against (youtube-preview-dry-run mode)'
+        description: 'Candidate artists, comma-separated, e.g. "Artist A, Artist B" (dedup-simulate mode), or the artist list to run the real Rule A matcher against (youtube-preview-dry-run and soundcloud-discogs-dry-run modes)'
         required: false
       dedup_venue:
         description: "Candidate venue name (dedup-simulate mode only)"
@@ -165,7 +166,7 @@ jobs:
           cache: npm
 
       - name: Verify DATABASE_URL secret is configured (skipped for reachability/youtube-preview-dry-run modes with no DB access, and for artist-identity-audit, which never receives DATABASE_URL)
-        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' && !startsWith(inputs.mode, 'artist-identity-audit') }}
+        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' && inputs.mode != 'soundcloud-discogs-dry-run' && !startsWith(inputs.mode, 'artist-identity-audit') }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -178,7 +179,7 @@ jobs:
         run: npm ci
 
       - name: Write DATABASE_URL for the diagnostic script
-        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' && !startsWith(inputs.mode, 'artist-identity-audit') }}
+        if: ${{ inputs.mode != 'reachability' && inputs.mode != 'youtube-preview-dry-run' && inputs.mode != 'soundcloud-discogs-dry-run' && !startsWith(inputs.mode, 'artist-identity-audit') }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.local
@@ -242,7 +243,7 @@ jobs:
           [ -n "$INPUT_DETAIL_SOURCE" ] && args+=(--detail-source="$INPUT_DETAIL_SOURCE")
           [ -n "$INPUT_DETAIL_LIMIT" ] && args+=(--detail-limit="$INPUT_DETAIL_LIMIT")
           [ -n "$INPUT_DETAIL_OFFSET" ] && args+=(--detail-offset="$INPUT_DETAIL_OFFSET")
-          if [ "$INPUT_MODE" = "reachability" ] || [ "$INPUT_MODE" = "youtube-preview-dry-run" ]; then
+          if [ "$INPUT_MODE" = "reachability" ] || [ "$INPUT_MODE" = "youtube-preview-dry-run" ] || [ "$INPUT_MODE" = "soundcloud-discogs-dry-run" ]; then
             node --import tsx src/db/inspectSource.ts "${args[@]}"
           else
             node --env-file=.env.local --import tsx src/db/inspectSource.ts "${args[@]}"

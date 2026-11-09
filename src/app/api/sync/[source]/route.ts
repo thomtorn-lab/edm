@@ -11,10 +11,14 @@ import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kult
 import { createHvaderpaaAdapter, HVADERPAA_SOURCE_ID } from "@/lib/adapters/hvaderpaaAdapter";
 import { createPylonenAdapter, PYLONEN_SOURCE_ID } from "@/lib/adapters/pylonenAdapter";
 import type { SourceAdapter } from "@/lib/adapters/types";
+import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
+import { rejectUnauthorizedScheduledRequest } from "@/lib/scheduledRequestAuth";
+
+// Longest observed sync is Pumpehuset at ~141s (detail page per event).
+export const maxDuration = 300;
 
 /**
- * Scheduling entry point (task 5): an external scheduler (cron, GitHub
- * Actions, etc.) calls this on `sources.syncFrequency` per source. Only
+ * Scheduling entry point (task 5): Vercel Cron (vercel.json) calls this on `sources.syncFrequency` per source. Only
  * sources with a real, verified adapter are wired here — see
  * src/lib/data/sources.ts's `integrationNote` for why the others aren't.
  */
@@ -44,14 +48,23 @@ const ADAPTERS: Record<string, { sourceId: string; displayName: string; create: 
   pylonen: { sourceId: PYLONEN_SOURCE_ID, displayName: "Pylonen", create: createPylonenAdapter },
 };
 
+/**
+ * GET is Vercel Cron's call (vercel.json); POST is a manual GitHub Actions
+ * run (sync-*.yml, workflow_dispatch). Same handler, same auth helper.
+ * Overlapping calls for one source are safe: runSourceSync takes a
+ * per-source advisory lock and returns "skipped_concurrent".
+ */
+export async function GET(request: NextRequest, context: { params: Promise<{ source: string }> }) {
+  return handle(request, context);
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ source: string }> }) {
-  const token = process.env.SYNC_TRIGGER_TOKEN;
-  if (!token) {
-    return NextResponse.json({ error: "SYNC_TRIGGER_TOKEN is not configured." }, { status: 500 });
-  }
-  if (request.headers.get("x-sync-token") !== token) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  return handle(request, context);
+}
+
+async function handle(request: NextRequest, context: { params: Promise<{ source: string }> }) {
+  const rejected = rejectUnauthorizedScheduledRequest(request);
+  if (rejected) return rejected;
 
   const { source } = await context.params;
   const entry = ADAPTERS[source];
@@ -60,6 +73,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ so
   }
 
   const summary = await runSourceSync(entry.sourceId, entry.displayName, entry.create());
+  reconcileArtistsSoon();
 
   // ok/skipped_concurrent are 200s — a concurrent-run skip is expected,
   // benign behavior, not something a scheduler should alert on. failed/

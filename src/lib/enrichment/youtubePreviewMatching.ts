@@ -80,8 +80,12 @@ export interface YoutubePreviewClient {
 }
 
 export const MATCH_RULE = "A" as const;
-const MAX_SEARCH_RESULTS = 5;
-const MIN_DURATION_SECONDS = 20 * 60;
+// 15, not 5 (owner decision 2026-11-03): a search.list call costs 100 units
+// whatever maxResults is, and the eligible candidates are verified in ONE
+// batched videos.list call (1 unit, up to 50 ids) — so looking further down
+// the ranking finds more safe candidates at no extra quota.
+export const MAX_SEARCH_RESULTS = 15;
+export const MIN_DURATION_SECONDS = 20 * 60;
 const ACCEPTED_TTL_DAYS = 90;
 const ABSTAIN_TTL_DAYS = 30;
 export const VERIFY_STALE_DAYS = 30;
@@ -89,13 +93,34 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Globally-recognized third-party channels validated in the feasibility
- * audit — exact list from the approved decision, never extended here
- * without a fresh audit finding ("only additional channels if they were
- * already proven in the audit and are structurally equivalent"). Exact
- * (normalized) match only — no substring/fuzzy containment, so "Not
- * Tomorrowland Fanpage" never qualifies.
+ * audit, plus the live-set channels HÖR Berlin, Cercle, Mixmag and Keep Hush
+ * (owner decision 2026-11-03) — never extended here without an explicit
+ * decision. Exact (normalized) match only — no substring/fuzzy containment,
+ * so "Not Tomorrowland Fanpage" or "Cercle Fan" never qualifies. A trusted
+ * channel still needs the exact artist name in the title and passes the
+ * short-continuation guard (checkTrustedChannelSuffix).
  */
-const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air"]);
+export const TRUSTED_CHANNELS = new Set(["boiler room", "tomorrowland", "dgtl", "ukf on air", "hör berlin", "cercle", "mixmag", "keep hush"]);
+
+/**
+ * The four live channels added 2026-11-03 qualify only with their own
+ * channel id, not just their name — channel names are not unique on
+ * YouTube. Each id was verified 2026-11-06 against the YouTube Data API
+ * (videos.list on one of the channel's own uploads returned this id with
+ * this exact channel name).
+ */
+export const PINNED_TRUSTED_CHANNEL_IDS: ReadonlyMap<string, string> = new Map([
+  ["hör berlin", "UCmfF7JZv26UUKyRedViGIlw"],
+  ["cercle", "UCPKT_csvP72boVX0XrMtagQ"],
+  ["mixmag", "UCQdCIrTpkhEH5Z8KPsn7NvQ"],
+  ["keep hush", "UCQAnY_suiNH0MvdTHk5GiBA"],
+]);
+
+function isTrustedChannel(channelNormalized: string, channelId: string): boolean {
+  if (!TRUSTED_CHANNELS.has(channelNormalized)) return false;
+  const pinned = PINNED_TRUSTED_CHANNEL_IDS.get(channelNormalized);
+  return pinned === undefined || pinned === channelId;
+}
 
 /**
  * The three generic/common-word collisions the audit actually surfaced
@@ -138,8 +163,8 @@ export function titleContainsExactName(title: string, cleanedName: string): bool
   return true;
 }
 
-const MULTI_BILLING_SEPARATORS = /,|&|(?:\bx\b)|(?:\bvs\.?\b)|(?:\bb2b\b)/gi;
-const TITLE_STOP_MARKERS = /\||@|\bat\b|\blive\b|\bdj set\b|\bfestival\b|\bpresents\b|\bfull set\b/i;
+export const MULTI_BILLING_SEPARATORS = /,|&|(?:\bx\b)|(?:\bvs\.?\b)|(?:\bb2b\b)/gi;
+export const TITLE_STOP_MARKERS = /\||@|\bat\b|\blive\b|\bdj set\b|\bfestival\b|\bpresents\b|\bfull set\b/i;
 
 /**
  * How many distinct names the title bills before the first
@@ -157,9 +182,9 @@ export function countBilledNames(title: string): number {
     .filter(Boolean).length;
 }
 
-type ChannelMatch = "own" | "trusted";
+export type ChannelMatch = "own" | "trusted";
 
-interface StructuralCheck {
+export interface StructuralCheck {
   eligible: boolean;
   channelMatch: ChannelMatch | null;
   reason: string | null;
@@ -202,7 +227,7 @@ interface StructuralCheck {
  * consumed by the cleanedName match itself before this function ever looks
  * at what follows.
  */
-const TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS = new Set([
+export const TRUSTED_CHANNEL_SAFE_CONTINUATION_WORDS = new Set([
   "b2b",
   "x",
   "vs",
@@ -243,7 +268,7 @@ function checkTrustedChannelSuffix(title: string, cleanedName: string, channelTi
   };
 }
 
-function checkStructuralEligibility(cleanedName: string, normalized: string, item: YoutubeSearchItem): StructuralCheck {
+export function checkStructuralEligibility(cleanedName: string, normalized: string, item: YoutubeSearchItem): StructuralCheck {
   if (!titleContainsExactName(item.title, cleanedName)) {
     return { eligible: false, channelMatch: null, reason: "title does not contain the exact artist name" };
   }
@@ -253,7 +278,7 @@ function checkStructuralEligibility(cleanedName: string, normalized: string, ite
   }
   const channelNormalized = item.channelTitle.trim().toLowerCase();
   const ownChannel = channelNormalized === normalized;
-  const trustedChannel = TRUSTED_CHANNELS.has(channelNormalized);
+  const trustedChannel = isTrustedChannel(channelNormalized, item.channelId);
 
   const acceptTrusted = (): StructuralCheck => {
     const suffixCheck = checkTrustedChannelSuffix(item.title, cleanedName, item.channelTitle);

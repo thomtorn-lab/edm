@@ -160,6 +160,9 @@ vi.mock("./enrichment", () => ({
   enrichEventGenre: vi.fn().mockResolvedValue({ genre: null, genreConfidence: null, perArtist: [] }),
 }));
 
+vi.mock("./discogsSoundcloud", () => ({
+  resolveDiscogsSoundcloud: vi.fn().mockResolvedValue({ considered: 0, lookedUp: 0, verifiable: 0, uncertain: 0, missing: 0, failed: 0 }),
+}));
 vi.mock("./soundcloudLinks", () => ({
   reconcileSourceSoundcloudLinks: vi.fn().mockResolvedValue({ upserts: [], deletes: [], suppressedDeletes: 0 }),
 }));
@@ -178,6 +181,7 @@ const {
 } = await import("./writes");
 const { notifyDiscoveryQueueInsertBatch } = await import("@/lib/discoveryNotification");
 const { reconcileSourceSoundcloudLinks } = await import("./soundcloudLinks");
+const { resolveDiscogsSoundcloud } = await import("./discogsSoundcloud");
 const { enrichEventGenre } = await import("./enrichment");
 
 function fakeAdapter(fetchCandidates: () => Promise<RawCandidateEvent[]>): SourceAdapter {
@@ -1853,6 +1857,24 @@ describe("Unknown-venue visibility + source freshness (work package, 2026-08-31)
     );
   });
 
+  it("6b. a PARTIAL fetch is recorded as the source's lastError (health 'degraded') and returned in errors, naming what could not be read — never a silent 'ok' (HvadErPå coverage gap, 2026-11-06)", async () => {
+    const adapter: SourceAdapter = {
+      sourceId: "src-hvaderpaa",
+      fetchCandidates: () => Promise.resolve([rawCandidate]),
+      lastFetchWasComplete: () => false,
+      lastFetchProblems: () => ["MODULE programme not read: HTTP 429"],
+    };
+    const summary = await runSourceSync("src-hvaderpaa", "HvadErPå", adapter);
+
+    const { touchSourceSyncStats } = await import("./writes");
+    expect(touchSourceSyncStats).toHaveBeenCalledWith(
+      "src-hvaderpaa",
+      expect.objectContaining({ success: true, complete: false, error: expect.stringContaining("MODULE programme not read: HTTP 429") }),
+    );
+    expect(summary.outcome).toBe("ok");
+    expect(summary.errors).toEqual([expect.stringContaining("Incomplete fetch: 1 page(s)")]);
+  });
+
   it("7. once the venue is registered, the NEXT normal sync resolves it, re-evaluates the pipeline, and resolves the prior pending row as published — no manual edit, no manual event creation, no Billetto-specific code", async () => {
     const raahuset: Venue[] = [
       {
@@ -2410,6 +2432,52 @@ describe("Source-provided SoundCloud links in a source's own text (2026-11-03) �
       fakeAdapter(() => Promise.resolve([night({ soundcloudLinkReport: report, description: "TIM ANDRESEN: https://soundcloud.com/tim-andresen" })])),
     );
     expect(reconcileSourceSoundcloudLinks).toHaveBeenCalledWith("src-culture-box", new Map([["e-night", report]]));
+  });
+});
+
+describe("Discogs as a supplementary SoundCloud source (2026-11-07) — bounded lookups after the run", () => {
+  function matchNight(artists: string[], title = "Some Other Night") {
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([existingCultureBoxEvent({ id: "e-night", title, artists })]);
+    const once = (result: unknown[]) =>
+      ({ from: () => ({ where: () => Object.assign(Promise.resolve(result), { limit: () => Promise.resolve([]) }) }) }) as unknown as ReturnType<typeof db.select>;
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => once([{ eventId: "e-night", sourceUrl: "https://culture-box.com/event/some-other-night" }]))
+      .mockImplementationOnce(() => once([]))
+      .mockImplementationOnce(() => once([]));
+  }
+  const night = (overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent => ({
+    ...rawCandidate,
+    title: "Some Other Night",
+    officialEventUrl: "https://culture-box.com/event/some-other-night",
+    sourceUrl: "https://culture-box.com/events/",
+    ...overrides,
+  });
+
+  it("distinctive lineup names without a link this run are handed over, at most two lookups", async () => {
+    vi.mocked(resolveDiscogsSoundcloud).mockClear();
+    matchNight(["GUY J", "Sub Zero Project", "HP"]);
+    await runSourceSync(
+      "src-culture-box",
+      "Culture Box",
+      fakeAdapter(() => Promise.resolve([night({ artists: ["GUY J", "Sub Zero Project", "HP"], soundcloudLinkReport: { links: [{ name: "GUY J", url: "https://soundcloud.com/guy-j" }], absenceDocumented: true } })])),
+    );
+    // GUY J has a link this run, HP is short: only the distinctive unlinked name
+    expect(resolveDiscogsSoundcloud).toHaveBeenCalledWith(["Sub Zero Project"], 2);
+  });
+
+  it("a lineup with nothing worth looking up makes no call at all", async () => {
+    vi.mocked(resolveDiscogsSoundcloud).mockClear();
+    matchNight(["Some Other Night"]); // title copy: the identity rules would not show a profile
+    await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artists: ["Some Other Night"] })])));
+    expect(resolveDiscogsSoundcloud).not.toHaveBeenCalled();
+  });
+
+  it("a failing lookup never changes the sync's outcome", async () => {
+    vi.mocked(resolveDiscogsSoundcloud).mockRejectedValueOnce(new Error("boom"));
+    matchNight(["Sub Zero Project"]);
+    const result = await runSourceSync("src-culture-box", "Culture Box", fakeAdapter(() => Promise.resolve([night({ artists: ["Sub Zero Project"] })])));
+    expect(result.outcome).toBe("ok");
+    expect(result.errors).toEqual([]);
   });
 });
 

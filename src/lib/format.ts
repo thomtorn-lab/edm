@@ -1,4 +1,4 @@
-import { getCopenhagenParts, isMultiDayEvent, type NightlifeEvent } from "./datetime";
+import { copenhagenWallClockToUtc, getCopenhagenParts, isMultiDayEvent, type NightlifeEvent } from "./datetime";
 
 const WEEKDAY_ABBR = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -105,4 +105,24 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
 export function formatIsoDateForInput(datetime: string): string {
   const parts = getCopenhagenParts(new Date(datetime));
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
+/**
+ * The value for an admin `<input type="datetime-local">`: the instant's
+ * Europe/Copenhagen wall-clock date and time ("2026-11-06T23:59"). Paired
+ * with copenhagenDateTimeInputToIso — every admin date/time field reads and
+ * writes through these two, so the field shows Danish local time and saving
+ * an untouched field returns the exact same instant, in summer and winter
+ * time alike and whatever timezone the admin's browser is set to.
+ */
+export function toCopenhagenDateTimeInput(datetime: string): string {
+  return `${formatIsoDateForInput(datetime)}T${formatTimeLabel(datetime)}`;
+}
+
+/** Reads a datetime-local value as Europe/Copenhagen wall-clock time and returns the UTC ISO instant; null if it isn't a complete value. */
+export function copenhagenDateTimeInputToIso(value: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m.map(Number);
+  return copenhagenWallClockToUtc({ year: y, month: mo, day: d }, h, mi).toISOString();
 }

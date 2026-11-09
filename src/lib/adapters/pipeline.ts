@@ -23,6 +23,7 @@ import { deterministicGenreFromText, refineGenreFromText, hasRichGenreEvidence, 
 import { suggestSecondaryGenre } from "./secondaryGenreSuggestion";
 import { sanitizeExtractedTitle, normalizeExtractedText, truncateAtBoundary, DESCRIPTION_SAFETY_MAX_LENGTH } from "./htmlExtraction";
 import { isPastEvent } from "../datetime";
+import { isEditorialPriorityVenue } from "../data/venues";
 import type { RawCandidateEvent } from "./types";
 
 /**
@@ -231,9 +232,15 @@ function computeDecision(
     missingFields.every((f) => f !== "date") &&
     resolvedVenueId != null &&
     missingFields.every((f) => f !== "source url");
+  // One of the four always-relevant venues (EDITORIAL_PRIORITY_VENUE_IDS).
+  // Only a real resolved venue id counts — the venue-resolution
+  // counterfactual's placeholder never matches.
+  const editorialPriorityVenue = isEditorialPriorityVenue(resolvedVenueId);
   // A trusted-electronic source (Section 6) IS itself relevance evidence —
-  // no genre keyword needs to have matched at all.
-  const hasCredibleElectronicRelevance = genre != null || trustedElectronicSource;
+  // no genre keyword needs to have matched at all. So is an event at an
+  // editorial-priority venue, for relevance only (see the review-queue floor
+  // below: the venue alone never auto-publishes).
+  const hasCredibleElectronicRelevance = genre != null || trustedElectronicSource || editorialPriorityVenue;
   // Generalized discovery-queue genre self-heal, 2026-09-06 — deliberately
   // NOT the same as meetsMinimumFields: venue resolution is excluded on
   // purpose. Whether a venue name matches the registry says nothing about
@@ -349,6 +356,16 @@ function computeDecision(
     // this is genreConfidence being neither "high" nor "medium" — a
     // confidence gap, not a relevance judgment.
     holdReason = "low_confidence";
+  }
+
+  // EDITORIAL-PRIORITY VENUE FLOOR (2026-11-06): an event at MODULE, Den
+  // Anden Side, Hangaren or Culture Box with complete core data is never
+  // held for missing/uncertain genre or for a genre-word contradiction —
+  // it goes to Needs Review for a human. Incomplete data still holds, and
+  // nothing here can produce auto_publish.
+  if (editorialPriorityVenue && meetsMinimumFields && decision === "hold") {
+    decision = "review_queue";
+    holdReason = null;
   }
 
   // A likely duplicate always needs a human merge decision before publishing,

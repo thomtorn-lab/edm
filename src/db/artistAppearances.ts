@@ -45,7 +45,17 @@ export interface ReconcileSummary {
   verifiedArtists: number;
   upserts: number;
   byConfidence: Record<string, number>;
+  /** Appearances of followed artists that just became public in review (see onFollowedReview). */
+  followedReview?: number;
   skipped?: "locked";
+}
+
+/** A followed artist's appearance that just became public but needs an admin before it can alert. */
+export interface FollowedReviewAppearance {
+  eventId: string;
+  eventTitle: string;
+  displayName: string;
+  reason: string | null;
 }
 
 /**
@@ -55,15 +65,22 @@ export interface ReconcileSummary {
  * with the transaction and writes no row anywhere, so a run touches only
  * artists and event_artists (and, after a verification, alert_follows).
  */
-export async function reconcileArtistAppearances(now: Date = new Date()): Promise<ReconcileSummary> {
-  return db.transaction(async (tx) => {
+export async function reconcileArtistAppearances(
+  now: Date = new Date(),
+  opts: { onFollowedReview?: (items: FollowedReviewAppearance[]) => Promise<void> } = {},
+): Promise<ReconcileSummary> {
+  const followedReview: FollowedReviewAppearance[] = [];
+  const summary = await db.transaction(async (tx) => {
     const lock = await tx.execute<{ ok: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtext('artist-alerts-reconcile')) AS ok`);
     if (!lock.rows[0]?.ok) return { events: 0, newArtists: 0, verifiedArtists: 0, upserts: 0, byConfidence: {}, skipped: "locked" as const };
-    return reconcileInTransaction(tx, now);
+    return reconcileInTransaction(tx, now, opts.onFollowedReview ? followedReview : null);
   });
+  // After commit, and only once per appearance: visible_since is written once, by the run that first sees it.
+  if (opts.onFollowedReview && followedReview.length > 0) await opts.onFollowedReview(followedReview);
+  return summary;
 }
 
-async function reconcileInTransaction(tx: Tx, now: Date): Promise<ReconcileSummary> {
+async function reconcileInTransaction(tx: Tx, now: Date, followedReview: FollowedReviewAppearance[] | null): Promise<ReconcileSummary> {
   const publicEvents = await tx.select({ id: events.id, title: events.title, artists: events.artists }).from(events).where(publicUpcomingEventCondition(now));
   const artistRows = await tx.select().from(artists);
   const appearanceRows = await tx.select().from(eventArtists);
@@ -99,7 +116,32 @@ async function reconcileInTransaction(tx: Tx, now: Date): Promise<ReconcileSumma
 
   const byConfidence: Record<string, number> = {};
   for (const u of result.upserts) if (!u.removedAt) byConfidence[u.confidence] = (byConfidence[u.confidence] ?? 0) + 1;
-  return { events: publicEvents.length, newArtists: result.newArtists.length, verifiedArtists: result.verifiedArtistIds.length, upserts: result.upserts.length, byConfidence };
+  const summary: ReconcileSummary = { events: publicEvents.length, newArtists: result.newArtists.length, verifiedArtists: result.verifiedArtistIds.length, upserts: result.upserts.length, byConfidence };
+
+  if (followedReview) {
+    // Newly public appearances in review whose artist someone follows: the
+    // admin has the safety hold to confirm them, so tell them now (2026-11-06,
+    // the Ayla event: a short name stays in review until confirmed).
+    const seen = new Set(appearanceRows.filter((a) => a.visibleSince).map((a) => `${a.eventId}|${a.nameKey}`));
+    const fresh = result.upserts.filter((u) => u.confidence === "review" && !u.removedAt && u.artistId && u.visibleSince && !seen.has(`${u.eventId}|${u.nameKey}`));
+    const artistIds = [...new Set(fresh.map((u) => u.artistId!))];
+    const followed = artistIds.length
+      ? new Set(
+          (
+            await tx
+              .selectDistinct({ artistId: alertFollows.artistId })
+              .from(alertFollows)
+              .where(and(inArray(alertFollows.artistId, artistIds), sql`${alertFollows.activeSince} IS NOT NULL`))
+          ).map((r) => r.artistId),
+        )
+      : new Set<string>();
+    const titles = new Map(publicEvents.map((e) => [e.id, e.title]));
+    for (const u of fresh) {
+      if (followed.has(u.artistId!)) followedReview.push({ eventId: u.eventId, eventTitle: titles.get(u.eventId) ?? u.eventId, displayName: u.displayName, reason: u.reason });
+    }
+    summary.followedReview = followedReview.length;
+  }
+  return summary;
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -184,17 +226,21 @@ export interface FollowableArtist {
  * Everyone who can be followed: identities seen as performers (not
  * excluded or rejected), plus verified ones. Requested artists are not
  * listed publicly; only their requester sees them, on the manage page.
+ * `upcomingEvents` counts the distinct public upcoming events the artist is
+ * billed on as the site shows them — including appearances still in review
+ * and those of identities merged into this one — not only the alertable ones.
  */
 export async function listFollowableArtists(now: Date = new Date()): Promise<FollowableArtist[]> {
   const rows = await db.execute<{ id: string; display_name: string; disambiguation: string | null; upcoming: number }>(sql`
     SELECT a.id, a.display_name, a.disambiguation,
       COUNT(DISTINCT ea.event_id) FILTER (
-        WHERE ea.confidence IN ('high', 'confirmed') AND ea.removed_at IS NULL
+        WHERE ea.confidence IN ('high', 'confirmed', 'review') AND ea.removed_at IS NULL
           AND e.published = true AND e.cancelled = false AND e.admin_unpublish_reason IS NULL AND e.source_cancelled_at IS NULL
           AND COALESCE(e.end_datetime, e.start_datetime + interval '1 day') > ${now}
       )::int AS upcoming
     FROM artists a
-    LEFT JOIN event_artists ea ON ea.artist_id = a.id
+    LEFT JOIN artists m ON m.id = a.id OR m.merged_into_id = a.id
+    LEFT JOIN event_artists ea ON ea.artist_id = m.id
     LEFT JOIN events e ON e.id = ea.event_id
     WHERE a.merged_into_id IS NULL AND a.status IN ('auto', 'verified')
     GROUP BY a.id

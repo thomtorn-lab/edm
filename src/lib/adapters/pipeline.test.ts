@@ -51,7 +51,7 @@ describe("runIngestionPipeline", () => {
 
   it("holds when genre cannot be determined at all", () => {
     const result = runIngestionPipeline(
-      raw({ genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+      raw({ venueName: "Pumpehuset", genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
       { venues: VENUES, existingEvents: [] },
     );
     expect(result.genre).toBeNull();
@@ -584,7 +584,7 @@ describe("relevance check reaches medium-confidence (review_queue) candidates to
 
   it("holds, rather than review-queues, a medium-confidence generic-electronic candidate whose own text carries a one-sided non-electronic signal with no offsetting evidence", () => {
     const result = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         title: "Support Act Night",
         description: "A DJ-led electronic warm-up, followed by the headline act — a well-known local jazz trio.",
         artists: [],
@@ -653,7 +653,7 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
 
   it("holds a bossa nova/MPB artist whose only 'electronic' evidence is one incidental production adjective (real ALICE evidence: Bruno Berle BR's own bio explicitly self-identifies as 'Música Popular Brasileira (MPB)', with 'subtle electronic textures' as the sole electronic mention)", () => {
     const result = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         title: "Bruno Berle BR",
         description:
           "With a voice of pure gold and a featherlight, deeply sensitive take on samba and bossa nova, Bruno Berle has emerged as one of the leading names in a new wave of Brazilian artists. Alongside names such as Bala Desejo, Zé Ibarra and Ana Frango Elétrico, the composer, singer and multi-instrumentalist is gently expanding the boundaries of Música Popular Brasileira (MPB) — the influential movement that emerged in the 1960s, blending traditional Brazilian genres like samba and bossa nova with pop, jazz and rock. His music effortlessly weaves together indie pop and subtle electronic textures.",
@@ -669,7 +669,7 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
 
   it("holds a flamenco guitarist whose only 'electronic' mention names a DIFFERENT collaborator, never the event's own sound (real ALICE evidence: Yerai Cortés ES — 'collaborating with contemporary artists such as icon C. Tangana, pop star Judeline, and electronic musician Floating Points')", () => {
     const result = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         title: "Yerai Cortés ES",
         description:
           "With his masterful guitar playing, Yerai Cortés has established himself as one of the most distinctive voices of flamenco's new generation. He has performed with many of flamenco's great masters while also collaborating with contemporary artists such as icon C. Tangana, pop star Judeline, and electronic musician Floating Points. His playing is elegant, expressive, and profoundly moving.",
@@ -685,7 +685,7 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
 
   it("holds a nine-piece afrojazz/funk/soul ensemble whose bio names six non-electronic genre families against one incidental 'electronic music' mention tacked onto the end of that list (real ALICE evidence: Nubiyan Twist UK — 'genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music')", () => {
     const result = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         title: "Nubiyan Twist UK",
         description:
           "Nubiyan Twist deliver an energetic fusion of jazz, funk and soul that is nearly impossible to stand still to. Nubiyan Twist was formed in 2011 at Leeds College of Music, where they developed their expansive, genre-blending sound drawing on jazz, hip hop, afrobeat, dancehall, soul, reggae and electronic music. The nine-piece ensemble spans saxophone, trumpet, vocals and percussion.",
@@ -712,7 +712,7 @@ describe("generalized relevance fixes for real Needs Review false positives (rou
   // match, which is what actually let this row through before.
   it("holds a jazz/chamber-ensemble show whose only specific-genre match is a bare, non-rich 'ambient' keyword, once 'electronics' is recognized as pure instrumentation (real ALICE evidence: Daniel Sommer/Arve Henriksen/Johannes Lundberg)", () => {
     const result = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         title: "Daniel Sommer / Arve Henriksen / Johannes Lundberg: Sounds & Sequences",
         description:
           "Sounds & Sequences brings together three distinctive voices from the Nordic improvised music scene. Drawing on jazz, chamber music, ambient and free improvisation, the trio creates a shared musical language where acoustic instruments and electronics open up new sonic possibilities. Arve Henriksen's trumpet, voice and electronics, Johannes Lundberg's double bass and Daniel Sommer's drumming move between simple melodies, open improvisation and rhythmic passages.",
@@ -865,7 +865,7 @@ describe("moved/rescheduled first-party events (data-quality Workstream C)", () 
 describe("applyEnrichedGenre", () => {
   function unresolvedResult() {
     return runIngestionPipeline(
-      raw({ genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
+      raw({ venueName: "Pumpehuset", genreHint: null, genreConfidenceHint: null, title: "Friday Night Out", description: "Drinks and vibes." }),
       { venues: VENUES, existingEvents: [] },
     );
   }
@@ -1015,7 +1015,7 @@ describe("Final EDM Relevance Rule (2026-08-30) — relevanceText must carry the
 
   it("Käärijä: real bio surfaces a genuine 'punk-rap' negative signal once relevanceText carries it, holding a Discogs-corroborated specific genre instead of letting it auto_publish", () => {
     const withoutRelevanceText = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         sourceId: "src-pumpehuset",
         title: "Käärijä",
         description: null, // nulled by the adapter's English-language guard, same as real Production
@@ -1034,6 +1034,7 @@ describe("Final EDM Relevance Rule (2026-08-30) — relevanceText must carry the
 
     const withRelevanceText = runIngestionPipeline(
       raw({
+        venueName: "Pumpehuset",
         sourceId: "src-pumpehuset",
         title: "Käärijä",
         description: null,
@@ -1259,7 +1260,7 @@ describe("Billetto Discovery Queue noise (data-quality Workstream, 2026-08-24 qu
       genreConfidenceHint: null,
       description: "",
       artists: [],
-      venueName: "Culture Box", // resolved, so the negative-signal branch (not "incomplete_data") is what's under test
+      venueName: "Pumpehuset", // resolved (and not an editorial-priority venue), so the negative-signal branch (not "incomplete_data") is what's under test
       ...overrides,
     });
   }
@@ -1604,7 +1605,7 @@ describe("KultuNaut publish work package (2026-09-05) — generalized relevance-
 describe("generalized discovery-queue genre self-heal (2026-09-06) — authoritative vs unreliable null at the pipeline level", () => {
   it("full record + real evidence text + no genre + no negative signal -> holdReason 'no_genre_evidence' (authoritative)", () => {
     const result = runIngestionPipeline(
-      raw({
+      raw({ venueName: "Pumpehuset",
         genreHint: null,
         genreConfidenceHint: null,
         title: "Wheelchair Access Notice",
@@ -1627,7 +1628,7 @@ describe("generalized discovery-queue genre self-heal (2026-09-06) — authorita
   });
 
   it("no evidence text at all this run (empty description/relevanceText) -> holdReason 'incomplete_data', not 'no_genre_evidence' — a real fetch/parse gap must not look authoritative just because the record's other fields are present", () => {
-    const result = runIngestionPipeline(raw({ genreHint: null, genreConfidenceHint: null, description: "" }), {
+    const result = runIngestionPipeline(raw({ venueName: "Pumpehuset", genreHint: null, genreConfidenceHint: null, description: "" }), {
       venues: VENUES,
       existingEvents: [],
     });
@@ -1666,6 +1667,7 @@ describe("generalized discovery-queue genre self-heal (2026-09-06) — authorita
   it("a real negative-relevance signal still wins over 'no_genre_evidence' — the two authoritative reasons are mutually exclusive per candidate", () => {
     const result = runIngestionPipeline(
       raw({
+        venueName: "Pumpehuset",
         genreHint: null,
         genreConfidenceHint: null,
         description: "A night of pure heavy metal and hardcore punk, no electronic music whatsoever.",
@@ -1843,5 +1845,46 @@ describe("runIngestionPipeline — Den Anden Side rooms ship inert (DAS_ROOMS_EN
     runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
     expect(candidate.title).toBe("Kilele x DAS at Den Anden Ende");
     expect(candidate.description).toBe("Afro house all night.");
+  });
+});
+
+describe("editorial-priority venues (MODULE, Den Anden Side, Hangaren, Culture Box — 2026-11-06)", () => {
+  // A HvadErPå-style MODULE candidate whose own text names no genre at all
+  // (real shape: "TANZEN UND SPRINGEN X MODULE", "MODULE NYE 2027").
+  function priorityRaw(venueName: string, overrides: Partial<RawCandidateEvent> = {}): RawCandidateEvent {
+    return raw({
+      sourceId: "src-hvaderpaa",
+      title: "TANZEN UND SPRINGEN X MODULE",
+      description: "TANZEN UND SPRINGEN præsenterer en lang nat.",
+      artists: [],
+      genreHint: null,
+      genreConfidenceHint: null,
+      venueName,
+      ...overrides,
+    });
+  }
+
+  it.each(["MODULE", "Den Anden Side", "Hangaren", "Culture Box"])("routes a genre-less event at %s to review instead of holding it", (venueName) => {
+    const result = runIngestionPipeline(priorityRaw(venueName), { venues: VENUES, existingEvents: [] });
+    expect(result.genre).toBeNull();
+    expect(result.decision).toBe("review_queue");
+    expect(result.holdReason).toBeNull();
+  });
+
+  it("never auto-publishes on the venue alone, and a genre-word contradiction still reaches a human instead of being rejected", () => {
+    const result = runIngestionPipeline(priorityRaw("MODULE", { description: "Live jazz and folk night." }), { venues: VENUES, existingEvents: [] });
+    expect(result.decision).toBe("review_queue");
+    expect(result.holdReason).toBeNull();
+  });
+
+  it("keeps the required-data checks: a priority-venue event with no date still holds", () => {
+    const result = runIngestionPipeline(priorityRaw("MODULE", { startDatetime: null as unknown as string }), { venues: VENUES, existingEvents: [] });
+    expect(result.decision).toBe("hold");
+  });
+
+  it("does not apply to other venues", () => {
+    const result = runIngestionPipeline(priorityRaw("Pumpehuset"), { venues: VENUES, existingEvents: [] });
+    expect(result.decision).toBe("hold");
+    expect(result.holdReason).toBe("no_genre_evidence");
   });
 });

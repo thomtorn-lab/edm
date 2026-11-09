@@ -380,9 +380,38 @@ describe("DiscoveryQueue — End time / Ticket URL / FREE fields in the real pre
     );
     const [, options] = fetchMock.mock.calls[0];
     const { patch } = JSON.parse((options as { body: string }).body);
-    expect(patch.probableEnd).toBe(new Date("2026-09-21T02:00").toISOString());
+    // Copenhagen wall-clock time (CEST, UTC+2), whatever the browser timezone.
+    expect(patch.probableEnd).toBe("2026-09-21T00:00:00.000Z");
     expect(patch.probableTicketUrl).toBe("https://tickets.example.com/kaj");
     expect(patch.probableFree).toBe(true);
+  });
+
+  // Regression (MODULE / Den Anden Side time-shift, 2026-11-06): the editor
+  // used to pre-fill the UTC hour and save it back as Copenhagen time, so any
+  // save (e.g. only setting a genre) moved the event 1h earlier in winter
+  // time and 2h in summer time.
+  it.each([
+    ["winter time (CET)", "2026-11-06T22:59:00.000Z", "2026-11-07T07:00:00.000Z", "2026-11-06T23:59"],
+    ["summer time (CEST)", "2026-09-12T21:59:00.000Z", "2026-09-13T06:00:00.000Z", "2026-09-12T23:59"],
+  ])("shows Copenhagen time and leaves start/end unchanged when saving genre, title and other fields — %s", async (_label, start, end, shown) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box", probableStart: start, probableEnd: end })]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText(/Date & time/) as HTMLInputElement).value).toBe(shown);
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Renamed night" } });
+    fireEvent.click(screen.getByLabelText(/Free entry/));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const { patch } = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(patch.predictedGenre).toBe("house");
+    expect(patch.probableTitle).toBe("Renamed night");
+    // Sent unchanged, so the server's changed/unchanged split records no time override.
+    expect(patch.probableStart).toBe(start);
+    expect(patch.probableEnd).toBe(end);
   });
 
   it("pre-fills End time, Ticket URL, and FREE from the candidate's existing values when opening the editor (e.g. already extracted by the admin 'Add event from URL' tool for 'Kaj - Din ven i solen')", () => {
@@ -404,7 +433,8 @@ describe("DiscoveryQueue — End time / Ticket URL / FREE fields in the real pre
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect((screen.getByLabelText(/Ticket URL/) as HTMLInputElement).value).toBe("https://tickets.example.com/kaj");
     expect((screen.getByLabelText(/Free entry/) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText(/End time/) as HTMLInputElement).value).toBe("2026-09-21T02:00");
+    // 02:00 UTC is 04:00 in Copenhagen (CEST) — the field shows Danish local time.
+    expect((screen.getByLabelText(/End time/) as HTMLInputElement).value).toBe("2026-09-21T04:00");
   });
 
   it("leaves end time out of the patch (never sends a corrupted value) when it was never touched and the candidate never had one", async () => {

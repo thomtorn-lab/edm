@@ -5,7 +5,7 @@ import { resolveVenue } from "@/lib/normalize";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "@/lib/dedup";
 import { isDiscoveryRowCurrent, classifyVenueBlock } from "@/lib/sync";
 import { buildApiKeypairHeader } from "@/lib/adapters/billettoAdapter";
-import { isPastEvent } from "@/lib/datetime";
+import { isPastEvent, getCopenhagenParts } from "@/lib/datetime";
 import { isTrustedElectronicSource } from "@/lib/data/sources";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
 import { createKultunautAdapter, KULTUNAUT_SOURCE_ID } from "@/lib/adapters/kultunautAdapter";
@@ -91,6 +91,15 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
     else out[body.slice(0, eq)] = body.slice(eq + 1);
   }
   return out;
+}
+
+/** "2026-11-06 23:00 (UTC+1)" — an instant's Europe/Copenhagen wall clock and its offset, for time audits. */
+function formatCopenhagenWallClock(iso: string): string {
+  const d = new Date(iso);
+  const p = getCopenhagenParts(d);
+  const offsetHours = Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - Math.floor(d.getTime() / 60_000) * 60_000) / 3_600_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)} (UTC+${offsetHours})`;
 }
 
 function section(title: string) {
@@ -545,11 +554,26 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
     if (titleFilter && (matchAllTitles || raw.title.toLowerCase().includes(titleFilter))) {
       evidenceDetail.push({
         title: raw.title,
+        sourceUrl: raw.sourceUrl,
+        // Timing as the adapter produced it (UTC instant) plus its
+        // Europe/Copenhagen wall-clock reading — the two values a
+        // source-vs-ElectronicCPH time comparison needs (MODULE/Den Anden
+        // Side time-shift audit, 2026-11-06).
+        startDatetime: raw.startDatetime,
+        startCopenhagen: raw.startDatetime ? formatCopenhagenWallClock(raw.startDatetime) : null,
+        endDatetime: raw.endDatetime,
+        endCopenhagen: raw.endDatetime ? formatCopenhagenWallClock(raw.endDatetime) : null,
+        residentAdvisorUrl: raw.residentAdvisorUrl ?? null,
+        resolvedVenueId: result.resolvedVenueId,
+        duplicateOfEventId: result.duplicateOfEventId,
+        duplicateConfidence: result.duplicateConfidence,
         venue: raw.venueName,
         artists: raw.artists,
         genreHint: raw.genreHint,
         genreConfidenceHint: raw.genreConfidenceHint,
-        description: raw.description,
+        // Omitted for the "*" (every candidate) dump so a large source's
+        // full time/queue audit still fits in one job log.
+        description: matchAllTitles ? undefined : raw.description,
         decision: result.decision,
         holdReason: result.holdReason,
         genre: result.genre,
@@ -625,6 +649,65 @@ async function modeAdapterDryRun(client: Client, args: Record<string, string | b
   section(`Unresolved venues (${unresolvedVenues.size} distinct)`);
   console.log(JSON.stringify([...unresolvedVenues.entries()].map(([venue, count]) => ({ venue, count })), null, 2));
   if (titleFilter) {
+    // What ElectronicCPH already holds for each matching candidate (any
+    // status): its Discovery Queue row (first registered = created_at) and,
+    // via source_event_links, the canonical event's stored times and which
+    // fields an admin has locked — so "never discovered / pending / ignored /
+    // published / manually corrected" can be read off one run.
+    const urls = evidenceDetail.map((d) => d.sourceUrl as string);
+    if (urls.length > 0) {
+      const dq = await client.query(
+        `SELECT source_url, status, hold_reason, overall_confidence, predicted_genre, probable_start, probable_end, created_at, last_seen_at, resolved_at
+         FROM discovery_queue WHERE source_url = ANY($1)`,
+        [urls],
+      );
+      const links = await client.query(
+        `SELECT l.source_url, e.id, e.title, e.start_datetime, e.end_datetime, e.published, e.overridden_fields, e.created_at
+         FROM source_event_links l JOIN events e ON e.id = l.event_id WHERE l.source_url = ANY($1)`,
+        [urls],
+      );
+      const dupIds = evidenceDetail.map((d) => d.duplicateOfEventId).filter((id): id is string => typeof id === "string");
+      const dupEvents = await client.query(
+        `SELECT id, title, start_datetime, end_datetime, published, overridden_fields FROM events WHERE id = ANY($1)`,
+        [dupIds],
+      );
+      for (const d of evidenceDetail) {
+        const dup = dupEvents.rows.find((r) => r.id === d.duplicateOfEventId);
+        d.matchedEvent = dup
+          ? {
+              id: dup.id,
+              published: dup.published,
+              startCopenhagen: formatCopenhagenWallClock(new Date(dup.start_datetime as string).toISOString()),
+              endCopenhagen: dup.end_datetime ? formatCopenhagenWallClock(new Date(dup.end_datetime as string).toISOString()) : null,
+              overriddenFields: dup.overridden_fields,
+            }
+          : null;
+        const row = dq.rows.find((r) => r.source_url === d.sourceUrl);
+        d.discoveryQueue = row
+          ? {
+              status: row.status,
+              holdReason: row.hold_reason,
+              overallConfidence: row.overall_confidence,
+              predictedGenre: row.predicted_genre,
+              probableStartCopenhagen: row.probable_start ? formatCopenhagenWallClock(new Date(row.probable_start as string).toISOString()) : null,
+              firstRegisteredAt: row.created_at ? new Date(row.created_at as string).toISOString() : null,
+              lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at as string).toISOString() : null,
+              resolvedAt: row.resolved_at ? new Date(row.resolved_at as string).toISOString() : null,
+            }
+          : null;
+        d.linkedEvents = links.rows
+          .filter((r) => r.source_url === d.sourceUrl)
+          .map((r) => ({
+            id: r.id,
+            title: r.title,
+            published: r.published,
+            startCopenhagen: formatCopenhagenWallClock(new Date(r.start_datetime as string).toISOString()),
+            endCopenhagen: r.end_datetime ? formatCopenhagenWallClock(new Date(r.end_datetime as string).toISOString()) : null,
+            overriddenFields: r.overridden_fields,
+            createdAt: new Date(r.created_at as string).toISOString(),
+          }));
+      }
+    }
     section(`Evidence detail for --title="${args.title}" (${evidenceDetail.length} matches) — full source text + verdict, any decision bucket`);
     console.log(JSON.stringify(evidenceDetail, null, 2));
   }
@@ -678,6 +761,76 @@ async function decodeResponseBody(res: Response): Promise<string> {
  * against Production as many times as needed without warming/polluting it
  * (a real cache warm only ever happens via src/db/writes.ts::createEvent).
  */
+/**
+ * SoundCloud via Discogs dry run (2026-11-06): for each given artist, the
+ * existing Discogs identity lookup (getOrLookupArtistGenre with an in-memory
+ * cache — never the artist_genre_cache table), the Discogs artist's own
+ * listed URLs, and SoundCloud's public oEmbed display name for the single
+ * profile, assessed by assessDiscogsSoundcloud. No DB connection, nothing
+ * stored, nothing linked. Paced under Discogs' unauthenticated 25/min limit.
+ */
+async function modeSoundcloudDiscogsDryRun(_client: Client, args: Record<string, string | boolean>) {
+  const artistsRaw = typeof args.artists === "string" ? args.artists : null;
+  if (!artistsRaw) throw new Error('soundcloud-discogs-dry-run requires --artists="Artist One, Artist Two, ..."');
+  const names = artistsRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 40);
+  const { getOrLookupArtistGenre } = await import("@/lib/enrichment/genreEnrichment");
+  const discogs = await import("@/lib/enrichment/discogsClient");
+  const { assessDiscogsSoundcloud, soundcloudProfilesFromUrls } = await import("@/lib/soundcloudEvidence/discogsCandidate");
+
+  const pause = (ms = 3000) => new Promise((resolve) => setTimeout(resolve, ms)); // < 25 requests/min
+  // Discogs' unauthenticated window is tighter from shared runner IPs: one wait-and-retry on HTTP 429.
+  const withRetry = async <T>(call: () => Promise<T>): Promise<T> => {
+    await pause();
+    try {
+      return await call();
+    } catch (err) {
+      if (!(err instanceof Error && /HTTP 429/.test(err.message))) throw err;
+      await pause(65_000);
+      return call();
+    }
+  };
+  const paced = {
+    searchArtist: (n: string) => withRetry(() => discogs.searchArtist(n)),
+    getArtistReleaseIds: (id: number, limit: number) => withRetry(() => discogs.getArtistReleaseIds(id, limit)),
+    getReleaseGenres: (id: number) => withRetry(() => discogs.getReleaseGenres(id)),
+  };
+  const memory = new Map<string, Awaited<ReturnType<typeof getOrLookupArtistGenre>>>();
+  const cache = { get: async (k: string) => memory.get(k) ?? null, set: async (e: Awaited<ReturnType<typeof getOrLookupArtistGenre>>) => void memory.set(e.artistNameNormalized, e) };
+
+  section(`SoundCloud via Discogs dry run — ${names.length} artist(s), in-memory only, nothing stored`);
+  const tally = { verifiable: 0, uncertain: 0, missing: 0, failed: 0 };
+  for (const name of names) {
+    try {
+      const entry = await getOrLookupArtistGenre(name, cache, paced);
+      let urls: string[] | null = null;
+      let displayName: string | null = null;
+      if (entry.lookupStatus === "found" && entry.discogsArtistId) {
+        const artistId = entry.discogsArtistId;
+        urls = await withRetry(() => discogs.getArtistUrls(artistId));
+        const profiles = soundcloudProfilesFromUrls(urls);
+        if (profiles.length === 1) {
+          const res = await fetch(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(profiles[0])}`, { signal: AbortSignal.timeout(8000) });
+          if (res.ok) displayName = ((await res.json()) as { author_name?: string }).author_name ?? null;
+        }
+      }
+      const a = assessDiscogsSoundcloud({
+        name,
+        lookupStatus: entry.lookupStatus as "found" | "not_found" | "ambiguous",
+        identityConfidence: entry.identityConfidence as "medium" | "low" | null,
+        discogsUrls: urls,
+        soundcloudDisplayName: displayName,
+      });
+      tally[a.verdict]++;
+      console.log(`${a.verdict.toUpperCase().padEnd(10)} "${name}" discogs=${entry.discogsArtistId ?? "-"} identity=${entry.identityConfidence ?? "-"} profile=${a.profileUrl ?? "-"} soundcloudName=${displayName ? JSON.stringify(displayName) : "-"} | ${a.reason}`);
+    } catch (err) {
+      tally.failed++;
+      console.log(`FAILED     "${name}" | ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  section("Summary");
+  console.log(JSON.stringify(tally));
+}
+
 async function modeYoutubePreviewDryRun(_client: Client, args: Record<string, string | boolean>) {
   const artistsRaw = typeof args.artists === "string" ? args.artists : null;
   if (!artistsRaw) throw new Error("youtube-preview-dry-run requires --artists=\"Artist One, Artist Two, ...\"");
@@ -2986,11 +3139,16 @@ async function main() {
     await modeYoutubePreviewDryRun(null as unknown as Client, args);
     return;
   }
+  if (mode === "soundcloud-discogs-dry-run") {
+    // No DB connection needed — Discogs + SoundCloud oEmbed reads, nothing stored.
+    await modeSoundcloudDiscogsDryRun(null as unknown as Client, args);
+    return;
+  }
 
   const runner = runners[mode];
   if (!runner) {
     console.error(
-      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
+      `::error::Unknown --mode="${mode}". Valid modes: inventory, discovery-queue, source-links, health, lock-status, dedup-simulate, reachability, snapshot, venues, venue-events, discovery-queue-venues, venue-blocks, event-integrity, text-leakage-audit, cancellation-audit, link-role-audit, db-integrity, adapter-dry-run, admin-queue-audit, ignore-persistence-audit, genre-taxonomy-audit, youtube-preview-dry-run, soundcloud-discogs-dry-run, youtube-preview-backfill-plan, youtube-preview-backlog-projection, youtube-preview-cache-row, migration-status, artist-genre-cache, review-discogs-measure.`,
     );
     process.exit(1);
   }

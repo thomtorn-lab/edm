@@ -73,3 +73,9 @@ export async function getReleaseGenres(releaseId: number): Promise<DiscogsReleas
   const data = (await discogsGet(`/releases/${releaseId}`)) as { genres?: string[]; styles?: string[] };
   return { genres: data.genres ?? [], styles: data.styles ?? [] };
 }
+
+/** The artist's own profile/site URLs as listed on Discogs (GET /artists/{id}, field `urls`). */
+export async function getArtistUrls(artistId: number): Promise<string[]> {
+  const data = (await discogsGet(`/artists/${artistId}`)) as { urls?: unknown };
+  return Array.isArray(data.urls) ? data.urls.filter((u): u is string => typeof u === "string") : [];
+}

@@ -118,23 +118,86 @@ ${names ? `<p>Artists: ${escapeHtml(names)}</p>` : ""}
   return { subject: "Confirm your Electronic CPH artist alerts", html, text };
 }
 
-/** For an address that already gets Artist Alerts and used the public form again: its manage link, nothing else. */
-export function buildManageLinkEmail(input: { manageToken: string }): EmailContent {
-  const url = manageUrl(input.manageToken);
-  const text = [
-    "You already get Electronic CPH artist alerts at this address.",
-    "",
-    "Add or remove artists here (no new confirmation needed):",
-    url,
-    "",
-    "If you didn't ask for this, you can ignore this email.",
-  ].join("\n");
+export interface ManagePicks {
+  artistIds: string[];
+  requests: { name: string; profileUrl?: string | null }[];
+}
+
+/**
+ * Manage link carrying a visitor's not-yet-applied picks (from the public
+ * form). Nothing is stored: the picks travel in the link, and the manage page
+ * only adds them when the subscriber presses the button there.
+ */
+export function manageUrlWithPicks(token: string, picks?: ManagePicks): string {
+  const base = manageUrl(token);
+  if (!picks || (picks.artistIds.length === 0 && picks.requests.length === 0)) return base;
+  const parts = [base];
+  if (picks.artistIds.length) parts.push(`add=${picks.artistIds.map(encodeURIComponent).join(",")}`);
+  if (picks.requests.length) {
+    const json = JSON.stringify(picks.requests.map((r) => ({ name: r.name, profileUrl: r.profileUrl ?? null })));
+    parts.push(`req=${Buffer.from(json, "utf8").toString("base64url")}`);
+  }
+  return parts.join("&");
+}
+
+/** Reads the picks back on the manage page; anything malformed is ignored. */
+export function decodeRequestPicks(raw: string | undefined): unknown {
+  if (!raw || raw.length > 4000) return [];
+  try {
+    return JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+  } catch {
+    return [];
+  }
+}
+
+/** Manage link for a confirmed subscriber (public form used again, or "Manage Artist Alerts"). */
+export function buildManageLinkEmail(input: { manageToken: string; picks?: ManagePicks }): EmailContent {
+  const url = manageUrlWithPicks(input.manageToken, input.picks);
+  const withPicks = !!input.picks && input.picks.artistIds.length + input.picks.requests.length > 0;
+  const lead = withPicks ? "Open your artist alerts to add the artists you just picked:" : "Manage the artists you follow on Electronic CPH:";
+  const text = [lead, url, "", "If you didn't ask for this, you can ignore this email."].join("\n");
   const html = `<!doctype html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;">
-<p>You already get Electronic CPH artist alerts at this address.</p>
-<p><a href="${escapeHtml(url)}">Add or remove your artists</a> (no new confirmation needed).</p>
+<p>${escapeHtml(lead)}</p>
+<p><a href="${escapeHtml(url)}">${withPicks ? "Add your artists" : "Manage your artist alerts"}</a></p>
 <p style="color:#666;font-size:12px;">If you didn't ask for this, you can ignore this email.</p>
 </body></html>`;
   return { subject: "Your Electronic CPH artist alerts", html, text };
+}
+
+/** One result email per requester when an admin approves or rejects a requested artist. */
+export function buildRequestResultEmail(input: { artistName: string; approved: boolean; manageToken: string }): EmailContent {
+  const url = manageUrl(input.manageToken);
+  const name = input.artistName;
+  const subject = input.approved ? `You're now following ${name}` : `We couldn't add ${name}`;
+  const body = input.approved
+    ? [`Your artist request has been approved. You're now following ${name} on Electronic CPH.`, "", `We'll email you when new events featuring ${name} are added.`]
+    : [`We couldn't approve your request for ${name}, so you won't get alerts for it.`];
+  const text = [...body, "", `Manage your artist alerts: ${url}`].join("\n");
+  const html = `<!doctype html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;">
+${body.filter(Boolean).map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
+<p><a href="${escapeHtml(url)}">Manage your artist alerts</a></p>
+</body></html>`;
+  return { subject, html, text };
+}
+
+/** To the site's own inbox when a request first gets a confirmed requester. */
+export function buildAdminRequestEmail(input: { requests: { displayName: string; profileUrl: string | null }[] }): EmailContent {
+  const lines = input.requests.map((r) => `- ${r.displayName}${r.profileUrl ? ` (${r.profileUrl})` : ""}`);
+  const text = ["New artist request on Electronic CPH:", "", ...lines, "", `Review it: ${SITE_URL}/admin/artists`].join("\n");
+  return { subject: `Artist request: ${input.requests.map((r) => r.displayName).join(", ")}`, html: "", text };
+}
+
+/** To the site's own inbox when a followed artist's new appearance needs an admin (e.g. a short name). */
+export function buildAdminReviewEmail(input: { items: { eventTitle: string; displayName: string; reason: string | null }[]; holdMinutes?: number }): EmailContent {
+  const lines = input.items.map((i) => `- ${i.displayName} at ${i.eventTitle}${i.reason ? ` (${i.reason})` : ""}`);
+  const text = [
+    "A followed artist was just listed, but the match needs a check before anyone is alerted:",
+    "",
+    ...lines,
+    "",
+    `Confirm or reject within ${input.holdMinutes ?? 120} minutes, or followers won't get an alert for it: ${SITE_URL}/admin/artists`,
+  ].join("\n");
+  return { subject: `Artist check needed: ${[...new Set(input.items.map((i) => i.displayName))].join(", ")}`, html: "", text };
 }
 
 /** A requester's identification link: a SoundCloud profile or a Spotify artist page, normalised; anything else is refused. Never fetched. */

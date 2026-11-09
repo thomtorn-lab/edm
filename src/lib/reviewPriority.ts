@@ -1,6 +1,7 @@
 import type { DiscoveryQueueItem, Source, Venue } from "./types";
 import { isPastEvent } from "./datetime";
 import { resolveVenue } from "./normalize";
+import { EDITORIAL_PRIORITY_VENUE_IDS } from "./data/venues";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 import { hasNonElectronicGenreSignal, hasPopOrRnbSignal } from "./relevance";
 import { assessDuplicate, type DuplicateCandidate } from "./dedup";
@@ -23,8 +24,8 @@ import { describeSeriesMatch, findSeriesMatch, seriesStrength, type SeriesIndex,
  * publish it.
  */
 
-/** Venues whose programme is primarily electronic: a strong positive signal on its own. */
-const STRONG_ELECTRONIC_VENUE_IDS: ReadonlySet<string> = new Set(["v-module", "v-den-anden-side", "v-culture-box", "v-hangaren"]);
+/** Venues whose programme is primarily electronic: a strong positive signal on its own (the editorial-priority venues). */
+const STRONG_ELECTRONIC_VENUE_IDS = EDITORIAL_PRIORITY_VENUE_IDS;
 
 /**
  * Venues with a regular electronic programme that are still not proof on

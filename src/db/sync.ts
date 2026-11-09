@@ -38,6 +38,8 @@ import {
 import { enrichEventGenre } from "./enrichment";
 import { reconcileSourceSoundcloudLinks } from "./soundcloudLinks";
 import { inlineSoundcloudEvidenceForSync, inlineReportsForSync, type InlineObservation } from "@/lib/soundcloudEvidence/syncLinks";
+import { discogsLookupCandidates } from "@/lib/soundcloudEvidence/discogsSoundcloud";
+import { resolveDiscogsSoundcloud } from "./discogsSoundcloud";
 import type { GenreSlug } from "@/lib/taxonomy";
 import type { ConfidenceLevel } from "@/lib/types";
 import type { PublishDecision } from "@/lib/classification";
@@ -182,6 +184,13 @@ async function runSourceSyncLocked(
   // candidate — freshness only needs to know "was this row touched by THIS
   // sync", not sub-second ordering within it.
   const fetchComplete = adapter.lastFetchWasComplete?.() ?? true;
+  // An incomplete fetch means real programme pages were skipped this run, so
+  // their events were not discovered. It used to be logged to the console
+  // only — the sync still reported "ok" with no errors and source health
+  // stayed "ok" (HvadErPå MODULE/Jolene/Baggen coverage gap, 2026-11-06).
+  // Recorded as the source's lastError (health "degraded", shown in admin and
+  // by monitor-source-health) without failing the sync itself.
+  const incompleteFetchMessage = fetchComplete ? null : describeIncompleteFetch(adapter.lastFetchProblems?.() ?? []);
   const seenAt = new Date();
 
   const [venues, existingEventRows, links, pendingDiscovery, ignoredDiscovery] = await Promise.all([
@@ -266,6 +275,8 @@ async function runSourceSyncLocked(
   // the loop (src/lib/soundcloudEvidence/syncLinks.ts). Never replaces a
   // structured report, never deletes.
   const inlineSoundcloud: InlineObservation[] = [];
+  // This run's lineups, for the bounded Discogs -> SoundCloud lookups after the loop.
+  const syncedLineups: { title: string; artists: string[] }[] = [];
 
   for (const raw of candidates) {
     try {
@@ -352,6 +363,7 @@ async function runSourceSyncLocked(
           const storedSourceText = existing.overriddenFields.includes("description") ? null : existing.description;
           const records = inlineSoundcloudEvidenceForSync(raw, lineup, existing.id, [storedSourceText]);
           if (records.length > 0) inlineSoundcloud.push({ eventId: existing.id, records });
+          syncedLineups.push({ title: existing.title, artists: [...lineup] });
         }
         const target: SyncTargetEvent = {
           id: existing.id,
@@ -570,6 +582,7 @@ async function runSourceSyncLocked(
         {
           const records = inlineSoundcloudEvidenceForSync(raw, result.normalizedArtists, eventId);
           if (records.length > 0) inlineSoundcloud.push({ eventId, records });
+          syncedLineups.push({ title: raw.title, artists: [...result.normalizedArtists] });
         }
         if (raw.withheldDescription) {
           await recordWithheldDescription(eventId, sourceId, raw.withheldDescription, raw.description);
@@ -804,6 +817,20 @@ async function runSourceSyncLocked(
     }
   }
 
+  // Discogs as a supplementary SoundCloud source (2026-11-07): at most two
+  // artists per run that actually need Discogs, cache-first; never fails the
+  // sync. See src/db/discogsSoundcloud.ts.
+  try {
+    const linkedNames = new Set([...soundcloudObservations.values()].flatMap((r) => r.links.map((l) => l.name)));
+    const candidates = discogsLookupCandidates(syncedLineups, linkedNames);
+    if (candidates.length > 0) {
+      const summary = await resolveDiscogsSoundcloud(candidates, 2);
+      if (summary.lookedUp > 0) console.log(`[sync] "${sourceId}" Discogs SoundCloud lookups: ${JSON.stringify(summary)}`);
+    }
+  } catch (err) {
+    console.error(`[sync] "${sourceId}" Discogs SoundCloud lookups failed`, err instanceof Error ? err.message : err);
+  }
+
   // Fires only after every DB write above has finished — bounded-concurrency
   // batch, not per-candidate — and is wrapped defensively so an unexpected
   // failure here can never turn a successful sync into a failed one; the
@@ -822,13 +849,38 @@ async function runSourceSyncLocked(
       success: true,
       eventsFound: candidates.length,
       eventsUpdated: updated,
-      error: writeSummary.lastErrorMessage,
+      error: [incompleteFetchMessage, writeSummary.lastErrorMessage].filter(Boolean).join(" | "),
       complete: fetchComplete,
       completeSyncAt: seenAt,
     });
     return { sourceId, outcome: "partial_failure", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
   }
 
-  await touchSourceSyncStats(sourceId, { success: true, eventsFound: candidates.length, eventsUpdated: updated, complete: fetchComplete, completeSyncAt: seenAt });
-  return { sourceId, outcome: "ok", candidatesFound: candidates.length, created, updated, queuedForReview, unpublished, errors };
+  if (incompleteFetchMessage) console.error(`[sync] "${sourceId}" ${incompleteFetchMessage}`);
+  await touchSourceSyncStats(sourceId, {
+    success: true,
+    eventsFound: candidates.length,
+    eventsUpdated: updated,
+    error: incompleteFetchMessage,
+    complete: fetchComplete,
+    completeSyncAt: seenAt,
+  });
+  return {
+    sourceId,
+    outcome: "ok",
+    candidatesFound: candidates.length,
+    created,
+    updated,
+    queuedForReview,
+    unpublished,
+    errors: incompleteFetchMessage ? [incompleteFetchMessage] : errors,
+  };
+}
+
+/** "Incomplete fetch: 2 page(s) could not be read — MODULE programme not read: …; …" (first 3 reasons). */
+function describeIncompleteFetch(problems: string[]): string {
+  if (problems.length === 0) return "Incomplete fetch: some source pages could not be read this run.";
+  const shown = problems.slice(0, 3).join("; ");
+  const more = problems.length > 3 ? ` (+${problems.length - 3} more)` : "";
+  return `Incomplete fetch: ${problems.length} page(s) could not be read — ${shown}${more}`;
 }
