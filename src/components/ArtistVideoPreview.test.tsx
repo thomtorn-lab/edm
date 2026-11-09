@@ -26,12 +26,12 @@ describe("videoPlayerTitle", () => {
 });
 
 describe("youtubeEmbedUrl", () => {
-  it("uses the privacy-enhanced embed domain and autoplays (the press already asked for the video)", () => {
-    expect(youtubeEmbedUrl("abc123XYZ")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1");
+  it("uses the privacy-enhanced embed domain and starts at once — muted and inline, so no browser blocks it", () => {
+    expect(youtubeEmbedUrl("abc123XYZ")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1&mute=1&playsinline=1");
   });
 
   it("encodes the id so it can never change the URL's path or query", () => {
-    expect(youtubeEmbedUrl("a/b?c")).toBe("https://www.youtube-nocookie.com/embed/a%2Fb%3Fc?autoplay=1");
+    expect(youtubeEmbedUrl("a/b?c")).toBe("https://www.youtube-nocookie.com/embed/a%2Fb%3Fc?autoplay=1&mute=1&playsinline=1");
   });
 });
 
@@ -121,7 +121,7 @@ describe("ArtistVideoPreview click-to-load", () => {
 
     const iframes = container.querySelectorAll("iframe");
     expect(iframes).toHaveLength(1);
-    expect(iframes[0].getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abcdefghijk?autoplay=1");
+    expect(iframes[0].getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abcdefghijk?autoplay=1&mute=1&playsinline=1");
     expect(iframes[0].getAttribute("title")).toBe("YouTube video: Eric Prydz DJ Set");
     expect(iframes[0].getAttribute("allow")).toContain("autoplay");
     expect(iframes[0].getAttribute("referrerpolicy")).toBe("strict-origin-when-cross-origin");

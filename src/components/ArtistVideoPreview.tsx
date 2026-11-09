@@ -65,9 +65,16 @@ export function youtubeThumbnailUrl(videoId: string): string | null {
   return VIDEO_ID.test(videoId) ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
 }
 
-/** The embed URL loaded after the visitor presses play — autoplay, since the press itself asked for the video. */
+/**
+ * The embed URL loaded after the visitor presses play. The press already
+ * asked for the video, so it starts at once: autoplay=1, muted (mute=1) and
+ * inline (playsinline=1) — browsers (Safari on macOS/iOS, often Firefox) do
+ * not let a cross-origin player start WITH sound on its own even right after
+ * a click on the page, which left the visitor pressing play a second time
+ * (2026-11-09). The player's own controls unmute it.
+ */
 export function youtubeEmbedUrl(videoId: string): string {
-  return `${YOUTUBE_EMBED_ORIGIN}/embed/${encodeURIComponent(videoId)}?autoplay=1`;
+  return `${YOUTUBE_EMBED_ORIGIN}/embed/${encodeURIComponent(videoId)}?autoplay=1&mute=1&playsinline=1`;
 }
 
 export default function ArtistVideoPreview({
