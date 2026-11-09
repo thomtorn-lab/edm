@@ -20,8 +20,7 @@ name: Sync HvadErPå
 # KultuNaut (:35), Billetto (:45) or Pumpehuset (:50).
 
 on:
-  schedule:
-    - cron: "55 */6 * * *"
+  # Scheduled by Vercel Cron (vercel.json); this workflow is for manual runs only.
   workflow_dispatch: {} # manual re-trigger, e.g. the first post-merge sync or a retry after a fix
 
 concurrency:
