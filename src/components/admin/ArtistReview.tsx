@@ -45,30 +45,6 @@ export default function ArtistReview({ appearances, requests }: { appearances: R
     <div className="space-y-10">
       {error && <p role="alert" className="text-sm text-status-bad">{error}</p>}
       <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">Appearances to review ({appearances.length})</h2>
-        <p className="mt-1 text-xs text-text-tertiary">Confirming within 2 hours of the event being listed still alerts followers; later confirmations only make the identity reusable.</p>
-        <ul className="mt-3">
-          {appearances.map((a) => {
-            const key = `${a.eventId}|${a.nameKey}`;
-            return (
-              <li key={key} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2 text-sm">
-                <span>
-                  <strong>{a.displayName}</strong> <span className="text-text-tertiary">— {a.reason}</span>
-                  <br />
-                  <a href={`/events/${a.eventSlug}`} className="text-xs text-text-tertiary underline">
-                    {a.eventTitle} · {a.start.slice(0, 10)}
-                  </a>
-                </span>
-                <span className="flex gap-2">
-                  <button className={BUTTON} disabled={done.has(key)} onClick={() => act(key, { action: "confirm-appearance", eventId: a.eventId, nameKey: a.nameKey })}>Confirm</button>
-                  <button className={BUTTON} disabled={done.has(key)} onClick={() => act(key, { action: "reject-appearance", eventId: a.eventId, nameKey: a.nameKey })}>Not this artist</button>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-      <section>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">Requested artists ({requests.length})</h2>
         <p className="mt-1 text-xs text-text-tertiary">
           Approve adds the artist and makes every confirmed requester follow it. Link instead if it is an artist already on the site. Each confirmed requester gets one email with the result.
@@ -104,6 +80,30 @@ export default function ArtistReview({ appearances, requests }: { appearances: R
               </span>
             </li>
           ))}
+        </ul>
+      </section>
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">Appearances to review ({appearances.length})</h2>
+        <p className="mt-1 text-xs text-text-tertiary">Confirming within 2 hours of the event being listed still alerts followers; later confirmations only make the identity reusable.</p>
+        <ul className="mt-3">
+          {appearances.map((a) => {
+            const key = `${a.eventId}|${a.nameKey}`;
+            return (
+              <li key={key} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2 text-sm">
+                <span>
+                  <strong>{a.displayName}</strong> <span className="text-text-tertiary">— {a.reason}</span>
+                  <br />
+                  <a href={`/events/${a.eventSlug}`} className="text-xs text-text-tertiary underline">
+                    {a.eventTitle} · {a.start.slice(0, 10)}
+                  </a>
+                </span>
+                <span className="flex gap-2">
+                  <button className={BUTTON} disabled={done.has(key)} onClick={() => act(key, { action: "confirm-appearance", eventId: a.eventId, nameKey: a.nameKey })}>Confirm</button>
+                  <button className={BUTTON} disabled={done.has(key)} onClick={() => act(key, { action: "reject-appearance", eventId: a.eventId, nameKey: a.nameKey })}>Not this artist</button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>
