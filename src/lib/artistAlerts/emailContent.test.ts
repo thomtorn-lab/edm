@@ -33,11 +33,17 @@ describe("artist request and manage emails (2026-11-06)", () => {
     expect(e.text).toContain(`/artists/manage?token=${token}`);
   });
 
-  it("rejected request: short, with the manage link", async () => {
+  it("rejected request: the agreed wording, manage link and contact address", async () => {
     const { buildRequestResultEmail } = await import("./emailContent");
     const e = buildRequestResultEmail({ artistName: "Teskey Brothers", approved: false, manageToken: token });
     expect(e.subject).toBe("We couldn't add Teskey Brothers");
-    expect(e.text).toContain(`/artists/manage?token=${token}`);
+    expect(e.text.startsWith("Hi,\n\nThanks for suggesting Teskey Brothers!")).toBe(true);
+    expect(e.text).toContain("You won\u2019t receive event alerts for Teskey Brothers, but you can still follow other artists on ElectronicCPH.");
+    expect(e.text).toContain(`Manage your artist alerts: ${manageUrl(token)}`);
+    expect(e.text).toContain("contact us at hello@electroniccph.com.");
+    expect(e.text.endsWith("Best regards,\nElectronicCPH")).toBe(true);
+    expect(e.html).toContain("contact us at hello@electroniccph.com.");
+    expect(e.html).toContain("Thanks for suggesting Teskey Brothers!");
   });
 
   it("manage link carries picks that the manage page can read back", async () => {
