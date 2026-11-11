@@ -168,16 +168,36 @@ export function buildManageLinkEmail(input: { manageToken: string; picks?: Manag
 export function buildRequestResultEmail(input: { artistName: string; approved: boolean; manageToken: string }): EmailContent {
   const url = manageUrl(input.manageToken);
   const name = input.artistName;
-  const subject = input.approved ? `You're now following ${name}` : `We couldn't add ${name}`;
-  const body = input.approved
-    ? [`Your artist request has been approved. You're now following ${name} on Electronic CPH.`, "", `We'll email you when new events featuring ${name} are added.`]
-    : [`We couldn't approve your request for ${name}, so you won't get alerts for it.`];
+  if (!input.approved) return buildRequestRejectedEmail(name, url);
+  const subject = `You're now following ${name}`;
+  const body = [`Your artist request has been approved. You're now following ${name} on Electronic CPH.`, "", `We'll email you when new events featuring ${name} are added.`];
   const text = [...body, "", `Manage your artist alerts: ${url}`].join("\n");
   const html = `<!doctype html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;">
 ${body.filter(Boolean).map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
 <p><a href="${escapeHtml(url)}">Manage your artist alerts</a></p>
 </body></html>`;
   return { subject, html, text };
+}
+
+const CONTACT_EMAIL = "hello@electroniccph.com";
+
+/** Rejected artist request: the agreed wording (2026-11-11), manage link mid-body. */
+function buildRequestRejectedEmail(name: string, url: string): EmailContent {
+  const intro = [
+    "Hi,",
+    `Thanks for suggesting ${name}!`,
+    "Unfortunately, we couldn\u2019t add this artist to ElectronicCPH at this time. This may be because we couldn\u2019t verify the artist\u2019s identity or confirm that the profile matches our focus on Copenhagen\u2019s electronic music scene.",
+    `You won\u2019t receive event alerts for ${name}, but you can still follow other artists on ElectronicCPH.`,
+  ];
+  const contact = `If you think we\u2019ve missed something or have a question, feel free to contact us at ${CONTACT_EMAIL}.`;
+  const text = [...intro, `Manage your artist alerts: ${url}`, contact, "Best regards,\nElectronicCPH"].join("\n\n");
+  const html = `<!doctype html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;">
+${intro.map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
+<p><a href="${escapeHtml(url)}">Manage your artist alerts</a></p>
+<p>${escapeHtml(contact)}</p>
+<p>Best regards,<br>ElectronicCPH</p>
+</body></html>`;
+  return { subject: `We couldn't add ${name}`, html, text };
 }
 
 /** To the site's own inbox when a request first gets a confirmed requester. */
