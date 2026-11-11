@@ -93,6 +93,16 @@ export interface EventFieldEditorProps {
   onFacebookUrlChange?: (v: string) => void;
 }
 
+/**
+ * Upper bound for the native datetime-local fields. Without a `max`, Chrome
+ * lets the year segment take up to six digits (the spec's max year is
+ * 275760), so it never auto-advances from year to hour: typing a whole date
+ * and time in one go ("111120261430") puts the time digits into the year
+ * instead. Capping the year at four digits restores the auto-advance through
+ * every segment, day -> month -> year -> hour -> minute.
+ */
+const DATETIME_LOCAL_MAX = "9999-12-31T23:59";
+
 const inputCls = "mt-1 w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary";
 const labelCls = "block text-[10px] font-semibold uppercase tracking-wide text-text-tertiary";
 
@@ -135,6 +145,7 @@ export function EventFieldEditorTop(props: TopProps) {
           <input
             id={id("start")}
             type="datetime-local"
+            max={DATETIME_LOCAL_MAX}
             value={props.startLocal}
             onChange={(e) => props.onStartLocalChange?.(e.target.value)}
             className={inputCls}
@@ -142,7 +153,7 @@ export function EventFieldEditorTop(props: TopProps) {
         </Field>
       )}
       <Field id={id("end")} label="End time (optional — leave blank when unknown)">
-        <input id={id("end")} type="datetime-local" value={props.endLocal} onChange={(e) => props.onEndLocalChange(e.target.value)} className={inputCls} />
+        <input id={id("end")} type="datetime-local" max={DATETIME_LOCAL_MAX} value={props.endLocal} onChange={(e) => props.onEndLocalChange(e.target.value)} className={inputCls} />
       </Field>
     </>
   );
