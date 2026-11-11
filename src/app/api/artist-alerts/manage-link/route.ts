@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const result = await requestManageLink(email);
     if (result) {
       const content = buildManageLinkEmail({ manageToken: result.manageToken });
-      await sendEmail({ to: email, subject: content.subject, text: content.text, replyTo: ARTIST_ALERTS_REPLY_TO });
+      await sendEmail({ to: email, subject: content.subject, text: content.text, html: content.html, replyTo: ARTIST_ALERTS_REPLY_TO });
       console.info("artist alerts manage-link: sent");
     } else {
       console.info("artist alerts manage-link: no email (not a confirmed subscriber, or limit reached)");

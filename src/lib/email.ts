@@ -14,9 +14,11 @@ export type SendEmailInput = {
    *  elsewhere, e.g. the Discovery Queue notification recipient. */
   to?: string;
   replyTo?: string;
+  /** Optional HTML part, sent alongside `text` (Artist Alerts emails, so links show as link text). */
+  html?: string;
 };
 
-export async function sendEmail({ subject, text, to, replyTo }: SendEmailInput): Promise<void> {
+export async function sendEmail({ subject, text, to, replyTo, html }: SendEmailInput): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   // An explicit `to` (e.g. the Discovery Queue notification's own dedicated
   // recipient) never requires CONTACT_RECIPIENT_EMAIL — only the default,
@@ -45,6 +47,7 @@ export async function sendEmail({ subject, text, to, replyTo }: SendEmailInput):
     to: recipient,
     subject,
     text,
+    ...(html ? { html } : {}),
     ...(replyTo ? { replyTo } : {}),
   });
 

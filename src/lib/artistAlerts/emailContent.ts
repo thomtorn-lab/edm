@@ -73,7 +73,7 @@ export function buildAlertEmail(input: { events: AlertEmailEvent[]; manageToken:
       ({ e, url, when }) => `
       <tr><td style="padding:10px 0;border-bottom:1px solid #2a2a2a;">
         <div style="color:#999999;font-size:13px;">${escapeHtml(e.artistName)}</div>
-        <div style="font-weight:600;"><a href="${escapeHtml(url)}" style="color:#f5f5f5;text-decoration:none;">${escapeHtml(e.title)}</a></div>
+        <div style="font-weight:600;"><a href="${escapeHtml(url)}" style="color:#ab9be0;text-decoration:underline;">${escapeHtml(e.title)}</a></div>
         <div style="color:#999999;font-size:13px;margin-top:2px;">${escapeHtml(when)} &middot; ${escapeHtml(e.venueName)}</div>
       </td></tr>`,
     )
@@ -158,7 +158,7 @@ export function buildManageLinkEmail(input: { manageToken: string; picks?: Manag
   const text = [lead, url, "", "If you didn't ask for this, you can ignore this email."].join("\n");
   const html = `<!doctype html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;">
 <p>${escapeHtml(lead)}</p>
-<p><a href="${escapeHtml(url)}">${withPicks ? "Add your artists" : "Manage your artist alerts"}</a></p>
+<p><a href="${escapeHtml(url)}">Manage your artist alerts</a></p>
 <p style="color:#666;font-size:12px;">If you didn't ask for this, you can ignore this email.</p>
 </body></html>`;
   return { subject: "Your Electronic CPH artist alerts", html, text };
