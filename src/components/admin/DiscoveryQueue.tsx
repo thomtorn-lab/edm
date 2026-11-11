@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { DiscoveryQueueItem } from "@/lib/types";
 import type { Venue } from "@/lib/types";
@@ -60,6 +60,37 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
   // Discovery two-genre support (2026-10-06): mirrors EventManager's own
   // secondaryGenre state exactly.
   const [secondaryGenre, setSecondaryGenre] = useState(item.predictedSecondaryGenre ?? "");
+
+  // The fields above are seeded from `item` once, at mount. A save made
+  // outside this row (e.g. Analyze's "Review & correct" panel) reaches this
+  // row only as a new `item` prop after router.refresh() — so without a
+  // re-seed, Edit (e.g. after a failed Publish) would reopen with the values
+  // the row first mounted with, hiding what is actually saved. Re-seed on
+  // opening Edit, and only when the persisted values changed since the last
+  // seed — never while the editor is open, so in-progress typing is kept.
+  const seededFrom = useRef(editorSnapshot(item));
+  function openEditor() {
+    const snapshot = editorSnapshot(item);
+    if (snapshot !== seededFrom.current) {
+      seededFrom.current = snapshot;
+      setTitle(item.probableTitle);
+      setStartLocal(item.probableStart ? toCopenhagenDateTimeInput(item.probableStart) : "");
+      setDateTouched(false);
+      setEndLocal(item.probableEnd ? toCopenhagenDateTimeInput(item.probableEnd) : "");
+      setEndTouched(false);
+      setOfficialEventUrl(item.probableOfficialEventUrl ?? "");
+      setTicketUrl(item.probableTicketUrl ?? "");
+      setResidentAdvisorUrl(item.probableResidentAdvisorUrl ?? "");
+      setDescription(item.description ?? "");
+      setFree(item.probableFree);
+      setVenueNameText(item.probableVenueName ?? "");
+      setSubVenueText(item.probableSubVenue ?? "");
+      setLineup(item.detectedLineup.join(", "));
+      setGenre(item.predictedGenre ?? "");
+      setSecondaryGenre(item.predictedSecondaryGenre ?? "");
+    }
+    setEditing(true);
+  }
 
   // ---- Admin-driven venue creation (human-gated: never wired into any
   // automated ingestion path — see src/lib/venueCreation.ts) ----
@@ -344,7 +375,7 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
           <button type="button" disabled={busy} onClick={handlePublish} className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50">
             {item.suspectedDuplicateOfEventId ? "Publish as new anyway" : "Publish"}
           </button>
-          <button type="button" disabled={busy} onClick={() => setEditing(true)} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
+          <button type="button" disabled={busy} onClick={openEditor} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
             Edit
           </button>
           <button type="button" disabled={busy} onClick={handleIgnore} className="rounded border border-border-strong px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary">
@@ -477,6 +508,25 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
       {error && <p className="mt-2 text-xs text-status-bad">{error}</p>}
     </li>
   );
+}
+
+/** The persisted values the editor fields are seeded from (see QueueRow's openEditor). */
+function editorSnapshot(item: DiscoveryQueueItem): string {
+  return JSON.stringify([
+    item.probableTitle,
+    item.probableStart,
+    item.probableEnd,
+    item.probableOfficialEventUrl,
+    item.probableTicketUrl,
+    item.probableResidentAdvisorUrl,
+    item.description,
+    item.probableFree,
+    item.probableVenueName,
+    item.probableSubVenue,
+    item.detectedLineup,
+    item.predictedGenre,
+    item.predictedSecondaryGenre,
+  ]);
 }
 
 async function callPost(

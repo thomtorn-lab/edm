@@ -687,3 +687,44 @@ describe("DiscoveryQueue — two-genre support (2026-10-06)", () => {
     },
   );
 });
+
+describe("DiscoveryQueue — editor re-opens with the saved data after a failed publish (no page reload)", () => {
+  afterEach(cleanup);
+
+  // Real flow: Analyze creates the row (it mounts with Analyze's values),
+  // the admin corrects fields in the Analyze panel and saves (PATCH +
+  // router.refresh() hands this row a NEW item prop with the saved values),
+  // Publish then fails, and Edit is clicked without reloading /admin.
+  const analyzed = makeItem({ probableTitle: "Analyzed title", description: null, detectedLineup: [], probableTicketUrl: null, probableVenueName: "Culture Box" });
+  const saved = makeItem({
+    probableTitle: "Saved title",
+    description: "Saved description.",
+    detectedLineup: ["DJ A", "DJ B"],
+    probableTicketUrl: "https://tickets.example/1",
+    probableVenueName: "Culture Box",
+  });
+
+  it("shows the refreshed (saved) values in the editor, not the values the row first mounted with", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "Publish blocked" }) }));
+    const { rerender } = render(<DiscoveryQueue items={[analyzed]} venues={VENUES} />);
+    rerender(<DiscoveryQueue items={[saved]} venues={VENUES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await screen.findByText("Publish blocked");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Saved title");
+    expect((screen.getByLabelText("Description") as HTMLTextAreaElement).value).toBe("Saved description.");
+    expect((screen.getByLabelText(/Artists \/ lineup/) as HTMLInputElement).value).toBe("DJ A, DJ B");
+    expect((screen.getByLabelText("Ticket URL") as HTMLInputElement).value).toBe("https://tickets.example/1");
+  });
+
+  it("keeps the admin's in-progress typing when a refresh arrives while the editor is open", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const { rerender } = render(<DiscoveryQueue items={[analyzed]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Typing…" } });
+    rerender(<DiscoveryQueue items={[saved]} venues={VENUES} />);
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Typing…");
+  });
+});
