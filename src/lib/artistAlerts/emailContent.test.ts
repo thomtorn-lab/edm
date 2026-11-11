@@ -57,3 +57,32 @@ describe("artist request and manage emails (2026-11-06)", () => {
     expect(buildConfirmEmail({ confirmToken: "c".repeat(43), artistNames: ["Ayla"] }).text).not.toContain("/artists/manage");
   });
 });
+
+describe("HTML link text (2026-11-11)", () => {
+  const token = "m".repeat(43);
+  const linkTexts = (html: string) => [...html.matchAll(/<a [^>]*>([^<]*)<\/a>/g)].map((m) => m[1]);
+
+  it("alert: the event name is an underlined, coloured link to the event page", () => {
+    const e = buildAlertEmail({
+      manageToken: token,
+      events: [{ artistName: "Daria Kolosova", title: "Night", slug: "night", startDatetime: new Date("2026-12-05T22:00:00Z"), venueName: "Culture Box" }],
+    });
+    expect(e.html).toMatch(/<a href="[^"]*\/events\/night\?utm_source=artist-alert&amp;utm_medium=email" style="color:#ab9be0;text-decoration:underline;">Night<\/a>/);
+  });
+
+  it("manage-link and request-result emails show 'Manage your artist alerts', never the bare URL", async () => {
+    const { buildManageLinkEmail, buildRequestResultEmail } = await import("./emailContent");
+    const emails = [
+      buildManageLinkEmail({ manageToken: token }),
+      buildManageLinkEmail({ manageToken: token, picks: { artistIds: ["art_00000000-0001"], requests: [] } }),
+      buildRequestResultEmail({ artistName: "Kölsch", approved: true, manageToken: token }),
+      buildRequestResultEmail({ artistName: "Kölsch", approved: false, manageToken: token }),
+    ];
+    for (const e of emails) {
+      expect(linkTexts(e.html)).toEqual(["Manage your artist alerts"]);
+      expect(e.html).toContain(`/artists/manage?token=${token}`); // same destination, in the href
+      expect(e.html.replace(/href="[^"]*"/g, "")).not.toContain("token="); // not visible
+      expect(e.text).toContain(`/artists/manage?token=${token}`); // plain-text fallback keeps the URL
+    }
+  });
+});

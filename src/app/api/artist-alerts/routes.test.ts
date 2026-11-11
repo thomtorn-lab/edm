@@ -59,6 +59,7 @@ describe("POST /api/artist-alerts/subscribe", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const sent = sendEmail.mock.calls[0][0];
     expect(sent.subject).toBe("Your Electronic CPH artist alerts");
+    expect(sent.html).toContain(">Manage your artist alerts</a>"); // HTML part is sent too
     // The picks travel in the link (nothing stored), to be added on the manage page.
     expect(sent.text).toContain(`/artists/manage?token=${"m".repeat(43)}&add=${ARTIST}&req=`);
     expect(sent.replyTo).toBe("hello@electroniccph.com");

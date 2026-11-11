@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       result.outcome === "manage"
         ? buildManageLinkEmail({ manageToken: result.manageToken, picks: result.picks })
         : buildConfirmEmail({ confirmToken: result.confirmToken, artistNames: result.artistNames });
-    await sendEmail({ to: email, subject: content.subject, text: content.text, replyTo: ARTIST_ALERTS_REPLY_TO });
+    await sendEmail({ to: email, subject: content.subject, text: content.text, html: content.html, replyTo: ARTIST_ALERTS_REPLY_TO });
   } catch (err) {
     console.error("artist alerts subscribe failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Something went wrong. Please try again later." }, { status: 502 });

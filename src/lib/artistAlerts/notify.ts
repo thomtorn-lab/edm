@@ -28,7 +28,7 @@ export async function sendRequestResultEmails(result: ResolvedRequest, mode: Art
     if (!emailAllowed(r.email, mode)) continue;
     const content = buildRequestResultEmail({ artistName: result.artistName, approved: result.outcome === "approved", manageToken: manageTokenFor(r.subscriberId) });
     try {
-      await sendEmail({ to: r.email, subject: content.subject, text: content.text, replyTo: ARTIST_ALERTS_REPLY_TO });
+      await sendEmail({ to: r.email, subject: content.subject, text: content.text, html: content.html, replyTo: ARTIST_ALERTS_REPLY_TO });
       sent++;
     } catch (err) {
       console.error("artist request result email failed:", err instanceof Error ? err.message : err);
