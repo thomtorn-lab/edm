@@ -1016,28 +1016,23 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
   const LINEUP_TEXT = "SOPHIE VAN HAYDEN / NAIVA / ONSBERG";
   const cls = (el: Element) => el.className.split(/\s+/);
 
-  it("renders the lineup outside the title link, directly after it, so the link's name is the title alone", () => {
+  it("renders the lineup outside the title link, directly after the title row, so the link's name is the title alone", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
     const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
     const lineup = screen.getByText(LINEUP_TEXT);
     expect(titleLink.contains(lineup)).toBe(false);
-    expect(titleLink.nextElementSibling).toBe(lineup);
+    expect(titleLink.parentElement?.nextElementSibling).toBe(lineup);
     expect(lineup.tagName).toBe("P");
-    // The colon is mobile-only (sm:hidden); jsdom applies no CSS, so it is in textContent.
     expect(lineup.textContent).toBe(`Lineup: ${LINEUP_TEXT}`);
   });
 
-  it("mobile: LINEUP: inherits the lineup's own size, weight and grey; desktop: inline purple semibold, no colon", () => {
+  it("mobile: LINEUP: inherits the lineup's own size, weight and grey; desktop: inline purple semibold — colon on both", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
-    const label = screen.getByText("Lineup");
+    const label = screen.getByText("Lineup:");
     const classes = cls(label);
-    expect(classes).toContain("uppercase");
     // Nothing un-prefixed besides uppercase, so on mobile it matches the artists exactly.
     expect(classes.filter((c) => !c.startsWith("sm:"))).toEqual(["uppercase"]);
     expect(classes).toEqual(expect.arrayContaining(["sm:text-accent", "sm:font-semibold", "sm:mr-1"]));
-    const colon = label.querySelector("span") as HTMLElement;
-    expect(colon.textContent).toBe(":");
-    expect(cls(colon)).toEqual(["sm:hidden"]);
     expect(label.className).not.toMatch(/\b(bg-|border|rounded)/);
   });
 
@@ -1051,7 +1046,7 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
   it("renders no lineup line when there are no artists", () => {
     const { container } = render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
     expect(container.querySelector("p")).toBeNull();
-    expect(screen.queryByText("Lineup")).toBeNull();
+    expect(screen.queryByText("Lineup:")).toBeNull();
   });
 
   it("renders no lineup line when the title already names every artist", () => {
@@ -1073,7 +1068,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
   const cls = (el: Element) => el.className.split(/\s+/);
   const orderOf = (el: Element) => cls(el).find((c) => /^-?order-/.test(c));
 
-  it("orders mobile info as date (+ status) → title → genres → lineup → venue → divider → actions → video/audio", () => {
+  it("orders mobile info as date (+ status) → title → genres → lineup → divider → venue → actions → video/audio", () => {
     const { container } = render(
       <EventRow
         event={{
@@ -1086,14 +1081,18 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     );
     const row = container.querySelector("li > div") as HTMLElement;
     expect(orderOf(row.firstElementChild as Element)).toBe("-order-6");
-    // SOLD OUT joins the date/time on the top row on mobile; back in the metadata row on desktop.
+    // SOLD OUT joins the date/time on the top row on mobile; on desktop it sits
+    // in the title row, right of the title.
     const soldOutWrap = screen.getByText("Sold out").parentElement as HTMLElement;
-    expect(cls(soldOutWrap)).toEqual(["-order-6", "sm:contents", "sm:order-none"]);
+    expect(cls(soldOutWrap)).toEqual(expect.arrayContaining(["-order-6", "sm:order-none", "sm:shrink-0"]));
+    const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
+    expect(soldOutWrap.parentElement).toBe(titleLink.parentElement);
+    expect(cls(titleLink.parentElement as Element)).toEqual(expect.arrayContaining(["contents", "sm:flex"]));
     expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
     expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
-    expect(orderOf(screen.getByRole("link", { name: "Test Venue" }))).toBe("-order-2");
-    expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-1");
+    expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-2");
+    expect(orderOf(screen.getByRole("link", { name: "Test Venue" }))).toBe("-order-1");
     expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");
     expect(orderOf(screen.getByRole("link", { name: /audio links/ }))).toBe("order-1");
   });

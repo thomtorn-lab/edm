@@ -46,8 +46,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // apart from the inline LINEUP label. Mobile reorders the same DOM — no
   // duplicated links — into: date + time + status badges (e.g. SOLD OUT)
   // on the top row → title → genres (muted accent purple) → LINEUP: +
-  // artists → venue (+ sub-venue) → divider → actions (Official event,
-  // Tickets, Free, Calendar, then Video/Audio). It does that by
+  // artists → divider → venue (+ sub-venue) → actions (Official event,
+  // Tickets, Free, Calendar, then Video/Audio). On desktop status badges
+  // sit right of the title. It does that by
   // making the middle column, the metadata row, the action column and the
   // link group `display: contents` below `sm`, so their children become
   // items of the row's own wrapping flexbox, sequenced with negative
@@ -68,35 +69,49 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
         </div>
 
         <div className="contents sm:block sm:min-w-0 sm:flex-1">
-          <Link
-            href={eventHref}
-            className="-order-5 mt-1 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
-          >
-            {title}
-            {/* Discreet internal-navigation cue, mobile only (desktop already
-                has the hover/focus underline as its affordance): a plain →
-                distinguishes this as Electronic CPH's own event-detail page,
-                never the ↗ glyph used for Official event/Tickets/Source,
-                which always means "leaves the site". Purely decorative — the
-                link's accessible name stays the title; no-underline
-                keeps the hover-decoration line from drawing through the glyph. */}
-            <span aria-hidden="true" className="ml-1 font-normal text-text-secondary-strong no-underline sm:hidden">
-              →
-            </span>
-          </Link>
+          {/* Title row: display:contents on mobile (title and status badges
+              are ordered independently), a flex row on desktop so status
+              badges sit right of the title. */}
+          <div className="contents sm:flex sm:items-start sm:gap-2">
+            <Link
+              href={eventHref}
+              className="-order-5 mt-1 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:min-w-0 sm:basis-auto sm:line-clamp-2"
+            >
+              {title}
+              {/* Discreet internal-navigation cue, mobile only (desktop already
+                  has the hover/focus underline as its affordance): a plain →
+                  distinguishes this as Electronic CPH's own event-detail page,
+                  never the ↗ glyph used for Official event/Tickets/Source,
+                  which always means "leaves the site". Purely decorative — the
+                  link's accessible name stays the title; no-underline
+                  keeps the hover-decoration line from drawing through the glyph. */}
+              <span aria-hidden="true" className="ml-1 font-normal text-text-secondary-strong no-underline sm:hidden">
+                →
+              </span>
+            </Link>
+            {/* Status badges (e.g. SOLD OUT): mobile → top row beside date +
+                time (-order-6); desktop → directly right of the title. Same
+                StatusBadge styling and logic as before. -my-px keeps the
+                badge from making the title line taller on desktop. */}
+            {statuses.map((s) => (
+              <span key={s.label} className="-order-6 sm:-my-px sm:order-none sm:shrink-0">
+                <StatusBadge {...s} />
+              </span>
+            ))}
+          </div>
           {/* Lineup under the title (2026-11-12), outside the title link
               (not clickable), never clamped so the full lineup always wraps
               into view; break-words keeps long names inside the column.
               Mobile: "LINEUP:" inline before the artists in exactly the
               lineup's own 12.5px/weight/grey — uppercase and the colon are
-              the only distinction. Desktop: the label inline before the
-              artists, same 14px, accent purple, semibold, no colon. No pill,
+              the only distinction. Desktop: "LINEUP:" inline before the
+              artists, same 14px, accent purple, semibold. No pill,
               background or border on either. Display only — event.artists
               itself is untouched. */}
           {lineup && (
             <p className="-order-3 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
               <span className="uppercase sm:mr-1 sm:font-semibold sm:tracking-wide sm:text-accent">
-                Lineup<span className="sm:hidden">:</span>
+                Lineup:
               </span>{" "}
               {lineup}
             </p>
@@ -104,16 +119,20 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           <div className="contents text-xs sm:mt-1 sm:flex sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="-order-2 text-text-secondary-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current sm:order-none"
+              className="-order-1 text-text-secondary-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current sm:order-none"
             >
               {event.venue.name}
             </Link>
             {subVenue && (
               <>
-                <span aria-hidden className="-order-2 text-text-tertiary sm:order-none">·</span>
-                <span className="-order-2 font-medium text-text-secondary-strong sm:order-none">{subVenue}</span>
+                <span aria-hidden className="-order-1 text-text-tertiary sm:order-none">·</span>
+                <span className="-order-1 font-medium text-text-secondary-strong sm:order-none">{subVenue}</span>
               </>
             )}
+            {/* Mobile-only line break: ends the venue line so the actions
+                start on their own line below it (zero height; venue →
+                actions ends up 12px, ≈ the 10px around the divider). */}
+            <span aria-hidden className="-order-1 h-0 basis-full sm:hidden" />
             {genres.length > 0 && (
               <>
                 <span aria-hidden className="hidden text-text-tertiary sm:inline">·</span>
@@ -197,14 +216,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 </Link>
               </>
             )}
-            {statuses.map((s) => (
-              <span key={s.label} className="-order-6 sm:contents sm:order-none">
-                <StatusBadge {...s} />
-              </span>
-            ))}
           </div>
-          {/* Mobile-only divider between event info and actions. */}
-          <div aria-hidden className="-order-1 my-1 h-px basis-full bg-border sm:hidden" />
+          {/* Mobile-only divider between event info and the venue + actions. */}
+          <div aria-hidden className="-order-2 my-1 h-px basis-full bg-border sm:hidden" />
         </div>
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
