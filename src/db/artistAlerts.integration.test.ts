@@ -472,4 +472,20 @@ describe.runIf(CAN_RUN)("artist alerts against a real PostgreSQL", () => {
     await runAt(12);
     expect(sent.filter((m) => m.text.includes("Headline Flip"))).toHaveLength(1);
   });
+  it("the alert names the artist as the event bills it, not as a requester typed it", async () => {
+    sent.length = 0;
+    await admin.query("DELETE FROM event_artists; DELETE FROM events; DELETE FROM alert_subscribers; DELETE FROM artists WHERE status = 'requested'");
+    await subscribe("case@example.test", [], [{ name: "black coffee" }], 0);
+    const [req] = await alerts.listRequestedArtists();
+    expect(req.displayName).toBe("black coffee");
+    await alerts.resolveRequestedArtist_admin(req.id, { verify: true }, at(0.5));
+    await addEvent("bc1", "TEST EVENT: Black Coffee", ["Black Coffee", "Opener Two"], { start: evStart(300) });
+    await runAt(1);
+    await runAt(3.2);
+    const mail = sent.filter((m) => m.text.includes("TEST EVENT"));
+    expect(mail).toHaveLength(1);
+    expect(mail[0].subject).toBe("Black Coffee \u2014 new event in Copenhagen");
+    expect(mail[0].text).toContain("Black Coffee: TEST EVENT: Black Coffee");
+    expect(mail[0].text).not.toContain("Opener Two");
+  });
 });
