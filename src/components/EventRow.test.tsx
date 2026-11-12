@@ -1023,16 +1023,22 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
     expect(titleLink.contains(lineup)).toBe(false);
     expect(titleLink.nextElementSibling).toBe(lineup);
     expect(lineup.tagName).toBe("P");
-    expect(lineup.textContent).toBe(`Lineup ${LINEUP_TEXT}`);
+    // The colon is mobile-only (sm:hidden); jsdom applies no CSS, so it is in textContent.
+    expect(lineup.textContent).toBe(`Lineup: ${LINEUP_TEXT}`);
   });
 
-  it("labels it with plain purple semibold uppercase text — no pill, background or border", () => {
+  it("mobile: LINEUP: inherits the lineup's own size, weight and grey; desktop: inline purple semibold, no colon", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
     const label = screen.getByText("Lineup");
-    expect(cls(label)).toEqual(expect.arrayContaining(["text-accent", "font-semibold", "uppercase"]));
+    const classes = cls(label);
+    expect(classes).toContain("uppercase");
+    // Nothing un-prefixed besides uppercase, so on mobile it matches the artists exactly.
+    expect(classes.filter((c) => !c.startsWith("sm:"))).toEqual(["uppercase"]);
+    expect(classes).toEqual(expect.arrayContaining(["sm:text-accent", "sm:font-semibold", "sm:mr-1"]));
+    const colon = label.querySelector("span") as HTMLElement;
+    expect(colon.textContent).toBe(":");
+    expect(cls(colon)).toEqual(["sm:hidden"]);
     expect(label.className).not.toMatch(/\b(bg-|border|rounded)/);
-    // Own line on mobile, inline at the lineup's 14px on desktop.
-    expect(cls(label)).toEqual(expect.arrayContaining(["block", "sm:inline", "sm:text-[14px]"]));
   });
 
   it("keeps the lineup's sizes and grey, and never clamps it", () => {
@@ -1067,18 +1073,22 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
   const cls = (el: Element) => el.className.split(/\s+/);
   const orderOf = (el: Element) => cls(el).find((c) => /^-?order-/.test(c));
 
-  it("orders mobile info as date → title → genres → lineup → venue → divider → actions → video/audio", () => {
+  it("orders mobile info as date (+ status) → title → genres → lineup → venue → divider → actions → video/audio", () => {
     const { container } = render(
       <EventRow
         event={{
           ...makeEvent({ title: "HYGGELIT SHOWCASE", artists: ["NAIVA", "ONSBERG"], subgenres: ["techno"] as GenreSlug[] }),
           hasArtistPreview: true,
           hasAudioLinks: true,
+          soldOut: true,
         }}
       />,
     );
     const row = container.querySelector("li > div") as HTMLElement;
     expect(orderOf(row.firstElementChild as Element)).toBe("-order-6");
+    // SOLD OUT joins the date/time on the top row on mobile; back in the metadata row on desktop.
+    const soldOutWrap = screen.getByText("Sold out").parentElement as HTMLElement;
+    expect(cls(soldOutWrap)).toEqual(["-order-6", "sm:contents", "sm:order-none"]);
     expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
     expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
@@ -1095,6 +1105,13 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     const [, middle, actions] = Array.from(row.children);
     expect(cls(middle)).toEqual(expect.arrayContaining(["contents", "sm:block", "sm:min-w-0", "sm:flex-1"]));
     expect(cls(actions)).toEqual(expect.arrayContaining(["contents", "sm:flex", "sm:shrink-0"]));
+  });
+
+  it("colours genres in the muted accent purple on mobile, keeping the tertiary grey on desktop", () => {
+    render(<EventRow event={makeEvent({ subgenres: ["house"] as GenreSlug[] })} />);
+    const classes = cls(screen.getByText("House").closest("span") as Element);
+    expect(classes).toEqual(expect.arrayContaining(["text-accent-dim", "sm:text-text-tertiary", "uppercase"]));
+    expect(classes.some((c) => c.startsWith("bg-") || c.startsWith("border"))).toBe(false);
   });
 
   it("draws the divider on mobile only", () => {

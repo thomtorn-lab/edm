@@ -44,9 +44,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // Mobile vs desktop structure (2026-11-12). Desktop is the existing
   // three-column row (date | title/lineup/metadata | actions), unchanged
   // apart from the inline LINEUP label. Mobile reorders the same DOM — no
-  // duplicated links — into: date → title → genres → LINEUP + artists →
-  // venue (+ sub-venue, status badges) → divider → actions (Official
-  // event, Tickets, Free, Calendar, then Video/Audio). It does that by
+  // duplicated links — into: date + time + status badges (e.g. SOLD OUT)
+  // on the top row → title → genres (muted accent purple) → LINEUP: +
+  // artists → venue (+ sub-venue) → divider → actions (Official event,
+  // Tickets, Free, Calendar, then Video/Audio). It does that by
   // making the middle column, the metadata row, the action column and the
   // link group `display: contents` below `sm`, so their children become
   // items of the row's own wrapping flexbox, sequenced with negative
@@ -57,7 +58,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   return (
     <li className="border-b border-border last:border-b-0">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 py-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
-        <div className="-order-6 flex shrink-0 basis-full items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:basis-auto sm:flex-col sm:items-start sm:gap-0.5">
+        <div className="-order-6 flex shrink-0 items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateRangeLabel(event)}
           </span>
@@ -86,15 +87,16 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           {/* Lineup under the title (2026-11-12), outside the title link
               (not clickable), never clamped so the full lineup always wraps
               into view; break-words keeps long names inside the column.
-              Mobile: a small purple LINEUP label on its own line, then the
-              artists at 12.5px. Desktop: the label inline before the artists,
-              same 14px as the lineup, accent purple, semibold — no pill,
+              Mobile: "LINEUP:" inline before the artists in exactly the
+              lineup's own 12.5px/weight/grey — uppercase and the colon are
+              the only distinction. Desktop: the label inline before the
+              artists, same 14px, accent purple, semibold, no colon. No pill,
               background or border on either. Display only — event.artists
               itself is untouched. */}
           {lineup && (
             <p className="-order-3 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
-              <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-accent sm:mb-0 sm:mr-1 sm:inline sm:text-[14px]">
-                Lineup
+              <span className="uppercase sm:mr-1 sm:font-semibold sm:tracking-wide sm:text-accent">
+                Lineup<span className="sm:hidden">:</span>
               </span>{" "}
               {lineup}
             </p>
@@ -115,7 +117,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             {genres.length > 0 && (
               <>
                 <span aria-hidden className="hidden text-text-tertiary sm:inline">·</span>
-                <span className="-order-4 basis-full font-medium uppercase tracking-wide text-text-tertiary sm:order-none sm:basis-auto">
+                <span className="-order-4 basis-full font-medium uppercase tracking-wide text-accent-dim sm:order-none sm:basis-auto sm:text-text-tertiary">
                   {/* A genre that has its own landing page (only Techno so
                       far) is a plain crawlable link to it, a sibling of the
                       title link rather than nested in it; every other genre
@@ -196,7 +198,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               </>
             )}
             {statuses.map((s) => (
-              <span key={s.label} className="-order-2 sm:contents sm:order-none">
+              <span key={s.label} className="-order-6 sm:contents sm:order-none">
                 <StatusBadge {...s} />
               </span>
             ))}
