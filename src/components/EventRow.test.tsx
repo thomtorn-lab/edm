@@ -1009,46 +1009,45 @@ describe("EventRow — AUDIO indicator (venue-provided SoundCloud links)", () =>
   });
 });
 
-describe("EventRow — lineup on its own line with a tinted LINEUP pill (2026-11-12)", () => {
+describe("EventRow — lineup on its own plain line under the title (2026-11-12)", () => {
   afterEach(cleanup);
 
   const SHOWCASE = { title: "HYGGELIT SHOWCASE", artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"] };
 
-  it("renders the lineup outside the title link, so the link's name is the title alone", () => {
+  it("renders the lineup outside the title link, directly after it, so the link's name is the title alone", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
     const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
     const lineup = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
     expect(titleLink.contains(lineup)).toBe(false);
     expect(titleLink.textContent).not.toContain(":");
-    // Directly after the title link, before the venue/genre metadata row.
     expect(titleLink.nextElementSibling).toBe(lineup);
     expect(lineup.tagName).toBe("P");
   });
 
-  it("keeps the lineup's current size and grey, and the desktop two-line cap", () => {
+  it("is plain text with no label or badge", () => {
+    render(<EventRow event={makeEvent(SHOWCASE)} />);
+    const lineup = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
+    expect(lineup.textContent).toBe("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
+    expect(lineup.children).toHaveLength(0);
+    expect(screen.queryByText(/^lineup$/i)).toBeNull();
+  });
+
+  it("is one step smaller than the title, in the secondary-strong grey, and never clamped", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
     const classes = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG").className.split(/\s+/);
-    expect(classes).toEqual(expect.arrayContaining(["text-[15px]", "leading-snug", "text-text-secondary-strong", "sm:line-clamp-2", "break-words"]));
-    expect(classes).not.toContain("line-clamp-2");
+    expect(classes).toEqual(expect.arrayContaining(["text-[14px]", "leading-snug", "text-text-secondary-strong", "break-words"]));
+    expect(classes.some((c) => c.includes("line-clamp") || c.includes("truncate"))).toBe(false);
+    const titleClasses = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }).className.split(/\s+/);
+    expect(titleClasses).toContain("text-[15px]");
   });
 
-  it("labels it with a tinted accent-purple LINEUP pill, not a filled button-like one", () => {
-    render(<EventRow event={makeEvent(SHOWCASE)} />);
-    const pill = screen.getByText("Lineup");
-    const classes = pill.className.split(/\s+/);
-    expect(classes).toEqual(expect.arrayContaining(["rounded-full", "bg-accent/15", "text-accent-strong", "uppercase"]));
-    expect(classes).not.toContain("bg-accent");
-    expect(classes).not.toContain("text-accent-on");
-    expect(pill.parentElement?.textContent).toBe("Lineup SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
+  it("renders no lineup line when there are no artists", () => {
+    const { container } = render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
+    expect(container.querySelector("p")).toBeNull();
   });
 
-  it("renders neither line nor pill when there is no lineup to show", () => {
-    render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
-    expect(screen.queryByText("Lineup")).toBeNull();
-  });
-
-  it("renders neither line nor pill when the title already names every artist", () => {
-    render(
+  it("renders no lineup line when the title already names every artist", () => {
+    const { container } = render(
       <EventRow
         event={makeEvent({
           title: "Black Box: TIMO MAAS, RYAN DANK, BALTZA · Red Box: KARINA LIN, ASLI",
@@ -1056,6 +1055,6 @@ describe("EventRow — lineup on its own line with a tinted LINEUP pill (2026-11
         })}
       />,
     );
-    expect(screen.queryByText("Lineup")).toBeNull();
+    expect(container.querySelector("p")).toBeNull();
   });
 });

@@ -71,20 +71,16 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             </span>
           </Link>
           {/* Lineup on its own line directly under the title (2026-11-12):
-              same 15px/leading-snug and secondary-strong grey the inline
-              lineup used, now outside the title link (not clickable — the
-              title is the link). A tinted LINEUP pill in the site's accent
-              purple (same treatment as the active genre-filter chips) labels
-              it without reading as a button. Desktop keeps the two-line cap
-              the title+lineup used to share; mobile wraps freely, as before.
-              Display only — event.artists itself is untouched. */}
+              plain text, no label — one step smaller than the title (14px vs
+              15px) in the same secondary-strong grey the inline lineup used,
+              so the title stays the primary focus. Outside the title link
+              (not clickable). Wraps naturally on mobile and desktop — never
+              clamped — so the full lineup is always visible; min-w-0 on the
+              column plus break-words keep it inside the content column, clear
+              of the Official event/Tickets/Calendar column. Display only —
+              event.artists itself is untouched. */}
           {lineup && (
-            <p className="mt-0.5 break-words text-[15px] leading-snug text-text-secondary-strong sm:line-clamp-2">
-              <span className="mr-0.5 inline-block rounded-full bg-accent/15 px-1.5 py-px align-[1px] text-[10px] font-semibold uppercase leading-[1.4] tracking-wide text-accent-strong">
-                Lineup
-              </span>{" "}
-              {lineup}
-            </p>
+            <p className="mt-0.5 break-words text-[14px] leading-snug text-text-secondary-strong">{lineup}</p>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link
