@@ -18,35 +18,6 @@ import { SITE_URL } from "@/lib/siteUrl";
  * indicator (a safe default, not a regression).
  */
 
-/**
- * Mobile bottom section, upper level (2026-11-12): can the venue and the
- * external links (Official event, Tickets, Free) share one line — venue
- * left, links right? A deliberately conservative width estimate (px, 12px
- * Inter as rendered; widths rounded up) against a 360px phone's content
- * width, so it only says yes when they clearly fit. If a narrower screen
- * still can't fit them, the row's flex-wrap simply wraps the link that
- * doesn't fit — nothing overlaps or scrolls sideways.
- */
-const MOBILE_CONTENT_WIDTH_PX = 328; // 360px screen − 2 × 16px padding
-const ACTION_GAP_PX = 16;
-export function venueFitsBesideLinks(opts: {
-  venue: string;
-  subVenue: string | null;
-  linkLabels: string[];
-  isFree: boolean;
-}): boolean {
-  const venueWidth =
-    16 + // pin + gap
-    opts.venue.length * 7.2 +
-    (opts.subVenue ? 20 + opts.subVenue.length * 7.6 : 0);
-  const linkWidths = [
-    ...opts.linkLabels.map((label) => label.length * 8.5 + 16), // uppercase label + ↗
-    ...(opts.isFree ? [34] : []),
-  ];
-  const linksWidth = linkWidths.reduce((a, b) => a + b, 0) + ACTION_GAP_PX * Math.max(0, linkWidths.length - 1);
-  return venueWidth + ACTION_GAP_PX + linksWidth <= MOBILE_CONTENT_WIDTH_PX;
-}
-
 export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
@@ -61,10 +32,6 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // VIDEO badge link below, so there is only ever one place that constructs
   // it.
   const eventHref = `/events/${event.slug}`;
-  const hasLinkActions = links.length > 0 || isFree;
-  const venueBesideLinks =
-    hasLinkActions &&
-    venueFitsBesideLinks({ venue: event.venue.name, subVenue, linkLabels: links.map((l) => l.label), isFree });
   const calendarInput = {
     title,
     description: event.description,
@@ -76,12 +43,12 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
 
   // Mobile vs desktop structure (2026-11-12). Desktop is the existing
   // three-column row (date | title/lineup/metadata | actions), unchanged
-  // apart from the inline LINEUP: label and status badges right-aligned on
-  // the title row. Mobile reorders the same DOM — no duplicated links —
-  // into: date + time + status badges (e.g. SOLD OUT) on the top row →
+  // apart from the inline LINEUP: label and status badges (e.g. SOLD OUT)
+  // below the time in the date column. Mobile reorders the same DOM — no
+  // duplicated links — into: date + time + status badges on the top row →
   // title → genres (muted accent purple) → LINEUP: + artists → divider →
-  // bottom section: venue (+ sub-venue) with Official event/Tickets/Free on
-  // the upper level, Calendar then Video/Audio on the lower level.
+  // bottom section, three left-aligned rows: venue; Official event/
+  // Tickets/Free (only if any); Calendar then Video/Audio.
   //
   // It does that by making the middle column, the metadata row, the action
   // column and the link group `display: contents` below `sm`, so their
@@ -99,45 +66,35 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           <span className="text-xs tabular-nums text-text-tertiary">
             {formatTimeRangeLabel(event)}
           </span>
+          {/* Status badges (e.g. SOLD OUT) live in the date column: beside the
+              time on mobile (the column is a row there), directly below it on
+              desktop — the same place regardless of title length or actions.
+              SOLD OUT uses the "strong" tone: text and border in the title's
+              white. Status logic unchanged. */}
+          {statuses.map((s) => (
+            <span key={s.label} className="sm:mt-1">
+              <StatusBadge label={s.label} tone={s.label === "Sold out" ? "strong" : s.tone} />
+            </span>
+          ))}
         </div>
 
         <div className="contents sm:block sm:min-w-0 sm:flex-1">
-          {/* Title row: display:contents on mobile (title and status badges
-              are ordered independently), a flex row on desktop so status
-              badges sit right of the title. */}
-          <div className="contents sm:flex sm:items-start sm:gap-2">
-            <Link
-              href={eventHref}
-              className="-order-5 mt-1 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:min-w-0 sm:basis-auto sm:line-clamp-2"
-            >
-              {title}
-              {/* Discreet internal-navigation cue, mobile only (desktop already
-                  has the hover/focus underline as its affordance): a plain →
-                  distinguishes this as Electronic CPH's own event-detail page,
-                  never the ↗ glyph used for Official event/Tickets/Source,
-                  which always means "leaves the site". Purely decorative — the
-                  link's accessible name stays the title; no-underline
-                  keeps the hover-decoration line from drawing through the glyph. */}
-              <span aria-hidden="true" className="ml-1 font-normal text-text-secondary-strong no-underline sm:hidden">
-                →
-              </span>
-            </Link>
-            {/* Status badges (e.g. SOLD OUT): mobile → top row beside date +
-                time (-order-6); desktop → same row as the title, pushed to
-                the right edge of the info column (ml-auto on the first
-                badge; the title keeps all remaining width and wraps
-                normally). -my-px keeps the badge from making the title line
-                taller on desktop. SOLD OUT uses the "strong" tone: text and
-                border in the title's white. Status logic unchanged. */}
-            {statuses.map((s, i) => (
-              <span
-                key={s.label}
-                className={`-order-6 -ml-2 sm:-my-px sm:ml-0 sm:order-none sm:shrink-0${i === 0 ? " sm:ml-auto" : ""}`}
-              >
-                <StatusBadge label={s.label} tone={s.label === "Sold out" ? "strong" : s.tone} />
-              </span>
-            ))}
-          </div>
+          <Link
+            href={eventHref}
+            className="-order-5 mt-1 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
+          >
+            {title}
+            {/* Discreet internal-navigation cue, mobile only (desktop already
+                has the hover/focus underline as its affordance): a plain →
+                distinguishes this as Electronic CPH's own event-detail page,
+                never the ↗ glyph used for Official event/Tickets/Source,
+                which always means "leaves the site". Purely decorative — the
+                link's accessible name stays the title; no-underline
+                keeps the hover-decoration line from drawing through the glyph. */}
+            <span aria-hidden="true" className="ml-1 font-normal text-text-secondary-strong no-underline sm:hidden">
+              →
+            </span>
+          </Link>
           {/* Lineup under the title (2026-11-12), outside the title link
               (not clickable), never clamped so the full lineup always wraps
               into view; break-words keeps long names inside the column.
@@ -156,16 +113,12 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             </p>
           )}
           <div className="contents text-xs sm:mt-1 sm:flex sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1">
-            {/* Venue (+ sub-venue): one item on mobile — pin, name, sub-venue —
-                opening the bottom section's upper level under the divider. It
-                shares a line with Official event/Tickets (venue left, links
-                pushed right by `grow`) when they comfortably fit; otherwise
-                (or with no links) it takes the full line and the links follow
-                on the next one. Calendar/Video/Audio always form the lower
-                level. At sm the wrapper is display:contents and the pin
-                hidden, so desktop's metadata row is unchanged. */}
+            {/* Venue (+ sub-venue): row 1 of the mobile bottom section under
+                the divider — pin, name, sub-venue, always on its own
+                left-aligned line. At sm the wrapper is display:contents and
+                the pin hidden, so desktop's metadata row is unchanged. */}
             <span
-              className={`-order-1 flex min-w-0 items-center gap-x-2 ${venueBesideLinks ? "grow" : "basis-full"} sm:contents sm:order-none`}
+              className="-order-1 flex min-w-0 basis-full items-center gap-x-2 sm:contents sm:order-none"
             >
               <svg
                 aria-hidden="true"
@@ -283,14 +236,18 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
           {(links.length > 0 || isFree) && (
-            <div className="contents text-xs font-medium uppercase tracking-wide sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
+            // Row 2 of the mobile bottom section: Official event, Tickets, Free
+            // — its own left-aligned, wrapping line. Calendar + Video/Audio
+            // follow as row 3. Desktop: unchanged link group in the actions
+            // column.
+            <div className="-order-1 flex basis-full flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium uppercase tracking-wide sm:order-none sm:basis-auto sm:gap-y-1">
               {links.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="-order-1 text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none"
+                  className="text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
                 >
                   {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
                 </a>
@@ -298,14 +255,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               {/* FREE is an admission/status badge, not a link — rendered
                   after the links so it always sits to the right of Official
                   Event, in white to carry comparable visual weight. */}
-              {isFree && <span className="-order-1 font-semibold text-text-primary sm:order-none">Free</span>}
+              {isFree && <span className="font-semibold text-text-primary">Free</span>}
             </div>
           )}
-          {/* Mobile-only line break between the bottom section's two levels:
-              venue + external links above, Calendar/Video/Audio below. Only
-              needed when links exist — without them the venue already takes
-              the full line. */}
-          {hasLinkActions && <span aria-hidden className="-order-1 h-0 basis-full sm:hidden" />}
           <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
         </div>
       </div>
