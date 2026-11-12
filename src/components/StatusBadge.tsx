@@ -6,6 +6,15 @@ interface StatusInfo {
 }
 
 /**
+ * "strong" (event listings, 2026-11-12): text and border in exactly the
+ * event title's white (text-primary) — used by EventRow for SOLD OUT only.
+ * Same background, typography, border width and padding as the other
+ * tones. getEventStatuses never returns it, so other callers (the event
+ * page) are unchanged.
+ */
+type BadgeTone = StatusInfo["tone"] | "strong";
+
+/**
  * Public event-lifecycle statuses only (event lifecycle/status handling,
  * 2026-08-28). `timeChanged` is still an internal data-quality flag (a
  * same-day time correction is not worth a prominent badge) and must never
@@ -39,14 +48,16 @@ export function getEventStatuses(
   return statuses;
 }
 
-export default function StatusBadge({ label, tone }: StatusInfo) {
+export default function StatusBadge({ label, tone }: { label: string; tone: BadgeTone }) {
   return (
     <span
       className={
         "inline-flex items-center rounded-[3px] border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
         (tone === "bad"
           ? "border-status-bad/40 text-status-bad"
-          : "border-border-strong text-text-secondary-strong")
+          : tone === "strong"
+            ? "border-text-primary text-text-primary"
+            : "border-border-strong text-text-secondary-strong")
       }
     >
       {label}

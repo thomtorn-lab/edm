@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import EventRow, { venueFitsBesideActions } from "./EventRow";
+import EventRow, { venueFitsBesideLinks } from "./EventRow";
 import type { EventWithVenue } from "@/lib/queries";
 import { GENRES, genrePagePath, type GenreSlug } from "@/lib/taxonomy";
 
@@ -1162,11 +1162,21 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(group.firstElementChild).toBe(pin);
   });
 
-  it("puts the venue beside the actions when they clearly fit, otherwise on its own line above them", () => {
+  it("puts Official event/Tickets beside the venue when they clearly fit, otherwise on the next line", () => {
     render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
     expect(cls(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toContain("grow");
     cleanup();
-    render(
+    render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
+    expect(cls(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toContain("basis-full");
+  });
+
+  it("gives the venue the full line when there are no external links", () => {
+    render(<EventRow event={makeEvent()} />);
+    expect(cls(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toContain("basis-full");
+  });
+
+  it("puts external links on the upper level and Calendar/Video/Audio on a separate lower level", () => {
+    const { container } = render(
       <EventRow
         event={{
           ...makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" }),
@@ -1175,14 +1185,25 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
         }}
       />,
     );
-    expect(cls(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toContain("basis-full");
+    const official = screen.getByRole("link", { name: /Official event/ });
+    expect(cls(official)).toEqual(expect.arrayContaining(["-order-1", "sm:order-none"]));
+    // Zero-height, mobile-only line break right before the calendar.
+    const calendar = screen.getByRole("button", { name: /calendar/i }).closest("div") as HTMLElement;
+    const breaker = calendar.previousElementSibling as HTMLElement;
+    expect(cls(breaker)).toEqual(["-order-1", "h-0", "basis-full", "sm:hidden"]);
+    expect(container.querySelectorAll("span.h-0.basis-full")).toHaveLength(1);
+  });
+
+  it("has no level break when there are no external links", () => {
+    const { container } = render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
+    expect(container.querySelectorAll("span.h-0.basis-full")).toHaveLength(0);
   });
 
   it("estimates conservatively", () => {
-    const base = { subVenue: null, isFree: false, video: false, audio: false };
-    expect(venueFitsBesideActions({ ...base, venue: "Culture Box", linkLabels: ["Tickets"] })).toBe(true);
-    expect(venueFitsBesideActions({ ...base, venue: "Culture Box", linkLabels: ["Official event", "Tickets"] })).toBe(false);
-    expect(venueFitsBesideActions({ ...base, venue: "Pumpehuset", subVenue: "Byhaven", linkLabels: [], video: true })).toBe(true);
+    const base = { subVenue: null, isFree: false };
+    expect(venueFitsBesideLinks({ ...base, venue: "Culture Box", linkLabels: ["Tickets"] })).toBe(true);
+    expect(venueFitsBesideLinks({ ...base, venue: "Den Anden Side", linkLabels: ["Official event", "Tickets"] })).toBe(false);
+    expect(venueFitsBesideLinks({ ...base, venue: "Pumpehuset", subVenue: "Byhaven", linkLabels: ["Tickets"] })).toBe(true);
   });
 
   it("uses a subtler internal divider than the between-event line on mobile; desktop line unchanged", () => {
@@ -1191,5 +1212,32 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(cls(li)).toEqual(expect.arrayContaining(["border-b", "border-border-strong/80", "sm:border-border"]));
     const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
     expect(cls(divider)).toContain("bg-border/70");
+  });
+});
+
+describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
+  afterEach(cleanup);
+  const cls = (el: Element) => el.className.split(/\s+/);
+
+  it("renders SOLD OUT with text and border in text-primary, same badge otherwise", () => {
+    render(<EventRow event={makeEvent({ soldOut: true })} />);
+    const badge = screen.getByText("Sold out");
+    expect(cls(badge)).toEqual(expect.arrayContaining(["border-text-primary", "text-text-primary", "border", "px-1.5", "py-0.5", "text-[10px]", "rounded-[3px]"]));
+    expect(cls(badge)).not.toContain("border-border-strong");
+    // The title uses the same token.
+    expect(cls(screen.getByRole("link", { name: /Test Event/ }))).toContain("text-text-primary");
+  });
+
+  it("leaves other statuses' styling unchanged", () => {
+    render(<EventRow event={makeEvent({ dateChanged: true })} />);
+    expect(cls(screen.getByText("Rescheduled"))).toEqual(expect.arrayContaining(["border-border-strong", "text-text-secondary-strong"]));
+  });
+
+  it("right-aligns the first status badge on the desktop title row only", () => {
+    render(<EventRow event={makeEvent({ soldOut: true, dateChanged: true })} />);
+    const wraps = [screen.getByText("Rescheduled"), screen.getByText("Sold out")].map((b) => b.parentElement as HTMLElement);
+    expect(cls(wraps[0])).toContain("sm:ml-auto");
+    expect(cls(wraps[1])).not.toContain("sm:ml-auto");
+    expect(cls(wraps[0]).filter((c) => !c.startsWith("sm:"))).toEqual(["-order-6", "-ml-2"]);
   });
 });

@@ -19,36 +19,32 @@ import { SITE_URL } from "@/lib/siteUrl";
  */
 
 /**
- * Mobile bottom section (2026-11-12): can the venue and the actions share
- * one line — venue left, actions right? A deliberately conservative width
- * estimate (px, 12px Inter as rendered; widths rounded up) against a 360px
- * phone's content width, so it only says yes when they clearly fit. If a
- * narrower screen still can't fit them, the row's flex-wrap simply wraps
- * the overflowing actions — nothing overlaps or scrolls sideways.
+ * Mobile bottom section, upper level (2026-11-12): can the venue and the
+ * external links (Official event, Tickets, Free) share one line — venue
+ * left, links right? A deliberately conservative width estimate (px, 12px
+ * Inter as rendered; widths rounded up) against a 360px phone's content
+ * width, so it only says yes when they clearly fit. If a narrower screen
+ * still can't fit them, the row's flex-wrap simply wraps the link that
+ * doesn't fit — nothing overlaps or scrolls sideways.
  */
 const MOBILE_CONTENT_WIDTH_PX = 328; // 360px screen − 2 × 16px padding
 const ACTION_GAP_PX = 16;
-export function venueFitsBesideActions(opts: {
+export function venueFitsBesideLinks(opts: {
   venue: string;
   subVenue: string | null;
   linkLabels: string[];
   isFree: boolean;
-  video: boolean;
-  audio: boolean;
 }): boolean {
   const venueWidth =
     16 + // pin + gap
     opts.venue.length * 7.2 +
     (opts.subVenue ? 20 + opts.subVenue.length * 7.6 : 0);
-  const actionWidths = [
+  const linkWidths = [
     ...opts.linkLabels.map((label) => label.length * 8.5 + 16), // uppercase label + ↗
     ...(opts.isFree ? [34] : []),
-    36, // calendar icon button (always present)
-    ...(opts.video ? [62] : []),
-    ...(opts.audio ? [62] : []),
   ];
-  const actionsWidth = actionWidths.reduce((a, b) => a + b, 0) + ACTION_GAP_PX * (actionWidths.length - 1);
-  return venueWidth + ACTION_GAP_PX + actionsWidth <= MOBILE_CONTENT_WIDTH_PX;
+  const linksWidth = linkWidths.reduce((a, b) => a + b, 0) + ACTION_GAP_PX * Math.max(0, linkWidths.length - 1);
+  return venueWidth + ACTION_GAP_PX + linksWidth <= MOBILE_CONTENT_WIDTH_PX;
 }
 
 export default function EventRow({ event }: { event: EventRowEvent }) {
@@ -65,14 +61,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // VIDEO badge link below, so there is only ever one place that constructs
   // it.
   const eventHref = `/events/${event.slug}`;
-  const venueBesideActions = venueFitsBesideActions({
-    venue: event.venue.name,
-    subVenue,
-    linkLabels: links.map((l) => l.label),
-    isFree,
-    video: !!event.hasArtistPreview,
-    audio: !!event.hasAudioLinks,
-  });
+  const hasLinkActions = links.length > 0 || isFree;
+  const venueBesideLinks =
+    hasLinkActions &&
+    venueFitsBesideLinks({ venue: event.venue.name, subVenue, linkLabels: links.map((l) => l.label), isFree });
   const calendarInput = {
     title,
     description: event.description,
@@ -84,18 +76,19 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
 
   // Mobile vs desktop structure (2026-11-12). Desktop is the existing
   // three-column row (date | title/lineup/metadata | actions), unchanged
-  // apart from the inline LINEUP label. Mobile reorders the same DOM — no
-  // duplicated links — into: date + time + status badges (e.g. SOLD OUT)
-  // on the top row → title → genres (muted accent purple) → LINEUP: +
-  // artists → divider → venue (+ sub-venue) → actions (Official event,
-  // Tickets, Free, Calendar, then Video/Audio). On desktop status badges
-  // sit right of the title. It does that by
-  // making the middle column, the metadata row, the action column and the
-  // link group `display: contents` below `sm`, so their children become
-  // items of the row's own wrapping flexbox, sequenced with negative
-  // `order` (info lines are basis-full; actions keep their natural width
-  // and wrap side by side with the row's 16px gap). At `sm` every container is a real box again and
-  // every order/margin resets, so desktop renders exactly as before.
+  // apart from the inline LINEUP: label and status badges right-aligned on
+  // the title row. Mobile reorders the same DOM — no duplicated links —
+  // into: date + time + status badges (e.g. SOLD OUT) on the top row →
+  // title → genres (muted accent purple) → LINEUP: + artists → divider →
+  // bottom section: venue (+ sub-venue) with Official event/Tickets/Free on
+  // the upper level, Calendar then Video/Audio on the lower level.
+  //
+  // It does that by making the middle column, the metadata row, the action
+  // column and the link group `display: contents` below `sm`, so their
+  // children become items of the row's own wrapping flexbox, sequenced with
+  // negative `order` (info lines are basis-full; actions keep their natural
+  // width and wrap side by side with the row's 16px gap). At `sm` every
+  // container is a real box again and every order/margin resets.
   return (
     <li className="border-b border-border-strong/80 last:border-b-0 sm:border-border">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
@@ -130,12 +123,18 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               </span>
             </Link>
             {/* Status badges (e.g. SOLD OUT): mobile → top row beside date +
-                time (-order-6); desktop → directly right of the title. Same
-                StatusBadge styling and logic as before. -my-px keeps the
-                badge from making the title line taller on desktop. */}
-            {statuses.map((s) => (
-              <span key={s.label} className="-order-6 -ml-2 sm:-my-px sm:ml-0 sm:order-none sm:shrink-0">
-                <StatusBadge {...s} />
+                time (-order-6); desktop → same row as the title, pushed to
+                the right edge of the info column (ml-auto on the first
+                badge; the title keeps all remaining width and wraps
+                normally). -my-px keeps the badge from making the title line
+                taller on desktop. SOLD OUT uses the "strong" tone: text and
+                border in the title's white. Status logic unchanged. */}
+            {statuses.map((s, i) => (
+              <span
+                key={s.label}
+                className={`-order-6 -ml-2 sm:-my-px sm:ml-0 sm:order-none sm:shrink-0${i === 0 ? " sm:ml-auto" : ""}`}
+              >
+                <StatusBadge label={s.label} tone={s.label === "Sold out" ? "strong" : s.tone} />
               </span>
             ))}
           </div>
@@ -158,14 +157,15 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           )}
           <div className="contents text-xs sm:mt-1 sm:flex sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1">
             {/* Venue (+ sub-venue): one item on mobile — pin, name, sub-venue —
-                opening the bottom section under the divider. It shares a line
-                with the actions (venue left, actions pushed right by `grow`)
-                when they comfortably fit; otherwise it takes the full line and
-                the actions follow on the next one, 6px below. At sm the
-                wrapper is display:contents and the pin hidden, so desktop's
-                metadata row is unchanged. */}
+                opening the bottom section's upper level under the divider. It
+                shares a line with Official event/Tickets (venue left, links
+                pushed right by `grow`) when they comfortably fit; otherwise
+                (or with no links) it takes the full line and the links follow
+                on the next one. Calendar/Video/Audio always form the lower
+                level. At sm the wrapper is display:contents and the pin
+                hidden, so desktop's metadata row is unchanged. */}
             <span
-              className={`-order-1 flex min-w-0 items-center gap-x-2 ${venueBesideActions ? "grow" : "basis-full"} sm:contents sm:order-none`}
+              className={`-order-1 flex min-w-0 items-center gap-x-2 ${venueBesideLinks ? "grow" : "basis-full"} sm:contents sm:order-none`}
             >
               <svg
                 aria-hidden="true"
@@ -290,7 +290,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
+                  className="-order-1 text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none"
                 >
                   {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
                 </a>
@@ -298,9 +298,14 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               {/* FREE is an admission/status badge, not a link — rendered
                   after the links so it always sits to the right of Official
                   Event, in white to carry comparable visual weight. */}
-              {isFree && <span className="font-semibold text-text-primary">Free</span>}
+              {isFree && <span className="-order-1 font-semibold text-text-primary sm:order-none">Free</span>}
             </div>
           )}
+          {/* Mobile-only line break between the bottom section's two levels:
+              venue + external links above, Calendar/Video/Audio below. Only
+              needed when links exist — without them the venue already takes
+              the full line. */}
+          {hasLinkActions && <span aria-hidden className="-order-1 h-0 basis-full sm:hidden" />}
           <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
         </div>
       </div>
