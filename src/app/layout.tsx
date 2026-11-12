@@ -5,6 +5,7 @@ import PrivacyAwareAnalytics from "@/components/PrivacyAwareAnalytics";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import BackToTopButton from "@/components/BackToTopButton";
 import { SITE_URL } from "@/lib/siteUrl";
 
 const inter = Inter({
@@ -69,6 +70,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Header />
         <main className="flex-1 relative z-[1]">{children}</main>
         <Footer />
+        <BackToTopButton />
         <PrivacyAwareAnalytics />
       </body>
     </html>

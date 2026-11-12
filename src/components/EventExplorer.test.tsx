@@ -281,8 +281,8 @@ describe("EventExplorer month heading — reference purple token (Round 14: no n
   });
 });
 
-// Back to top moved to the site footer (2026-11-03): one control on every
-// page instead of a second, floating one here. See FooterBackToTopButton.
+// Back to top is the site-wide floating BackToTopButton in the root layout
+// (2026-11-12): one control on every page, so EventExplorer has none of its own.
 describe("EventExplorer — no floating Back to top", () => {
   it("does not render its own Back to top button, even when scrolled far down", () => {
     render(<EventExplorer events={[AUG_EVENT, SEP_EVENT]} serverNow="2026-08-01T12:00:00.000Z" />);

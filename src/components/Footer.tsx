@@ -2,7 +2,6 @@ import Link from "next/link";
 import { artistAlertsMode } from "@/lib/artistAlerts/config";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 import { INDEXABLE_GENRE_PAGES, genrePagePath, getGenre } from "@/lib/taxonomy";
-import FooterBackToTopButton from "./FooterBackToTopButton";
 
 // Outline glyphs in the same 20×20 / 1.5-stroke style as the site's other
 // inline icons (e.g. VenueAddressLink's MapPinIcon), so they read as quiet
@@ -38,16 +37,14 @@ const LINK = "inline-block py-1 hover:text-text-primary";
 
 // Footer redesign (2026-11-03): three columns on desktop (identity · primary
 // links · information links + social), stacked on mobile with both link groups
-// in fixed two-column grids. The back-to-top button is absolutely placed in the
-// top-right corner, and the content next to it reserves room for it (pr-16 on
-// the identity block, lg:pr-20 on the desktop grid), so it never overlaps text.
+// in fixed two-column grids. Back to top is the site-wide floating
+// BackToTopButton (root layout), not part of the footer.
 export default function Footer() {
   return (
     <footer className="border-t border-border">
-      <div className="relative mx-auto max-w-6xl px-4 py-10 text-sm text-text-secondary sm:px-6 lg:py-14">
-        <FooterBackToTopButton className="absolute right-4 top-10 sm:right-6 lg:top-14" />
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-0 lg:pr-20">
-          <div className="min-h-12 pr-16 lg:pr-10">
+      <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-text-secondary sm:px-6 lg:py-14">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-0">
+          <div className="lg:pr-10">
             <p className="text-base font-semibold text-text-primary lg:text-lg">Electronic CPH</p>
             <p className="mt-2 max-w-xs text-text-tertiary">
               An independent index of electronic music events in Copenhagen.
