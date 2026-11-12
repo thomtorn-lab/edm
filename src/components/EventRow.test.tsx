@@ -486,7 +486,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.getByText(/SOPHIE VAN HAYDEN \/ NAIVA \/ ONSBERG/)).toBeTruthy();
+    expect(screen.getByText(/Sophie Van Hayden \/ Naiva \/ Onsberg/)).toBeTruthy();
   });
 
   it("renders no lineup text at all when the event has no artists", () => {
