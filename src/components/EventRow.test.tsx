@@ -1265,6 +1265,16 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     expect(cls(tickets)).toEqual(expect.arrayContaining(["text-xs", "font-medium", "uppercase", "tracking-wide"]));
   });
 
+  it("does not bind when Video/Audio follow Calendar — links then fill the line by width alone", () => {
+    render(
+      <EventRow
+        event={{ ...makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" }), hasAudioLinks: true }}
+      />,
+    );
+    const unit = screen.getByRole("link", { name: /Tickets/ }).parentElement as HTMLElement;
+    expect(cls(unit)).toEqual(["contents", "sm:contents"]);
+  });
+
   it("binds FREE (when it is last) to Calendar", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
     const unit = screen.getByText("Free").parentElement as HTMLElement;

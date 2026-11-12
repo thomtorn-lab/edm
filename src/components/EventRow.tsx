@@ -49,6 +49,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
     ...(isFree ? [{ kind: "free" as const }] : []),
   ];
   const leadLinkItems = linkItems.slice(0, -1);
+  const bindCalendarToLastLink = !event.hasArtistPreview && !event.hasAudioLinks;
   const lastLinkItem = linkItems.at(-1);
   // Typography the link group gives its children; the last item sits
   // outside the group (in the Calendar unit), so each item carries it itself.
@@ -280,9 +281,12 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           {/* Mobile: the link group is display:contents, so each link is its
               own unit in the bottom section's single wrapping flow (venue →
               Official event → Tickets/Free → Calendar → Video → Audio).
-              The last of Official event/Tickets/Free is bound to Calendar in
-              one non-wrapping unit, so Calendar never drops onto a line by
-              itself — it moves down together with that link instead. At sm
+              Everything wraps purely by available width. One exception keeps
+              Calendar from ever ending up alone on a line: when no Video/
+              Audio follows it, the last of Official event/Tickets/Free and
+              Calendar form one non-wrapping unit, so Calendar moves down
+              with that link. (With media present Calendar is never last, so
+              no binding is needed and the links fill the line first.) At sm
               both wrappers are display:contents / the original flex group,
               so desktop renders exactly as before. */}
           {leadLinkItems.length > 0 && (
@@ -290,7 +294,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               {leadLinkItems.map(renderLinkItem)}
             </div>
           )}
-          <span className="inline-flex items-center gap-x-4 sm:contents">
+          <span className={`${bindCalendarToLastLink ? "inline-flex items-center gap-x-4" : "contents"} sm:contents`}>
             {lastLinkItem && renderLinkItem(lastLinkItem)}
             <AddToCalendar
               event={calendarInput}
