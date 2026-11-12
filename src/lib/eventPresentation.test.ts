@@ -185,4 +185,11 @@ describe("formatArtistName — public lineup casing", () => {
     expect(formatArtistName("  ØLLE   ÅSE ")).toBe("Ølle Åse");
     expect(formatArtistName("jean-michel")).toBe("Jean-Michel");
   });
+
+  it("keeps DJ upper-case and b2b lower-case however they were entered", () => {
+    expect(formatArtistName("dj koze")).toBe("DJ Koze");
+    expect(formatArtistName("Dj KOZE")).toBe("DJ Koze");
+    expect(formatArtistName("ROSA MALENA B2B DJ BETA")).toBe("Rosa Malena b2b DJ Beta");
+    expect(formatArtistName("djane")).toBe("Djane");
+  });
 });

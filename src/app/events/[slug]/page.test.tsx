@@ -569,7 +569,7 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
         subgenres: [],
       }),
     );
-    expect(screen.getByText("Dj Alpha / Dj Beta")).toBeTruthy();
+    expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
     expect(screen.queryByText("About")).toBeNull();
   });
 });
@@ -625,7 +625,7 @@ describe("Event detail page — suppress redundant artist preview when the title
 
   it("still shows the grey artist line for a non-Culture-Box event whose title never names the artists (no regression)", async () => {
     await renderPage(makeEvent({ title: "Test Event", artists: ["DJ Alpha", "DJ Beta"] }));
-    expect(screen.getByText("Dj Alpha / Dj Beta")).toBeTruthy();
+    expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
   });
 });
 

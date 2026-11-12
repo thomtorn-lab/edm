@@ -123,18 +123,33 @@ export function shouldShowArtistPreview(title: string, artists: string[]): boole
   return true;
 }
 
+// Words that keep a fixed casing instead of the title-case rule, matched
+// case-insensitively against a whole word: "dj koze" → "DJ Koze",
+// "A B2B C" → "A b2b C".
+const ARTIST_WORD_EXCEPTIONS: Record<string, string> = {
+  dj: "DJ",
+  b2b: "b2b",
+};
+
 /**
  * Display casing for an artist name in the public lineup: every word starts
  * with a capital letter and the rest of the word is lower-case, regardless
  * of how the name was entered ("ROSA MALENA" / "rosa malena" → "Rosa
  * Malena"). Words are split on whitespace and hyphens ("jean-michel" →
- * "Jean-Michel"). Presentation-only — canonical `artists` data is never
- * modified.
+ * "Jean-Michel"); the words in ARTIST_WORD_EXCEPTIONS keep their fixed
+ * casing. Presentation-only — canonical `artists` data is never modified.
  */
 export function formatArtistName(name: string): string {
   return name
     .trim()
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase("da-DK")
-    .replace(/(^|[\s-])(\p{L})/gu, (_, sep: string, letter: string) => sep + letter.toLocaleUpperCase("da-DK"));
+    .split(/(\s+|-)/)
+    .map((part) => {
+      if (/^\s+$/.test(part)) return " ";
+      if (part === "-" || part === "") return part;
+      const lower = part.toLocaleLowerCase("da-DK");
+      const exception = ARTIST_WORD_EXCEPTIONS[lower];
+      if (exception) return exception;
+      return lower.replace(/^(\P{L}*)(\p{L})/u, (_, lead: string, letter: string) => lead + letter.toLocaleUpperCase("da-DK"));
+    })
+    .join("");
 }
