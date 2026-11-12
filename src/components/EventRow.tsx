@@ -73,7 +73,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           {/* Lineup on its own line directly under the title (2026-11-12):
               plain text, no label, in the same secondary-strong grey the
               inline lineup used, smaller than the 15px title so the title
-              stays the primary focus: 12.5px on mobile (≈15% under desktop,
+              stays the primary focus: 12.5px on mobile (≈11% under desktop,
               where it competed with the title) with a little more room above
               it (6px), 14px with 2px above on desktop. Outside the title link
               (not clickable). Wraps naturally on mobile and desktop — never
