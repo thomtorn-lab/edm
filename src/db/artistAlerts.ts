@@ -466,7 +466,8 @@ export async function sendPendingAlerts(now: Date, timing: AlertTiming, mode: Ar
       startDatetime: events.startDatetime,
       venueName: venues.name,
       eventPublic: sql<boolean>`(${publicUpcomingEventCondition(now)})`,
-      artistName: artists.displayName,
+      // The name as this event bills it (e.g. "Black Coffee"), not as a requester typed it; falls back to the stored artist name.
+      artistName: sql<string>`COALESCE((SELECT ea.display_name FROM event_artists ea WHERE ea.event_id = ${alertDeliveries.eventId} AND ea.artist_id = ${alertDeliveries.artistId} AND ea.removed_at IS NULL ORDER BY (ea.confidence IN ('high', 'confirmed')) DESC, ea.name_key LIMIT 1), ${artists.displayName})`,
       appearanceAlertable: sql<boolean>`EXISTS (SELECT 1 FROM event_artists ea WHERE ea.event_id = ${alertDeliveries.eventId} AND ea.artist_id = ${alertDeliveries.artistId} AND ea.removed_at IS NULL AND ea.confidence IN ('high', 'confirmed'))`,
     })
     .from(alertDeliveries)
