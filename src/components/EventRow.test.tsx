@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import EventRow from "./EventRow";
+import EventRow, { venueFitsBesideActions } from "./EventRow";
 import type { EventWithVenue } from "@/lib/queries";
 import { GENRES, genrePagePath, type GenreSlug } from "@/lib/taxonomy";
 
@@ -212,7 +212,11 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     const metadataRow = genreText.parentElement as HTMLElement;
     expect(metadataRow.className).toContain("flex-wrap");
     const venueLink = screen.getByRole("link", { name: /An Unusually Long Venue Name/ });
-    expect(venueLink.parentElement).toBe(metadataRow);
+    // Mobile-only venue group wrapper is display:contents at sm, so on desktop
+    // the venue still lays out as an item of this same metadata row.
+    const venueGroup = venueLink.parentElement as HTMLElement;
+    expect(venueGroup.className).toContain("sm:contents");
+    expect(venueGroup.parentElement).toBe(metadataRow);
   });
 
   it("shows a FREE badge when there is no ticket link but free-admission evidence exists", () => {
@@ -934,8 +938,10 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
     );
     const venueLink = screen.getByRole("link", { name: "Test Venue" });
     const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
-    // Same flex-wrap metadata container, not a sibling block/new row.
-    expect(venueLink.parentElement).toBe(videoLink.parentElement);
+    // Same flex-wrap metadata container, not a sibling block/new row (the
+    // venue's mobile-only group wrapper is display:contents at sm).
+    expect((venueLink.parentElement as HTMLElement).className).toContain("sm:contents");
+    expect(venueLink.parentElement?.parentElement).toBe(videoLink.parentElement);
   });
 
   it("preserves the badge's visual appearance as closely as possible — same outlined pill, accent play glyph, no new button styling", () => {
@@ -1092,7 +1098,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
     expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
     expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-2");
-    expect(orderOf(screen.getByRole("link", { name: "Test Venue" }))).toBe("-order-1");
+    expect(orderOf(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toBe("-order-1");
     expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");
     expect(orderOf(screen.getByRole("link", { name: /audio links/ }))).toBe("order-1");
   });
@@ -1116,7 +1122,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
   it("draws the divider on mobile only", () => {
     const { container } = render(<EventRow event={makeEvent()} />);
     const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
-    expect(cls(divider)).toEqual(expect.arrayContaining(["basis-full", "bg-border", "sm:hidden"]));
+    expect(cls(divider)).toEqual(expect.arrayContaining(["basis-full", "bg-border/70", "sm:hidden"]));
   });
 
   it("hides the metadata · separators on mobile except between venue and sub-venue", () => {
@@ -1139,5 +1145,51 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     const titleLink = screen.getByRole("link", { name: /Test Event/ });
     const arrow = titleLink.querySelector("span[aria-hidden='true']");
     expect(arrow?.textContent?.trim()).toBe("\u2192");
+  });
+});
+
+describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () => {
+  afterEach(cleanup);
+  const cls = (el: Element) => el.className.split(/\s+/);
+
+  it("opens the venue with a discreet pin icon (mobile only) in the muted grey", () => {
+    render(<EventRow event={makeEvent()} />);
+    const group = screen.getByRole("link", { name: "Test Venue" }).parentElement as HTMLElement;
+    const pin = group.querySelector("svg") as SVGElement;
+    expect(pin.getAttribute("aria-hidden")).toBe("true");
+    expect(pin.getAttribute("class")).toContain("text-text-tertiary");
+    expect(pin.getAttribute("class")).toContain("sm:hidden");
+    expect(group.firstElementChild).toBe(pin);
+  });
+
+  it("puts the venue beside the actions when they clearly fit, otherwise on its own line above them", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
+    expect(cls(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toContain("grow");
+    cleanup();
+    render(
+      <EventRow
+        event={{
+          ...makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" }),
+          hasArtistPreview: true,
+          hasAudioLinks: true,
+        }}
+      />,
+    );
+    expect(cls(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toContain("basis-full");
+  });
+
+  it("estimates conservatively", () => {
+    const base = { subVenue: null, isFree: false, video: false, audio: false };
+    expect(venueFitsBesideActions({ ...base, venue: "Culture Box", linkLabels: ["Tickets"] })).toBe(true);
+    expect(venueFitsBesideActions({ ...base, venue: "Culture Box", linkLabels: ["Official event", "Tickets"] })).toBe(false);
+    expect(venueFitsBesideActions({ ...base, venue: "Pumpehuset", subVenue: "Byhaven", linkLabels: [], video: true })).toBe(true);
+  });
+
+  it("uses a subtler internal divider than the between-event line on mobile; desktop line unchanged", () => {
+    const { container } = render(<EventRow event={makeEvent()} />);
+    const li = container.querySelector("li") as HTMLElement;
+    expect(cls(li)).toEqual(expect.arrayContaining(["border-b", "border-border-strong/80", "sm:border-border"]));
+    const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
+    expect(cls(divider)).toContain("bg-border/70");
   });
 });

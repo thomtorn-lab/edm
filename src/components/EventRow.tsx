@@ -18,6 +18,39 @@ import { SITE_URL } from "@/lib/siteUrl";
  * indicator (a safe default, not a regression).
  */
 
+/**
+ * Mobile bottom section (2026-11-12): can the venue and the actions share
+ * one line — venue left, actions right? A deliberately conservative width
+ * estimate (px, 12px Inter as rendered; widths rounded up) against a 360px
+ * phone's content width, so it only says yes when they clearly fit. If a
+ * narrower screen still can't fit them, the row's flex-wrap simply wraps
+ * the overflowing actions — nothing overlaps or scrolls sideways.
+ */
+const MOBILE_CONTENT_WIDTH_PX = 328; // 360px screen − 2 × 16px padding
+const ACTION_GAP_PX = 16;
+export function venueFitsBesideActions(opts: {
+  venue: string;
+  subVenue: string | null;
+  linkLabels: string[];
+  isFree: boolean;
+  video: boolean;
+  audio: boolean;
+}): boolean {
+  const venueWidth =
+    16 + // pin + gap
+    opts.venue.length * 7.2 +
+    (opts.subVenue ? 20 + opts.subVenue.length * 7.6 : 0);
+  const actionWidths = [
+    ...opts.linkLabels.map((label) => label.length * 8.5 + 16), // uppercase label + ↗
+    ...(opts.isFree ? [34] : []),
+    36, // calendar icon button (always present)
+    ...(opts.video ? [62] : []),
+    ...(opts.audio ? [62] : []),
+  ];
+  const actionsWidth = actionWidths.reduce((a, b) => a + b, 0) + ACTION_GAP_PX * (actionWidths.length - 1);
+  return venueWidth + ACTION_GAP_PX + actionsWidth <= MOBILE_CONTENT_WIDTH_PX;
+}
+
 export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
@@ -32,6 +65,14 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // VIDEO badge link below, so there is only ever one place that constructs
   // it.
   const eventHref = `/events/${event.slug}`;
+  const venueBesideActions = venueFitsBesideActions({
+    venue: event.venue.name,
+    subVenue,
+    linkLabels: links.map((l) => l.label),
+    isFree,
+    video: !!event.hasArtistPreview,
+    audio: !!event.hasAudioLinks,
+  });
   const calendarInput = {
     title,
     description: event.description,
@@ -53,12 +94,11 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // link group `display: contents` below `sm`, so their children become
   // items of the row's own wrapping flexbox, sequenced with negative
   // `order` (info lines are basis-full; actions keep their natural width
-  // and wrap side by side; a trailing mr-2 restores their 16px spacing on
-  // top of the row's 8px gap without indenting a wrapped line). At `sm` every container is a real box again and
+  // and wrap side by side with the row's 16px gap). At `sm` every container is a real box again and
   // every order/margin resets, so desktop renders exactly as before.
   return (
-    <li className="border-b border-border last:border-b-0">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 py-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
+    <li className="border-b border-border-strong/80 last:border-b-0 sm:border-border">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
         <div className="-order-6 flex shrink-0 items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateRangeLabel(event)}
@@ -94,7 +134,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 StatusBadge styling and logic as before. -my-px keeps the
                 badge from making the title line taller on desktop. */}
             {statuses.map((s) => (
-              <span key={s.label} className="-order-6 sm:-my-px sm:order-none sm:shrink-0">
+              <span key={s.label} className="-order-6 -ml-2 sm:-my-px sm:ml-0 sm:order-none sm:shrink-0">
                 <StatusBadge {...s} />
               </span>
             ))}
@@ -117,22 +157,40 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             </p>
           )}
           <div className="contents text-xs sm:mt-1 sm:flex sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1">
-            <Link
-              href={`/venues/${event.venue.slug}`}
-              className="-order-1 text-text-secondary-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current sm:order-none"
+            {/* Venue (+ sub-venue): one item on mobile — pin, name, sub-venue —
+                opening the bottom section under the divider. It shares a line
+                with the actions (venue left, actions pushed right by `grow`)
+                when they comfortably fit; otherwise it takes the full line and
+                the actions follow on the next one, 6px below. At sm the
+                wrapper is display:contents and the pin hidden, so desktop's
+                metadata row is unchanged. */}
+            <span
+              className={`-order-1 flex min-w-0 items-center gap-x-2 ${venueBesideActions ? "grow" : "basis-full"} sm:contents sm:order-none`}
             >
-              {event.venue.name}
-            </Link>
-            {subVenue && (
-              <>
-                <span aria-hidden className="-order-1 text-text-tertiary sm:order-none">·</span>
-                <span className="-order-1 font-medium text-text-secondary-strong sm:order-none">{subVenue}</span>
-              </>
-            )}
-            {/* Mobile-only line break: ends the venue line so the actions
-                start on their own line below it (zero height; venue →
-                actions ends up 12px, ≈ the 10px around the divider). */}
-            <span aria-hidden className="-order-1 h-0 basis-full sm:hidden" />
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                className="-mr-0.5 h-3 w-3 shrink-0 text-text-tertiary sm:hidden"
+              >
+                <path d="M10 17.5s-5.5-4.9-5.5-9.25a5.5 5.5 0 0 1 11 0c0 4.35-5.5 9.25-5.5 9.25Z" strokeLinejoin="round" />
+                <circle cx="10" cy="8.25" r="2" />
+              </svg>
+              <Link
+                href={`/venues/${event.venue.slug}`}
+                className="min-w-0 text-text-secondary-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+              >
+                {event.venue.name}
+              </Link>
+              {subVenue && (
+                <>
+                  <span aria-hidden className="text-text-tertiary">·</span>
+                  <span className="font-medium text-text-secondary-strong">{subVenue}</span>
+                </>
+              )}
+            </span>
             {genres.length > 0 && (
               <>
                 <span aria-hidden className="hidden text-text-tertiary sm:inline">·</span>
@@ -186,7 +244,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 <Link
                   href={`${eventHref}#video`}
                   aria-label={`Go to artist preview video for ${title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 mr-2 sm:order-none sm:mr-0"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
                 >
                   <span aria-hidden="true" className="text-accent">▶</span>
                   Video
@@ -209,7 +267,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 <Link
                   href={`${eventHref}#soundcloud`}
                   aria-label={`Go to audio links for ${title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 mr-2 sm:order-none sm:mr-0"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
                 >
                   <span aria-hidden="true" className="text-accent">♫</span>
                   Audio
@@ -217,8 +275,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               </>
             )}
           </div>
-          {/* Mobile-only divider between event info and the venue + actions. */}
-          <div aria-hidden className="-order-2 my-1 h-px basis-full bg-border sm:hidden" />
+          {/* Mobile-only internal divider between event info and the venue +
+              actions section — subtler (border at 70%) than the between-event
+              line, which is border-strong at 80% on mobile. */}
+          <div aria-hidden className="-order-2 my-1 h-px basis-full bg-border/70 sm:hidden" />
         </div>
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
@@ -230,7 +290,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mr-2 text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:mr-0"
+                  className="text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
                 >
                   {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
                 </a>
@@ -238,14 +298,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               {/* FREE is an admission/status badge, not a link — rendered
                   after the links so it always sits to the right of Official
                   Event, in white to carry comparable visual weight. */}
-              {isFree && <span className="mr-2 font-semibold text-text-primary sm:mr-0">Free</span>}
+              {isFree && <span className="font-semibold text-text-primary">Free</span>}
             </div>
           )}
-          {/* Wrapper only adds the mobile action spacing; at sm it is
-              display:contents, so desktop sees AddToCalendar exactly as before. */}
-          <div className="mr-2 sm:contents">
-            <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
-          </div>
+          <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
         </div>
       </div>
     </li>
