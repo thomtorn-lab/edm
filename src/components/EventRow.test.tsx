@@ -1009,43 +1009,43 @@ describe("EventRow — AUDIO indicator (venue-provided SoundCloud links)", () =>
   });
 });
 
-describe("EventRow — lineup on its own plain line under the title (2026-11-12)", () => {
+describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", () => {
   afterEach(cleanup);
 
   const SHOWCASE = { title: "HYGGELIT SHOWCASE", artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"] };
+  const LINEUP_TEXT = "SOPHIE VAN HAYDEN / NAIVA / ONSBERG";
+  const cls = (el: Element) => el.className.split(/\s+/);
 
   it("renders the lineup outside the title link, directly after it, so the link's name is the title alone", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
     const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
-    const lineup = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
+    const lineup = screen.getByText(LINEUP_TEXT);
     expect(titleLink.contains(lineup)).toBe(false);
-    expect(titleLink.textContent).not.toContain(":");
     expect(titleLink.nextElementSibling).toBe(lineup);
     expect(lineup.tagName).toBe("P");
+    expect(lineup.textContent).toBe(`Lineup ${LINEUP_TEXT}`);
   });
 
-  it("is plain text with no label or badge", () => {
+  it("labels it with plain purple semibold uppercase text — no pill, background or border", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
-    const lineup = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
-    expect(lineup.textContent).toBe("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
-    expect(lineup.children).toHaveLength(0);
-    expect(screen.queryByText(/^lineup$/i)).toBeNull();
+    const label = screen.getByText("Lineup");
+    expect(cls(label)).toEqual(expect.arrayContaining(["text-accent", "font-semibold", "uppercase"]));
+    expect(label.className).not.toMatch(/\b(bg-|border|rounded)/);
+    // Own line on mobile, inline at the lineup's 14px on desktop.
+    expect(cls(label)).toEqual(expect.arrayContaining(["block", "sm:inline", "sm:text-[14px]"]));
   });
 
-  it("is smaller than the title (12.5px mobile, 14px desktop), in the secondary-strong grey, and never clamped", () => {
+  it("keeps the lineup's sizes and grey, and never clamps it", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
-    const classes = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG").className.split(/\s+/);
+    const classes = cls(screen.getByText(LINEUP_TEXT));
     expect(classes).toEqual(expect.arrayContaining(["text-[12.5px]", "sm:text-[14px]", "leading-snug", "text-text-secondary-strong", "break-words"]));
     expect(classes.some((c) => c.includes("line-clamp") || c.includes("truncate"))).toBe(false);
-    // A little more room under the title on mobile (6px), unchanged 2px on desktop.
-    expect(classes).toEqual(expect.arrayContaining(["mt-1.5", "sm:mt-0.5"]));
-    const titleClasses = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }).className.split(/\s+/);
-    expect(titleClasses).toContain("text-[15px]");
   });
 
   it("renders no lineup line when there are no artists", () => {
     const { container } = render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
     expect(container.querySelector("p")).toBeNull();
+    expect(screen.queryByText("Lineup")).toBeNull();
   });
 
   it("renders no lineup line when the title already names every artist", () => {
@@ -1058,5 +1058,70 @@ describe("EventRow — lineup on its own plain line under the title (2026-11-12)
       />,
     );
     expect(container.querySelector("p")).toBeNull();
+  });
+});
+
+describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () => {
+  afterEach(cleanup);
+
+  const cls = (el: Element) => el.className.split(/\s+/);
+  const orderOf = (el: Element) => cls(el).find((c) => /^-?order-/.test(c));
+
+  it("orders mobile info as date → title → genres → lineup → venue → divider → actions → video/audio", () => {
+    const { container } = render(
+      <EventRow
+        event={{
+          ...makeEvent({ title: "HYGGELIT SHOWCASE", artists: ["NAIVA", "ONSBERG"], subgenres: ["techno"] as GenreSlug[] }),
+          hasArtistPreview: true,
+          hasAudioLinks: true,
+        }}
+      />,
+    );
+    const row = container.querySelector("li > div") as HTMLElement;
+    expect(orderOf(row.firstElementChild as Element)).toBe("-order-6");
+    expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
+    expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
+    expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
+    expect(orderOf(screen.getByRole("link", { name: "Test Venue" }))).toBe("-order-2");
+    expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-1");
+    expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");
+    expect(orderOf(screen.getByRole("link", { name: /audio links/ }))).toBe("order-1");
+  });
+
+  it("flattens the inner containers only below sm, so desktop keeps its three columns", () => {
+    const { container } = render(<EventRow event={makeEvent()} />);
+    const row = container.querySelector("li > div") as HTMLElement;
+    expect(cls(row)).toEqual(expect.arrayContaining(["flex-wrap", "sm:flex-nowrap", "sm:items-start", "sm:gap-5"]));
+    const [, middle, actions] = Array.from(row.children);
+    expect(cls(middle)).toEqual(expect.arrayContaining(["contents", "sm:block", "sm:min-w-0", "sm:flex-1"]));
+    expect(cls(actions)).toEqual(expect.arrayContaining(["contents", "sm:flex", "sm:shrink-0"]));
+  });
+
+  it("draws the divider on mobile only", () => {
+    const { container } = render(<EventRow event={makeEvent()} />);
+    const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
+    expect(cls(divider)).toEqual(expect.arrayContaining(["basis-full", "bg-border", "sm:hidden"]));
+  });
+
+  it("hides the metadata · separators on mobile except between venue and sub-venue", () => {
+    render(
+      <EventRow
+        event={{
+          ...makeEvent({ title: "Byhaven: Anything Everything", subgenres: ["techno"] as GenreSlug[], venue: { ...VENUE, name: "Pumpehuset", slug: "pumpehuset" } }),
+          hasArtistPreview: true,
+        }}
+      />,
+    );
+    const seps = screen.getAllByText("·", { selector: "span[aria-hidden]" });
+    const mobileVisible = seps.filter((s) => !cls(s).includes("hidden"));
+    expect(mobileVisible).toHaveLength(1);
+    expect(mobileVisible[0].nextElementSibling?.textContent).toBe("Byhaven");
+  });
+
+  it("keeps the mobile → arrow a plain right arrow, never a diagonal one", () => {
+    render(<EventRow event={makeEvent()} />);
+    const titleLink = screen.getByRole("link", { name: /Test Event/ });
+    const arrow = titleLink.querySelector("span[aria-hidden='true']");
+    expect(arrow?.textContent?.trim()).toBe("\u2192");
   });
 });
