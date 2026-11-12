@@ -1008,3 +1008,54 @@ describe("EventRow — AUDIO indicator (venue-provided SoundCloud links)", () =>
     expect(audioLink.className).toBe(videoLink.className);
   });
 });
+
+describe("EventRow — lineup on its own line with a tinted LINEUP pill (2026-11-12)", () => {
+  afterEach(cleanup);
+
+  const SHOWCASE = { title: "HYGGELIT SHOWCASE", artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"] };
+
+  it("renders the lineup outside the title link, so the link's name is the title alone", () => {
+    render(<EventRow event={makeEvent(SHOWCASE)} />);
+    const titleLink = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" });
+    const lineup = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
+    expect(titleLink.contains(lineup)).toBe(false);
+    expect(titleLink.textContent).not.toContain(":");
+    // Directly after the title link, before the venue/genre metadata row.
+    expect(titleLink.nextElementSibling).toBe(lineup);
+    expect(lineup.tagName).toBe("P");
+  });
+
+  it("keeps the lineup's current size and grey, and the desktop two-line cap", () => {
+    render(<EventRow event={makeEvent(SHOWCASE)} />);
+    const classes = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG").className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(["text-[15px]", "leading-snug", "text-text-secondary-strong", "sm:line-clamp-2", "break-words"]));
+    expect(classes).not.toContain("line-clamp-2");
+  });
+
+  it("labels it with a tinted accent-purple LINEUP pill, not a filled button-like one", () => {
+    render(<EventRow event={makeEvent(SHOWCASE)} />);
+    const pill = screen.getByText("Lineup");
+    const classes = pill.className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(["rounded-full", "bg-accent/15", "text-accent-strong", "uppercase"]));
+    expect(classes).not.toContain("bg-accent");
+    expect(classes).not.toContain("text-accent-on");
+    expect(pill.parentElement?.textContent).toBe("Lineup SOPHIE VAN HAYDEN / NAIVA / ONSBERG");
+  });
+
+  it("renders neither line nor pill when there is no lineup to show", () => {
+    render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
+    expect(screen.queryByText("Lineup")).toBeNull();
+  });
+
+  it("renders neither line nor pill when the title already names every artist", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Black Box: TIMO MAAS, RYAN DANK, BALTZA · Red Box: KARINA LIN, ASLI",
+          artists: ["TIMO MAAS", "RYAN DANK", "BALTZA", "KARINA LIN", "ASLI"],
+        })}
+      />,
+    );
+    expect(screen.queryByText("Lineup")).toBeNull();
+  });
+});

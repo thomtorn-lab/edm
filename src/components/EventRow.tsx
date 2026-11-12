@@ -26,7 +26,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
-  const lineup = showArtistPreview ? `: ${event.artists.join(" / ")}` : "";
+  const lineup = showArtistPreview ? event.artists.join(" / ") : "";
   // Single source of truth for this row's own event-detail URL (mobile/video
   // affordance polish, 2026-09-26) — reused by both the title link and the
   // VIDEO badge link below, so there is only ever one place that constructs
@@ -59,18 +59,33 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             className="block cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:line-clamp-2"
           >
             {title}
-            <span className="font-normal text-text-secondary-strong">{lineup}</span>
             {/* Discreet internal-navigation cue, mobile only (desktop already
                 has the hover/focus underline as its affordance): a plain →
                 distinguishes this as Electronic CPH's own event-detail page,
                 never the ↗ glyph used for Official event/Tickets/Source,
                 which always means "leaves the site". Purely decorative — the
-                link's accessible name stays the title (+ lineup); no-underline
+                link's accessible name stays the title; no-underline
                 keeps the hover-decoration line from drawing through the glyph. */}
             <span aria-hidden="true" className="ml-1 font-normal text-text-secondary-strong no-underline sm:hidden">
               →
             </span>
           </Link>
+          {/* Lineup on its own line directly under the title (2026-11-12):
+              same 15px/leading-snug and secondary-strong grey the inline
+              lineup used, now outside the title link (not clickable — the
+              title is the link). A tinted LINEUP pill in the site's accent
+              purple (same treatment as the active genre-filter chips) labels
+              it without reading as a button. Desktop keeps the two-line cap
+              the title+lineup used to share; mobile wraps freely, as before.
+              Display only — event.artists itself is untouched. */}
+          {lineup && (
+            <p className="mt-0.5 break-words text-[15px] leading-snug text-text-secondary-strong sm:line-clamp-2">
+              <span className="mr-0.5 inline-block rounded-full bg-accent/15 px-1.5 py-px align-[1px] text-[10px] font-semibold uppercase leading-[1.4] tracking-wide text-accent-strong">
+                Lineup
+              </span>{" "}
+              {lineup}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link
               href={`/venues/${event.venue.slug}`}
