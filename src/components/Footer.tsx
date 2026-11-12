@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { artistAlertsMode } from "@/lib/artistAlerts/config";
+import { artistAlertsMode, subscriptionsEnabled } from "@/lib/artistAlerts/config";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
 import { INDEXABLE_GENRE_PAGES, genrePagePath, getGenre } from "@/lib/taxonomy";
 
@@ -40,6 +40,7 @@ const LINK = "inline-block py-1 hover:text-text-primary";
 // in fixed two-column grids. Back to top is the site-wide floating
 // BackToTopButton (root layout), not part of the footer.
 export default function Footer() {
+  const artistAlerts = subscriptionsEnabled(artistAlertsMode());
   return (
     <footer className="border-t border-border">
       <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-text-secondary sm:px-6 lg:py-14">
@@ -57,10 +58,12 @@ export default function Footer() {
             {/* Column-major 2×3 grid: the three site sections down the first
                 column, the approved genre landing pages (taxonomy.ts
                 allowlist) down the second; no other genre gets a link here. */}
-            <ul className="grid grid-flow-col grid-cols-2 grid-rows-3 gap-x-6 gap-y-2">
+            <ul className={`grid grid-flow-col grid-cols-2 ${artistAlerts ? "grid-rows-4" : "grid-rows-3"} gap-x-6 gap-y-2`}>
               <li><Link href="/" className={LINK}>Events</Link></li>
               <li><Link href="/venues" className={LINK}>Venues</Link></li>
               <li><Link href="/festivals" className={LINK}>Festivals</Link></li>
+              {/* Artist Alerts (2026-11-12): last in the first column, whenever /artists takes signups. */}
+              {artistAlerts && <li><Link href="/artists" className={LINK}>Artist alerts</Link></li>}
               {INDEXABLE_GENRE_PAGES.map((slug) => (
                 <li key={slug}>
                   <Link href={genrePagePath(slug)!} className={LINK}>

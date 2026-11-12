@@ -68,6 +68,26 @@ describe("Footer — redesign structure", () => {
     ]);
   });
 
+  it("adds Artist alerts after Festivals, in the first column, when Artist Alerts takes signups", () => {
+    for (const mode of ["test", "live"]) {
+      process.env.ARTIST_ALERTS_MODE = mode;
+      render(<Footer />);
+      const nav = screen.getByRole("navigation", { name: "Footer" });
+      expect(within(nav).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+        ["Events", "/"],
+        ["Venues", "/venues"],
+        ["Festivals", "/festivals"],
+        ["Artist alerts", "/artists"],
+        ["Techno", "/genres/techno"],
+        ["House", "/genres/house"],
+        ["Trance", "/genres/trance"],
+      ]);
+      expect(nav.querySelector("ul")!.className).toContain("grid-rows-4");
+      cleanup();
+    }
+    delete process.env.ARTIST_ALERTS_MODE;
+  });
+
   it("keeps the information links in their own nav", () => {
     render(<Footer />);
     const nav = screen.getByRole("navigation", { name: "Footer information" });
