@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import Footer from "./Footer";
 
 afterEach(cleanup);
@@ -46,8 +46,8 @@ describe("Footer — genre links", () => {
   });
 });
 
-// Footer redesign (2026-11-03): two labelled link groups, identity text and
-// the footer's own back-to-top button.
+// Footer redesign (2026-11-03): two labelled link groups and identity text.
+// Back to top is the site-wide floating BackToTopButton, not in the footer.
 describe("Footer — redesign structure", () => {
   it("shows the identity text", () => {
     render(<Footer />);
@@ -82,11 +82,8 @@ describe("Footer — redesign structure", () => {
     );
   });
 
-  it("has a labelled back-to-top button that smooth-scrolls to the top", () => {
-    const scrollTo = vi.fn();
-    window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+  it("does not render its own Back to top button", () => {
     render(<Footer />);
-    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
-    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
   });
 });
