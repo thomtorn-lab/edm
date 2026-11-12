@@ -21,8 +21,8 @@ export default function ArtistAlertsBanner() {
           <span className="order-2 ml-auto shrink-0 text-xs font-semibold uppercase tracking-wide text-accent md:order-3">
             Find artists <span aria-hidden="true">→</span>
           </span>
-          <span className="order-3 basis-full text-xs leading-snug text-text-secondary md:text-sm md:order-2 md:flex-1 md:basis-auto">
-            Get email alerts for new Copenhagen events with artists you follow.
+          <span className="order-3 basis-full text-[11px] leading-snug text-text-secondary sm:text-xs md:text-sm md:order-2 md:flex-1 md:basis-auto">
+            Get email alerts for new events with artists you follow.
           </span>
         </span>
       </Link>

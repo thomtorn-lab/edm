@@ -11,7 +11,7 @@ describe("ArtistAlertsBanner", () => {
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute("href")).toBe("/artists");
-    expect(links[0].textContent).toBe("Artist AlertsFind artists →Get email alerts for new Copenhagen events with artists you follow.");
+    expect(links[0].textContent).toBe("Artist AlertsFind artists →Get email alerts for new events with artists you follow.");
     expect(screen.getByRole("link", { name: /Artist Alerts/ })).toBeTruthy();
     expect(container.querySelector("button")).toBeNull();
   });
