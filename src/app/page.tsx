@@ -5,9 +5,11 @@ import {
   getUpcomingPublishedEventsForList,
 } from "@/lib/queries";
 import { toHomepageEvent, upcomingForHomepage } from "@/lib/homepageEvents";
+import ArtistAlertsBanner from "@/components/ArtistAlertsBanner";
 import EventExplorer from "@/components/EventExplorer";
 import NewsletterSignupForm from "@/components/NewsletterSignupForm";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
+import { artistAlertsMode, subscriptionsEnabled } from "@/lib/artistAlerts/config";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -49,6 +51,8 @@ export default async function HomePage() {
 
   return (
     <div>
+      {/* Artist Alerts entry point: homepage only, whenever /artists takes signups. */}
+      {subscriptionsEnabled(artistAlertsMode()) && <ArtistAlertsBanner />}
       <div className="mx-auto max-w-6xl px-4 pb-4 pt-6 sm:px-6 sm:pt-8">
         <h1 className="font-display text-2xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-[2rem]">
           Electronic music in Copenhagen
