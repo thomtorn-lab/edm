@@ -51,8 +51,8 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // link group `display: contents` below `sm`, so their children become
   // items of the row's own wrapping flexbox, sequenced with negative
   // `order` (info lines are basis-full; actions keep their natural width
-  // and wrap side by side; mr-2/ml-2 restore their 16px spacing on top of
-  // the row's 8px gap). At `sm` every container is a real box again and
+  // and wrap side by side; a trailing mr-2 restores their 16px spacing on
+  // top of the row's 8px gap without indenting a wrapped line). At `sm` every container is a real box again and
   // every order/margin resets, so desktop renders exactly as before.
   return (
     <li className="border-b border-border last:border-b-0">
@@ -92,7 +92,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               background or border on either. Display only — event.artists
               itself is untouched. */}
           {lineup && (
-            <p className="-order-3 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
+            <p className="-order-3 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
               <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-accent sm:mb-0 sm:mr-1 sm:inline sm:text-[14px]">
                 Lineup
               </span>{" "}
@@ -165,7 +165,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 <Link
                   href={`${eventHref}#video`}
                   aria-label={`Go to artist preview video for ${title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 ml-2 sm:order-none sm:ml-0"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 mr-2 sm:order-none sm:mr-0"
                 >
                   <span aria-hidden="true" className="text-accent">▶</span>
                   Video
@@ -188,7 +188,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 <Link
                   href={`${eventHref}#soundcloud`}
                   aria-label={`Go to audio links for ${title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 ml-2 sm:order-none sm:ml-0"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 mr-2 sm:order-none sm:mr-0"
                 >
                   <span aria-hidden="true" className="text-accent">♫</span>
                   Audio
@@ -225,7 +225,11 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               {isFree && <span className="mr-2 font-semibold text-text-primary sm:mr-0">Free</span>}
             </div>
           )}
-          <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
+          {/* Wrapper only adds the mobile action spacing; at sm it is
+              display:contents, so desktop sees AddToCalendar exactly as before. */}
+          <div className="mr-2 sm:contents">
+            <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
+          </div>
         </div>
       </div>
     </li>
