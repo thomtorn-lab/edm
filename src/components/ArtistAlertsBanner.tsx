@@ -14,7 +14,7 @@ export default function ArtistAlertsBanner() {
         href="/artists"
         className="block border border-border-strong bg-accent/10 transition-colors md:border-x-0 md:hover:bg-accent/15"
       >
-        <span className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-4 gap-y-1 px-3 py-2 md:min-h-[50px] md:flex-nowrap md:items-center md:gap-x-6 md:px-6 md:py-0">
+        <span className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-2 md:min-h-[50px] md:flex-nowrap md:gap-x-6 md:px-6 md:py-0">
           <span className="order-1 shrink-0 font-display text-lg font-bold uppercase leading-none tracking-tight text-accent">
             Artist Alerts
           </span>
