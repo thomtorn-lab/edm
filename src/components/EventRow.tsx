@@ -71,16 +71,18 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             </span>
           </Link>
           {/* Lineup on its own line directly under the title (2026-11-12):
-              plain text, no label — one step smaller than the title (14px vs
-              15px) in the same secondary-strong grey the inline lineup used,
-              so the title stays the primary focus. Outside the title link
+              plain text, no label, in the same secondary-strong grey the
+              inline lineup used, smaller than the 15px title so the title
+              stays the primary focus: 12.5px on mobile (≈15% under desktop,
+              where it competed with the title) with a little more room above
+              it (6px), 14px with 2px above on desktop. Outside the title link
               (not clickable). Wraps naturally on mobile and desktop — never
               clamped — so the full lineup is always visible; min-w-0 on the
               column plus break-words keep it inside the content column, clear
               of the Official event/Tickets/Calendar column. Display only —
               event.artists itself is untouched. */}
           {lineup && (
-            <p className="mt-0.5 break-words text-[14px] leading-snug text-text-secondary-strong">{lineup}</p>
+            <p className="mt-1.5 break-words text-[12.5px] leading-snug text-text-secondary-strong sm:mt-0.5 sm:text-[14px]">{lineup}</p>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Link

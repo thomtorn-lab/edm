@@ -1032,11 +1032,13 @@ describe("EventRow — lineup on its own plain line under the title (2026-11-12)
     expect(screen.queryByText(/^lineup$/i)).toBeNull();
   });
 
-  it("is one step smaller than the title, in the secondary-strong grey, and never clamped", () => {
+  it("is smaller than the title (12.5px mobile, 14px desktop), in the secondary-strong grey, and never clamped", () => {
     render(<EventRow event={makeEvent(SHOWCASE)} />);
     const classes = screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG").className.split(/\s+/);
-    expect(classes).toEqual(expect.arrayContaining(["text-[14px]", "leading-snug", "text-text-secondary-strong", "break-words"]));
+    expect(classes).toEqual(expect.arrayContaining(["text-[12.5px]", "sm:text-[14px]", "leading-snug", "text-text-secondary-strong", "break-words"]));
     expect(classes.some((c) => c.includes("line-clamp") || c.includes("truncate"))).toBe(false);
+    // A little more room under the title on mobile (6px), unchanged 2px on desktop.
+    expect(classes).toEqual(expect.arrayContaining(["mt-1.5", "sm:mt-0.5"]));
     const titleClasses = screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }).className.split(/\s+/);
     expect(titleClasses).toContain("text-[15px]");
   });
