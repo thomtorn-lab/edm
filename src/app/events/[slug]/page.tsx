@@ -5,7 +5,7 @@ import { getEventBySlugWithVenue, getEventYoutubePreview, getSoundcloudLinksForL
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks } from "@/lib/links";
-import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
+import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/siteUrl";
 import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
@@ -32,12 +32,12 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
   const genres = genreLabels.join(" · ");
   // Open Graph keeps its existing title/description — the SEO work package
   // (2026-10-06) is scoped to the HTML <title> and meta description only.
-  const ogDescription = `${title}${event.artists.length ? `: ${event.artists.join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
+  const ogDescription = `${title}${event.artists.length ? `: ${event.artists.map(formatArtistName).join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
   const seoInput = {
     title,
     venueName: event.venue.name,
     startDatetime: event.startDatetime,
-    artists: event.artists,
+    artists: event.artists.map(formatArtistName),
     genres: genreLabels,
     showArtists: shouldShowArtistPreview(title, event.artists),
   };
@@ -131,7 +131,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
       </h1>
 
       {showArtistPreview && (
-        <p className="mt-3 text-lg text-text-secondary">{event.artists.join(" / ")}</p>
+        <p className="mt-3 text-lg text-text-secondary">{event.artists.map(formatArtistName).join(" / ")}</p>
       )}
 
       {/* Core event facts plus the primary outbound actions, inside one

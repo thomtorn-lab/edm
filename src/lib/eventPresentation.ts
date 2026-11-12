@@ -122,3 +122,19 @@ export function shouldShowArtistPreview(title: string, artists: string[]): boole
   if (total >= 3 && foundCount >= total - 1) return false;
   return true;
 }
+
+/**
+ * Display casing for an artist name in the public lineup: every word starts
+ * with a capital letter and the rest of the word is lower-case, regardless
+ * of how the name was entered ("ROSA MALENA" / "rosa malena" → "Rosa
+ * Malena"). Words are split on whitespace and hyphens ("jean-michel" →
+ * "Jean-Michel"). Presentation-only — canonical `artists` data is never
+ * modified.
+ */
+export function formatArtistName(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("da-DK")
+    .replace(/(^|[\s-])(\p{L})/gu, (_, sep: string, letter: string) => sep + letter.toLocaleUpperCase("da-DK"));
+}

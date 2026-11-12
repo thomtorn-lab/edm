@@ -1,3 +1,5 @@
+import { formatArtistName } from "@/lib/eventPresentation";
+
 /**
  * Compact SoundCloud links section (one-event pilot, 2026-10-09; relabeled
  * to "AUDIO" on the overview and switched to the official wordmark here in
@@ -45,7 +47,7 @@ export default function SoundcloudLinks({
               rel="noopener noreferrer"
               className="inline-flex min-h-11 items-center text-sm text-text-secondary-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current sm:min-h-8"
             >
-              {artist.name} ↗<span className="sr-only"> (opens in a new tab)</span>
+              {formatArtistName(artist.name)} ↗<span className="sr-only"> (opens in a new tab)</span>
             </a>
           </li>
         ))}

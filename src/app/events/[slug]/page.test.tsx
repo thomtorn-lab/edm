@@ -569,7 +569,7 @@ describe("Event detail page — graceful degradation for sparse/missing metadata
         subgenres: [],
       }),
     );
-    expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
+    expect(screen.getByText("Dj Alpha / Dj Beta")).toBeTruthy();
     expect(screen.queryByText("About")).toBeNull();
   });
 });
@@ -598,7 +598,7 @@ describe("Event detail page — suppress redundant artist preview when the title
         venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
       }),
     );
-    expect(screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG")).toBeTruthy();
+    expect(screen.getByText("Sophie Van Hayden / Naiva / Onsberg")).toBeTruthy();
   });
 
   it("still shows the grey artist line when only some artists are named in the title (partial overlap)", async () => {
@@ -609,7 +609,7 @@ describe("Event detail page — suppress redundant artist preview when the title
         venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
       }),
     );
-    expect(screen.getByText(/ERICH VON KOLLAR/)).toBeTruthy();
+    expect(screen.getByText(/Erich Von Kollar/)).toBeTruthy();
   });
 
   it("hides the grey artist line when the same artist name repeats across both rooms (real Culture Box shape)", async () => {
@@ -625,7 +625,7 @@ describe("Event detail page — suppress redundant artist preview when the title
 
   it("still shows the grey artist line for a non-Culture-Box event whose title never names the artists (no regression)", async () => {
     await renderPage(makeEvent({ title: "Test Event", artists: ["DJ Alpha", "DJ Beta"] }));
-    expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
+    expect(screen.getByText("Dj Alpha / Dj Beta")).toBeTruthy();
   });
 });
 
@@ -1147,7 +1147,7 @@ describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10
         .map((n) => n.textContent)
         .join(""),
     );
-    expect(visibleTexts.sort()).toEqual(["REXIE LEX ↗", "TIM ANDRESEN ↗"]);
+    expect(visibleTexts.sort()).toEqual(["Rexie Lex ↗", "Tim Andresen ↗"]);
     expect(anchor.textContent).not.toContain("on SoundCloud");
   });
 
@@ -1296,7 +1296,7 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(soundcloud.className).toContain("mt-8");
     expect(soundcloud.className).toContain("sm:mt-10");
     // Artist names stay on the SoundCloud links — only the video caption went.
-    expect(soundcloud.querySelector('a[href="https://soundcloud.com/tim-andresen"]')!.textContent).toContain("TIM ANDRESEN");
+    expect(soundcloud.querySelector('a[href="https://soundcloud.com/tim-andresen"]')!.textContent).toContain("Tim Andresen");
     expect(section.querySelector("figcaption")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2, name: "Get a taste" })).toHaveLength(1);
   });

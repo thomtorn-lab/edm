@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
+import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
 
 describe("shouldShowArtistPreview — suppress when the title already carries the lineup", () => {
   it("suppresses when a per-room lineup title names every artist (real Culture Box shape, no hardcoding)", () => {
@@ -170,5 +170,19 @@ describe("cleanEventTitle — Den Anden Side rooms (2026-10-27)", () => {
     expect(cleanEventTitle("GAG x DAS", "Den Anden Side")).toBe("GAG x DAS");
     expect(cleanEventTitle("Den Anden Ende: Kilele x DAS", "Culture Box")).toBe("Den Anden Ende: Kilele x DAS");
     expect(cleanEventTitle("Black Box: X · Red Box: Y", "Culture Box")).toBe("X · Y");
+  });
+});
+
+describe("formatArtistName — public lineup casing", () => {
+  it("capitalizes the first letter of every word and lower-cases the rest, however it was entered", () => {
+    expect(formatArtistName("ROSA MALENA")).toBe("Rosa Malena");
+    expect(formatArtistName("rosa malena")).toBe("Rosa Malena");
+    expect(formatArtistName("rOsA mAlEnA")).toBe("Rosa Malena");
+    expect(formatArtistName("baltza")).toBe("Baltza");
+  });
+
+  it("handles Danish letters, hyphens and stray whitespace", () => {
+    expect(formatArtistName("  ØLLE   ÅSE ")).toBe("Ølle Åse");
+    expect(formatArtistName("jean-michel")).toBe("Jean-Michel");
   });
 });
