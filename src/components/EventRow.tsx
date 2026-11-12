@@ -47,8 +47,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // below the time in the date column. Mobile reorders the same DOM — no
   // duplicated links — into: date + time + status badges on the top row →
   // title → genres (muted accent purple) → LINEUP: + artists → divider →
-  // bottom section, three left-aligned rows: venue; Official event/
-  // Tickets/Free (only if any); Calendar then Video/Audio.
+  // bottom section: one left-aligned wrapping flow of venue → Official
+  // event → Tickets/Free → Calendar → Video → Audio (only those present),
+  // so few elements share a line and more wrap as width requires.
   //
   // It does that by making the middle column, the metadata row, the action
   // column and the link group `display: contents` below `sm`, so their
@@ -113,12 +114,13 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             </p>
           )}
           <div className="contents text-xs sm:mt-1 sm:flex sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1">
-            {/* Venue (+ sub-venue): row 1 of the mobile bottom section under
-                the divider — pin, name, sub-venue, always on its own
-                left-aligned line. At sm the wrapper is display:contents and
-                the pin hidden, so desktop's metadata row is unchanged. */}
+            {/* Venue (+ sub-venue): first item of the mobile bottom section
+                under the divider — pin, name, sub-venue as one unit (min-w-0
+                lets a very long name wrap inside it rather than overflow).
+                At sm the wrapper is display:contents and the pin hidden, so
+                desktop's metadata row is unchanged. */}
             <span
-              className="-order-1 flex min-w-0 basis-full items-center gap-x-2 sm:contents sm:order-none"
+              className="-order-1 flex min-w-0 items-center gap-x-2 sm:contents sm:order-none"
             >
               <svg
                 aria-hidden="true"
@@ -236,18 +238,18 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
           {(links.length > 0 || isFree) && (
-            // Row 2 of the mobile bottom section: Official event, Tickets, Free
-            // — its own left-aligned, wrapping line. Calendar + Video/Audio
-            // follow as row 3. Desktop: unchanged link group in the actions
-            // column.
-            <div className="-order-1 flex basis-full flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium uppercase tracking-wide sm:order-none sm:basis-auto sm:gap-y-1">
+            // Mobile: display:contents, so each link is its own unit in the
+            // bottom section's single wrapping flow (venue → Official event →
+            // Tickets/Free → Calendar → Video → Audio). Desktop: unchanged
+            // link group in the actions column.
+            <div className="contents text-xs font-medium uppercase tracking-wide sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
               {links.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary"
+                  className="-order-1 whitespace-nowrap text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none sm:whitespace-normal"
                 >
                   {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
                 </a>
@@ -255,7 +257,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               {/* FREE is an admission/status badge, not a link — rendered
                   after the links so it always sits to the right of Official
                   Event, in white to carry comparable visual weight. */}
-              {isFree && <span className="font-semibold text-text-primary">Free</span>}
+              {isFree && <span className="-order-1 font-semibold text-text-primary sm:order-none">Free</span>}
             </div>
           )}
           <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />

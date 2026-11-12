@@ -1158,14 +1158,15 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(group.firstElementChild).toBe(pin);
   });
 
-  it("puts the venue on its own left-aligned line (row 1)", () => {
+  it("makes the venue one unit of the bottom flow, not a full line", () => {
     render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
     const group = screen.getByRole("link", { name: "Test Venue" }).parentElement as Element;
-    expect(cls(group)).toEqual(expect.arrayContaining(["-order-1", "basis-full", "sm:contents"]));
+    expect(cls(group)).toEqual(expect.arrayContaining(["-order-1", "min-w-0", "sm:contents"]));
+    expect(cls(group)).not.toContain("basis-full");
     expect(cls(group)).not.toContain("grow");
   });
 
-  it("puts Official event/Tickets/Free on their own wrapping line (row 2), then Calendar + media (row 3)", () => {
+  it("flows venue → Official event → Tickets → Calendar → Video → Audio as separate, non-breaking units", () => {
     render(
       <EventRow
         event={{
@@ -1175,12 +1176,16 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
         }}
       />,
     );
-    const linkRow = screen.getByRole("link", { name: /Official event/ }).parentElement as HTMLElement;
-    expect(linkRow.contains(screen.getByRole("link", { name: /Tickets/ }))).toBe(true);
-    expect(cls(linkRow)).toEqual(expect.arrayContaining(["-order-1", "flex", "basis-full", "flex-wrap", "sm:order-none", "sm:basis-auto"]));
-    // Calendar keeps its natural order (0), Video/Audio follow it (order-1).
-    const calendar = screen.getByRole("button", { name: /calendar/i }).closest("div") as HTMLElement;
-    expect(calendar.previousElementSibling).toBe(linkRow);
+    const official = screen.getByRole("link", { name: /Official event/ });
+    const tickets = screen.getByRole("link", { name: /Tickets/ });
+    for (const link of [official, tickets]) {
+      expect(cls(link)).toEqual(expect.arrayContaining(["-order-1", "whitespace-nowrap", "sm:order-none", "sm:whitespace-normal"]));
+    }
+    const group = official.parentElement as HTMLElement;
+    expect(cls(group)).toContain("contents");
+    expect(cls(group)).not.toContain("basis-full");
+    // No line-break elements anywhere in the bottom section.
+    expect(document.querySelectorAll("span.h-0.basis-full")).toHaveLength(0);
   });
 
   it("renders no link row at all when there are no external links", () => {
