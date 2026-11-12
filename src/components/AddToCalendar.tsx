@@ -43,6 +43,7 @@ export default function AddToCalendar({
   labelAlwaysVisible = false,
   buttonClassName = ROW_BUTTON_CLASSES,
   menuAlign = "end",
+  mobileLabel,
 }: {
   event: CalendarEventInput;
   icsHref: string;
@@ -51,6 +52,9 @@ export default function AddToCalendar({
   labelAlwaysVisible?: boolean;
   buttonClassName?: string;
   menuAlign?: "start" | "end";
+  /** Short visible text shown below `sm` only, next to the icon (listing
+   *  rows' mobile pill, 2026-11-12). The accessible name stays `label`. */
+  mobileLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -91,6 +95,11 @@ export default function AddToCalendar({
         className={buttonClassName}
       >
         <CalendarIcon />
+        {mobileLabel && (
+          <span aria-hidden="true" className="sm:hidden">
+            {mobileLabel}
+          </span>
+        )}
         <span className={compact ? "hidden" : labelAlwaysVisible ? undefined : "hidden sm:inline"}>{label}</span>
       </button>
 

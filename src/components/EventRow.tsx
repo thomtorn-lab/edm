@@ -18,6 +18,15 @@ import { SITE_URL } from "@/lib/siteUrl";
  * indicator (a safe default, not a regression).
  */
 
+/**
+ * Listing-row calendar button (2026-11-12). Mobile: the same small outlined
+ * pill as the VIDEO/AUDIO badges (10px semibold uppercase, rounded-full,
+ * border-strong, tertiary text) with a short "Calendar" label. sm and up:
+ * exactly AddToCalendar's default row button (36px, rounded, 11px medium).
+ */
+const CALENDAR_BUTTON_CLASSES =
+  "inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-[1.3333] tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary sm:min-h-[2.25rem] sm:gap-1.5 sm:rounded sm:px-2.5 sm:py-1 sm:text-[11px] sm:font-medium sm:normal-case sm:leading-normal sm:tracking-normal [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5";
+
 export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
@@ -32,6 +41,37 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // VIDEO badge link below, so there is only ever one place that constructs
   // it.
   const eventHref = `/events/${event.slug}`;
+  // External links + FREE as one ordered list, so the last one can share a
+  // non-wrapping mobile unit with Calendar (see the actions column below).
+  type LinkItem = { kind: "link"; label: string; href: string } | { kind: "free" };
+  const linkItems: LinkItem[] = [
+    ...links.map((l) => ({ kind: "link" as const, label: l.label, href: l.href })),
+    ...(isFree ? [{ kind: "free" as const }] : []),
+  ];
+  const leadLinkItems = linkItems.slice(0, -1);
+  const lastLinkItem = linkItems.at(-1);
+  // Typography the link group gives its children; the last item sits
+  // outside the group (in the Calendar unit), so each item carries it itself.
+  const LINK_GROUP_TEXT = "text-xs font-medium uppercase tracking-wide";
+  const renderLinkItem = (item: LinkItem) =>
+    item.kind === "link" ? (
+      <a
+        key={item.href}
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${LINK_GROUP_TEXT} -order-1 whitespace-nowrap text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none sm:whitespace-normal`}
+      >
+        {item.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+      </a>
+    ) : (
+      // FREE is an admission/status badge, not a link — rendered after the
+      // links so it always sits to the right of Official Event, in white to
+      // carry comparable visual weight.
+      <span key="free" className="-order-1 text-xs font-semibold uppercase tracking-wide text-text-primary sm:order-none">
+        Free
+      </span>
+    );
   const calendarInput = {
     title,
     description: event.description,
@@ -237,30 +277,28 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
         </div>
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
-          {(links.length > 0 || isFree) && (
-            // Mobile: display:contents, so each link is its own unit in the
-            // bottom section's single wrapping flow (venue → Official event →
-            // Tickets/Free → Calendar → Video → Audio). Desktop: unchanged
-            // link group in the actions column.
+          {/* Mobile: the link group is display:contents, so each link is its
+              own unit in the bottom section's single wrapping flow (venue →
+              Official event → Tickets/Free → Calendar → Video → Audio).
+              The last of Official event/Tickets/Free is bound to Calendar in
+              one non-wrapping unit, so Calendar never drops onto a line by
+              itself — it moves down together with that link instead. At sm
+              both wrappers are display:contents / the original flex group,
+              so desktop renders exactly as before. */}
+          {leadLinkItems.length > 0 && (
             <div className="contents text-xs font-medium uppercase tracking-wide sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
-              {links.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="-order-1 whitespace-nowrap text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none sm:whitespace-normal"
-                >
-                  {link.label} ↗<span className="sr-only"> (opens in a new tab)</span>
-                </a>
-              ))}
-              {/* FREE is an admission/status badge, not a link — rendered
-                  after the links so it always sits to the right of Official
-                  Event, in white to carry comparable visual weight. */}
-              {isFree && <span className="-order-1 font-semibold text-text-primary sm:order-none">Free</span>}
+              {leadLinkItems.map(renderLinkItem)}
             </div>
           )}
-          <AddToCalendar event={calendarInput} icsHref={`/events/${event.slug}/calendar.ics`} />
+          <span className="inline-flex items-center gap-x-4 sm:contents">
+            {lastLinkItem && renderLinkItem(lastLinkItem)}
+            <AddToCalendar
+              event={calendarInput}
+              icsHref={`/events/${event.slug}/calendar.ics`}
+              mobileLabel="Calendar"
+              buttonClassName={CALENDAR_BUTTON_CLASSES}
+            />
+          </span>
         </div>
       </div>
     </li>

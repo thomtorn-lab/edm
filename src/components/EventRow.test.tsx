@@ -1234,3 +1234,40 @@ describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
   });
 });
 });
+
+describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
+  afterEach(cleanup);
+  const cls = (el: Element) => el.className.split(/\s+/);
+
+  it("styles the calendar button as the same outlined pill as VIDEO/AUDIO on mobile, original button at sm", () => {
+    render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
+    const button = screen.getByRole("button", { name: "Add to calendar" });
+    const video = screen.getByRole("link", { name: /artist preview video/ });
+    const shared = ["inline-flex", "items-center", "gap-1", "rounded-full", "border", "border-border-strong", "px-1.5", "py-0.5", "text-[10px]", "font-semibold", "uppercase", "tracking-wide", "text-text-tertiary"];
+    expect(cls(button)).toEqual(expect.arrayContaining(shared));
+    expect(cls(video)).toEqual(expect.arrayContaining(shared));
+    expect(cls(button)).toEqual(
+      expect.arrayContaining(["sm:min-h-[2.25rem]", "sm:rounded", "sm:px-2.5", "sm:py-1", "sm:text-[11px]", "sm:font-medium", "sm:normal-case", "sm:tracking-normal"]),
+    );
+    // Short visible label on mobile only; the accessible name stays "Add to calendar".
+    expect(screen.getByText("Calendar").className).toBe("sm:hidden");
+  });
+
+  it("binds the last external link to Calendar in one non-wrapping unit", () => {
+    render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
+    const tickets = screen.getByRole("link", { name: /Tickets/ });
+    const official = screen.getByRole("link", { name: /Official event/ });
+    const unit = tickets.parentElement as HTMLElement;
+    expect(cls(unit)).toEqual(["inline-flex", "items-center", "gap-x-4", "sm:contents"]);
+    expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
+    expect(unit.contains(official)).toBe(false);
+    // Items outside the link group carry its typography themselves.
+    expect(cls(tickets)).toEqual(expect.arrayContaining(["text-xs", "font-medium", "uppercase", "tracking-wide"]));
+  });
+
+  it("binds FREE (when it is last) to Calendar", () => {
+    render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
+    const unit = screen.getByText("Free").parentElement as HTMLElement;
+    expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
+  });
+});
