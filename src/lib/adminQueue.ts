@@ -4,6 +4,7 @@ import { isPastEvent } from "./datetime";
 import { resolveVenue } from "./normalize";
 import type { DuplicateCandidate } from "./dedup";
 import { isManualReviewSource } from "./data/sources";
+import { VENUES } from "./data/venues";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 
 /**
@@ -50,6 +51,25 @@ export interface AdminQueueClassifiable {
   probableTitle: DiscoveryQueueItem["probableTitle"];
   detectedLineup: DiscoveryQueueItem["detectedLineup"];
   predictedGenre: DiscoveryQueueItem["predictedGenre"];
+  /** Used only by the Baggen no_genre_evidence routing exception below.
+   *  Optional: a caller that omits it keeps the pre-existing routing. */
+  probableVenueName?: DiscoveryQueueItem["probableVenueName"];
+}
+
+/**
+ * Baggen no_genre_evidence routing (2026-11-13): Baggen's own venue page
+ * carries no description, so its events reach the queue as
+ * no_genre_evidence and previously sank into INSUFFICIENT, which is not part
+ * of the admin's day-to-day review. Rows that resolve to Baggen are surfaced
+ * in NEEDS_REVIEW instead. ROUTING only — never assigns a genre, never
+ * publishes, never mutates holdReason/overallConfidence. Applied only after
+ * the existing positive/negative relevance rules, so an obviously
+ * non-relevant Baggen row is still REJECTED, and only for Baggen (v-baggen):
+ * every other venue's routing is unchanged.
+ */
+function isBaggenRow(item: AdminQueueClassifiable): boolean {
+  if (!item.probableVenueName) return false;
+  return resolveVenue(item.probableVenueName, VENUES)?.venue.id === "v-baggen";
 }
 
 /**
@@ -251,6 +271,8 @@ export function classifyAdminQueueRow(
       // holdReason/overallConfidence/predictedGenre/source data.
       const negativeRuleApplies = item.holdReason === "incomplete_data" || item.holdReason === "no_genre_evidence";
       if (negativeRuleApplies && hasHighPrecisionNegativeRelevanceSignal(item)) return "rejected";
+      // Baggen exception — see isBaggenRow's own doc comment.
+      if (item.holdReason === "no_genre_evidence" && isBaggenRow(item)) return "needs_review";
       return "insufficient";
     }
     // Legacy fallback: a row inserted/last classified before discoveryQueue's
