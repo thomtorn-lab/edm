@@ -468,7 +468,7 @@ describe("EventRow — Apple Calendar / ICS uses a real HTTP endpoint, not a dat
 describe("EventRow — redundant artist preview suppression (Round 12)", () => {
   afterEach(cleanup);
 
-  it("suppresses the grey artist preview when a per-room lineup title already names every artist", () => {
+  it("shows the lineup even when a per-room lineup title already names every artist (2026-11-13)", () => {
     render(
       <EventRow
         event={makeEvent({
@@ -477,7 +477,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.queryByText(/TIMO MAAS \/ RYAN DANK/)).toBeNull();
+    expect(screen.getByText("Timo Maas / Ryan Dank / Baltza / Karina Lin / Asli")).toBeTruthy();
     expect(screen.getByText(/Black Box: TIMO MAAS/)).toBeTruthy();
   });
 
@@ -1059,16 +1059,10 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
     expect(screen.queryByText("Lineup:")).toBeNull();
   });
 
-  it("renders no lineup line when the title already names every artist", () => {
-    const { container } = render(
-      <EventRow
-        event={makeEvent({
-          title: "Black Box: TIMO MAAS, RYAN DANK, BALTZA · Red Box: KARINA LIN, ASLI",
-          artists: ["TIMO MAAS", "RYAN DANK", "BALTZA", "KARINA LIN", "ASLI"],
-        })}
-      />,
-    );
-    expect(container.querySelector("p")).toBeNull();
+  it("still renders the lineup line when the title already names every artist", () => {
+    render(<EventRow event={makeEvent({ title: "Blikfang", artists: ["Blikfang"] })} />);
+    const lineup = screen.getByText("Blikfang", { selector: "p" });
+    expect(lineup.textContent).toBe("Lineup: Blikfang");
   });
 });
 
