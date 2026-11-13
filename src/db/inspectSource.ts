@@ -1798,6 +1798,7 @@ async function modeAdminQueueAudit(client: Client, args: Record<string, string |
         probableTitle: r.probable_title as string,
         detectedLineup: (r.detected_lineup as string[]) ?? [],
         predictedGenre: r.predicted_genre as GenreSlug | null,
+        probableVenueName: (r.probable_venue_name as string | null) ?? null,
       },
       { lastCompleteSyncAt, now },
     );

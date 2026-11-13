@@ -1100,3 +1100,58 @@ describe("mapPendingDiscoveryQueueForDedup (unified event create/edit model, 202
     expect(mapped.venueId).toBeNull();
   });
 });
+
+describe("classifyAdminQueueRow — Baggen no_genre_evidence routing (2026-11-13)", () => {
+  // Shape of the three real Production rows (src-hvaderpaa, pending, low,
+  // no_genre_evidence, predictedGenre null) observed via inspect-source.
+  const baggen = (overrides: Partial<AdminQueueClassifiable> = {}) =>
+    row({ sourceId: "src-hvaderpaa", holdReason: "no_genre_evidence", overallConfidence: "low", probableVenueName: "Baggen", ...overrides });
+
+  it.each(["DNMI", "MWAH x MASIV", "Ikigai presents Raresh"])("Production row %s -> NEEDS_REVIEW", (title) => {
+    expect(classifyAdminQueueRow(baggen({ probableTitle: title }), SYNC)).toBe("needs_review");
+  });
+
+  it("a Baggen alias resolves the same way", () => {
+    expect(classifyAdminQueueRow(baggen({ probableVenueName: "Baggen Kødbyen" }), SYNC)).toBe("needs_review");
+  });
+
+  it("the same row at another venue keeps the pre-existing INSUFFICIENT routing", () => {
+    expect(classifyAdminQueueRow(baggen({ probableVenueName: "Jolene" }), SYNC)).toBe("insufficient");
+    expect(classifyAdminQueueRow(baggen({ probableVenueName: null }), SYNC)).toBe("insufficient");
+    expect(classifyAdminQueueRow(baggen({ probableVenueName: undefined }), SYNC)).toBe("insufficient");
+  });
+
+  it("only no_genre_evidence is affected — other insufficient hold reasons at Baggen are unchanged", () => {
+    expect(classifyAdminQueueRow(baggen({ holdReason: "incomplete_data" }), SYNC)).toBe("insufficient");
+    expect(classifyAdminQueueRow(baggen({ holdReason: "low_confidence" }), SYNC)).toBe("insufficient");
+  });
+
+  it("existing relevance filters still win: an obviously non-relevant Baggen row stays REJECTED", () => {
+    expect(classifyAdminQueueRow(baggen({ probableTitle: "Guided meditation evening" }), SYNC)).toBe("rejected");
+    expect(classifyAdminQueueRow(baggen({ holdReason: "negative_relevance" }), SYNC)).toBe("rejected");
+  });
+
+  it("past/stale precedence is unchanged for Baggen", () => {
+    expect(
+      classifyAdminQueueRow(baggen({ probableStart: "2026-09-01T22:00:00+02:00", probableEnd: "2026-09-02T04:00:00+02:00" }), SYNC),
+    ).toBe("past_stale");
+  });
+
+  it("routing only — the row's own evidence fields are never mutated", () => {
+    const item = baggen();
+    const before = JSON.stringify(item);
+    classifyAdminQueueRow(item, SYNC);
+    expect(JSON.stringify(item)).toBe(before);
+    expect(item.predictedGenre).toBeNull();
+  });
+
+  it("groupAdminQueueRows (the admin UI path) puts a Baggen row in needs_review", () => {
+    const groups = groupAdminQueueRows(
+      [discoveryItem({ sourceId: "src-hvaderpaa", holdReason: "no_genre_evidence", overallConfidence: "low", probableVenueName: "Baggen", probableStart: "2026-09-10T22:00:00+02:00", probableEnd: "2026-09-11T04:00:00+02:00", lastSeenAt: "2026-09-06T10:00:00+02:00", predictedGenre: null, detectedLineup: [], probableTitle: "DNMI" })],
+      new Map([["src-hvaderpaa", "2026-09-06T10:00:00+02:00"]]),
+      NOW,
+    );
+    expect(groups.needs_review.map((r) => r.probableTitle)).toEqual(["DNMI"]);
+    expect(groups.insufficient).toEqual([]);
+  });
+});
