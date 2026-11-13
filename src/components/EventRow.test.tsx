@@ -1237,7 +1237,6 @@ describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
     expect(dateCol.className).toContain("sm:flex-col");
   });
 });
-});
 
 describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
   afterEach(cleanup);
