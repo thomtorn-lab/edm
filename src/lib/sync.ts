@@ -264,6 +264,47 @@ export interface SyncMatch {
  * silently attaching to the wrong event would be worse than a few minutes
  * of admin review (see the brief's "few minutes of exception handling").
  */
+/**
+ * Selective auto-publish (2026-11-13, approved after a read-only simulation
+ * on the full HvadErPå queue history). HvadErPå stays registered with
+ * autoPublish: false; this is a narrow, per-source exception, not a policy
+ * flip. A candidate qualifies only when ALL of these hold:
+ *   - it comes from a source listed below, at one of that source's listed
+ *     venues (HvadErPå: Den Anden Side, MODULE, Jolene, Baggen);
+ *   - the pipeline decision is "review_queue" or "auto_publish" (never any
+ *     "hold" — e.g. Baggen no_genre_evidence stays in the manual queue);
+ *   - relevance is "strong" (a real event-level electronic signal — venue
+ *     context alone only ever yields "weak", see assessRelevance);
+ *   - a genre resolved (the generic "electronic-other" is allowed when the
+ *     strong relevance is documented but no specific subgenre is);
+ *   - no possible duplicate at all (duplicateConfidence "none").
+ * The caller additionally refuses admin-ignored and other-owner-pending
+ * candidates and keeps every existing venue/date/cancellation guard.
+ */
+const SELECTIVE_AUTO_PUBLISH_VENUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  "src-hvaderpaa": new Set(["v-den-anden-side", "v-module", "v-jolene", "v-baggen"]),
+};
+
+export interface SelectiveAutoPublishInput {
+  decision: PublishDecision;
+  relevance: "strong" | "weak" | "none";
+  genre: GenreSlug | null;
+  resolvedVenueId: string | null;
+  duplicateOfEventId: string | null;
+  duplicateConfidence: DuplicateConfidence;
+}
+
+export function isSelectiveAutoPublishCandidate(sourceId: string, result: SelectiveAutoPublishInput): boolean {
+  const venues = SELECTIVE_AUTO_PUBLISH_VENUES[sourceId];
+  if (!venues) return false;
+  if (result.decision !== "review_queue" && result.decision !== "auto_publish") return false;
+  if (result.relevance !== "strong") return false;
+  if (result.genre == null) return false;
+  if (!result.resolvedVenueId || !venues.has(result.resolvedVenueId)) return false;
+  if (result.duplicateConfidence !== "none" || result.duplicateOfEventId != null) return false;
+  return true;
+}
+
 export function findSyncMatch(
   linkedEventId: string | null,
   duplicateOfEventId: string | null,
