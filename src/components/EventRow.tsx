@@ -118,11 +118,16 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // column and the link group `display: contents` below `sm`, so their
   // children become items of the row's own wrapping flexbox, sequenced with
   // negative `order` (info lines are basis-full; actions keep their natural
-  // width and wrap side by side with the row's 16px gap). At `sm` every
+  // width and wrap side by side with the row's 16px gap). Vertical rhythm
+  // (2026-11-13): the row gap is 10px so the bottom section's lines (venue/
+  // links ↔ Calendar/Video/Audio) sit as far apart as the divider above
+  // them; genres and the lineup take -4px to keep their tighter 6px under
+  // the title, and pb-3 trims the bottom so the badge row → event line gap
+  // matches too (≈10/11/13px; total row height unchanged for two lines). At `sm` every
   // container is a real box again and every order/margin resets.
   return (
     <li className="border-b border-border-strong/80 last:border-b-0 sm:border-border">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 pb-3 pt-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
         <div className="-order-6 flex shrink-0 items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateRangeLabel(event)}
@@ -145,7 +150,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
         <div className="contents sm:block sm:min-w-0 sm:flex-1">
           <Link
             href={eventHref}
-            className="-order-5 mt-1 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
+            className="-order-5 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
           >
             {title}
             {/* Discreet internal-navigation cue, mobile only (desktop already
@@ -169,7 +174,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               background or border on either. Display only — event.artists
               itself is untouched. */}
           {lineup && (
-            <p className="-order-3 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
+            <p className="-order-3 -mt-1 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
               <span className="uppercase sm:mr-1 sm:font-semibold sm:tracking-wide sm:text-accent">
                 Lineup:
               </span>{" "}
@@ -212,7 +217,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             {genres.length > 0 && (
               <>
                 <span aria-hidden className="hidden text-text-tertiary sm:inline">·</span>
-                <span className="-order-4 basis-full font-medium uppercase tracking-wide text-accent-dim sm:order-none sm:basis-auto sm:text-text-tertiary">
+                <span className="-order-4 -mt-1 basis-full font-medium uppercase tracking-wide text-accent-dim sm:order-none sm:mt-0 sm:basis-auto sm:text-text-tertiary">
                   {/* A genre that has its own landing page (only Techno so
                       far) is a plain crawlable link to it, a sibling of the
                       title link rather than nested in it; every other genre
@@ -313,7 +318,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           {/* Mobile-only internal divider between event info and the venue +
               actions section — subtler (border at 70%) than the between-event
               line, which is border-strong at 80% on mobile. */}
-          <div aria-hidden className="-order-2 my-1 h-px basis-full bg-border/70 sm:hidden" />
+          <div aria-hidden className="-order-2 h-px basis-full bg-border/70 sm:hidden" />
         </div>
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
