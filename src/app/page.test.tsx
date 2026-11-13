@@ -104,4 +104,18 @@ describe("homepage — server-side upcoming filter and projection", () => {
     expect(html).not.toContain("internal");
     expect(html).not.toContain("Long venue profile");
   });
+
+  it("shows the Artist Alerts banner above the hero only when Artist Alerts takes signups", async () => {
+    vi.mocked(getUpcomingPublishedEventsForList).mockResolvedValue([]);
+    vi.mocked(getPreviewAvailabilityForEvents).mockResolvedValue([]);
+    vi.mocked(getSoundcloudAvailabilityForEvents).mockResolvedValue([]);
+    for (const [mode, shown] of [[undefined, false], ["observe", false], ["test", true], ["live", true]] as const) {
+      if (mode) process.env.ARTIST_ALERTS_MODE = mode;
+      else delete process.env.ARTIST_ALERTS_MODE;
+      const html = renderToStaticMarkup(await HomePage());
+      expect(html.includes('href="/artists"')).toBe(shown);
+      if (shown) expect(html.indexOf('href="/artists"')).toBeLessThan(html.indexOf("Electronic music in Copenhagen"));
+    }
+    delete process.env.ARTIST_ALERTS_MODE;
+  });
 });

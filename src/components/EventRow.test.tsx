@@ -490,7 +490,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.getByText(/SOPHIE VAN HAYDEN \/ NAIVA \/ ONSBERG/)).toBeTruthy();
+    expect(screen.getByText(/Sophie Van Hayden \/ Naiva \/ Onsberg/)).toBeTruthy();
   });
 
   it("renders no lineup text at all when the event has no artists", () => {
@@ -1023,7 +1023,7 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
   afterEach(cleanup);
 
   const SHOWCASE = { title: "HYGGELIT SHOWCASE", artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"] };
-  const LINEUP_TEXT = "SOPHIE VAN HAYDEN / NAIVA / ONSBERG";
+  const LINEUP_TEXT = "Sophie Van Hayden / Naiva / Onsberg";
   const cls = (el: Element) => el.className.split(/\s+/);
 
   it("renders the lineup outside the title link, directly after the title row, so the link's name is the title alone", () => {
@@ -1096,7 +1096,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(soldOutWrap.parentElement).toBe(row.firstElementChild);
     expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
-    expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
+    expect(orderOf(screen.getByText("Naiva / Onsberg"))).toBe("-order-3");
     expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-2");
     expect(orderOf(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toBe("-order-1");
     expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");

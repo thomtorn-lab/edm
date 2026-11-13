@@ -4,7 +4,7 @@ import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
-import { cleanEventTitle, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
+import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 import { SITE_URL } from "@/lib/siteUrl";
@@ -35,7 +35,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   const showArtistPreview = shouldShowArtistPreview(title, event.artists);
-  const lineup = showArtistPreview ? event.artists.join(" / ") : "";
+  const lineup = showArtistPreview ? event.artists.map(formatArtistName).join(" / ") : "";
   // Single source of truth for this row's own event-detail URL (mobile/video
   // affordance polish, 2026-09-26) — reused by both the title link and the
   // VIDEO badge link below, so there is only ever one place that constructs
