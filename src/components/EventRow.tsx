@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
@@ -49,7 +49,8 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
     ...(isFree ? [{ kind: "free" as const }] : []),
   ];
   const leadLinkItems = linkItems.slice(0, -1);
-  const bindCalendarToLastLink = !event.hasArtistPreview && !event.hasAudioLinks;
+  const hasMedia = !!event.hasArtistPreview || !!event.hasAudioLinks;
+  const bindCalendarToLastLink = !hasMedia;
   const lastLinkItem = linkItems.at(-1);
   // Typography the link group gives its children; the last item sits
   // outside the group (in the Calendar unit), so each item carries it itself.
@@ -81,6 +82,27 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
     venue: event.venue,
     eventUrl: `${SITE_URL}${eventHref}`,
   };
+  const calendarButton = (
+    <AddToCalendar
+      event={calendarInput}
+      icsHref={`/events/${event.slug}/calendar.ics`}
+      mobileLabel="Calendar"
+      buttonClassName={CALENDAR_BUTTON_CLASSES}
+    />
+  );
+  // Mobile only (2026-11-13): when Video/Audio exist, a second Calendar
+  // instance sits in the metadata row, bound with the first media badge in
+  // one non-wrapping unit, so Calendar and that badge always wrap together
+  // and no lone pill is left on a line. The actions-column Calendar is then
+  // desktop-only (display:none below sm), so exactly one is ever rendered
+  // visibly/accessibly per breakpoint. At sm the unit is display:contents
+  // and this copy hidden, so desktop is unchanged.
+  const withMobileCalendar = (badge: ReactNode) => (
+    <span className="order-1 inline-flex items-center gap-x-4 sm:contents">
+      <span className="flex sm:hidden">{calendarButton}</span>
+      {badge}
+    </span>
+  );
 
   // Mobile vs desktop structure (2026-11-12). Desktop is the existing
   // three-column row (date | title/lineup/metadata | actions), unchanged
@@ -237,14 +259,16 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                     conflicting click handlers. aria-label gives it one
                     clean, title-specific accessible name instead of the
                     visible glyph + "Video" being read out separately. */}
-                <Link
-                  href={`${eventHref}#video`}
-                  aria-label={`Go to artist preview video for ${title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
-                >
-                  <span aria-hidden="true" className="text-accent">▶</span>
-                  Video
-                </Link>
+                {withMobileCalendar(
+                  <Link
+                    href={`${eventHref}#video`}
+                    aria-label={`Go to artist preview video for ${title}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
+                  >
+                    <span aria-hidden="true" className="text-accent">▶</span>
+                    Video
+                  </Link>
+                )}
               </>
             )}
             {event.hasAudioLinks && (
@@ -260,14 +284,29 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                     visible/accessible label changed), exactly like VIDEO's
                     `#video` deep-link — never straight to soundcloud.com
                     from the overview. */}
-                <Link
-                  href={`${eventHref}#soundcloud`}
-                  aria-label={`Go to audio links for ${title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
-                >
-                  <span aria-hidden="true" className="text-accent">♫</span>
-                  Audio
-                </Link>
+                {/* Bound with the mobile Calendar only when there's no VIDEO
+                    badge to carry it. */}
+                {event.hasArtistPreview ? (
+                  <Link
+                    href={`${eventHref}#soundcloud`}
+                    aria-label={`Go to audio links for ${title}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
+                  >
+                    <span aria-hidden="true" className="text-accent">♫</span>
+                    Audio
+                  </Link>
+                ) : (
+                  withMobileCalendar(
+                    <Link
+                      href={`${eventHref}#soundcloud`}
+                      aria-label={`Go to audio links for ${title}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
+                    >
+                      <span aria-hidden="true" className="text-accent">♫</span>
+                      Audio
+                    </Link>
+                  )
+                )}
               </>
             )}
           </div>
@@ -285,8 +324,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               Calendar from ever ending up alone on a line: when no Video/
               Audio follows it, the last of Official event/Tickets/Free and
               Calendar form one non-wrapping unit, so Calendar moves down
-              with that link. (With media present Calendar is never last, so
-              no binding is needed and the links fill the line first.) At sm
+              with that link. With media present, the mobile Calendar is the
+              copy bound to the first media badge in the metadata row (see
+              withMobileCalendar) and this one is desktop-only. At sm
               both wrappers are display:contents / the original flex group,
               so desktop renders exactly as before. */}
           {leadLinkItems.length > 0 && (
@@ -296,12 +336,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
           )}
           <span className={`${bindCalendarToLastLink ? "inline-flex items-center gap-x-4" : "contents"} sm:contents`}>
             {lastLinkItem && renderLinkItem(lastLinkItem)}
-            <AddToCalendar
-              event={calendarInput}
-              icsHref={`/events/${event.slug}/calendar.ics`}
-              mobileLabel="Calendar"
-              buttonClassName={CALENDAR_BUTTON_CLASSES}
-            />
+            {hasMedia ? <span className="hidden sm:contents">{calendarButton}</span> : calendarButton}
           </span>
         </div>
       </div>

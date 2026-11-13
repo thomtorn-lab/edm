@@ -941,7 +941,9 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
     // Same flex-wrap metadata container, not a sibling block/new row (the
     // venue's mobile-only group wrapper is display:contents at sm).
     expect((venueLink.parentElement as HTMLElement).className).toContain("sm:contents");
-    expect(venueLink.parentElement?.parentElement).toBe(videoLink.parentElement);
+    // VIDEO's own wrapper is the mobile Calendar unit, also display:contents at sm.
+    expect((videoLink.parentElement as HTMLElement).className).toContain("sm:contents");
+    expect(venueLink.parentElement?.parentElement).toBe(videoLink.parentElement?.parentElement);
   });
 
   it("preserves the badge's visual appearance as closely as possible — same outlined pill, accent play glyph, no new button styling", () => {
@@ -1004,7 +1006,9 @@ describe("EventRow — AUDIO indicator (venue-provided SoundCloud links)", () =>
     );
     const videoLink = screen.getByRole("link", { name: "Go to artist preview video for Test Event" });
     const audioLink = screen.getByRole("link", { name: "Go to audio links for Test Event" });
-    expect(videoLink.parentElement).toBe(audioLink.parentElement);
+    // VIDEO sits in the mobile Calendar unit (display:contents at sm), AUDIO directly in the row.
+    expect((videoLink.parentElement as HTMLElement).className).toContain("sm:contents");
+    expect(videoLink.parentElement?.parentElement).toBe(audioLink.parentElement);
   });
 
   it("matches the VIDEO badge's pill styling exactly (same border/rounded shape/size/spacing, no filled-accent treatment)", () => {
@@ -1191,7 +1195,7 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
   it("renders no link row at all when there are no external links", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
     expect(screen.queryByRole("link", { name: /Official event|Tickets/ })).toBeNull();
-    const calendar = screen.getByRole("button", { name: /calendar/i }).closest("div") as HTMLElement;
+    const calendar = screen.getAllByRole("button", { name: /calendar/i })[1].closest("div") as HTMLElement;
     expect(calendar.previousElementSibling).toBeNull();
   });
 
@@ -1241,7 +1245,8 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
 
   it("styles the calendar button as the same outlined pill as VIDEO/AUDIO on mobile, original button at sm", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
-    const button = screen.getByRole("button", { name: "Add to calendar" });
+    // Two instances with media (mobile copy + desktop one; CSS shows one per breakpoint).
+    const [button] = screen.getAllByRole("button", { name: "Add to calendar" });
     const video = screen.getByRole("link", { name: /artist preview video/ });
     const shared = ["inline-flex", "items-center", "gap-1", "rounded-full", "border", "border-border-strong", "px-1.5", "py-0.5", "text-[10px]", "font-semibold", "uppercase", "tracking-wide", "text-text-tertiary"];
     expect(cls(button)).toEqual(expect.arrayContaining(shared));
@@ -1250,7 +1255,7 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
       expect.arrayContaining(["sm:min-h-[2.25rem]", "sm:rounded", "sm:px-2.5", "sm:py-1", "sm:text-[11px]", "sm:font-medium", "sm:normal-case", "sm:tracking-normal"]),
     );
     // Short visible label on mobile only; the accessible name stays "Add to calendar".
-    expect(screen.getByText("Calendar").className).toBe("sm:hidden");
+    expect(screen.getAllByText("Calendar")[0].className).toBe("sm:hidden");
   });
 
   it("binds the last external link to Calendar in one non-wrapping unit", () => {
@@ -1279,5 +1284,37 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
     const unit = screen.getByText("Free").parentElement as HTMLElement;
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
+  });
+});
+
+describe("EventRow — mobile Calendar wraps together with the first media badge (2026-11-13)", () => {
+  afterEach(cleanup);
+  const cls = (el: Element) => el.className.split(/\s+/);
+
+  it("with VIDEO: a mobile-only Calendar is bound to VIDEO; the actions-column Calendar is desktop-only", () => {
+    render(<EventRow event={{ ...makeEvent({ ticketUrl: "https://example.com/t" }), hasArtistPreview: true, hasAudioLinks: true }} />);
+    const [mobileCal, desktopCal] = screen.getAllByRole("button", { name: "Add to calendar" });
+    const video = screen.getByRole("link", { name: /artist preview video/ });
+    const unit = video.parentElement as HTMLElement;
+    expect(cls(unit)).toEqual(["order-1", "inline-flex", "items-center", "gap-x-4", "sm:contents"]);
+    expect(unit.contains(mobileCal)).toBe(true);
+    expect(cls(mobileCal.closest("div")?.parentElement as Element)).toEqual(["flex", "sm:hidden"]);
+    expect(cls(desktopCal.closest("div")?.parentElement as Element)).toEqual(["hidden", "sm:contents"]);
+    // AUDIO follows freely, outside the unit.
+    expect(unit.contains(screen.getByRole("link", { name: /audio links/ }))).toBe(false);
+    // Tickets is no longer bound to Calendar when media follow.
+    expect(cls(screen.getByRole("link", { name: /Tickets/ }).parentElement as Element)).toEqual(["contents", "sm:contents"]);
+  });
+
+  it("with AUDIO only: the mobile Calendar is bound to AUDIO", () => {
+    render(<EventRow event={{ ...makeEvent(), hasAudioLinks: true }} />);
+    const [mobileCal] = screen.getAllByRole("button", { name: "Add to calendar" });
+    const audio = screen.getByRole("link", { name: /audio links/ });
+    expect((audio.parentElement as HTMLElement).contains(mobileCal)).toBe(true);
+  });
+
+  it("without media: a single Calendar, no mobile copy", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
+    expect(screen.getAllByRole("button", { name: "Add to calendar" })).toHaveLength(1);
   });
 });
