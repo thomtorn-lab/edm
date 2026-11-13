@@ -32,6 +32,7 @@ import {
   indexPendingRowsForSource,
   findSyncMatch,
   isIgnoredCandidate,
+  isSelectiveAutoPublishCandidate,
   summarizeWriteErrors,
   type SyncTargetEvent,
 } from "@/lib/sync";
@@ -534,9 +535,17 @@ async function runSourceSyncLocked(
       const effectiveHoldReason: HoldReason =
         sourceCancellationPolicy !== "none" && raw.cancelledHint === true ? "source_cancelled" : result.holdReason;
 
+      // Selective auto-publish (HvadErPå, 2026-11-13) — see
+      // isSelectiveAutoPublishCandidate's own doc comment. Never applies to
+      // a candidate an admin already ignored, or one another owner already
+      // has pending, so no existing safety check is bypassed.
+      const selectiveAutoPublish =
+        isSelectiveAutoPublishCandidate(sourceId, result) &&
+        !isIgnoredCandidate(dedupKey, ignoredByUrl) &&
+        !otherOwnerPendingUrls.has(dedupKey);
+
       if (
-        result.decision === "auto_publish" &&
-        sourceAutoPublishAllowed &&
+        ((result.decision === "auto_publish" && sourceAutoPublishAllowed) || selectiveAutoPublish) &&
         result.resolvedVenueId &&
         raw.startDatetime &&
         raw.cancelledHint !== true
@@ -578,6 +587,24 @@ async function runSourceSyncLocked(
           sourceId,
         );
         created++;
+        // Selective path only: make the new event visible to dedup for the
+        // rest of this run, so a second listing of the same night in the
+        // same fetch can never also be auto-published.
+        if (selectiveAutoPublish) {
+          existingForDedup.push({
+            id: eventId,
+            title: raw.title,
+            artists: result.normalizedArtists,
+            venueId: result.resolvedVenueId,
+            subVenue: result.resolvedSubVenue,
+            startDatetime: raw.startDatetime,
+            sourceId,
+            officialEventUrl: raw.officialEventUrl,
+            ticketUrl: raw.ticketUrl,
+            residentAdvisorUrl: raw.residentAdvisorUrl,
+            adminUnpublished: false,
+          });
+        }
         if (raw.soundcloudLinkReport) soundcloudObservations.set(eventId, raw.soundcloudLinkReport);
         {
           const records = inlineSoundcloudEvidenceForSync(raw, result.normalizedArtists, eventId);
