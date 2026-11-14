@@ -35,11 +35,11 @@ export default function AnalyticsConsentSettings() {
         </p>
       )}
       <div className="flex flex-wrap gap-3">
-        <button type="button" className={BUTTON} disabled={consent === "denied"} onClick={() => setAnalyticsConsent("denied")}>
-          Decline statistics
-        </button>
         <button type="button" className={BUTTON} disabled={consent === "granted"} onClick={() => setAnalyticsConsent("granted")}>
           Allow statistics
+        </button>
+        <button type="button" className={BUTTON} disabled={consent === "denied"} onClick={() => setAnalyticsConsent("denied")}>
+          Decline statistics
         </button>
       </div>
     </div>

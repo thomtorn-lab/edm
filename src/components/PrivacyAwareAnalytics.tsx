@@ -54,11 +54,11 @@ function AnalyticsConsentBanner() {
           </p>
         </div>
         <div className="flex shrink-0 gap-3">
-          <button type="button" className={CHOICE_BUTTON} onClick={() => setAnalyticsConsent("denied")}>
-            Decline
-          </button>
           <button type="button" className={CHOICE_BUTTON} onClick={() => setAnalyticsConsent("granted")}>
             Allow
+          </button>
+          <button type="button" className={CHOICE_BUTTON} onClick={() => setAnalyticsConsent("denied")}>
+            Decline
           </button>
         </div>
       </div>
