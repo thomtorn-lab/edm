@@ -1,0 +1,19 @@
+name: tmp run tests 208
+on:
+  push:
+    branches: [tmp/run-tests-208]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/components/ArtistVideoPreview.test.tsx "src/app/events/[slug]/page.test.tsx"
+      - run: npm test
+      - run: npm run lint --if-present
