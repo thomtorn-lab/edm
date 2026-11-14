@@ -337,7 +337,7 @@ describe("Event detail page — eyebrow + neutral H1 preserved (Round 19)", () =
   });
 });
 
-describe("Event detail page — public/internal status separation (event lifecycle/status handling, 2026-08-28: dateChanged is now the public Rescheduled signal; timeChanged alone stays internal-only)", () => {
+describe("Event detail page — public/internal status separation (dateChanged and timeChanged are internal-only; no public Rescheduled badge since 2026-11-14)", () => {
   afterEach(cleanup);
 
   it("shows no status text for a normal event", async () => {
@@ -348,9 +348,9 @@ describe("Event detail page — public/internal status separation (event lifecyc
     expect(screen.queryByText(/Postponed/i)).toBeNull();
   });
 
-  it("dateChanged alone renders the public Rescheduled status", async () => {
+  it("dateChanged alone renders no public status", async () => {
     await renderPage(makeEvent({ dateChanged: true }));
-    expect(screen.getByText("Rescheduled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
   });
 
   it("timeChanged alone renders no public status — internal same-day correction only", async () => {
@@ -359,9 +359,9 @@ describe("Event detail page — public/internal status separation (event lifecyc
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
-  it("dateChanged + timeChanged together render only Rescheduled once", async () => {
+  it("dateChanged + timeChanged together render no Rescheduled and no Time changed status", async () => {
     await renderPage(makeEvent({ dateChanged: true, timeChanged: true }));
-    expect(screen.getAllByText("Rescheduled")).toHaveLength(1);
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
@@ -380,16 +380,16 @@ describe("Event detail page — public/internal status separation (event lifecyc
     expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("cancelled + dateChanged: cancelled contributes no badge, Rescheduled still renders (cancelled no longer suppresses it)", async () => {
+  it("cancelled + dateChanged: no Cancelled and no Rescheduled badge", async () => {
     await renderPage(makeEvent({ cancelled: true, dateChanged: true, timeChanged: true }));
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
-    expect(screen.getByText("Rescheduled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
   });
 
-  it("soldOut + dateChanged shows both SOLD OUT and RESCHEDULED", async () => {
+  it("soldOut + dateChanged shows SOLD OUT only, no RESCHEDULED", async () => {
     await renderPage(makeEvent({ soldOut: true, dateChanged: true, timeChanged: true }));
     expect(screen.getByText("Sold out")).toBeTruthy();
-    expect(screen.getByText("Rescheduled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
   });
 });
 

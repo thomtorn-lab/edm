@@ -16,16 +16,14 @@ type BadgeTone = StatusInfo["tone"] | "strong";
 
 /**
  * Public event-lifecycle statuses only (event lifecycle/status handling,
- * 2026-08-28). `timeChanged` is still an internal data-quality flag (a
- * same-day time correction is not worth a prominent badge) and must never
- * surface here. `dateChanged`, however, now doubles as the public
- * "Rescheduled" signal: it's set only when an already-known, already-linked
- * event's date genuinely differs from what the source now reports (see
- * buildSyncPatch in lib/sync.ts) — that IS a confirmed replacement date from
- * the source's own authority, exactly what "rescheduled" means. It is a
- * one-way flag (never reset), which is fine here: once the event's start
- * date passes it drops out of the public "upcoming" listing entirely (see
- * EventExplorer), so this can never linger as stale clutter.
+ * 2026-08-28). `timeChanged` is an internal data-quality flag and must never
+ * surface here.
+ *
+ * No "Rescheduled" badge (2026-11-14): when an event gets a confirmed new
+ * date the listing already shows that date, so the badge added little and
+ * could cause doubt. `dateChanged` is still set by sync (buildSyncPatch in
+ * lib/sync.ts) and kept as internal QA/history metadata — it just no longer
+ * produces a public badge. "Postponed" (no confirmed new date) is unchanged.
  *
  * No "Cancelled" badge here (admin unpublish/cancellation safety,
  * 2026-09-06): a cancelled event must not remain publicly visible at all —
@@ -36,14 +34,10 @@ type BadgeTone = StatusInfo["tone"] | "strong";
  * historical metadata (see EventManager.tsx) rather than removed outright.
  */
 export function getEventStatuses(
-  event: Pick<EventRecord, "soldOut" | "postponed" | "dateChanged">,
+  event: Pick<EventRecord, "soldOut" | "postponed">,
 ): StatusInfo[] {
   const statuses: StatusInfo[] = [];
-  if (event.postponed) {
-    statuses.push({ label: "Postponed", tone: "bad" });
-  } else if (event.dateChanged) {
-    statuses.push({ label: "Rescheduled", tone: "neutral" });
-  }
+  if (event.postponed) statuses.push({ label: "Postponed", tone: "bad" });
   if (event.soldOut) statuses.push({ label: "Sold out", tone: "neutral" });
   return statuses;
 }
