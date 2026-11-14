@@ -45,7 +45,7 @@ interface SourceRow {
 let eventsRows: EventsRow[] = [];
 let discoveryRows: DiscoveryRow[] = [];
 let sourceRows: SourceRow[] = [];
-let cacheRows: { n: string }[] = [];
+let cacheRows: { n: string; status?: string; videoTitle?: string | null; channelTitle?: string | null }[] = [];
 
 /**
  * Distinguishes buildWorklist's four distinct queries (events / pending
@@ -71,7 +71,8 @@ vi.mock("@/db/client", () => ({
 }));
 
 const getOrMatchMock = vi.fn();
-vi.mock("@/lib/enrichment/youtubePreviewMatching", () => ({
+vi.mock("@/lib/enrichment/youtubePreviewMatching", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/enrichment/youtubePreviewMatching")>()),
   getOrMatchArtistYoutubePreview: (...args: unknown[]) => getOrMatchMock(...args),
 }));
 
@@ -316,6 +317,16 @@ describe("buildWorklist (via runApply) — combined published + Discovery releva
     cacheRows = [{ n: normalizeArtistName(cleanArtistDisplayName("Cached Artist")) }];
 
     expect(await runAndCollectNames()).toEqual([]);
+  });
+
+  it("a fresh accepted row whose video is now hidden (podcast / own-channel video without a performance cue) is looked up again", async () => {
+    discoveryRows = [baseDiscoveryRow({ sourceId: null, probableStart: null, detectedLineup: ["Mat Eclair", "Real Set Artist"] })];
+    cacheRows = [
+      { n: "mat eclair", status: "accepted", videoTitle: "MAT ECLAIR PODCAST / 2024 New Years Eve Special / EP Early Listen", channelTitle: "Mat Eclair" },
+      { n: "real set artist", status: "accepted", videoTitle: "Real Set Artist - DJ Set", channelTitle: "Real Set Artist" },
+    ];
+
+    expect(await runAndCollectNames()).toEqual(["Mat Eclair"]);
   });
 
   it("zero combined backlog (no visible events, no Needs Review/Venue Blocked Discovery rows) never calls the matcher", async () => {

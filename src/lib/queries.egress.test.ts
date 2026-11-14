@@ -185,7 +185,7 @@ describe("YouTube preview cache render-time reads select only the fields they us
 
     expect(result).toEqual([true, false]);
     const [query] = previewQueries();
-    expect(selectedColumns(query.text).sort()).toEqual(["artist_name_normalized", "manual_block", "status", "video_id", "video_title"].sort());
+    expect(selectedColumns(query.text).sort()).toEqual(["artist_name_normalized", "channel_title", "manual_block", "status", "video_id", "video_title"].sort());
   });
 
   it("both reads skip a cached podcast/release-preview match and fall through to the next artist", async () => {

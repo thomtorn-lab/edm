@@ -167,7 +167,7 @@ describe("replayAcceptedRow", () => {
   it("never offers an alternative that was not verified, or failed verification", () => {
     const result = replayAcceptedRow(
       row("ADELINA", { videoId: "axkFsBI2E6U", title: "AFRO DJ AUDIO SET 2026 - ADELINA.", channelTitle: "Adelina", safe: true }, [
-        { videoId: "unverified", title: "Adelina - House Mix", channelTitle: "Adelina" },
+        { videoId: "unverified", title: "Adelina - House DJ Set", channelTitle: "Adelina" },
         { videoId: "too-short", title: "Adelina - Teaser", channelTitle: "Adelina", safe: false },
       ]),
     );
