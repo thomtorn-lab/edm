@@ -229,8 +229,8 @@ export function nonPerformanceTitleTerm(title: string | null | undefined, artist
  * holds vlogs, films and talk ("Ridin´ round NYC with Miss Bashful",
  * "A Daughter's Conviction | Full Movie | LMN", "'Friends' Power Hour" were
  * all accepted on own-channel + 20 minutes alone). Deliberately not the bare
- * "mix", "at" or "@": a home mix or "Artist at Somewhere" says nothing about
- * a performance. Tested with the artist's own name removed, so a name like
+ * "mix" or "at": a home mix or "Artist at Somewhere" says nothing about a
+ * performance. Tested with the artist's own name removed, so a name like
  * "Set Mo" or "DJ Live" never documents itself.
  */
 export const PERFORMANCE_TITLE_CUES: readonly RegExp[] = [
@@ -244,6 +244,15 @@ export const PERFORMANCE_TITLE_CUES: readonly RegExp[] = [
   /\bkoncert\b/i,
   /\bperformance\b/i,
   /\bshowcase\b/i,
+  // Added 2026-11-14 after the read-only risk report on PR #211: these
+  // marked real sets that the list above alone would have hidden
+  // ("Mindloader @ The Dome", "MEUTE - Rooftop Session", "CøkiT | ... Dj
+  // Marathon", "Backyard Djing"). The "@" symbol only — the word "at" still
+  // does not count.
+  /@/,
+  /\bsessions?\b/i,
+  /\bdj\b/i,
+  /\bdjing\b/i,
 ];
 
 export function hasPerformanceTitleCue(title: string | null | undefined, artistName: string): boolean {
@@ -401,7 +410,7 @@ export function checkStructuralEligibility(cleanedName: string, normalized: stri
   }
   if (ownChannel) {
     if (!hasPerformanceTitleCue(item.title, cleanedName)) {
-      return { eligible: false, channelMatch: null, reason: "own-channel title has no performance cue (live, set, b2b, festival, ...)" };
+      return { eligible: false, channelMatch: null, reason: "own-channel title has no performance cue (live, set, b2b, festival, @, session, dj, ...)" };
     }
     return { eligible: true, channelMatch: "own", reason: null };
   }

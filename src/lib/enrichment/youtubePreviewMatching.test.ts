@@ -397,17 +397,16 @@ describe("matchArtistYoutubePreview — Rule A", () => {
     expect(client.detailsCalls).toHaveLength(0);
   });
 
-  it("a bare 'mix', 'at' or '@' is not enough on the artist's own channel", async () => {
+  it("a bare 'mix' or 'at' is not enough on the artist's own channel", async () => {
     const client = fakeYoutubeClient({
       search: {
         "Scheibenwischer dj set": [
           video({ videoId: "a", channelTitle: "Scheibenwischer", title: "HARDGROOVE CD ONLY MIX | Scheibenwischer" }),
           video({ videoId: "b", channelTitle: "Scheibenwischer", title: "Scheibenwischer at home" }),
-          video({ videoId: "c", channelTitle: "Scheibenwischer", title: "Scheibenwischer @ Somewhere" }),
         ],
         "Scheibenwischer live": [],
       },
-      details: { a: details({ videoId: "a" }), b: details({ videoId: "b" }), c: details({ videoId: "c" }) },
+      details: { a: details({ videoId: "a" }), b: details({ videoId: "b" }) },
     });
 
     expect((await matchArtistYoutubePreview("Scheibenwischer", client)).status).toBe("abstain");
@@ -424,6 +423,15 @@ describe("matchArtistYoutubePreview — Rule A", () => {
 
     expect((await matchArtistYoutubePreview("Benwal", client)).videoId).toBe("b2b");
     expect((await matchArtistYoutubePreview("Kardenal", client)).videoId).toBe("power");
+  });
+
+  it("'@', 'session' and 'dj'/'djing' count as performance cues (real sets from the 2026-11-14 risk report)", () => {
+    expect(hasPerformanceTitleCue("Mindloader @ The Dome 002 (2022)", "Mindloader")).toBe(true);
+    expect(hasPerformanceTitleCue("MEUTE - Rooftop Session [Full Length]", "MEUTE")).toBe(true);
+    expect(hasPerformanceTitleCue("CøkiT |Amsterdam Most wanted Dj Marathon (AMW) x ADE | 23 Oct 2025", "CøkiT")).toBe(true);
+    expect(hasPerformanceTitleCue("Dinosaudius Backyard Djing for Sparks Dance Arena", "Dinosaudius")).toBe(true);
+    expect(hasPerformanceTitleCue("DJ Algorythm - summer vlog", "DJ Algorythm")).toBe(false); // the name's own "DJ" never counts
+    expect(cachedVideoMeetsContentRules("Someone @ Studio - Podcast #4", "Someone", "someone")).toBe(false); // rejection rules still win
   });
 
   it("trusted live channels keep their existing rules — no performance cue needed", async () => {
