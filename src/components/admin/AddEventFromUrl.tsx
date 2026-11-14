@@ -58,8 +58,12 @@ export default function AddEventFromUrl() {
   const [endLocal, setEndLocal] = useState("");
   const [venueNameText, setVenueNameText] = useState("");
   const [genre, setGenre] = useState("");
+  // Optional second genre (max two genres per event) — same control and
+  // save semantics as EventManager/DiscoveryQueue. Analyze itself only ever
+  // detects one genre, so this always starts empty.
+  const [secondaryGenre, setSecondaryGenre] = useState("");
   // The genre Analyze stored on a just-published event — a different pick
-  // here is an explicit new main genre (see the note under the editor).
+  // here is an explicit new genre classification (see the note under the editor).
   const [analyzedGenre, setAnalyzedGenre] = useState("");
   const [artists, setArtists] = useState("");
   const [officialEventUrl, setOfficialEventUrl] = useState("");
@@ -96,6 +100,7 @@ export default function AddEventFromUrl() {
         setVenueNameText(raw.venueName ?? "");
         setGenre(result.genre ?? "");
         setAnalyzedGenre(result.genre ?? "");
+        setSecondaryGenre("");
         setArtists(result.normalizedArtists.join(", "));
         setOfficialEventUrl(raw.officialEventUrl ?? "");
         setTicketUrl(raw.ticketUrl ?? "");
@@ -132,13 +137,20 @@ export default function AddEventFromUrl() {
     setSaveError(null);
     try {
       const isEvent = data.persisted.kind === "event";
+      // Never sends a duplicate — same guard EventManager/DiscoveryQueue use.
+      const secondary = secondaryGenre && secondaryGenre !== genre ? secondaryGenre : "";
       const path = isEvent ? `/api/admin/events/${data.persisted.id}` : `/api/admin/discovery/${data.persisted.id}`;
       const patch: Record<string, unknown> = isEvent
         ? {
             title,
             description: description || null,
             artists: artists.split(",").map((s) => s.trim()).filter(Boolean),
-            primaryGenre: genre || undefined,
+            // The genre pair is sent as one ordered classification
+            // ([primary, secondary]) only when it differs from what Analyze
+            // stored — see EventManager's save path / writes.ts.
+            ...(genre && (genre !== analyzedGenre || secondary)
+              ? { primaryGenre: genre, subgenres: secondary ? [genre, secondary] : [genre] }
+              : {}),
             officialEventUrl: officialEventUrlTrimmed || null,
             ticketUrl: ticketUrlTrimmed || null,
             residentAdvisorUrl: residentAdvisorUrlTrimmed || null,
@@ -149,6 +161,7 @@ export default function AddEventFromUrl() {
             probableVenueName: venueNameText || null,
             detectedLineup: artists.split(",").map((s) => s.trim()).filter(Boolean),
             predictedGenre: genre || null,
+            predictedSecondaryGenre: genre && secondary ? secondary : null,
             probableOfficialEventUrl: officialEventUrlTrimmed || null,
             probableTicketUrl: ticketUrlTrimmed || null,
             probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
@@ -290,6 +303,8 @@ export default function AddEventFromUrl() {
               genre={genre}
               onGenreChange={setGenre}
               allowUnresolvedGenre
+              secondaryGenre={secondaryGenre}
+              onSecondaryGenreChange={setSecondaryGenre}
               artists={artists}
               onArtistsChange={setArtists}
               officialEventUrl={officialEventUrl}
@@ -301,11 +316,10 @@ export default function AddEventFromUrl() {
               free={free}
               onFreeChange={setFree}
             />
-            {data.persisted.kind === "event" && genre && genre !== analyzedGenre && (
+            {data.persisted.kind === "event" && genre && (genre !== analyzedGenre || (secondaryGenre && secondaryGenre !== genre)) && (
               <p id="analyze-genre-replace-note" role="note" className="text-[11px] text-status-warn">
-                Saving sets {isGenreSlug(genre) ? getGenre(genre).label : genre} as the event&rsquo;s only genre: it replaces the whole genre classification, removes any
-                secondary genre, and protects the genres from source sync. To keep or add a secondary genre, edit the event
-                under &ldquo;All events&rdquo; instead.
+                Saving sets {[genre, secondaryGenre && secondaryGenre !== genre ? secondaryGenre : ""].filter(Boolean).map((g) => (isGenreSlug(g) ? getGenre(g).label : g)).join(" + ")} as
+                the event&rsquo;s genres: it replaces the whole genre classification and protects the genres from source sync.
               </p>
             )}
             <div className="flex items-center gap-2 pt-1">
