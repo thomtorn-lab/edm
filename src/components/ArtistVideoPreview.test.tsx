@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import ArtistVideoPreview, { playerStateFromMessage, SOUND_START_GRACE_MS, videoPlayerTitle, youtubeEmbedUrl } from "./ArtistVideoPreview";
+import ArtistVideoPreview, { isIOSDevice, playerStateFromMessage, SOUND_START_GRACE_MS, videoPlayerTitle, youtubeEmbedUrl } from "./ArtistVideoPreview";
 
 /** The YouTube iframe's accessible name (2026-10-24). */
 describe("videoPlayerTitle", () => {
@@ -25,6 +25,18 @@ describe("videoPlayerTitle", () => {
   });
 });
 
+describe("isIOSDevice", () => {
+  it("recognises iPhone and iPad (incl. iPadOS posing as a Mac with touch)", () => {
+    expect(isIOSDevice({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", platform: "iPhone", maxTouchPoints: 5 })).toBe(true);
+    expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 5 })).toBe(true);
+  });
+
+  it("leaves desktop Macs and Android alone", () => {
+    expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 0 })).toBe(false);
+    expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8)", platform: "Linux armv8l", maxTouchPoints: 5 })).toBe(false);
+  });
+});
+
 describe("playerStateFromMessage", () => {
   it("reads the state from YouTube's widget messages (JSON strings or objects)", () => {
     expect(playerStateFromMessage(JSON.stringify({ event: "onStateChange", info: 1 }))).toBe(1);
@@ -43,6 +55,12 @@ describe("playerStateFromMessage", () => {
 describe("youtubeEmbedUrl", () => {
   it("uses the privacy-enhanced embed domain and autoplays (the press already asked for the video)", () => {
     expect(youtubeEmbedUrl("abc123XYZ")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1&playsinline=1&enablejsapi=1");
+  });
+
+  it("mutes from the URL when asked (iOS only starts a muted embed by itself)", () => {
+    expect(youtubeEmbedUrl("abc", undefined, { muted: true })).toBe(
+      "https://www.youtube-nocookie.com/embed/abc?autoplay=1&playsinline=1&enablejsapi=1&mute=1",
+    );
   });
 
   it("passes our origin so the player accepts play/mute commands from the page", () => {
@@ -193,5 +211,13 @@ describe("ArtistVideoPreview click-to-load", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("loads the embed muted on iPhone so it starts with the one press", () => {
+    const nav = vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)");
+    const { container } = renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: /^Play YouTube video/ }));
+    expect(container.querySelector("iframe")!.getAttribute("src")).toContain("&mute=1");
+    nav.mockRestore();
   });
 });

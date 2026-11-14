@@ -57,10 +57,21 @@ export function videoPlayerTitle({ videoTitle, artistName, eventTitle }: { video
  * (one-press start, 2026-11-14); `playsinline` keeps iOS from demanding a
  * fullscreen tap.
  */
-export function youtubeEmbedUrl(videoId: string, origin?: string): string {
+export function youtubeEmbedUrl(videoId: string, origin?: string, { muted = false }: { muted?: boolean } = {}): string {
   const params = new URLSearchParams({ autoplay: "1", playsinline: "1", enablejsapi: "1" });
+  if (muted) params.set("mute", "1");
   if (origin) params.set("origin", origin);
   return `${YOUTUBE_EMBED_ORIGIN}/embed/${encodeURIComponent(videoId)}?${params.toString()}`;
+}
+
+/**
+ * iPhone/iPad (every iOS browser is WebKit; iPadOS reports itself as a Mac
+ * with touch). iOS ignores both sound autoplay and scripted `playVideo` in a
+ * cross-origin iframe, and a `mute` command sent after load comes too late —
+ * only an embed that is muted from its URL starts by itself (2026-11-14).
+ */
+export function isIOSDevice(nav: Pick<Navigator, "userAgent" | "platform" | "maxTouchPoints"> = navigator): boolean {
+  return /iPad|iPhone|iPod/.test(nav.userAgent) || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
 }
 
 /** How long the player gets to start with sound before we fall back to a muted start. */
@@ -176,7 +187,7 @@ export default function ArtistVideoPreview({
     <div className="mt-3">
       <button
         type="button"
-        onClick={() => setEmbedSrc(youtubeEmbedUrl(videoId, window.location.origin))}
+        onClick={() => setEmbedSrc(youtubeEmbedUrl(videoId, window.location.origin, { muted: isIOSDevice() }))}
         aria-label={`Play ${playerTitle}`}
         aria-describedby={noticeId}
         className="group flex aspect-video w-full flex-col items-center justify-center gap-3 rounded border border-border-strong bg-black px-4 text-center text-text-secondary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
