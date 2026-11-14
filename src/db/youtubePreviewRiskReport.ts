@@ -2,6 +2,7 @@ import { classifyArtistName, type NameRule, type NameVerdict } from "@/lib/enric
 import { fold, identifyHeadliners, type HeadlinerResult } from "@/lib/enrichment/eventHeadliners";
 import { cleanArtistDisplayName, normalizeArtistName } from "@/lib/enrichment/genreEnrichment";
 import { resolveEventOverride, type EventOverrideDecision } from "@/lib/eventYoutubeOverride";
+import { nonPerformanceTitleTerm } from "@/lib/enrichment/youtubePreviewMatching";
 import { assertReadOnlyRole, type GuardResult } from "./reportReadOnlyGuard";
 import {
   billedPartners,
@@ -566,13 +567,20 @@ export function buildNameSection(eventNames: EventNameRow[], discoveryNames: Dis
 const keyOf = (name: string) => normalizeArtistName(cleanArtistDisplayName(name));
 
 function isShowable(row: CacheRow | undefined): row is CacheRow & { video_id: string } {
-  return !!row && row.status === "accepted" && !row.manual_block && !!row.video_id;
+  return (
+    !!row &&
+    row.status === "accepted" &&
+    !row.manual_block &&
+    !!row.video_id &&
+    nonPerformanceTitleTerm(row.video_title, row.artist_name_normalized) === null
+  );
 }
 
 /**
  * Exactly the event page's choice (src/lib/queries.ts::getArtistYoutubePreviewForLineup):
  * the first lineup entry, by first occurrence of its normalized name, whose
- * cache row is accepted, not manually blocked, and has a video id.
+ * cache row is accepted, not manually blocked, has a video id, and whose
+ * title is not a podcast/release preview (nonPerformanceTitleTerm).
  */
 export function shownPreviewArtist(lineup: string[], cacheByKey: Map<string, CacheRow>): { artist: string; row: CacheRow & { video_id: string } } | null {
   const rawByKey = new Map(lineup.map((name) => [keyOf(name), name]));

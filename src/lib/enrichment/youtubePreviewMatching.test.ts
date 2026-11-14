@@ -5,6 +5,7 @@ import {
   titleContainsExactName,
   countBilledNames,
   normalizeArtistName,
+  nonPerformanceTitleTerm,
   VERIFY_STALE_DAYS,
   MAX_SEARCH_RESULTS,
   type ArtistPreviewCacheEntry,
@@ -343,6 +344,39 @@ describe("matchArtistYoutubePreview — Rule A", () => {
 
     const result = await matchArtistYoutubePreview("Meute", client);
     expect(result.status).toBe("abstain");
+  });
+
+  it("rejects the artist's own podcast/release-preview upload and picks the real set instead (Mat Eclair, 2026-11-14)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Mat Eclair dj set": [
+          video({ videoId: "pod", channelTitle: "Mat Eclair", title: "MAT ECLAIR PODCAST / 2024 New Years Eve Special / EP Early Listen", publishedAt: "2026-01-01T00:00:00Z" }),
+          video({ videoId: "gig", channelTitle: "Mat Eclair", title: "Mat Eclair DJ Set @ Pumpehuset", publishedAt: "2024-01-01T00:00:00Z" }),
+        ],
+      },
+      details: { pod: details({ videoId: "pod", durationSeconds: 3600 }), gig: details({ videoId: "gig", durationSeconds: 3600 }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Mat Eclair", client);
+    expect(result.videoId).toBe("gig"); // the newer podcast never even reaches verification
+    expect(client.detailsCalls[0]).toEqual(["gig"]);
+  });
+
+  it("abstains when the only own-channel candidates are podcasts, radio shows or release previews", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Mat Eclair dj set": [
+          video({ videoId: "a", channelTitle: "Mat Eclair", title: "Mat Eclair Podcast #12" }),
+          video({ videoId: "b", channelTitle: "Mat Eclair", title: "Mat Eclair - Radio Show Episode 4" }),
+        ],
+        "Mat Eclair live": [video({ videoId: "c", channelTitle: "Mat Eclair", title: "Mat Eclair - New EP full album listen" })],
+      },
+      details: { a: details({ videoId: "a" }), b: details({ videoId: "b" }), c: details({ videoId: "c" }) },
+    });
+
+    const result = await matchArtistYoutubePreview("Mat Eclair", client);
+    expect(result.status).toBe("abstain");
+    expect(client.detailsCalls).toHaveLength(0);
   });
 
   it("propagates a genuine API failure rather than silently returning an abstain", async () => {
@@ -750,6 +784,34 @@ describe("getOrMatchArtistYoutubePreview — cache behavior", () => {
     expect(cache.store.has(normalizeArtistName("Eric Prydz"))).toBe(true);
   });
 
+  it("a cached podcast match accepted under older rules is matched again, not served from cache", async () => {
+    const cache = inMemoryCache();
+    await cache.set({
+      artistNameNormalized: "mat eclair",
+      provider: "youtube",
+      status: "accepted",
+      matchRule: "A",
+      query: "Mat Eclair dj set",
+      videoId: "pod",
+      videoTitle: "MAT ECLAIR PODCAST / 2024 New Years Eve Special / EP Early Listen",
+      channelId: "c1",
+      channelTitle: "Mat Eclair",
+      evidence: {},
+      manualBlock: false,
+      matchedAt: NOW,
+      lastVerifiedAt: NOW,
+      expiresAt: new Date(NOW.getTime() + 60 * 24 * 60 * 60 * 1000),
+    });
+    const client = fakeYoutubeClient({
+      search: { "Mat Eclair dj set": [video({ videoId: "gig", channelTitle: "Mat Eclair", title: "Mat Eclair DJ Set" })] },
+      details: { gig: details({ videoId: "gig" }) },
+    });
+
+    const result = await getOrMatchArtistYoutubePreview("Mat Eclair", cache, client, NOW);
+    expect(client.searchCalls).toEqual(["Mat Eclair dj set"]);
+    expect(result.videoId).toBe("gig");
+  });
+
   it("an accepted match is reused across events without a new search", async () => {
     const cache = inMemoryCache();
     const client = fakeYoutubeClient({
@@ -843,5 +905,43 @@ describe("getOrMatchArtistYoutubePreview — cache behavior", () => {
 
     expect(result.status).toBe("accepted"); // the matcher itself still accepts it
     expect(result.manualBlock).toBe(true); // but the block is preserved for the serving layer to respect
+  });
+});
+
+describe("nonPerformanceTitleTerm", () => {
+  it("flags podcasts, episodes, radio shows, release previews and studio/talk videos", () => {
+    for (const title of [
+      "MAT ECLAIR PODCAST / 2024 New Years Eve Special / EP Early Listen",
+      "Artist - Episode 41",
+      "Artist Radio Show 2025",
+      "Artist - Debut Album Listening Session",
+      "Artist LP preview",
+      "Artist - Essential Mix",
+      "Artist Guest Mix for XYZ",
+      "Artist Mixtape Vol. 3",
+      "Artist interview",
+      "Artist in the studio",
+      "Artist Q&A",
+    ]) {
+      expect(nonPerformanceTitleTerm(title, "Artist"), title).not.toBeNull();
+    }
+  });
+
+  it("leaves real sets alone, including live mixes and trusted-channel names", () => {
+    for (const title of [
+      "ERIC PRYDZ LIVE @ ULTRA MIAMI 2026 | RESISTANCE MEGASTRUCTURE",
+      "Artist | Boiler Room London",
+      "Artist Live Mix at Berghain",
+      "Artist - Mixmag Lab LDN",
+      "Artist b2b Other DJ Set",
+    ]) {
+      expect(nonPerformanceTitleTerm(title, "Artist"), title).toBeNull();
+    }
+  });
+
+  it("ignores words that are part of the artist's own name", () => {
+    expect(nonPerformanceTitleTerm("Radio Slave | Boiler Room Berlin", "radio slave")).toBeNull();
+    expect(nonPerformanceTitleTerm("The Album Leaf live at KEXP", "The Album Leaf")).toBeNull();
+    expect(nonPerformanceTitleTerm("The Album Leaf - podcast", "The Album Leaf")).toBe("podcast");
   });
 });
