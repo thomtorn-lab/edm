@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import ArtistVideoPreview, {
   HANDSHAKE_GIVE_UP_MS,
   HANDSHAKE_INTERVAL_MS,
+  isDesktopSafari,
   isIOSDevice,
   playerEventFromMessage,
   playerStateFromMessage,
@@ -43,6 +44,18 @@ describe("isIOSDevice", () => {
   it("leaves desktop Macs and Android alone", () => {
     expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 0 })).toBe(false);
     expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8)", platform: "Linux armv8l", maxTouchPoints: 5 })).toBe(false);
+  });
+});
+
+describe("isDesktopSafari", () => {
+  it("recognises Safari on Mac", () => {
+    expect(isDesktopSafari({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15" })).toBe(true);
+  });
+
+  it("leaves Chrome, Edge and Firefox on Mac alone", () => {
+    expect(isDesktopSafari({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" })).toBe(false);
+    expect(isDesktopSafari({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0" })).toBe(false);
+    expect(isDesktopSafari({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:132.0) Gecko/20100101 Firefox/132.0" })).toBe(false);
   });
 });
 
@@ -249,6 +262,20 @@ describe("ArtistVideoPreview click-to-load", () => {
     }
   });
 
+  it("still mutes when the player only buffered and then fell back to unstarted (Safari)", () => {
+    vi.useFakeTimers();
+    try {
+      const { iframe, posted } = loadPlayer();
+      playerReady(iframe);
+      playerSays(iframe, 3);
+      playerSays(iframe, -1);
+      vi.advanceTimersByTime(SOUND_START_GRACE_MS);
+      expect(funcs(posted)).toEqual(["playVideo", "mute", "playVideo"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores messages from any other origin", () => {
     vi.useFakeTimers();
     try {
@@ -270,6 +297,16 @@ describe("ArtistVideoPreview click-to-load", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("loads the embed muted on Safari for Mac", () => {
+    const nav = vi
+      .spyOn(window.navigator, "userAgent", "get")
+      .mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15");
+    const { container } = renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: /^Play YouTube video/ }));
+    expect(container.querySelector("iframe")!.getAttribute("src")).toContain("&mute=1");
+    nav.mockRestore();
   });
 
   it("loads the embed muted on iPhone so it starts with the one press", () => {

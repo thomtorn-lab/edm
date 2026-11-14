@@ -70,6 +70,20 @@ export function youtubeEmbedUrl(videoId: string, origin?: string, { muted = fals
  * cross-origin iframe, and a `mute` command sent after load comes too late —
  * only an embed that is muted from its URL starts by itself (2026-11-14).
  */
+export function isDesktopSafari(nav: Pick<Navigator, "userAgent"> = navigator): boolean {
+  const ua = nav.userAgent;
+  return /Version\/[\d.]+.*Safari\//.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Firefox|Edg|OPR|Android/.test(ua);
+}
+
+/**
+ * Browsers where the start with sound is refused anyway, so the embed is
+ * muted from its URL — the one start that is proven to work there (Safari
+ * on Mac, videodebug=muted recording 2026-11-14; every iOS browser).
+ */
+export function prefersMutedStart(nav: Pick<Navigator, "userAgent" | "platform" | "maxTouchPoints"> = navigator): boolean {
+  return isIOSDevice(nav) || isDesktopSafari(nav);
+}
+
 export function isIOSDevice(nav: Pick<Navigator, "userAgent" | "platform" | "maxTouchPoints"> = navigator): boolean {
   return /iPad|iPhone|iPod/.test(nav.userAgent) || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
 }
@@ -77,8 +91,13 @@ export function isIOSDevice(nav: Pick<Navigator, "userAgent" | "platform" | "max
 /** How long the player gets to start with sound before we fall back to a muted start. */
 export const SOUND_START_GRACE_MS = 1500;
 
-/** YouTube player states that mean the press has been honoured (playing / buffering). */
-const STARTED_STATES = new Set([1, 3]);
+/**
+ * YouTube's "playing" state. Only this counts as started: Safari's player
+ * reports buffering (3) while it tries the sound autoplay and then falls back
+ * to unstarted (-1) when the browser refuses it, so treating 3 as started
+ * skipped the muted fallback (found with the videodebug log, 2026-11-14).
+ */
+const PLAYING_STATE = 1;
 
 /** Reads the player state out of a YouTube widget-API message, if it carries one. */
 export function playerStateFromMessage(data: unknown): number | null {
@@ -138,37 +157,20 @@ export const HANDSHAKE_GIVE_UP_MS = 4000;
  * Only talks to the iframe's own window, only accepts messages from the
  * embed origin, and stores nothing.
  */
-/**
- * Temporary diagnostics (2026-11-14): with `?videodebug=1` (or
- * `?videodebug=muted`, which also mutes from the URL) the player shows a log
- * of what the page and the YouTube player send each other, so the Safari
- * one-press start can be diagnosed from a screen recording. Off by default;
- * nothing is stored or sent anywhere.
- */
-export type DebugLog = (line: string) => void;
-
-function videoDebugMode(): "off" | "on" | "muted" {
-  if (typeof window === "undefined") return "off";
-  const value = new URLSearchParams(window.location.search).get("videodebug");
-  if (value === "muted") return "muted";
-  return value ? "on" : "off";
-}
-
-function useOnePressStart(iframe: HTMLIFrameElement | null, log?: DebugLog) {
+function useOnePressStart(iframe: HTMLIFrameElement | null) {
   useEffect(() => {
     if (!iframe) return;
-    let started = false;
+    let lastState: number | null = null;
     let ready = false;
     let handshake: ReturnType<typeof setInterval> | undefined;
     const timers: Array<ReturnType<typeof setTimeout>> = [];
 
     const post = (payload: Record<string, unknown>) => {
-      log?.(`→ ${payload.event === "command" ? `command ${String(payload.func)}` : String(payload.event)}`);
       iframe.contentWindow?.postMessage(JSON.stringify(payload), YOUTUBE_EMBED_ORIGIN);
     };
     const command = (func: string) => post({ event: "command", func, args: [] });
     const playMuted = () => {
-      if (started) return;
+      if (lastState === PLAYING_STATE) return;
       command("mute");
       command("playVideo");
     };
@@ -184,20 +186,14 @@ function useOnePressStart(iframe: HTMLIFrameElement | null, log?: DebugLog) {
     };
 
     const onMessage = (e: MessageEvent) => {
-      if (log && e.source === iframe.contentWindow) {
-        const ev = playerEventFromMessage(e.data);
-        const st = playerStateFromMessage(e.data);
-        log(`← ${e.origin.replace("https://", "")} ${ev ?? String(e.data).slice(0, 60)}${st !== null ? ` state=${st}` : ""}`);
-      }
       if (e.origin !== YOUTUBE_EMBED_ORIGIN || e.source !== iframe.contentWindow) return;
       if (playerEventFromMessage(e.data) === null) return;
       const state = playerStateFromMessage(e.data);
-      if (state !== null && STARTED_STATES.has(state)) started = true;
+      if (state !== null) lastState = state;
       onReady();
     };
 
     const onLoad = () => {
-      log?.("iframe load");
       const listen = () => post({ event: "listening", id: iframe.id, channel: "widget" });
       listen();
       clearInterval(handshake);
@@ -218,7 +214,7 @@ function useOnePressStart(iframe: HTMLIFrameElement | null, log?: DebugLog) {
       clearInterval(handshake);
       timers.forEach(clearTimeout);
     };
-  }, [iframe, log]);
+  }, [iframe]);
 }
 
 export default function ArtistVideoPreview({
@@ -234,19 +230,12 @@ export default function ArtistVideoPreview({
 }) {
   const [embedSrc, setEmbedSrc] = useState<string | null>(null);
   const [iframe, setIframe] = useState<HTMLIFrameElement | null>(null);
-  const [debugMode] = useState(videoDebugMode);
-  const [debugLines, setDebugLines] = useState<string[]>([]);
-  const [log] = useState<DebugLog | undefined>(() => {
-    if (debugMode === "off") return undefined;
-    const t0 = Date.now();
-    return (line: string) => setDebugLines((lines) => [...lines.slice(-200), `${((Date.now() - t0) / 1000).toFixed(2)}s ${line}`]);
-  });
-  useOnePressStart(iframe, log);
+  useOnePressStart(iframe);
   const playerTitle = videoPlayerTitle({ videoTitle, artistName, eventTitle });
   const noticeId = `youtube-notice-${videoId}`;
 
   if (embedSrc) {
-    const player = (
+    return (
       <div className="mt-3 aspect-video w-full overflow-hidden rounded border border-border-strong bg-black">
         <iframe
           ref={setIframe}
@@ -260,27 +249,13 @@ export default function ArtistVideoPreview({
         />
       </div>
     );
-    if (log) {
-      return (
-        <div>
-          {player}
-          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded border border-border-strong bg-black p-2 font-mono text-[11px] leading-snug text-text-secondary">
-            {`videodebug=${debugMode} · ${navigator.userAgent}\n${embedSrc}\n\n${debugLines.join("\n")}`}
-          </pre>
-        </div>
-      );
-    }
-    return player;
   }
 
   return (
     <div className="mt-3">
       <button
         type="button"
-        onClick={() => {
-          log?.("press");
-          setEmbedSrc(youtubeEmbedUrl(videoId, window.location.origin, { muted: debugMode === "muted" || isIOSDevice() }));
-        }}
+        onClick={() => setEmbedSrc(youtubeEmbedUrl(videoId, window.location.origin, { muted: prefersMutedStart() }))}
         aria-label={`Play ${playerTitle}`}
         aria-describedby={noticeId}
         className="group flex aspect-video w-full flex-col items-center justify-center gap-3 rounded border border-border-strong bg-black px-4 text-center text-text-secondary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
