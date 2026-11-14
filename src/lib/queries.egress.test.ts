@@ -185,7 +185,30 @@ describe("YouTube preview cache render-time reads select only the fields they us
 
     expect(result).toEqual([true, false]);
     const [query] = previewQueries();
-    expect(selectedColumns(query.text).sort()).toEqual(["artist_name_normalized", "manual_block", "status", "video_id"].sort());
+    expect(selectedColumns(query.text).sort()).toEqual(["artist_name_normalized", "manual_block", "status", "video_id", "video_title"].sort());
+  });
+
+  it("both reads skip a cached podcast/release-preview match and fall through to the next artist", async () => {
+    tableRows.artist_youtube_preview_cache = [
+      row(schema.artistYoutubePreviewCache, {
+        artist_name_normalized: "mat eclair",
+        status: "accepted",
+        manual_block: false,
+        video_id: "pod1",
+        video_title: "MAT ECLAIR PODCAST / 2024 New Years Eve Special / EP Early Listen",
+        channel_title: "Mat Eclair",
+        query: "mat eclair dj set",
+      }),
+      acceptedPrydz(),
+    ];
+
+    await expect(getArtistYoutubePreviewForLineup(["Mat Eclair", "Eric Prydz"])).resolves.toEqual({
+      artistName: "Eric Prydz",
+      videoId: "v1",
+      videoTitle: "Eric Prydz Set",
+      channelTitle: "Eric Prydz",
+    });
+    await expect(getArtistPreviewAvailabilityForLineups([["Mat Eclair"], ["Mat Eclair", "Eric Prydz"]])).resolves.toEqual([false, true]);
   });
 
   it("both reads still honor manual_block and status exactly as before", async () => {

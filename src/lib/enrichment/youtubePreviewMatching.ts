@@ -167,6 +167,59 @@ export const MULTI_BILLING_SEPARATORS = /,|&|(?:\bx\b)|(?:\bvs\.?\b)|(?:\bb2b\b)
 export const TITLE_STOP_MARKERS = /\||@|\bat\b|\blive\b|\bdj set\b|\bfestival\b|\bpresents\b|\bfull set\b/i;
 
 /**
+ * Titles that announce something other than a recorded performance — a
+ * podcast or radio episode, a release preview (EP/LP/album), a studio or
+ * talk video. The preview exists to show the artist playing out, so these
+ * never qualify, even on the artist's own channel and over the 20-minute
+ * floor. Root case (2026-11-14): "MAT ECLAIR PODCAST / 2024 New Years Eve
+ * Special / EP Early Listen" on Mat Eclair's own channel was shown as the
+ * preview for "A Proper House Party" at Pumpehuset.
+ *
+ * Deliberately specific phrases, not the bare word "mix" — "Live Mix at
+ * Berghain" or a Mixmag upload must keep qualifying. The artist's own name
+ * is removed from the title before testing, so a name that contains one of
+ * these words ("Radio Slave", an artist called "Album") never trips it.
+ */
+export const NON_PERFORMANCE_TITLE_TERMS: readonly RegExp[] = [
+  /\bpodcasts?\b/i,
+  /\bepisodes?\b/i,
+  /\bep\b/i, // "EP", "Ep. 12", "EP Early Listen"
+  /\blp\b/i,
+  /\balbums?\b/i,
+  /\bearly listen\b/i,
+  /\blistening (?:session|party)\b/i,
+  /\bradio show\b/i,
+  /\bessential mix\b/i,
+  /\bguest mix\b/i,
+  /\bmixtapes?\b/i,
+  /\binterviews?\b/i,
+  /\btutorials?\b/i,
+  /\bmasterclass\b/i,
+  /\bdocumentary\b/i,
+  /\bstudio session\b/i,
+  /\bin the studio\b/i,
+  /\bmaking of\b/i,
+  /\bhow i made\b/i,
+  /\bbehind the scenes\b/i,
+  /\btrack[\s-]by[\s-]track\b/i,
+  /\bq\s*&\s*a\b/i,
+];
+
+/** The first non-performance term found in the title (with the artist's own name removed first), or null. */
+export function nonPerformanceTitleTerm(title: string | null | undefined, artistName: string): string | null {
+  if (!title) return null;
+  const name = artistName.trim();
+  const withoutName = name
+    ? title.replace(new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}(?=[^\\p{L}\\p{N}]|$)`, "giu"), "$1 ")
+    : title;
+  for (const term of NON_PERFORMANCE_TITLE_TERMS) {
+    const match = term.exec(withoutName);
+    if (match) return match[0];
+  }
+  return null;
+}
+
+/**
  * How many distinct names the title bills before the first
  * venue/event-descriptor marker (e.g. "Sub Focus, Dimension, Culture Shock
  * & 1991: LA Livestream | ..." -> 4; "Kasper Bjørke & Sexy Lazer ... at
@@ -271,6 +324,10 @@ function checkTrustedChannelSuffix(title: string, cleanedName: string, channelTi
 export function checkStructuralEligibility(cleanedName: string, normalized: string, item: YoutubeSearchItem): StructuralCheck {
   if (!titleContainsExactName(item.title, cleanedName)) {
     return { eligible: false, channelMatch: null, reason: "title does not contain the exact artist name" };
+  }
+  const nonPerformance = nonPerformanceTitleTerm(item.title, cleanedName);
+  if (nonPerformance) {
+    return { eligible: false, channelMatch: null, reason: `title marks it as non-performance content ("${nonPerformance}") — not a live/DJ set` };
   }
   const billed = countBilledNames(item.title);
   if (billed >= 3) {
@@ -488,10 +545,16 @@ export async function getOrMatchArtistYoutubePreview(
   client: YoutubePreviewClient,
   now: Date = new Date(),
 ): Promise<ArtistPreviewCacheEntry> {
-  const normalized = normalizeArtistName(cleanArtistDisplayName(artistNameRaw));
+  const cleanedName = cleanArtistDisplayName(artistNameRaw);
+  const normalized = normalizeArtistName(cleanedName);
   const cached = await cache.get(normalized);
+  // A match accepted before the non-performance title rule existed (e.g. a
+  // podcast episode) is not trusted as fresh: it is matched again from
+  // scratch, which can only pick a candidate that passes today's rules.
+  const acceptedUnderOlderRules =
+    cached?.status === "accepted" && nonPerformanceTitleTerm(cached.videoTitle, cleanedName) !== null;
 
-  if (cached && cached.expiresAt.getTime() > now.getTime()) {
+  if (cached && !acceptedUnderOlderRules && cached.expiresAt.getTime() > now.getTime()) {
     if (cached.status !== "accepted" || !cached.videoId) return cached;
     const verifiedAt = cached.lastVerifiedAt ?? cached.matchedAt;
     const staleSince = now.getTime() - verifiedAt.getTime();

@@ -24,6 +24,7 @@ import {
   venueRowToRecord,
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
+import { nonPerformanceTitleTerm } from "./enrichment/youtubePreviewMatching";
 import { matchStoredLinksByIdentityKey, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
 import { discogsCacheKey, verifiedDiscogsProfile } from "./soundcloudEvidence/discogsSoundcloud";
 import { classifyAboutText, type AboutKind } from "./aboutContent";
@@ -417,9 +418,18 @@ export interface ArtistYoutubePreview {
  * this one function against the same table.
  */
 function isAcceptedPreviewRow<
-  T extends Pick<typeof artistYoutubePreviewCache.$inferSelect, "status" | "manualBlock" | "videoId">,
+  T extends Pick<typeof artistYoutubePreviewCache.$inferSelect, "artistNameNormalized" | "status" | "manualBlock" | "videoId" | "videoTitle">,
 >(row: T | undefined): row is T & { videoId: string } {
-  return Boolean(row && row.status === "accepted" && !row.manualBlock && row.videoId);
+  return Boolean(
+    row &&
+      row.status === "accepted" &&
+      !row.manualBlock &&
+      row.videoId &&
+      // Never serve a podcast/radio episode or release preview, even one
+      // accepted before the matcher learned to reject them (2026-11-14) —
+      // the lineup's next artist with a real set is shown instead.
+      nonPerformanceTitleTerm(row.videoTitle, row.artistNameNormalized) === null,
+  );
 }
 
 /**
@@ -435,10 +445,10 @@ const previewAvailabilityColumns = {
   status: artistYoutubePreviewCache.status,
   manualBlock: artistYoutubePreviewCache.manualBlock,
   videoId: artistYoutubePreviewCache.videoId,
+  videoTitle: artistYoutubePreviewCache.videoTitle,
 };
 const previewDetailColumns = {
   ...previewAvailabilityColumns,
-  videoTitle: artistYoutubePreviewCache.videoTitle,
   channelTitle: artistYoutubePreviewCache.channelTitle,
 };
 
