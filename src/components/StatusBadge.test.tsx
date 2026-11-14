@@ -31,28 +31,23 @@ describe("getEventStatuses", () => {
     ]);
   });
 
-  describe("dateChanged -> public 'Rescheduled' (event lifecycle/status handling, 2026-08-28)", () => {
-    it("dateChanged alone now renders 'Rescheduled' — a confirmed date change from the source", () => {
-      expect(getEventStatuses(flags({ dateChanged: true }))).toEqual([{ label: "Rescheduled", tone: "neutral" }]);
+  describe("dateChanged is internal-only — no public 'Rescheduled' badge (2026-11-14)", () => {
+    it("dateChanged alone renders no public status", () => {
+      expect(getEventStatuses(flags({ dateChanged: true }))).toEqual([]);
     });
 
-    it("dateChanged + timeChanged together still render only Rescheduled — timeChanged itself never leaks through as its own status", () => {
-      expect(getEventStatuses(flags({ dateChanged: true, timeChanged: true }))).toEqual([
-        { label: "Rescheduled", tone: "neutral" },
-      ]);
+    it("dateChanged + timeChanged together render no public status", () => {
+      expect(getEventStatuses(flags({ dateChanged: true, timeChanged: true }))).toEqual([]);
     });
 
-    it("rescheduled + soldOut together render both", () => {
+    it("dateChanged + soldOut renders only Sold out", () => {
       expect(getEventStatuses(flags({ dateChanged: true, soldOut: true }))).toEqual([
-        { label: "Rescheduled", tone: "neutral" },
         { label: "Sold out", tone: "neutral" },
       ]);
     });
 
-    it("cancelled no longer suppresses Rescheduled — cancelled contributes no public badge at all now", () => {
-      expect(getEventStatuses(flags({ cancelled: true, dateChanged: true }))).toEqual([
-        { label: "Rescheduled", tone: "neutral" },
-      ]);
+    it("cancelled + dateChanged renders nothing", () => {
+      expect(getEventStatuses(flags({ cancelled: true, dateChanged: true }))).toEqual([]);
     });
   });
 
@@ -74,7 +69,7 @@ describe("getEventStatuses", () => {
       ]);
     });
 
-    it("postponed takes priority over dateChanged/Rescheduled when both happen to be set", () => {
+    it("postponed still renders when dateChanged is also set", () => {
       expect(getEventStatuses(flags({ postponed: true, dateChanged: true }))).toEqual([
         { label: "Postponed", tone: "bad" },
       ]);

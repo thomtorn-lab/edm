@@ -617,7 +617,7 @@ describe("EventRow — sold-out hides Tickets (public link-integrity rule, 2026-
   });
 });
 
-describe("EventRow — public/internal status separation (event lifecycle/status handling, 2026-08-28: dateChanged is now the public Rescheduled signal; timeChanged alone stays internal-only)", () => {
+describe("EventRow — public/internal status separation (dateChanged and timeChanged are internal-only; no public Rescheduled badge since 2026-11-14)", () => {
   afterEach(cleanup);
 
   it("shows no status text for a normal event", () => {
@@ -628,9 +628,9 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.queryByText(/Postponed/i)).toBeNull();
   });
 
-  it("dateChanged alone renders the public Rescheduled status", () => {
+  it("dateChanged alone renders no public status", () => {
     render(<EventRow event={makeEvent({ dateChanged: true })} />);
-    expect(screen.getByText("Rescheduled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
     expect(screen.queryByText(/Sold out/i)).toBeNull();
   });
@@ -643,9 +643,9 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.queryByText(/Sold out/i)).toBeNull();
   });
 
-  it("dateChanged + timeChanged together render only Rescheduled once, not a separate Time changed status", () => {
+  it("dateChanged + timeChanged together render no Rescheduled and no Time changed status", () => {
     render(<EventRow event={makeEvent({ dateChanged: true, timeChanged: true })} />);
-    expect(screen.getAllByText("Rescheduled")).toHaveLength(1);
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
     expect(screen.queryByText(/Time changed/i)).toBeNull();
   });
 
@@ -664,10 +664,10 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("cancelled + dateChanged: cancelled contributes no badge, Rescheduled still renders (cancelled no longer suppresses it)", () => {
+  it("cancelled + dateChanged: no Cancelled and no Rescheduled badge", () => {
     render(<EventRow event={makeEvent({ cancelled: true, dateChanged: true, timeChanged: true })} />);
     expect(screen.queryByText(/Cancelled/i)).toBeNull();
-    expect(screen.getByText("Rescheduled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
   });
 
   it("cancelled + postponed: cancelled contributes no badge, Postponed still renders (cancelled no longer suppresses it)", () => {
@@ -676,10 +676,10 @@ describe("EventRow — public/internal status separation (event lifecycle/status
     expect(screen.getByText("Postponed")).toBeTruthy();
   });
 
-  it("soldOut + dateChanged shows both SOLD OUT and RESCHEDULED", () => {
+  it("soldOut + dateChanged shows SOLD OUT only, no RESCHEDULED", () => {
     render(<EventRow event={makeEvent({ soldOut: true, dateChanged: true, timeChanged: true })} />);
     expect(screen.getByText("Sold out")).toBeTruthy();
-    expect(screen.getByText("Rescheduled")).toBeTruthy();
+    expect(screen.queryByText(/Rescheduled/i)).toBeNull();
   });
 
   it("FREE is unaffected by internal dateChanged/timeChanged noise", () => {
@@ -1216,14 +1216,14 @@ describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
   });
 
   it("leaves other statuses' styling unchanged", () => {
-    render(<EventRow event={makeEvent({ dateChanged: true })} />);
-    expect(cls(screen.getByText("Rescheduled"))).toEqual(expect.arrayContaining(["border-border-strong", "text-text-secondary-strong"]));
+    render(<EventRow event={makeEvent({ postponed: true })} />);
+    expect(cls(screen.getByText("Postponed"))).toEqual(expect.arrayContaining(["border-status-bad/40", "text-status-bad"]));
   });
 
   it("puts every status badge in the date column, after the time", () => {
-    const { container } = render(<EventRow event={makeEvent({ soldOut: true, dateChanged: true })} />);
+    const { container } = render(<EventRow event={makeEvent({ soldOut: true, postponed: true })} />);
     const dateCol = (container.querySelector("li > div") as HTMLElement).firstElementChild as HTMLElement;
-    for (const label of ["Rescheduled", "Sold out"]) {
+    for (const label of ["Postponed", "Sold out"]) {
       const wrap = screen.getByText(label).parentElement as HTMLElement;
       expect(wrap.parentElement).toBe(dateCol);
       expect(cls(wrap)).toEqual(["sm:mt-1"]);
