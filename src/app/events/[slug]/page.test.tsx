@@ -836,7 +836,7 @@ describe("Event detail page — YouTube Artist Preview embed (automated Rule A V
 
     const iframe = pressPlay();
     expect(iframe).not.toBeNull();
-    expect(iframe.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1");
+    expect(iframe.getAttribute("src")).toMatch(/^https:\/\/www\.youtube-nocookie\.com\/embed\/abc123XYZ\?autoplay=1&playsinline=1&enablejsapi=1/);
   });
 
   it("renders no embed and no placeholder when there is no cached match", async () => {
@@ -1104,7 +1104,7 @@ describe("Event detail page — Artist Preview #video anchor (homepage VIDEO dee
 
     expect(document.querySelector("iframe")).toBeNull();
     const iframe = pressPlay();
-    expect(iframe.getAttribute("src")).toBe("https://www.youtube-nocookie.com/embed/abc123XYZ?autoplay=1");
+    expect(iframe.getAttribute("src")).toMatch(/^https:\/\/www\.youtube-nocookie\.com\/embed\/abc123XYZ\?autoplay=1&playsinline=1&enablejsapi=1/);
   });
 });
 
