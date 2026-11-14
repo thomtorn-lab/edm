@@ -205,18 +205,70 @@ export const NON_PERFORMANCE_TITLE_TERMS: readonly RegExp[] = [
   /\bq\s*&\s*a\b/i,
 ];
 
+function withoutArtistName(title: string, artistName: string): string {
+  const name = artistName.trim();
+  if (!name) return title;
+  return title.replace(new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}(?=[^\\p{L}\\p{N}]|$)`, "giu"), "$1 ");
+}
+
 /** The first non-performance term found in the title (with the artist's own name removed first), or null. */
 export function nonPerformanceTitleTerm(title: string | null | undefined, artistName: string): string | null {
   if (!title) return null;
-  const name = artistName.trim();
-  const withoutName = name
-    ? title.replace(new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}(?=[^\\p{L}\\p{N}]|$)`, "giu"), "$1 ")
-    : title;
+  const withoutName = withoutArtistName(title, artistName);
   for (const term of NON_PERFORMANCE_TITLE_TERMS) {
     const match = term.exec(withoutName);
     if (match) return match[0];
   }
   return null;
+}
+
+/**
+ * Words that say the video IS a performance (2026-11-14). Required only for
+ * a video on the artist's OWN channel: a trusted live channel (Boiler Room,
+ * Cercle, ...) only uploads performances, but an artist's own channel also
+ * holds vlogs, films and talk ("Ridin´ round NYC with Miss Bashful",
+ * "A Daughter's Conviction | Full Movie | LMN", "'Friends' Power Hour" were
+ * all accepted on own-channel + 20 minutes alone). Deliberately not the bare
+ * "mix", "at" or "@": a home mix or "Artist at Somewhere" says nothing about
+ * a performance. Tested with the artist's own name removed, so a name like
+ * "Set Mo" or "DJ Live" never documents itself.
+ */
+export const PERFORMANCE_TITLE_CUES: readonly RegExp[] = [
+  /\blive\b/i, // "Live @ Ultra", "live set", "live from", "Live Mix at Berghain"
+  /\blivestream\b/i,
+  /\bset\b/i, // "DJ Set", "Full set", "Closing set", "b2b set"
+  /\bb2b\b/i,
+  /\bboiler room\b/i,
+  /\bfestival\b/i,
+  /\bconcert\b/i,
+  /\bkoncert\b/i,
+  /\bperformance\b/i,
+  /\bshowcase\b/i,
+];
+
+export function hasPerformanceTitleCue(title: string | null | undefined, artistName: string): boolean {
+  if (!title) return false;
+  const withoutName = withoutArtistName(title, artistName);
+  return PERFORMANCE_TITLE_CUES.some((cue) => cue.test(withoutName));
+}
+
+/**
+ * Whether an already-accepted cached video still meets today's content
+ * rules — used where a cached row is served (event page, VIDEO indicator,
+ * risk report) and to decide that such a row must be matched again. "Own
+ * channel" is decided exactly as checkStructuralEligibility does (channel
+ * name equals the normalized artist name; that check runs before the
+ * trusted-channel one), so the two can never disagree.
+ */
+export function cachedVideoMeetsContentRules(
+  videoTitle: string | null | undefined,
+  channelTitle: string | null | undefined,
+  artistNameNormalized: string,
+): boolean {
+  if (nonPerformanceTitleTerm(videoTitle, artistNameNormalized) !== null) return false;
+  const ownChannel = (channelTitle ?? "").trim().toLowerCase() === artistNameNormalized;
+  if (ownChannel && !hasPerformanceTitleCue(videoTitle, artistNameNormalized)) return false;
+  return true;
 }
 
 /**
@@ -347,7 +399,12 @@ export function checkStructuralEligibility(cleanedName: string, normalized: stri
     if (trustedChannel) return acceptTrusted();
     return { eligible: false, channelMatch: null, reason: "generic/common-word name — own-channel match alone is not sufficient in Rule A" };
   }
-  if (ownChannel) return { eligible: true, channelMatch: "own", reason: null };
+  if (ownChannel) {
+    if (!hasPerformanceTitleCue(item.title, cleanedName)) {
+      return { eligible: false, channelMatch: null, reason: "own-channel title has no performance cue (live, set, b2b, festival, ...)" };
+    }
+    return { eligible: true, channelMatch: "own", reason: null };
+  }
   if (trustedChannel) return acceptTrusted();
   return { eligible: false, channelMatch: null, reason: "channel is neither the artist's own nor an allow-listed trusted channel" };
 }
@@ -548,11 +605,12 @@ export async function getOrMatchArtistYoutubePreview(
   const cleanedName = cleanArtistDisplayName(artistNameRaw);
   const normalized = normalizeArtistName(cleanedName);
   const cached = await cache.get(normalized);
-  // A match accepted before the non-performance title rule existed (e.g. a
-  // podcast episode) is not trusted as fresh: it is matched again from
-  // scratch, which can only pick a candidate that passes today's rules.
+  // A match accepted before today's content rules (a podcast episode, an
+  // own-channel video with no performance cue) is not trusted as fresh: it
+  // is matched again from scratch, which can only pick a candidate that
+  // passes today's rules.
   const acceptedUnderOlderRules =
-    cached?.status === "accepted" && nonPerformanceTitleTerm(cached.videoTitle, cleanedName) !== null;
+    cached?.status === "accepted" && !cachedVideoMeetsContentRules(cached.videoTitle, cached.channelTitle, normalized);
 
   if (cached && !acceptedUnderOlderRules && cached.expiresAt.getTime() > now.getTime()) {
     if (cached.status !== "accepted" || !cached.videoId) return cached;

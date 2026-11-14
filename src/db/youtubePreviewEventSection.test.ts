@@ -272,8 +272,8 @@ describe("buildEventSection — fallback must name the artist visibly", () => {
 describe("shownPreviewArtist — same choice as the event page", () => {
   it("takes the first lineup entry (by first occurrence of its normalized name) with an accepted, unblocked video", () => {
     const cache = new Map([
-      ["b", accepted("b", "B", { videoId: "vb", title: "B", channelTitle: "B" })],
-      ["a", accepted("a", "A", { videoId: "va", title: "A", channelTitle: "A" }, [], true)],
+      ["b", accepted("b", "B", { videoId: "vb", title: "B Live", channelTitle: "B" })],
+      ["a", accepted("a", "A", { videoId: "va", title: "A Live", channelTitle: "A" }, [], true)],
     ]);
     expect(shownPreviewArtist(["A", "B", "b"], cache)?.row.video_id).toBe("vb");
     expect(shownPreviewArtist(["A"], cache)).toBeNull();

@@ -6,6 +6,8 @@ import {
   countBilledNames,
   normalizeArtistName,
   nonPerformanceTitleTerm,
+  hasPerformanceTitleCue,
+  cachedVideoMeetsContentRules,
   VERIFY_STALE_DAYS,
   MAX_SEARCH_RESULTS,
   type ArtistPreviewCacheEntry,
@@ -379,6 +381,60 @@ describe("matchArtistYoutubePreview — Rule A", () => {
     expect(client.detailsCalls).toHaveLength(0);
   });
 
+  it("rejects own-channel videos whose title has no performance cue (vlog, film, talk — documented 2026-11-14)", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Miss Bashful dj set": [video({ videoId: "vlog", channelTitle: "Miss Bashful", title: "Ridin´ round NYC with Miss Bashful" })],
+        "Miss Bashful live": [],
+        "LMN dj set": [video({ videoId: "film", channelTitle: "LMN", title: "A Daughter's Conviction | Full Movie | LMN" })],
+        "LMN live": [],
+      },
+      details: { vlog: details({ videoId: "vlog" }), film: details({ videoId: "film" }) },
+    });
+
+    expect((await matchArtistYoutubePreview("Miss Bashful", client)).status).toBe("abstain");
+    expect((await matchArtistYoutubePreview("LMN", client)).status).toBe("abstain");
+    expect(client.detailsCalls).toHaveLength(0);
+  });
+
+  it("a bare 'mix', 'at' or '@' is not enough on the artist's own channel", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Scheibenwischer dj set": [
+          video({ videoId: "a", channelTitle: "Scheibenwischer", title: "HARDGROOVE CD ONLY MIX | Scheibenwischer" }),
+          video({ videoId: "b", channelTitle: "Scheibenwischer", title: "Scheibenwischer at home" }),
+          video({ videoId: "c", channelTitle: "Scheibenwischer", title: "Scheibenwischer @ Somewhere" }),
+        ],
+        "Scheibenwischer live": [],
+      },
+      details: { a: details({ videoId: "a" }), b: details({ videoId: "b" }), c: details({ videoId: "c" }) },
+    });
+
+    expect((await matchArtistYoutubePreview("Scheibenwischer", client)).status).toBe("abstain");
+  });
+
+  it("own-channel live/DJ sets and B2B sets with a clear cue are still accepted", async () => {
+    const client = fakeYoutubeClient({
+      search: {
+        "Benwal dj set": [video({ videoId: "b2b", channelTitle: "Benwal", title: "Benwal b2b Sam Alfred at Glitch 2026" })],
+        "Kardenal dj set": [video({ videoId: "power", channelTitle: "Kardenal", title: "HARDTECHNO POWER SET | Kardenal" })],
+      },
+      details: { b2b: details({ videoId: "b2b" }), power: details({ videoId: "power" }) },
+    });
+
+    expect((await matchArtistYoutubePreview("Benwal", client)).videoId).toBe("b2b");
+    expect((await matchArtistYoutubePreview("Kardenal", client)).videoId).toBe("power");
+  });
+
+  it("trusted live channels keep their existing rules — no performance cue needed", async () => {
+    const client = fakeYoutubeClient({
+      search: { "Lele Sacchi dj set": [video({ videoId: "br", channelTitle: "Boiler Room", title: "Lele Sacchi | Boiler Room Milan: Apollo" })] },
+      details: { br: details({ videoId: "br" }) },
+    });
+
+    expect((await matchArtistYoutubePreview("Lele Sacchi", client)).videoId).toBe("br");
+  });
+
   it("propagates a genuine API failure rather than silently returning an abstain", async () => {
     const client = fakeYoutubeClient({ throwOnSearch: true });
     await expect(matchArtistYoutubePreview("Eric Prydz", client)).rejects.toThrow(/unreachable/);
@@ -722,7 +778,7 @@ describe("matchArtistYoutubePreview — trusted-channel short-suffix guard (2026
   it("does not apply the short-suffix guard to own-channel matches (scoped to trusted channels only)", async () => {
     const client = fakeYoutubeClient({
       search: {
-        "Benji dj set": [video({ videoId: "v_own", channelTitle: "Benji", title: "Benji B Official Highlights" })],
+        "Benji dj set": [video({ videoId: "v_own", channelTitle: "Benji", title: "Benji B Official Highlights DJ Set" })],
       },
       details: { v_own: details({ videoId: "v_own" }) },
     });
@@ -943,5 +999,19 @@ describe("nonPerformanceTitleTerm", () => {
     expect(nonPerformanceTitleTerm("Radio Slave | Boiler Room Berlin", "radio slave")).toBeNull();
     expect(nonPerformanceTitleTerm("The Album Leaf live at KEXP", "The Album Leaf")).toBeNull();
     expect(nonPerformanceTitleTerm("The Album Leaf - podcast", "The Album Leaf")).toBe("podcast");
+  });
+});
+
+describe("hasPerformanceTitleCue / cachedVideoMeetsContentRules", () => {
+  it("never lets the artist's own name count as the cue", () => {
+    expect(hasPerformanceTitleCue("Live Set Collective - summer vlog", "Live Set Collective")).toBe(false);
+    expect(hasPerformanceTitleCue("Live Set Collective - DJ Set", "Live Set Collective")).toBe(true);
+  });
+
+  it("hides an own-channel cached video without a cue, keeps a trusted-channel one, and always hides podcasts", () => {
+    expect(cachedVideoMeetsContentRules("Ridin´ round NYC with Miss Bashful", "Miss Bashful ", "miss bashful")).toBe(false);
+    expect(cachedVideoMeetsContentRules("Lele Sacchi | Boiler Room Milan: Apollo", "Boiler Room", "lele sacchi")).toBe(true);
+    expect(cachedVideoMeetsContentRules("Eric Prydz Live 2026", "Eric Prydz", "eric prydz")).toBe(true);
+    expect(cachedVideoMeetsContentRules("Someone Podcast #3 | Boiler Room", "Boiler Room", "someone")).toBe(false);
   });
 });

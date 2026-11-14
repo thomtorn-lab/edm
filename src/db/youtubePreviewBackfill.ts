@@ -3,7 +3,7 @@ import { eq, inArray, gt, and } from "drizzle-orm";
 import { db } from "./client";
 import { events, artistYoutubePreviewCache, discoveryQueue, sources } from "./schema";
 import { cleanArtistDisplayName, normalizeArtistName, isPlaceholderArtistName } from "@/lib/enrichment/genreEnrichment";
-import { getOrMatchArtistYoutubePreview } from "@/lib/enrichment/youtubePreviewMatching";
+import { cachedVideoMeetsContentRules, getOrMatchArtistYoutubePreview } from "@/lib/enrichment/youtubePreviewMatching";
 import * as youtubeClient from "@/lib/enrichment/youtubeClient";
 import { YoutubeDailyQuotaExhaustedError } from "@/lib/enrichment/youtubeClient";
 import { drizzleCacheStore } from "./youtubePreview";
@@ -263,15 +263,29 @@ async function buildWorklist(): Promise<WorklistEntry[]> {
   );
 }
 
-/** Which of `worklist`'s normalized names already have a fresh (unexpired) cache row — read-only, never creates the table. */
+/**
+ * Which of `worklist`'s normalized names already have a fresh (unexpired)
+ * cache row — read-only, never creates the table. An accepted row whose
+ * video no longer meets today's content rules (hidden on the site, see
+ * cachedVideoMeetsContentRules) does not count as fresh, so the backfill
+ * looks that artist up again instead of leaving them without a video until
+ * the row expires.
+ */
 async function getFreshCachedSet(worklist: { normalized: string }[]): Promise<Set<string>> {
   if (worklist.length === 0) return new Set();
   const names = worklist.map((w) => w.normalized);
   const rows = await db
-    .select({ n: artistYoutubePreviewCache.artistNameNormalized })
+    .select({
+      n: artistYoutubePreviewCache.artistNameNormalized,
+      status: artistYoutubePreviewCache.status,
+      videoTitle: artistYoutubePreviewCache.videoTitle,
+      channelTitle: artistYoutubePreviewCache.channelTitle,
+    })
     .from(artistYoutubePreviewCache)
     .where(and(inArray(artistYoutubePreviewCache.artistNameNormalized, names), gt(artistYoutubePreviewCache.expiresAt, new Date())));
-  return new Set(rows.map((r) => r.n));
+  return new Set(
+    rows.filter((r) => r.status !== "accepted" || cachedVideoMeetsContentRules(r.videoTitle, r.channelTitle, r.n)).map((r) => r.n),
+  );
 }
 
 async function runPlan(batchLimit: number): Promise<void> {

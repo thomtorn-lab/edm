@@ -37,7 +37,7 @@ function row(key: string, videoId: string | null, opts: { status?: string; manua
     artist_name_normalized: key,
     status: opts.status ?? "accepted",
     video_id: videoId,
-    video_title: `${key} video`,
+    video_title: `${key} live set`,
     channel_title: key,
     manual_block: opts.manualBlock ?? false,
     evidence: {},
