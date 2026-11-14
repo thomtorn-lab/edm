@@ -100,14 +100,41 @@ export function playerStateFromMessage(data: unknown): number | null {
   return null;
 }
 
+/** The widget-API event name of a YouTube player message, if it is one. */
+export function playerEventFromMessage(data: unknown): string | null {
+  let msg: unknown = data;
+  if (typeof data === "string") {
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+  if (!msg || typeof msg !== "object") return null;
+  const { event } = msg as { event?: unknown };
+  return typeof event === "string" ? event : null;
+}
+
+/** How often we repeat the "listening" handshake until the player answers (YouTube's own API does the same). */
+export const HANDSHAKE_INTERVAL_MS = 250;
+/** If the player never answers the handshake, send the muted start blindly after this long. */
+export const HANDSHAKE_GIVE_UP_MS = 4000;
+
 /**
- * One-press start (2026-11-14). Browsers — iOS Safari and most mobile
- * browsers above all — often refuse `autoplay=1` with sound inside a
+ * One-press start (2026-11-14). Browsers — Safari on Mac and every iOS
+ * browser above all — often refuse `autoplay=1` with sound inside a
  * cross-origin iframe, leaving YouTube's own play button as a second press.
- * After the iframe loads we (1) subscribe to its state updates, (2) send
- * `playVideo`, and (3) if it still hasn't started after a short grace period,
- * mute and play — muted autoplay is allowed everywhere, and YouTube then shows
- * its own "tap to unmute" control. Where sound is allowed it simply plays.
+ *
+ * The player inside the iframe only obeys commands once it is ready, and is
+ * ready some time after the iframe's load event (longer on a cold cache), so
+ * commands must wait for it (ready handshake, 2026-11-14 — a fixed delay
+ * after load made the muted fallback work only sometimes):
+ * 1. after load, repeat the widget API's "listening" message until the
+ *    player answers;
+ * 2. on its first answer, send `playVideo`;
+ * 3. if it still hasn't started after a short grace period, `mute` and play —
+ *    muted playback is allowed everywhere, and YouTube shows its own unmute
+ *    control. Where sound is allowed it simply plays.
  * Only talks to the iframe's own window, only accepts messages from the
  * embed origin, and stores nothing.
  */
@@ -115,28 +142,49 @@ function useOnePressStart(iframe: HTMLIFrameElement | null) {
   useEffect(() => {
     if (!iframe) return;
     let started = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let ready = false;
+    let handshake: ReturnType<typeof setInterval> | undefined;
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
 
     const post = (payload: Record<string, unknown>) => {
       iframe.contentWindow?.postMessage(JSON.stringify(payload), YOUTUBE_EMBED_ORIGIN);
     };
     const command = (func: string) => post({ event: "command", func, args: [] });
+    const playMuted = () => {
+      if (started) return;
+      command("mute");
+      command("playVideo");
+    };
+
+    const onReady = () => {
+      if (ready) return;
+      ready = true;
+      clearInterval(handshake);
+      command("playVideo");
+      timers.push(setTimeout(playMuted, SOUND_START_GRACE_MS));
+      // One more muted try in case the first came while the player was still buffering its first frame.
+      timers.push(setTimeout(playMuted, SOUND_START_GRACE_MS * 2));
+    };
 
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== YOUTUBE_EMBED_ORIGIN || e.source !== iframe.contentWindow) return;
+      if (playerEventFromMessage(e.data) === null) return;
       const state = playerStateFromMessage(e.data);
       if (state !== null && STARTED_STATES.has(state)) started = true;
+      onReady();
     };
 
     const onLoad = () => {
-      post({ event: "listening", id: iframe.id, channel: "widget" });
-      command("playVideo");
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        if (started) return;
-        command("mute");
-        command("playVideo");
-      }, SOUND_START_GRACE_MS);
+      const listen = () => post({ event: "listening", id: iframe.id, channel: "widget" });
+      listen();
+      clearInterval(handshake);
+      handshake = setInterval(listen, HANDSHAKE_INTERVAL_MS);
+      timers.push(
+        setTimeout(() => {
+          clearInterval(handshake);
+          if (!ready) playMuted();
+        }, HANDSHAKE_GIVE_UP_MS),
+      );
     };
 
     window.addEventListener("message", onMessage);
@@ -144,7 +192,8 @@ function useOnePressStart(iframe: HTMLIFrameElement | null) {
     return () => {
       window.removeEventListener("message", onMessage);
       iframe.removeEventListener("load", onLoad);
-      clearTimeout(timer);
+      clearInterval(handshake);
+      timers.forEach(clearTimeout);
     };
   }, [iframe]);
 }

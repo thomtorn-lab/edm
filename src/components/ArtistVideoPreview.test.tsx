@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import ArtistVideoPreview, { isIOSDevice, playerStateFromMessage, SOUND_START_GRACE_MS, videoPlayerTitle, youtubeEmbedUrl } from "./ArtistVideoPreview";
+import ArtistVideoPreview, {
+  HANDSHAKE_GIVE_UP_MS,
+  HANDSHAKE_INTERVAL_MS,
+  isIOSDevice,
+  playerEventFromMessage,
+  playerStateFromMessage,
+  SOUND_START_GRACE_MS,
+  videoPlayerTitle,
+  youtubeEmbedUrl,
+} from "./ArtistVideoPreview";
 
 /** The YouTube iframe's accessible name (2026-10-24). */
 describe("videoPlayerTitle", () => {
@@ -34,6 +43,15 @@ describe("isIOSDevice", () => {
   it("leaves desktop Macs and Android alone", () => {
     expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 0 })).toBe(false);
     expect(isIOSDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8)", platform: "Linux armv8l", maxTouchPoints: 5 })).toBe(false);
+  });
+});
+
+describe("playerEventFromMessage", () => {
+  it("names YouTube widget events and ignores everything else", () => {
+    expect(playerEventFromMessage(JSON.stringify({ event: "onReady" }))).toBe("onReady");
+    expect(playerEventFromMessage({ event: "infoDelivery", info: {} })).toBe("infoDelivery");
+    expect(playerEventFromMessage("not json")).toBeNull();
+    expect(playerEventFromMessage(JSON.stringify({ foo: 1 }))).toBeNull();
   });
 });
 
@@ -172,18 +190,47 @@ describe("ArtistVideoPreview click-to-load", () => {
     );
   }
 
-  it("sends playVideo to the player as soon as it loads, only to the embed origin", () => {
-    const { posted, targets } = loadPlayer();
-    expect(posted.map((m) => m.func ?? m.event)).toEqual(["listening", "playVideo"]);
-    expect(new Set(targets)).toEqual(new Set(["https://www.youtube-nocookie.com"]));
+  const funcs = (posted: Array<{ event: string; func?: string }>) => posted.filter((m) => m.event === "command").map((m) => m.func);
+  const playerReady = (iframe: HTMLIFrameElement, origin = "https://www.youtube-nocookie.com") =>
+    window.dispatchEvent(
+      new MessageEvent("message", { data: JSON.stringify({ event: "initialDelivery", info: { playerState: -1 } }), origin, source: iframe.contentWindow }),
+    );
+
+  it("repeats the listening handshake and sends nothing else until the player answers", () => {
+    vi.useFakeTimers();
+    try {
+      const { posted, targets } = loadPlayer();
+      vi.advanceTimersByTime(HANDSHAKE_INTERVAL_MS * 3);
+      expect(posted.filter((m) => m.event === "listening").length).toBeGreaterThanOrEqual(3);
+      expect(funcs(posted)).toEqual([]);
+      expect(new Set(targets)).toEqual(new Set(["https://www.youtube-nocookie.com"]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends playVideo once the player is ready, and stops the handshake", () => {
+    vi.useFakeTimers();
+    try {
+      const { iframe, posted } = loadPlayer();
+      vi.advanceTimersByTime(2000); // a slow player: the old fixed 1.5 s delay would already have fired
+      playerReady(iframe);
+      expect(funcs(posted)).toEqual(["playVideo"]);
+      const listening = posted.filter((m) => m.event === "listening").length;
+      vi.advanceTimersByTime(HANDSHAKE_INTERVAL_MS * 4);
+      expect(posted.filter((m) => m.event === "listening").length).toBe(listening);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("mutes and plays when the browser blocked the start with sound", () => {
     vi.useFakeTimers();
     try {
-      const { posted } = loadPlayer();
+      const { iframe, posted } = loadPlayer();
+      playerReady(iframe);
       vi.advanceTimersByTime(SOUND_START_GRACE_MS);
-      expect(posted.map((m) => m.func ?? m.event)).toEqual(["listening", "playVideo", "mute", "playVideo"]);
+      expect(funcs(posted)).toEqual(["playVideo", "mute", "playVideo"]);
     } finally {
       vi.useRealTimers();
     }
@@ -193,21 +240,33 @@ describe("ArtistVideoPreview click-to-load", () => {
     vi.useFakeTimers();
     try {
       const { iframe, posted } = loadPlayer();
+      playerReady(iframe);
       playerSays(iframe, 1);
-      vi.advanceTimersByTime(SOUND_START_GRACE_MS);
-      expect(posted.map((m) => m.func ?? m.event)).not.toContain("mute");
+      vi.advanceTimersByTime(SOUND_START_GRACE_MS * 3);
+      expect(funcs(posted)).not.toContain("mute");
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("ignores state messages from any other origin", () => {
+  it("ignores messages from any other origin", () => {
     vi.useFakeTimers();
     try {
       const { iframe, posted } = loadPlayer();
+      playerReady(iframe, "https://evil.example");
       playerSays(iframe, 1, "https://evil.example");
-      vi.advanceTimersByTime(SOUND_START_GRACE_MS);
-      expect(posted.map((m) => m.func ?? m.event)).toContain("mute");
+      expect(funcs(posted)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still tries a muted start if the player never answers the handshake", () => {
+    vi.useFakeTimers();
+    try {
+      const { posted } = loadPlayer();
+      vi.advanceTimersByTime(HANDSHAKE_GIVE_UP_MS);
+      expect(funcs(posted)).toEqual(["mute", "playVideo"]);
     } finally {
       vi.useRealTimers();
     }
