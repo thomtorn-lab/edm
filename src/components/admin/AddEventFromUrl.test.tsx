@@ -143,7 +143,8 @@ describe("AddEventFromUrl — direct handoff to the exact created row (Section 5
 });
 
 // Genre storage (2026-11-02): on a just-published event, a different genre
-// here replaces the whole classification (any secondary genre is removed).
+// pair here replaces the whole classification. Analyze supports the same
+// optional secondary genre as the other admin editors (max two genres).
 describe("AddEventFromUrl — changing the genre of a published event is an explicit replacement", () => {
   const publishedResponse = () =>
     discoveryExtractResponse({
@@ -165,9 +166,57 @@ describe("AddEventFromUrl — changing the genre of a published event is an expl
     await analyze(fetchMock);
     fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
     const note = screen.getByRole("note");
-    expect(note.textContent).toContain("Saving sets House as the event’s only genre");
-    expect(note.textContent).toContain("removes any secondary genre");
+    expect(note.textContent).toContain("Saving sets House as the event’s genres");
+    expect(note.textContent).toContain("replaces the whole genre classification");
     expect(note.textContent).toContain("protects the genres from source sync");
+  });
+
+  it("lets the admin add a secondary genre and saves both as one ordered classification", async () => {
+    const extractMock = vi.fn().mockResolvedValue({ ok: true, json: async () => publishedResponse() });
+    vi.stubGlobal("fetch", extractMock);
+    await analyze(extractMock);
+    fireEvent.change(screen.getByLabelText("Secondary genre (optional)"), { target: { value: "house" } });
+    expect(screen.getByRole("note").textContent).toContain("Saving sets Techno + House as the event’s genres");
+
+    const saveMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", saveMock);
+    fireEvent.click(screen.getByRole("button", { name: "Save corrections" }));
+    await vi.waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const [path, options] = saveMock.mock.calls[0];
+    expect(path).toBe("/api/admin/events/e-abc12345");
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.primaryGenre).toBe("techno");
+    expect(patch.subgenres).toEqual(["techno", "house"]);
+  });
+
+  it("does not touch the genre classification when neither genre was changed", async () => {
+    const extractMock = vi.fn().mockResolvedValue({ ok: true, json: async () => publishedResponse() });
+    vi.stubGlobal("fetch", extractMock);
+    await analyze(extractMock);
+    const saveMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", saveMock);
+    fireEvent.click(screen.getByRole("button", { name: "Save corrections" }));
+    await vi.waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const { patch } = JSON.parse((saveMock.mock.calls[0][1] as { body: string }).body);
+    expect(patch.primaryGenre).toBeUndefined();
+    expect(patch.subgenres).toBeUndefined();
+  });
+
+  it("saves a secondary genre on a Discovery Queue candidate as predictedSecondaryGenre", async () => {
+    const extractMock = vi.fn().mockResolvedValue({ ok: true, json: async () => discoveryExtractResponse() });
+    vi.stubGlobal("fetch", extractMock);
+    await analyze(extractMock);
+    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "techno" } });
+    fireEvent.change(screen.getByLabelText("Secondary genre (optional)"), { target: { value: "house" } });
+    const saveMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", saveMock);
+    fireEvent.click(screen.getByRole("button", { name: "Save corrections" }));
+    await vi.waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const [path, options] = saveMock.mock.calls[0];
+    expect(path).toBe("/api/admin/discovery/dq-abc12345");
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.predictedGenre).toBe("techno");
+    expect(patch.predictedSecondaryGenre).toBe("house");
   });
 
   it("shows no note on a Discovery Queue candidate (not yet an event)", async () => {
