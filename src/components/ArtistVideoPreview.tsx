@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 /**
@@ -20,7 +20,8 @@ import Link from "next/link";
  * page would share data before any choice was made. The press is the
  * visitor's informed choice for that one video: it is not remembered, so
  * every page asks again and nothing is stored on our side. Pressing play
- * loads the embed with autoplay, so one press is enough to start the video.
+ * loads the embed with autoplay and then tells the player to start (see
+ * useOnePressStart), so one press is enough to start the video.
  *
  * Rendered inside the event page's "Get a taste" section (event-page action
  * layout, 2026-10-17), which owns the section heading and the `#video`
@@ -49,9 +50,92 @@ export function videoPlayerTitle({ videoTitle, artistName, eventTitle }: { video
   return `YouTube video for ${eventTitle.trim() || "this event"}`;
 }
 
-/** The embed URL loaded after the visitor presses play — autoplay, since the press itself asked for the video. */
-export function youtubeEmbedUrl(videoId: string): string {
-  return `${YOUTUBE_EMBED_ORIGIN}/embed/${encodeURIComponent(videoId)}?autoplay=1`;
+/**
+ * The embed URL loaded after the visitor presses play — autoplay, since the
+ * press itself asked for the video. `enablejsapi` (+ our `origin`) lets the
+ * page send the player a play command and hear back whether it is playing
+ * (one-press start, 2026-11-14); `playsinline` keeps iOS from demanding a
+ * fullscreen tap.
+ */
+export function youtubeEmbedUrl(videoId: string, origin?: string): string {
+  const params = new URLSearchParams({ autoplay: "1", playsinline: "1", enablejsapi: "1" });
+  if (origin) params.set("origin", origin);
+  return `${YOUTUBE_EMBED_ORIGIN}/embed/${encodeURIComponent(videoId)}?${params.toString()}`;
+}
+
+/** How long the player gets to start with sound before we fall back to a muted start. */
+export const SOUND_START_GRACE_MS = 1500;
+
+/** YouTube player states that mean the press has been honoured (playing / buffering). */
+const STARTED_STATES = new Set([1, 3]);
+
+/** Reads the player state out of a YouTube widget-API message, if it carries one. */
+export function playerStateFromMessage(data: unknown): number | null {
+  let msg: unknown = data;
+  if (typeof data === "string") {
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+  if (!msg || typeof msg !== "object") return null;
+  const { event, info } = msg as { event?: unknown; info?: unknown };
+  if (event === "onStateChange" && typeof info === "number") return info;
+  if ((event === "infoDelivery" || event === "initialDelivery") && info && typeof info === "object") {
+    const state = (info as { playerState?: unknown }).playerState;
+    if (typeof state === "number") return state;
+  }
+  return null;
+}
+
+/**
+ * One-press start (2026-11-14). Browsers — iOS Safari and most mobile
+ * browsers above all — often refuse `autoplay=1` with sound inside a
+ * cross-origin iframe, leaving YouTube's own play button as a second press.
+ * After the iframe loads we (1) subscribe to its state updates, (2) send
+ * `playVideo`, and (3) if it still hasn't started after a short grace period,
+ * mute and play — muted autoplay is allowed everywhere, and YouTube then shows
+ * its own "tap to unmute" control. Where sound is allowed it simply plays.
+ * Only talks to the iframe's own window, only accepts messages from the
+ * embed origin, and stores nothing.
+ */
+function useOnePressStart(iframe: HTMLIFrameElement | null) {
+  useEffect(() => {
+    if (!iframe) return;
+    let started = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const post = (payload: Record<string, unknown>) => {
+      iframe.contentWindow?.postMessage(JSON.stringify(payload), YOUTUBE_EMBED_ORIGIN);
+    };
+    const command = (func: string) => post({ event: "command", func, args: [] });
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== YOUTUBE_EMBED_ORIGIN || e.source !== iframe.contentWindow) return;
+      const state = playerStateFromMessage(e.data);
+      if (state !== null && STARTED_STATES.has(state)) started = true;
+    };
+
+    const onLoad = () => {
+      post({ event: "listening", id: iframe.id, channel: "widget" });
+      command("playVideo");
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (started) return;
+        command("mute");
+        command("playVideo");
+      }, SOUND_START_GRACE_MS);
+    };
+
+    window.addEventListener("message", onMessage);
+    iframe.addEventListener("load", onLoad);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      iframe.removeEventListener("load", onLoad);
+      clearTimeout(timer);
+    };
+  }, [iframe]);
 }
 
 export default function ArtistVideoPreview({
@@ -65,16 +149,20 @@ export default function ArtistVideoPreview({
   videoId: string;
   videoTitle: string | null;
 }) {
-  const [loaded, setLoaded] = useState(false);
+  const [embedSrc, setEmbedSrc] = useState<string | null>(null);
+  const [iframe, setIframe] = useState<HTMLIFrameElement | null>(null);
+  useOnePressStart(iframe);
   const playerTitle = videoPlayerTitle({ videoTitle, artistName, eventTitle });
   const noticeId = `youtube-notice-${videoId}`;
 
-  if (loaded) {
+  if (embedSrc) {
     return (
       <div className="mt-3 aspect-video w-full overflow-hidden rounded border border-border-strong bg-black">
         <iframe
+          ref={setIframe}
+          id={`youtube-player-${videoId}`}
           className="h-full w-full"
-          src={youtubeEmbedUrl(videoId)}
+          src={embedSrc}
           title={playerTitle}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           referrerPolicy="strict-origin-when-cross-origin"
@@ -88,7 +176,7 @@ export default function ArtistVideoPreview({
     <div className="mt-3">
       <button
         type="button"
-        onClick={() => setLoaded(true)}
+        onClick={() => setEmbedSrc(youtubeEmbedUrl(videoId, window.location.origin))}
         aria-label={`Play ${playerTitle}`}
         aria-describedby={noticeId}
         className="group flex aspect-video w-full flex-col items-center justify-center gap-3 rounded border border-border-strong bg-black px-4 text-center text-text-secondary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary"
