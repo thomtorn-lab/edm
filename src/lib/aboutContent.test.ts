@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyAboutText } from "./aboutContent";
+import { classifyAboutText, isDanishAboutText } from "./aboutContent";
 
 // Real stored descriptions (KultuNaut fixtures, as the adapter stores them).
 const VEGA_BOILERPLATE =
@@ -27,5 +27,25 @@ describe("classifyAboutText (real fixture texts)", () => {
   it("no text → null", () => {
     expect(classifyAboutText(null)).toBeNull();
     expect(classifyAboutText("  ")).toBeNull();
+  });
+});
+
+describe("isDanishAboutText (QA 2026-11-15)", () => {
+  it("Danish About text is hidden, including Danish grammar with no æ/ø/å (Hvaderpaa, Whipped #7)", () => {
+    expect(isDanishAboutText(WITCHZ)).toBe(true);
+    expect(isDanishAboutText("Syvende udgave af klubnatten Whipped samler Matrixxman, Pamela Svart, zamara og Ctrls bag pulten til en nat med elektronisk dansemusik.")).toBe(true);
+  });
+  it("practical information is never hidden, in any language", () => {
+    expect(isDanishAboutText(VEGA_BOILERPLATE)).toBe(false);
+    expect(isDanishAboutText(AGE_ONLY)).toBe(false);
+  });
+  it("English text is never hidden, also when it names Danish places", () => {
+    expect(isDanishAboutText("The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.")).toBe(false);
+    expect(isDanishAboutText("Shrek Rave returns to Poolen. Where underground rave meets live stage show, the swamp transforms into a full-scale party.")).toBe(false);
+    expect(isDanishAboutText("Get ready for the Grand Opening of Cava Søndag x La Boucherie, a night dedicated to the music.")).toBe(false);
+  });
+  it("no text, nothing to hide", () => {
+    expect(isDanishAboutText(null)).toBe(false);
+    expect(isDanishAboutText("")).toBe(false);
   });
 });

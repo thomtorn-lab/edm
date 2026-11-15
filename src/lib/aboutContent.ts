@@ -1,4 +1,5 @@
 import { isPracticalInfoOnly } from "./descriptionQuality";
+import { isLikelyDanish, readsAsDanish } from "./languageDetection";
 
 /**
  * What kind of text an event's stored description is, for presentation
@@ -30,4 +31,20 @@ export function classifyAboutText(text: string | null | undefined): AboutKind | 
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (lines.every((l) => BARE_LABEL_RE.test(l))) return "empty";
   return isPracticalInfoOnly(text) ? "practical" : "about";
+}
+
+/**
+ * Whether a description is Danish About text the English-language public
+ * site must not show (QA 2026-11-15, real case: Hvaderpaa's "Syvende udgave
+ * af klubnatten Whipped samler Matrixxman, … til en nat med elektronisk
+ * dansemusik" — Danish grammar with no æ/ø/å, which isLikelyDanish alone
+ * misses). Only "about" text is ever hidden: practical information (age
+ * limit, doors, cloakroom) is still shown in any language, and plainly
+ * English prose is never hidden (isLikelyDanish's own English exception;
+ * readsAsDanish needs more Danish than English function words).
+ * Presentation only: the stored description is never changed.
+ */
+export function isDanishAboutText(text: string | null | undefined): boolean {
+  if (classifyAboutText(text) !== "about") return false;
+  return isLikelyDanish(text!) || readsAsDanish(text!);
 }

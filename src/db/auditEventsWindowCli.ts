@@ -55,11 +55,12 @@ export function printReport(report: EventsWindowReport): void {
     for (const reason of r.reasons) console.log(`      - ${reason}`);
   }
 
-  const danish = report.events.filter((e) => e.descriptionReadsDanish || e.withheldSourceDescription);
+  const danish = report.events.filter((e) => e.descriptionReadsDanish || e.descriptionHiddenAsDanish || e.withheldSourceDescription);
   console.log(`\n== Danish descriptions (${danish.length}) — for QA reporting; nothing is changed or translated ==`);
   for (const e of danish) {
     const flags = [
-      e.descriptionReadsDanish ? "shown description reads as Danish" : null,
+      e.descriptionHiddenAsDanish ? "stored description hidden publicly as Danish About text" : null,
+      e.descriptionReadsDanish && !e.descriptionHiddenAsDanish ? "stored description reads as Danish, still shown (practical information)" : null,
       e.withheldSourceDescription ? "source has a Danish text not shown publicly (admin sees it)" : null,
     ];
     console.log(`  ${e.id}  ${e.startLocal}  ${e.title}  [${e.sourceId ?? "admin-pasted"}; ${flags.filter(Boolean).join("; ")}]`);

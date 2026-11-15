@@ -133,3 +133,50 @@ export function classifyArtistName(raw: string): NameClassification {
   if (cleanable.length > 0) return { verdict: "cleanable", rules: cleanable, cleanedName };
   return { verdict: "ok", rules: [], cleanedName };
 }
+
+/**
+ * Role labels a source puts in front of a real act's name in its lineup
+ * (QA 2026-11-15, all from Pumpehuset's support_bands: "Efterfest: SKAI",
+ * "Afters: Gavnlig", "Afterparty: ELOQ", "Preparty: Dokkedal"). Only these
+ * documented words, at the very start and followed by a colon, so a name
+ * that merely contains a colon ("Arcanum Collective: POSSESSED") is kept.
+ */
+const ROLE_PREFIX = /^(?:efterfest|afters|after[- ]?party|pre[- ]?party)\s*:\s*/iu;
+
+/** A status tail separated by a dash at the end of the entry ("– NEW DATE"). Stricter than STATUS_TAG: the dash is required. */
+const DASHED_STATUS_TAIL = /\s+[–—-]\s+(?:new date|nyt? dato|sold out|udsolgt|cancel+ed|aflyst|postponed|udsat|rescheduled)\s*!*$/iu;
+
+/**
+ * The display name stored for one lineup entry (QA 2026-11-15). Removes,
+ * conservatively and in this order:
+ *   1. a documented role label ("Efterfest: SKAI" -> "SKAI"),
+ *   2. a dash-separated status tail, only when classifyArtistName calls the
+ *      entry a cleanable real name ("Dengue Dengue Dengue PE – NEW DATE"),
+ *   3. a trailing country code, only when classifyArtistName calls the entry
+ *      cleanable for that reason ("Byetone DE", "Dengue Dengue Dengue PE").
+ * Steps 2–3 reuse exactly the rules artistIdentityKey already applies, so
+ * an artist's identity key is the same before and after cleaning. Anything
+ * the classification does not vouch for — "not_artist" entries such as
+ * "Xuri & John Clewort DK & Gábor Lázár HU", all-caps names ("JAMIE XX"),
+ * a status tag with no name ("NEW DATE") — is returned unchanged. Never
+ * returns an empty string for a non-empty entry.
+ */
+export function cleanArtistEntry(raw: string): string {
+  let name = raw.trim();
+  const withoutRole = name.replace(ROLE_PREFIX, "").trim();
+  if (withoutRole !== name && /\p{L}/u.test(withoutRole)) name = withoutRole;
+
+  let classification = classifyArtistName(name);
+  if (classification.verdict === "cleanable" && classification.rules.includes("status_tag")) {
+    const withoutStatus = name.replace(DASHED_STATUS_TAIL, "").trim();
+    if (withoutStatus !== name && /\p{L}/u.test(withoutStatus)) {
+      name = withoutStatus;
+      classification = classifyArtistName(name);
+    }
+  }
+  if (classification.verdict === "cleanable" && classification.rules.includes("country_code_suffix")) {
+    const withoutCode = name.replace(/\s+[A-Z]{2}(?:\/[A-Z]{2})*$/u, "").trim();
+    if (/\p{L}/u.test(withoutCode)) name = withoutCode;
+  }
+  return name;
+}

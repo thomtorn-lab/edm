@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * Public event queries and About-text presentation (2026-10-25): a
  * description made only of bare labels is dropped, a practical-only one is
- * marked, and every other description — in any language — is passed through
- * unchanged. Each db.select().from().where() call returns the next queued
+ * marked, Danish About text is not shown (QA 2026-11-15), and every other
+ * description is passed through unchanged. Each db.select().from().where() call returns the next queued
  * result: events, then their venues.
  */
 let queue: unknown[][] = [];
@@ -45,11 +45,11 @@ beforeEach(() => {
 });
 
 describe("public event queries: About kind", () => {
-  it("passes descriptions through unchanged in any language; marks practical-only; drops bare labels", async () => {
+  it("hides Danish About text; marks practical-only; drops bare labels", async () => {
     queue = [[eventRow("da", DANISH), eventRow("practical", PRACTICAL), eventRow("labels", "Praktisk info:.\n\nEntré"), eventRow("none", null)], [VENUE_ROW]];
     const events = await getPublishedEventsWithVenue();
     expect(events.map((e) => [e.id, e.description, e.aboutKind])).toEqual([
-      ["da", DANISH, "about"],
+      ["da", null, null],
       ["practical", PRACTICAL, "practical"],
       ["labels", null, null],
       ["none", null, null],
@@ -60,28 +60,29 @@ describe("public event queries: About kind", () => {
     queue = [[eventRow("e", PRACTICAL)], [VENUE_ROW]];
     expect((await getEventBySlugWithVenue("e"))?.aboutKind).toBe("practical");
     queue = [[eventRow("e", DANISH)], [VENUE_ROW]];
-    expect((await getEventsForVenue("v1"))[0].description).toBe(DANISH);
+    expect((await getEventsForVenue("v1"))[0].description).toBeNull();
   });
 });
 
-describe("public event queries: Danish Poolen/Pumpehuset descriptions stay as they are (2026-10-25)", () => {
-  // Production check 2026-10-25: 20 published Poolen/Pumpehuset events show a
-  // Danish description stored before the import guard existed. Deploying the
-  // About-text work must not hide them.
+describe("public event queries: Danish About text is not shown publicly (QA 2026-11-15)", () => {
+  // Supersedes the 2026-10-25 rule that every stored description is shown in
+  // any language. The stored text is untouched (presentation only).
   const EN_PLACE = "The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.";
-  it("shows every stored description, whatever its source or language", async () => {
+  const WHIPPED_7 = "Syvende udgave af klubnatten Whipped samler Matrixxman, Pamela Svart, zamara og Ctrls bag pulten til en nat med elektronisk dansemusik.";
+  const DANISH_PRACTICAL = "Praktisk info: Aldersgrænse: 18+.\n\nEntré";
+  it("hides Danish About text from any source, keeps English text and Danish practical information", async () => {
     queue = [[
       eventRow("pump-da", DANISH, { canonicalSourceId: "src-pumpehuset" }),
-      eventRow("pool-da", DANISH, { canonicalSourceId: "src-poolen" }),
-      eventRow("pump-da-admin", DANISH, { canonicalSourceId: "src-pumpehuset", overriddenFields: ["description"] }),
+      eventRow("whipped-7", WHIPPED_7, { canonicalSourceId: "src-hvaderpaa" }),
       eventRow("pool-en", EN_PLACE, { canonicalSourceId: "src-poolen" }),
+      eventRow("da-practical", DANISH_PRACTICAL, { canonicalSourceId: "src-kultunaut" }),
     ], [VENUE_ROW]];
     const events = await getPublishedEventsWithVenue();
     expect(events.map((e) => [e.id, e.description, e.aboutKind])).toEqual([
-      ["pump-da", DANISH, "about"],
-      ["pool-da", DANISH, "about"],
-      ["pump-da-admin", DANISH, "about"],
+      ["pump-da", null, null],
+      ["whipped-7", null, null],
       ["pool-en", EN_PLACE, "about"],
+      ["da-practical", DANISH_PRACTICAL, "practical"],
     ]);
   });
 });
