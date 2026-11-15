@@ -564,6 +564,33 @@ export const eventSoundcloudLinks = pgTable(
 );
 
 /**
+ * Admin-entered artist SoundCloud profile links (2026-11-15) — one row per
+ * (event, exact lineup name), typed in by an admin when creating or editing
+ * an event by hand. Kept apart from event_soundcloud_links so no sync can
+ * ever overwrite or delete them (reconcileSourceSoundcloudLinks only touches
+ * its own source's rows there). Event-local: never reused on other events.
+ * On the event page an admin link wins over a venue-provided one for the
+ * same name; like every link it only shows while artistName is still in the
+ * event's lineup, and never when its url is in soundcloud_link_blocks.
+ * Written only by src/db/eventSoundcloudAdmin.ts.
+ */
+export const eventAdminSoundcloudLinks = pgTable(
+  "event_admin_soundcloud_links",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    /** Exact lineup display name, as stored in events.artists. */
+    artistName: text("artist_name").notNull(),
+    /** Normalized profile URL: https://soundcloud.com/<handle>. */
+    url: text("url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.eventId, table.artistName] })],
+);
+
+/**
  * Manual blocks for SoundCloud profile links, keyed by normalized profile
  * URL. Set/cleared only by the soundcloud-link-block workflow
  * (src/db/soundcloudLinkBlock.ts); the sync never reads or writes this table,

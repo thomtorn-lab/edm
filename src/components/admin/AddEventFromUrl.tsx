@@ -11,6 +11,8 @@ import { isValidHttpUrl } from "@/lib/urlValidation";
 import { copenhagenDateTimeInputToIso, toCopenhagenDateTimeInput } from "@/lib/format";
 import { getGenre, isGenreSlug } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
+import EventYoutubePanel from "./EventYoutubePanel";
+import EventSoundcloudPanel from "./EventSoundcloudPanel";
 
 interface ExtractResponse {
   raw: RawCandidateEvent;
@@ -73,6 +75,8 @@ export default function AddEventFromUrl() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // Bumped on every successful save, so the SoundCloud panel re-reads the saved lineup.
+  const [saveCount, setSaveCount] = useState(0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -182,6 +186,7 @@ export default function AddEventFromUrl() {
         return;
       }
       setSaved(true);
+      setSaveCount((n) => n + 1);
       router.refresh();
     } catch {
       setSaveError("Network error.");
@@ -335,6 +340,21 @@ export default function AddEventFromUrl() {
             </div>
             {saveError && <p className="text-xs text-status-bad">{saveError}</p>}
           </div>
+
+          {/* Manual media (2026-11-15): YouTube video and artist SoundCloud
+              links for the event just created, each saved on its own button.
+              Only for a published event — a Discovery Queue candidate gets
+              the same panels right after it is published there. */}
+          {data.persisted.kind === "event" ? (
+            <div className="mt-4 space-y-3">
+              <EventYoutubePanel eventId={data.persisted.id} />
+              <EventSoundcloudPanel eventId={data.persisted.id} reloadKey={String(saveCount)} />
+            </div>
+          ) : (
+            <p className="mt-3 text-[11px] text-text-tertiary">
+              YouTube video and SoundCloud links can be added as soon as this candidate is published from the queue.
+            </p>
+          )}
         </div>
       )}
     </div>

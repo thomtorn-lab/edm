@@ -13,6 +13,16 @@ import AddEventFromUrl from "./AddEventFromUrl";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
+// The media panels fetch on their own (own tests); stubbed so these tests'
+// fetch assertions only see Analyze's and the editor's requests.
+vi.mock("./EventYoutubePanel", async () => {
+  const { createElement } = await import("react");
+  return { default: ({ eventId }: { eventId: string }) => createElement("p", null, `YouTube panel for ${eventId}`) };
+});
+vi.mock("./EventSoundcloudPanel", async () => {
+  const { createElement } = await import("react");
+  return { default: ({ eventId }: { eventId: string }) => createElement("p", null, `SoundCloud panel for ${eventId}`) };
+});
 
 afterEach(() => {
   cleanup();
@@ -152,6 +162,14 @@ describe("AddEventFromUrl — changing the genre of a published event is an expl
       persisted: { kind: "event", id: "e-abc12345" },
       category: undefined,
     });
+
+  it("offers the YouTube and SoundCloud panels for the event it just published", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => publishedResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    await analyze(fetchMock);
+    expect(screen.getByText("YouTube panel for e-abc12345")).toBeTruthy();
+    expect(screen.getByText("SoundCloud panel for e-abc12345")).toBeTruthy();
+  });
 
   it("shows no note while the genre is the one Analyze stored", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => publishedResponse() });

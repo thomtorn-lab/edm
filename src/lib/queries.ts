@@ -8,6 +8,7 @@ import {
   artists as artistIdentities,
   discoveryQueue,
   eventArtists,
+  eventAdminSoundcloudLinks,
   eventChangeLog,
   eventSoundcloudLinks,
   eventYoutubePreviewOverrides,
@@ -624,6 +625,24 @@ function soundcloudLinkNotBlocked() {
   );
 }
 
+/**
+ * Admin-entered links (event_admin_soundcloud_links, 2026-11-15) for these
+ * events, minus blocked profile URLs. Event-local: never fed into the
+ * cross-event reuse below.
+ */
+async function adminSoundcloudRows(eventIds: string[]) {
+  if (eventIds.length === 0) return [];
+  return db
+    .select({ eventId: eventAdminSoundcloudLinks.eventId, artistName: eventAdminSoundcloudLinks.artistName, url: eventAdminSoundcloudLinks.url })
+    .from(eventAdminSoundcloudLinks)
+    .where(
+      and(
+        inArray(eventAdminSoundcloudLinks.eventId, eventIds),
+        notExists(db.select({ one: sql`1` }).from(soundcloudLinkBlocks).where(eq(soundcloudLinkBlocks.url, eventAdminSoundcloudLinks.url))),
+      ),
+    );
+}
+
 /** Appearances Artist Alerts resolved to one artist with enough confidence to show that artist's profile. */
 const SHOWN_CONFIDENCE = ["high", "confirmed"];
 
@@ -716,10 +735,16 @@ export async function getSoundcloudLinksForLineup(eventId: string, artists: stri
   if (artists.length === 0) return [];
   let own: { artistName: string; url: string }[];
   try {
-    own = await db
-      .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
-      .from(eventSoundcloudLinks)
-      .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked()));
+    const [venueRows, adminRows] = await Promise.all([
+      db
+        .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
+        .from(eventSoundcloudLinks)
+        .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked())),
+      adminSoundcloudRows([eventId]),
+    ]);
+    // Admin rows last: selectLineupSoundcloudLinks keeps the last URL per
+    // name, so an admin-entered link wins over the venue's for that name.
+    own = [...venueRows, ...adminRows];
   } catch (err) {
     console.error(`[soundcloud-links] lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
@@ -747,10 +772,14 @@ export async function getSoundcloudAvailabilityForEvents(list: { id: string; art
   if (ids.length === 0) return list.map(() => false);
   let rows: { eventId: string; artistName: string }[];
   try {
-    rows = await db
-      .select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName })
-      .from(eventSoundcloudLinks)
-      .where(and(inArray(eventSoundcloudLinks.eventId, ids), soundcloudLinkNotBlocked()));
+    const [venueRows, adminRows] = await Promise.all([
+      db
+        .select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName })
+        .from(eventSoundcloudLinks)
+        .where(and(inArray(eventSoundcloudLinks.eventId, ids), soundcloudLinkNotBlocked())),
+      adminSoundcloudRows(ids),
+    ]);
+    rows = [...venueRows, ...adminRows];
   } catch (err) {
     console.error(`[soundcloud-links] batched availability lookup failed: ${err instanceof Error ? err.message : String(err)}`);
     return list.map(() => false);

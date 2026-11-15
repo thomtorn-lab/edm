@@ -7,6 +7,16 @@ import type { DiscoveryQueueItem, Venue } from "@/lib/types";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
+// The media panels fetch on their own (own tests); stubbed so the queue's
+// fetch assertions only see the queue's requests.
+vi.mock("./EventYoutubePanel", async () => {
+  const { createElement } = await import("react");
+  return { default: ({ eventId }: { eventId: string }) => createElement("p", null, `YouTube panel for ${eventId}`) };
+});
+vi.mock("./EventSoundcloudPanel", async () => {
+  const { createElement } = await import("react");
+  return { default: ({ eventId }: { eventId: string }) => createElement("p", null, `SoundCloud panel for ${eventId}`) };
+});
 
 afterEach(() => {
   cleanup();
@@ -241,6 +251,16 @@ describe("DiscoveryQueue — normal existing-venue publication unchanged", () =>
 
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/discovery/dq-1/publish", expect.objectContaining({ method: "POST" })));
+  });
+
+  it("offers the YouTube and SoundCloud panels for the newly published event, until Done", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, eventId: "e-new" }) }));
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    expect(await screen.findByText("YouTube panel for e-new")).toBeTruthy();
+    expect(screen.getByText("SoundCloud panel for e-new")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByText("YouTube panel for e-new")).toBeNull();
   });
 });
 
