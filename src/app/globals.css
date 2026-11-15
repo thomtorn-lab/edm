@@ -155,12 +155,15 @@ body::before {
   opacity: 1;
   transition: none;
 }
+/* 600ms cycle down to 0.2 so the pulse is clearly visible even when the
+   wait is well under a second (a 900ms / 0.35 cycle barely dimmed before
+   the page arrived). */
 .nav-pending-hint[data-loading="true"] {
-  animation: nav-pending-pulse 900ms ease-in-out infinite;
+  animation: nav-pending-pulse 600ms ease-in-out infinite;
 }
 @keyframes nav-pending-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  50% { opacity: 0.2; }
 }
 @media (prefers-reduced-motion: reduce) {
   .nav-pending-hint {
