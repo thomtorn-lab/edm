@@ -170,14 +170,14 @@ export default function EventExplorer(props: EventExplorerProps) {
 interface EventExplorerProps {
   /**
    * Upcoming events only, as the minimal HomepageEvent projection — the
-   * server (app/page.tsx) already drops events that are past at
+   * server (app/(home)/page.tsx) already drops events that are past at
    * `serverNow`; `upcoming` below still re-applies isPastEvent as `now`
    * advances while the page stays open.
    */
   events: HomepageEvent[];
   /**
    * ISO timestamp for "now" at the moment the server rendered this page
-   * (see app/page.tsx). Used as the initial value so the very first render
+   * (see app/(home)/page.tsx). Used as the initial value so the very first render
    * — server-side, and the client's first paint before hydration's own
    * effect below runs — already has a real, current clock to filter
    * past/upcoming events by, rather than treating "now" as unknown.
