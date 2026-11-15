@@ -6,6 +6,7 @@ import { decideDuplicateAction, type DuplicateConfidence } from "./dedup";
 import { resolveByCanonicalPriority, type PublishDecision } from "./classification";
 import type { HoldReason } from "./adapters/pipeline";
 import { getSourceById } from "./data/sources";
+import { allowedOfficialEventUrl, isHvaderpaaUrl } from "./officialUrlPolicy";
 import { usableDiscoveryDescription } from "./descriptionQuality";
 import { DEN_ANDEN_SIDE_VENUE_ID, hasRoomSplit, isDenAndenSideRoomsEnabled } from "./denAndenSideRooms";
 
@@ -114,7 +115,14 @@ export function buildSyncPatch(
   if (resolved.resolvedVenueId && resolved.resolvedSubVenue !== undefined && resolved.resolvedSubVenue !== existing.subVenue) {
     patch.subVenue = resolved.resolvedSubVenue;
   }
-  if (raw.officialEventUrl && raw.officialEventUrl !== existing.officialEventUrl) {
+  // HvadErPå ban (2026-11-15, src/lib/officialUrlPolicy.ts): a stored
+  // hvaderpaa.dk Official Event URL is always removed — replaced by this
+  // run's own allowed official URL, or cleared — even when an admin override
+  // protects the field, because no value of that kind may ever stay there.
+  const incomingOfficialUrl = allowedOfficialEventUrl(raw.officialEventUrl);
+  if (isHvaderpaaUrl(existing.officialEventUrl)) {
+    patch.officialEventUrl = incomingOfficialUrl;
+  } else if (incomingOfficialUrl && incomingOfficialUrl !== existing.officialEventUrl) {
     // Multi-source merge precedence (event-link-role follow-up, 2026-09-05
     // — spec section 32's canonical-priority resolution, resolveByCanonicalPriority,
     // wired in for the first time): a lower-authority source (e.g. a
@@ -142,7 +150,7 @@ export function buildSyncPatch(
           ])?.value === "incoming";
       }
     }
-    if (keepIncoming) patch.officialEventUrl = raw.officialEventUrl;
+    if (keepIncoming) patch.officialEventUrl = incomingOfficialUrl;
   }
   if (raw.ticketUrl && raw.ticketUrl !== existing.ticketUrl) patch.ticketUrl = raw.ticketUrl;
   if (raw.facebookUrl && raw.facebookUrl !== existing.facebookUrl) patch.facebookUrl = raw.facebookUrl;
@@ -881,12 +889,17 @@ export function buildDiscoveryQueueClassificationPatch(
   // same-host ticket-link re-parse provides. Same overriddenFields guard as
   // every other self-heal in this function, so an admin's own hand-entered
   // Official Event URL is never clobbered by a later sync.
-  if (
+  const freshOfficialUrl = allowedOfficialEventUrl(fresh.officialEventUrl);
+  if (isHvaderpaaUrl(existing.probableOfficialEventUrl)) {
+    // HvadErPå ban (2026-11-15, src/lib/officialUrlPolicy.ts): never kept,
+    // whoever stored it — replaced by an allowed fresh URL or cleared.
+    patch.probableOfficialEventUrl = freshOfficialUrl;
+  } else if (
     !existing.overriddenFields.includes("probableOfficialEventUrl") &&
-    fresh.officialEventUrl != null &&
-    fresh.officialEventUrl !== existing.probableOfficialEventUrl
+    freshOfficialUrl != null &&
+    freshOfficialUrl !== existing.probableOfficialEventUrl
   ) {
-    patch.probableOfficialEventUrl = fresh.officialEventUrl;
+    patch.probableOfficialEventUrl = freshOfficialUrl;
   }
 
   // RA-REFERENCE FILL (RA link integrity, 2026-10-17). A row queued before

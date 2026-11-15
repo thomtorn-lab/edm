@@ -2623,3 +2623,112 @@ describe("Withheld descriptions stay out of every stored description (2026-10-25
     expect(recordWithheldDescription).toHaveBeenCalledWith(created.id, "src-hangaren", DA, null);
   });
 });
+
+describe("HvadErPå sync flow without an Official Event URL (hvaderpaa.dk ban, 2026-11-15)", () => {
+  const HVP = "https://hvaderpaa.dk/da/event/22405/";
+  const candidate: RawCandidateEvent = {
+    sourceId: "src-hvaderpaa",
+    sourceUrl: HVP,
+    stableSourceUrl: true,
+    sourceLinkUrl: HVP,
+    title: "Some Traces Of House",
+    description: "A night of deep house and techno on the Jolene dancefloor.",
+    relevanceText: "A night of deep house and techno on the Jolene dancefloor.",
+    artists: ["Mendon", "DJ HNRKSN"],
+    lineupNamesAreStructured: true,
+    startDatetime: "2026-12-10T21:00:00.000Z",
+    endDatetime: "2026-12-11T02:00:00.000Z",
+    venueName: "Jolene",
+    officialEventUrl: null,
+    ticketUrl: null,
+    facebookUrl: null,
+    residentAdvisorUrl: null,
+    imageUrl: null,
+    priceFrom: null,
+    genreHint: "house",
+    genreConfidenceHint: "medium",
+  };
+  const adapter: SourceAdapter = { sourceId: "src-hvaderpaa", fetchCandidates: () => Promise.resolve([{ ...candidate }]) };
+
+  /** sourceEventLinks rows for the first select; every other table empty. */
+  async function mockSourceLinks(rows: { eventId: string; sourceUrl: string; role: string }[]) {
+    const { db } = await import("./client");
+    const { sourceEventLinks } = await import("./schema");
+    vi.mocked(db.select).mockImplementation(
+      () =>
+        ({
+          from: (table: unknown) => ({
+            where: () =>
+              Object.assign(Promise.resolve(table === sourceEventLinks ? rows : []), { limit: () => Promise.resolve([]) }),
+          }),
+        }) as unknown as ReturnType<typeof db.select>,
+    );
+  }
+
+  it("auto-publishes with an empty Official Event URL, keeps the HvadErPå page as Source, and recognises the event on the next sync without a duplicate", async () => {
+    const { VENUES } = await import("@/lib/data/venues");
+    const { getExternalLinks, getSourceProvenance } = await import("@/lib/links");
+
+    // Sync 1: qualifying candidate, nothing known yet -> selective auto-publish.
+    vi.mocked(getVenues).mockResolvedValue(VENUES);
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([]);
+    await mockSourceLinks([]);
+    const first = await runSourceSync("src-hvaderpaa", "HvadErPå", adapter);
+
+    expect(first.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    const created = vi.mocked(createEvent).mock.calls[0][0];
+    expect(created.officialEventUrl).toBeNull();
+    expect(created.canonicalSourceId).toBe("src-hvaderpaa");
+    // The HvadErPå page is stored as this source's own link (provenance).
+    expect(created.provenanceUrl).toBe(HVP);
+
+    // Public display: the HvadErPå page is only ever a Source, never Official Event.
+    const publicLinks = getExternalLinks({
+      officialEventUrl: created.officialEventUrl,
+      ticketUrl: created.ticketUrl,
+      facebookUrl: created.facebookUrl,
+      residentAdvisorUrl: created.residentAdvisorUrl,
+      otherSourceUrls: [],
+      canonicalSourceId: "src-hvaderpaa",
+      overriddenFields: [],
+      soldOut: false,
+    });
+    expect(publicLinks.some((l) => l.label === "Official event")).toBe(false);
+    expect(publicLinks.some((l) => l.href.includes("hvaderpaa.dk"))).toBe(false);
+    expect(getSourceProvenance([{ sourceId: "src-hvaderpaa", sourceUrl: HVP, role: "official" }])).toEqual([
+      { sourceName: "HvadErPå", sourceUrl: HVP },
+    ]);
+
+    // Sync 2: the event now exists with the HvadErPå link createEvent recorded.
+    vi.clearAllMocks();
+    vi.mocked(getVenues).mockResolvedValue(VENUES);
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([
+      existingCultureBoxEvent({
+        id: created.id,
+        title: created.title,
+        slug: created.slug,
+        artists: created.artists,
+        startDatetime: created.startDatetime.toISOString(),
+        endDatetime: created.endDatetime ? created.endDatetime.toISOString() : null,
+        venueId: created.venueId,
+        primaryGenre: created.primaryGenre,
+        subgenres: created.subgenres,
+        officialEventUrl: null,
+        canonicalSourceId: "src-hvaderpaa",
+      }),
+    ]);
+    await mockSourceLinks([{ eventId: created.id, sourceUrl: HVP, role: "official" }]);
+    const second = await runSourceSync("src-hvaderpaa", "HvadErPå", adapter);
+
+    expect(second.created).toBe(0);
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).not.toHaveBeenCalled();
+    const { recordSourceLink } = await import("./writes");
+    expect(recordSourceLink).not.toHaveBeenCalled();
+    for (const [, , patch] of vi.mocked(applySourceSyncPatch).mock.calls) {
+      expect((patch as Record<string, unknown>).officialEventUrl ?? null).toBeNull();
+    }
+  });
+});

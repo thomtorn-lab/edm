@@ -333,7 +333,12 @@ async function runSourceSyncLocked(
         }
       }
 
-      const linkedEventId = raw.officialEventUrl ? (linkedByUrl.get(raw.officialEventUrl) ?? null) : null;
+      // The URL this source's own source_event_links row holds — the
+      // official URL by default, or the source's own page for a source that
+      // may never be the Official Event URL (HvadErPå, see
+      // RawCandidateEvent.sourceLinkUrl / src/lib/officialUrlPolicy.ts).
+      const sourceLinkUrl = raw.sourceLinkUrl ?? raw.officialEventUrl;
+      const linkedEventId = sourceLinkUrl ? (linkedByUrl.get(sourceLinkUrl) ?? null) : null;
       const match = findSyncMatch(linkedEventId, result.duplicateOfEventId, result.duplicateConfidence);
       // Pylonen DQ identity stabilization, 2026-09-13: a source can declare
       // its own sourceUrl a stable per-candidate identity in its own right
@@ -461,7 +466,7 @@ async function runSourceSyncLocked(
           await applySourceCancellationRestore(match.eventId, sourceId);
         }
 
-        if (raw.officialEventUrl) {
+        if (sourceLinkUrl) {
           // A high-confidence-duplicate/moved-event match (findSyncMatch's
           // "high-confidence-duplicate" kind — including the moved-event
           // check in src/lib/adapters/pipeline.ts, Workstream C) can attach
@@ -478,11 +483,11 @@ async function runSourceSyncLocked(
           // before.
           const existingOfficialLink = links.find((l) => l.eventId === match.eventId && l.role === "official");
           if (existingOfficialLink) {
-            if (existingOfficialLink.sourceUrl !== raw.officialEventUrl) {
-              await updateSourceLinkUrl(match.eventId, sourceId, "official", raw.officialEventUrl);
+            if (existingOfficialLink.sourceUrl !== sourceLinkUrl) {
+              await updateSourceLinkUrl(match.eventId, sourceId, "official", sourceLinkUrl);
             }
           } else {
-            await recordSourceLink(match.eventId, sourceId, raw.officialEventUrl, "official");
+            await recordSourceLink(match.eventId, sourceId, sourceLinkUrl, "official");
           }
         }
         // A pending discovery_queue row for this exact candidate can outlive
@@ -583,6 +588,9 @@ async function runSourceSyncLocked(
             published: true,
             confidence: result.genreConfidence,
             canonicalSourceId: sourceId,
+            // This source's own link (provenance + later sync matching) —
+            // the HvadErPå page even when officialEventUrl is empty.
+            provenanceUrl: sourceLinkUrl,
           },
           sourceId,
         );

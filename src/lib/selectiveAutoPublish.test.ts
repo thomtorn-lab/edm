@@ -139,6 +139,20 @@ describe("selective auto-publish — real pipeline cases", () => {
     expect(ok).toBe(true);
   });
 
+  it("a missing Official Event URL (the HvadErPå adapter never sets a hvaderpaa.dk one) does not block eligibility", () => {
+    const { eligible: ok } = eligible(
+      hvaderpaa({
+        title: "Some Traces Of House",
+        artists: ["Mendon", "DJ HNRKSN"],
+        description: "A night of deep house and techno on the Jolene dancefloor.",
+        genreHint: "house",
+        genreConfidenceHint: "medium",
+        officialEventUrl: null,
+      }),
+    );
+    expect(ok).toBe(true);
+  });
+
   it("re-syncing the same event after it was auto-published never qualifies again (matched, not re-created)", () => {
     const raw = hvaderpaa({
       title: "Some Traces Of House",

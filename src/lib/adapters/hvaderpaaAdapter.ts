@@ -3,6 +3,9 @@ import { deterministicGenreFromText, hasRichGenreEvidence, maskLineupNamesWithGe
 import { decodeHtmlEntities, htmlToText, htmlToParagraphText } from "./htmlExtraction";
 import type { GenreSlug } from "../taxonomy";
 import type { RawCandidateEvent, SourceAdapter } from "./types";
+import { resolveVenue } from "../normalize";
+import { VENUES } from "../data/venues";
+import { isHvaderpaaUrl } from "../officialUrlPolicy";
 
 /**
  * HvadErPå — shared discovery-only gap-filler adapter, Phase 1.
@@ -74,11 +77,14 @@ import type { RawCandidateEvent, SourceAdapter } from "./types";
  *                                          event-specific official venue
  *                                          page — never guessed into a role
  *                                          it didn't earn.
- * Official Event: never populated from offers.url at all — no event across
- * every venue sampled in the probe ever carried a genuine event-specific
- * official venue/promoter page there (always RA/a ticket platform/absent).
- * officialEventUrl is always the hvaderpaa event page itself (Source role,
- * structurally guaranteed — see above).
+ * Official Event (HvadErPå ban, product rule 2026-11-15 — see
+ * src/lib/officialUrlPolicy.ts): a hvaderpaa.dk URL is NEVER officialEventUrl.
+ * The field is only set when offers.url points at the event's own venue's
+ * website (the venue registry's websiteUrl host — a first-party page);
+ * otherwise it stays null (publishing and queue routing are unaffected).
+ * The hvaderpaa event page is still this source's
+ * stable identity (sourceUrl + stableSourceUrl) and its provenance link
+ * (sourceLinkUrl) — never an official link.
  *
  * RELEVANCE: HvadErPå exposes no first-party genre taxonomy at all (unlike
  * Billetto's categorization.subcategory or KultuNaut's Genre= filter) — this
@@ -260,6 +266,30 @@ export function parseVenuePlaceDescription(html: string): string | null {
  * this module's own doc comment for the full semantics. Never guessed:
  * anything that isn't recognizably ra.co or billetto.dk earns neither role.
  */
+/**
+ * The Official Event URL this adapter may set (HvadErPå ban, 2026-11-15):
+ * offers.url only when it is on the event's own venue's website (the venue
+ * registry's websiteUrl host, subdomains included) — a page published by the
+ * venue itself. Never a hvaderpaa.dk URL, never a ticket platform, RA or a
+ * listing aggregator. Null when no such link exists.
+ */
+export function officialEventUrlFromOffers(offersUrl: string | null, venueName: string): string | null {
+  if (!offersUrl || isHvaderpaaUrl(offersUrl)) return null;
+  const website = resolveVenue(venueName, VENUES)?.venue.websiteUrl ?? null;
+  if (!website) return null;
+  const host = (u: string): string | null => {
+    try {
+      return new URL(u).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  };
+  const offersHost = host(offersUrl);
+  const venueHost = host(website);
+  if (!offersHost || !venueHost) return null;
+  return offersHost === venueHost || offersHost.endsWith(`.${venueHost}`) ? offersUrl : null;
+}
+
 export function classifyOffersUrl(url: string | null): { ticketUrl: string | null; residentAdvisorUrl: string | null } {
   if (!url) return { ticketUrl: null, residentAdvisorUrl: null };
   let hostname: string;
@@ -339,6 +369,7 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
   const offers = event.offers as Record<string, unknown> | undefined;
   const offersUrl = offers && typeof offers.url === "string" ? offers.url : null;
   const { ticketUrl, residentAdvisorUrl } = classifyOffersUrl(offersUrl);
+  const officialEventUrl = officialEventUrlFromOffers(offersUrl, venueName);
   let priceFrom: number | null = null;
   if (offers) {
     const rawPrice = offers.price ?? offers.lowPrice;
@@ -398,6 +429,10 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
   return {
     sourceId: HVADERPAA_SOURCE_ID,
     sourceUrl: eventUrl,
+    // The hvaderpaa event page is this candidate's identity and provenance
+    // only — never its Official Event URL (see officialUrlPolicy.ts).
+    stableSourceUrl: true,
+    sourceLinkUrl: eventUrl,
     title,
     description: storedDescription,
     relevanceText: fullDescriptionText || null,
@@ -406,11 +441,9 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
     startDatetime,
     endDatetime,
     venueName,
-    // Always the hvaderpaa event page itself — Source/provenance only,
-    // never Official event (see this module's own doc comment: this is
-    // structurally guaranteed by the general-aggregator sourceType, not by
-    // anything adapter-local).
-    officialEventUrl: eventUrl,
+    // Never a hvaderpaa.dk URL (HvadErPå ban, 2026-11-15): the venue's own
+    // page when offers.url is one, otherwise null.
+    officialEventUrl,
     ticketUrl,
     facebookUrl: null,
     residentAdvisorUrl,

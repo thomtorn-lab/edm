@@ -6,6 +6,7 @@ import {
   createHvaderpaaAdapter,
   HVADERPAA_SOURCE_ID,
   parseEventJsonLd,
+  officialEventUrlFromOffers,
   parseVenueItemList,
   parseVenuePlaceDescription,
 } from "./hvaderpaaAdapter";
@@ -108,10 +109,12 @@ describe("test 5: venue outside the Phase 1 allowlist is rejected", () => {
 });
 
 describe("test 6: stable numeric HvadErPå ID is used as the source-event identity", () => {
-  it("sourceUrl and officialEventUrl are both the event's own /da/event/<id>/ URL — the stable id the shared pipeline's dedupKey (officialEventUrl ?? sourceUrl) keys off", () => {
+  it("sourceUrl is the event's own /da/event/<id>/ URL and is declared the stable identity (stableSourceUrl) and provenance link (sourceLinkUrl) — never the Official Event URL", () => {
     const c = eventCandidate("22405");
     expect(c!.sourceUrl).toBe("https://hvaderpaa.dk/da/event/22405/");
-    expect(c!.officialEventUrl).toBe("https://hvaderpaa.dk/da/event/22405/");
+    expect(c!.stableSourceUrl).toBe(true);
+    expect(c!.sourceLinkUrl).toBe("https://hvaderpaa.dk/da/event/22405/");
+    expect(c!.officialEventUrl).toBeNull();
   });
 
   it("the same event id always yields the byte-identical URL across syncs — the stability Ignore Persistence/sourceEventLinks depend on", () => {
@@ -169,9 +172,31 @@ describe("test 8: performer/lineup extraction", () => {
 });
 
 describe("test 10: HvadErPå event page is stored as Source/provenance only, never Official Event", () => {
-  it("officialEventUrl is always the hvaderpaa event page itself", () => {
-    const c = eventCandidate("13006");
-    expect(c!.officialEventUrl).toBe("https://hvaderpaa.dk/da/event/13006/");
+  it("officialEventUrl is never a hvaderpaa.dk URL — null for every real fixture (none links the venue's own page)", () => {
+    for (const id of ["22405", "19246", "21119", "21354", "20765", "13006"]) {
+      const c = eventCandidate(id)!;
+      expect(c.officialEventUrl).toBeNull();
+    }
+  });
+
+  it("officialEventUrl is offers.url only when it is on the event's own venue's website", () => {
+    const page = (offersUrl: string, venue = "Den Anden Side") =>
+      `<script type="application/ld+json">{"@context":"https://schema.org","@type":"Event","name":"X","startDate":"2026-10-03T22:00:00+02:00","location":{"@type":"Place","name":"${venue}"},"offers":{"@type":"Offer","url":"${offersUrl}"}}</script>`;
+    const parse = (offersUrl: string, venue?: string) => parseEventJsonLd(page(offersUrl, venue), "https://hvaderpaa.dk/da/event/1/")!;
+    expect(parse("https://www.denandenside.com/events/x").officialEventUrl).toBe("https://www.denandenside.com/events/x");
+    expect(parse("https://denandenside.com/events/x").officialEventUrl).toBe("https://denandenside.com/events/x");
+    expect(parse("https://hvaderpaa.dk/da/event/1/").officialEventUrl).toBeNull();
+    expect(parse("https://ra.co/events/1").officialEventUrl).toBeNull();
+    expect(parse("https://billetto.dk/e/x").officialEventUrl).toBeNull();
+    expect(parse("https://www.songkick.com/concerts/1").officialEventUrl).toBeNull();
+    expect(parse("https://notdenandenside.com/events/x").officialEventUrl).toBeNull();
+    // A venue with no registered website never gets an inferred official link.
+    expect(parse("https://module.example/events/x", "MODULE").officialEventUrl).toBeNull();
+  });
+
+  it("officialEventUrlFromOffers never returns a hvaderpaa.dk URL", () => {
+    expect(officialEventUrlFromOffers("https://hvaderpaa.dk/da/event/1/", "Den Anden Side")).toBeNull();
+    expect(officialEventUrlFromOffers(null, "Den Anden Side")).toBeNull();
   });
 
   it("REGRESSION (structural guarantee, src/lib/links.ts): src-hvaderpaa's sourceType is general-aggregator, so classifySourceRole never returns \"official\" for it regardless of what officialEventUrl holds — verified directly against the real source registry rather than re-implementing links.ts's own logic here", async () => {
@@ -191,7 +216,7 @@ describe("tests 11-15: link-role classification (classifyOffersUrl)", () => {
     // are both present in the real venue-page JSON-LD but never read by
     // parseEventJsonLd — confirming neither ever reaches ticketUrl/
     // officialEventUrl/residentAdvisorUrl.
-    expect(c!.officialEventUrl).not.toContain("denandenside.com");
+    expect(c!.officialEventUrl).toBeNull();
     expect(c!.ticketUrl).toBeNull();
   });
 
@@ -399,11 +424,12 @@ describe("test 18: autoPublish remains false for every candidate, regardless of 
 });
 
 describe("test 19: Ignore Persistence — the same dedupKey shape every other source uses", () => {
-  it("the candidate's dedupKey (officialEventUrl ?? sourceUrl, src/db/sync.ts's own derivation) is a stable, ignorable key — re-parsing the identical fixture on a later sync yields the identical key, which is exactly what isIgnoredCandidate/ignoredByUrl match against", () => {
+  it("the candidate's dedupKey (stableSourceUrl -> sourceUrl, src/db/sync.ts's own derivation) is a stable, ignorable key — re-parsing the identical fixture on a later sync yields the identical key, which is exactly what isIgnoredCandidate/ignoredByUrl match against", () => {
     const first = eventCandidate("21354")!;
     const second = eventCandidate("21354")!;
-    const dedupKey1 = first.officialEventUrl ?? first.sourceUrl;
-    const dedupKey2 = second.officialEventUrl ?? second.sourceUrl;
+    const key = (c: typeof first) => (c.stableSourceUrl ? c.sourceUrl : (c.officialEventUrl ?? c.sourceUrl));
+    const dedupKey1 = key(first);
+    const dedupKey2 = key(second);
     expect(dedupKey1).toBe(dedupKey2);
     expect(dedupKey1).toBe("https://hvaderpaa.dk/da/event/21354/");
   });
