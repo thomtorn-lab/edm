@@ -144,27 +144,18 @@ body::before {
 }
 
 /* Header link click feedback (NavPendingHint, 2026-11-15). Hidden by
-   default; while a navigation is pending the accent underline fades in
-   after a 120ms delay (so fast/prefetched navigations never flicker) and
-   then pulses. Reduced-motion: no pulse, just the underline. */
+   default; shown instantly on click and while a navigation is pending
+   (no delay, no pulse), then fades out briefly once done. */
 .nav-pending-hint {
   opacity: 0;
+  transition: opacity 150ms ease-out;
 }
 .nav-pending-hint[data-pending="true"] {
-  animation:
-    nav-pending-in 150ms ease-out 120ms forwards,
-    nav-pending-pulse 900ms ease-in-out 270ms infinite;
-}
-@keyframes nav-pending-in {
-  to { opacity: 1; }
-}
-@keyframes nav-pending-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  opacity: 1;
+  transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .nav-pending-hint[data-pending="true"] {
-    animation: none;
-    opacity: 1;
+  .nav-pending-hint {
+    transition: none;
   }
 }
