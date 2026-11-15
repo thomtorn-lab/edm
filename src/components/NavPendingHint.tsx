@@ -16,13 +16,13 @@ const CLICK_FEEDBACK_MS = 400;
  * loading reads as "working". Absolutely positioned so it never shifts
  * layout.
  */
-export default function NavPendingHint({ active = false }: { active?: boolean }) {
+export default function NavPendingHint({ active = false, pulse = true }: { active?: boolean; pulse?: boolean }) {
   const { pending } = useLinkStatus();
   return (
     <span
       aria-hidden="true"
       data-pending={active || pending ? "true" : undefined}
-      data-loading={pending ? "true" : undefined}
+      data-loading={pulse && pending ? "true" : undefined}
       className="nav-pending-hint pointer-events-none absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-accent"
     />
   );
@@ -35,7 +35,15 @@ export default function NavPendingHint({ active = false }: { active?: boolean })
  * current page doesn't navigate. Navigation itself is untouched — this only
  * observes the click.
  */
-export function NavLink({ children, onClick, ...props }: ComponentProps<typeof Link>) {
+export function NavLink({
+  children,
+  onClick,
+  pulse = true,
+  ...props
+}: ComponentProps<typeof Link> & {
+  /** false: static underline only, no pulse while pending (e.g. Venues). */
+  pulse?: boolean;
+}) {
   const [clicked, setClicked] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -54,7 +62,7 @@ export function NavLink({ children, onClick, ...props }: ComponentProps<typeof L
   return (
     <Link {...props} onClick={handleClick}>
       {children}
-      <NavPendingHint active={clicked} />
+      <NavPendingHint active={clicked} pulse={pulse} />
     </Link>
   );
 }

@@ -1,8 +1,10 @@
 import { NavLink } from "./NavPendingHint";
 
+// pulse: false → static click underline only, like the fast pages
+// (Festivals, About), even though /venues renders per request.
 const NAV = [
   { href: "/", label: "Events" },
-  { href: "/venues", label: "Venues" },
+  { href: "/venues", label: "Venues", pulse: false },
   { href: "/festivals", label: "Festivals" },
   { href: "/about", label: "About" },
 ];
@@ -22,6 +24,7 @@ export default function Header() {
             <NavLink
               key={item.href}
               href={item.href}
+              pulse={item.pulse ?? true}
               className="relative transition-colors hover:text-text-primary"
             >
               {item.label}
