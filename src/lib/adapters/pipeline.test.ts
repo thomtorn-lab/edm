@@ -1888,3 +1888,24 @@ describe("editorial-priority venues (MODULE, Den Anden Side, Hangaren, Culture B
     expect(result.holdReason).toBe("no_genre_evidence");
   });
 });
+
+describe("artist entry cleanup (QA 2026-11-15)", () => {
+  it("cleans role labels, status tails and country codes in place, keeping lineup order", () => {
+    const result = runIngestionPipeline(
+      raw({ artists: ["Trinix", "he is tall", "Efterfest: SKAI", "Dengue Dengue Dengue PE – NEW DATE", "Byetone DE"] }),
+      { venues: VENUES, existingEvents: [] },
+    );
+    expect(result.normalizedArtists).toEqual(["Trinix", "he is tall", "SKAI", "Dengue Dengue Dengue", "Byetone"]);
+  });
+
+  it("folds an entry that becomes a repeat of an earlier one, keeping the first position", () => {
+    const result = runIngestionPipeline(raw({ artists: ["SKAI", "Trinix", "Efterfest: SKAI"] }), { venues: VENUES, existingEvents: [] });
+    expect(result.normalizedArtists).toEqual(["SKAI", "Trinix"]);
+  });
+
+  it("leaves real names and undocumented shapes unchanged", () => {
+    const artists = ["Above & Beyond", "JAMIE XX", "Arcanum Collective: POSSESSED", "Black Box: TICON", "Shrek Rave"];
+    const result = runIngestionPipeline(raw({ artists }), { venues: VENUES, existingEvents: [] });
+    expect(result.normalizedArtists).toEqual(artists);
+  });
+});

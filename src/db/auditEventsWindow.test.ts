@@ -176,6 +176,17 @@ describe("toScreeningEvent", () => {
     expect(ev({ description: EN, canonical_source_id: "src-poolen" })).toMatchObject({ descriptionReadsDanish: false, withheldSourceDescription: null });
   });
 
+  it("Danish About QA (2026-11-15): reports exactly what the public queries hide, and the stored text is reported unchanged", () => {
+    const WHIPPED_7 = "Syvende udgave af klubnatten Whipped samler Matrixxman, Pamela Svart, zamara og Ctrls bag pulten til en nat med elektronisk dansemusik.";
+    const EN = "The legendary Berlin DJ returns to Refshaleøen for a long night of techno with all of their friends.";
+    const PRACTICAL_DA = "Praktisk info: Aldersgrænse: 18+.\n\nEntré";
+    const ev = (o: Partial<WindowEventRow>) => toScreeningEvent(row({ id: "e-d", start: "2026-10-17T22:00:00Z", ...o }), w, null);
+    expect(ev({ description: WHIPPED_7 })).toMatchObject({ descriptionHiddenAsDanish: true, description: shortenDescription(WHIPPED_7) });
+    expect(ev({ description: EN })).toMatchObject({ descriptionHiddenAsDanish: false });
+    expect(ev({ description: PRACTICAL_DA })).toMatchObject({ descriptionHiddenAsDanish: false });
+    expect(ev({ description: null })).toMatchObject({ descriptionHiddenAsDanish: false });
+  });
+
   it("reads withheld texts with one narrow SELECT: that change type only, event id and text only", () => {
     expect(WITHHELD_DESCRIPTIONS_SQL).toMatch(/^SELECT l\.event_id, l\.note\nFROM event_change_log l\nWHERE l\.change_type = 'withheld_description' AND l\.event_id = ANY\(\$1\)/);
     expect(WITHHELD_DESCRIPTIONS_SQL).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
@@ -451,7 +462,7 @@ describe("findGenreFieldMismatches — read-only genre-field consistency (2026-1
         countBySource: [],
         completenessCheck: "ok",
         events: [
-          { ...ev({ primaryGenre: "electronic-other", subgenres: ["house", "techno"], genreManuallySet: ["subgenres"] }), edgeFlags: [], descriptionReadsDanish: false, withheldSourceDescription: null } as never,
+          { ...ev({ primaryGenre: "electronic-other", subgenres: ["house", "techno"], genreManuallySet: ["subgenres"] }), edgeFlags: [], descriptionReadsDanish: false, descriptionHiddenAsDanish: false, withheldSourceDescription: null } as never,
         ],
         duplicateCandidates: [],
       } as never);

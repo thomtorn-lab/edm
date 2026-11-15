@@ -27,7 +27,7 @@ import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreE
 import { cachedVideoMeetsContentRules } from "./enrichment/youtubePreviewMatching";
 import { matchStoredLinksByIdentityKey, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
 import { discogsCacheKey, verifiedDiscogsProfile } from "./soundcloudEvidence/discogsSoundcloud";
-import { classifyAboutText, type AboutKind } from "./aboutContent";
+import { classifyAboutText, isDanishAboutText, type AboutKind } from "./aboutContent";
 import { isPastEvent } from "./datetime";
 import { resolveEventOverride, type EventOverrideRow } from "./eventYoutubeOverride";
 import type { DiscoveryQueueItem, DiscoveryQueueStatus, EventRecord, Source, Venue } from "./types";
@@ -159,14 +159,17 @@ async function attachVenue(eventRows: (typeof events.$inferSelect)[]): Promise<E
  * 2026-10-25): marks each event's description as about the event or only
  * practical venue information, and drops a description that is nothing but
  * bare labels with no value ("Praktisk info:.", "Entré") — see
- * src/lib/aboutContent.ts. Pure and deterministic: the stored description
- * is never changed, and every other description is passed through as is, in
- * whatever language the source wrote it. Admin queries never call this.
+ * src/lib/aboutContent.ts. Danish About text is not shown either (QA
+ * 2026-11-15, isDanishAboutText); practical information and English text
+ * are. Pure and deterministic: the stored description is never changed,
+ * and every other description is passed through as is. Admin queries never
+ * call this.
  */
 function withAboutKind(list: EventWithVenue[]): EventWithVenue[] {
   return list.map((e) => {
     const aboutKind = classifyAboutText(e.description);
-    return aboutKind === "empty" ? { ...e, description: null, aboutKind: null } : { ...e, aboutKind };
+    if (aboutKind === "empty" || isDanishAboutText(e.description)) return { ...e, description: null, aboutKind: null };
+    return { ...e, aboutKind };
   });
 }
 
@@ -293,7 +296,7 @@ export async function getUpcomingPublishedEventsForList(now: Date, venueIds?: re
       id: row.id,
       slug: row.slug,
       title: row.title,
-      description: classifyAboutText(row.description) === "empty" ? null : row.description,
+      description: classifyAboutText(row.description) === "empty" || isDanishAboutText(row.description) ? null : row.description,
       artists: row.artists,
       startDatetime: row.startDatetime.toISOString(),
       endDatetime: row.endDatetime?.toISOString() ?? null,

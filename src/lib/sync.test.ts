@@ -2021,3 +2021,30 @@ describe("buildSyncPatch — Den Anden Side room split is kept (2026-10-27)", ()
     expect(patch.description).toBe("New text.");
   });
 });
+
+describe("buildSyncPatch — artist entry cleanup reaching existing events (QA 2026-11-15)", () => {
+  const stored = ["Trinix", "he is tall", "Efterfest: SKAI"];
+  const rawPumpehuset = () =>
+    raw({ sourceId: "src-pumpehuset", title: "Trinix", venueName: "Pumpehuset", artists: [...stored] });
+
+  it("proposes the cleaned lineup for an existing event whose source still lists it", () => {
+    const candidate = rawPumpehuset();
+    const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    const { patch } = buildSyncPatch(candidate, result, target({ title: "Trinix", artists: stored }));
+    expect(patch.artists).toEqual(["Trinix", "he is tall", "SKAI"]);
+  });
+
+  it("never touches a lineup an admin has locked", () => {
+    const candidate = rawPumpehuset();
+    const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    const { patch } = buildSyncPatch(candidate, result, target({ title: "Trinix", artists: stored }));
+    expect(stripOverriddenFields(patch, ["artists"])).not.toHaveProperty("artists");
+  });
+
+  it("never rewrites an existing event's lineup from title-guessed names", () => {
+    const candidate = raw({ sourceId: "src-kultunaut", artists: ["Someone – udsolgt"], artistsGuessedFromTitle: true });
+    const result = runIngestionPipeline(candidate, { venues: VENUES, existingEvents: [] });
+    const { patch } = buildSyncPatch(candidate, result, target({ artists: ["Someone – udsolgt"] }));
+    expect(patch).not.toHaveProperty("artists");
+  });
+});

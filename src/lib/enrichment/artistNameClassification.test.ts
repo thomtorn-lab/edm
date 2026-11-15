@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyArtistName } from "./artistNameClassification";
+import { cleanArtistEntry, classifyArtistName } from "./artistNameClassification";
 
 describe("classifyArtistName — legitimate artist names are never flagged", () => {
   // Real acts whose names look like the patterns below: duo names with a
@@ -111,3 +111,52 @@ describe("classifyArtistName — computes on the matcher's own cleaned name", ()
     expect(classifyArtistName("Oliver Koletzki [Stil vor Talent]").cleanedName).toBe("Oliver Koletzki");
   });
 });
+
+describe("cleanArtistEntry — QA 2026-11-15 lineup decoration", () => {
+  it.each([
+    ["Efterfest: SKAI", "SKAI"],
+    ["Afters: Gavnlig", "Gavnlig"],
+    ["Afterparty: ELOQ", "ELOQ"],
+    ["Afterparty: Farveblind", "Farveblind"],
+    ["Preparty: Dokkedal", "Dokkedal"],
+    ["Preparty: Talons", "Talons"],
+    ["Dengue Dengue Dengue PE – NEW DATE", "Dengue Dengue Dengue"],
+    ["Dengue Dengue Dengue PE", "Dengue Dengue Dengue"],
+    ["Byetone DE", "Byetone"],
+    ["Amelie Duchow DE", "Amelie Duchow"],
+    ["Bby Eco NL", "Bby Eco"],
+    ["Jazz Lambaux FR", "Jazz Lambaux"],
+    ["La Tène FR/CH", "La Tène"],
+    ["Someone – udsolgt", "Someone"],
+  ])("%s -> %s", (raw, cleaned) => {
+    expect(cleanArtistEntry(raw)).toBe(cleaned);
+  });
+
+  it("leaves every protected real name unchanged", () => {
+    for (const name of PROTECTED_FOR_CLEANING) expect(cleanArtistEntry(name)).toBe(name);
+  });
+
+  it.each([
+    "Arcanum Collective: POSSESSED", // a colon that is not a documented role label
+    "Black Box: TICON", // room label: handled manually, not by this rule
+    "SOMEONE DE", // all caps: a two-letter tail may be part of the name
+    "Daniel Avery XY", // not a real country code
+    "Xuri & John Clewort DK & Gábor Lázár HU", // not_artist: never half-cleaned
+    "NEW DATE", // a status with no name stays as it is
+    "Sold Out Sessions", // status words without a dash separator
+    "Efterfest:", // a label with no name after it
+    "Aname (SE)", // bracketed codes are left to normalizeArtistName's identity key
+    "Shrek Rave",
+    "Electro Werkz",
+  ])("leaves %s unchanged", (name) => {
+    expect(cleanArtistEntry(name)).toBe(name);
+  });
+});
+
+const PROTECTED_FOR_CLEANING = [
+  "Above & Beyond", "Chase & Status", "Camo & Krooked", "Vini Vici", "2manydjs", "MCR-T",
+  "MCR-T [Live From Earth]", "Jamie xx", "JAMIE XX", "!!!", "Fred again..", "DJ Koze", "Kölsch", "1991",
+  "Sub Focus", "Oliver Koletzki [Stil vor Talent]", "Mac Declos (all night long)", "Jai Taylor (AU)",
+  "BORIS BREJCHA", "Trentemøller", "Omar S", "Otto Knows", "Paul Van Dyk", "I HATE MODELS", "MEUTE",
+  "¥ØU$UK€ ¥UK1MAT$U", "Infernal (DK)", "tonser",
+];

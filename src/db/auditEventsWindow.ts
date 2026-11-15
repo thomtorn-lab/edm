@@ -40,6 +40,7 @@
  * See runEventsWindowAudit.
  */
 import { readsAsDanish } from "@/lib/languageDetection";
+import { isDanishAboutText } from "@/lib/aboutContent";
 import { latestWithheldByEvent, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "@/lib/withheldDescriptions";
 import {
   addDaysToDateKey,
@@ -209,8 +210,13 @@ export interface ScreeningEvent {
    * - withheldSourceDescription: the source's own Danish text that the
    *   public site does not show (shortened like description) — kept for
    *   admin and QA, see src/lib/withheldDescriptions.ts. Null when none.
+   * - descriptionHiddenAsDanish: the public site does not show this stored
+   *   description because it is Danish About text — the exact rule the
+   *   public queries apply (src/lib/aboutContent.ts isDanishAboutText,
+   *   QA 2026-11-15). The stored text itself is unchanged.
    */
   descriptionReadsDanish: boolean;
+  descriptionHiddenAsDanish: boolean;
   withheldSourceDescription: string | null;
   edgeFlags: EdgeFlag[];
 }
@@ -280,6 +286,7 @@ export function toScreeningEvent(row: WindowEventRow, window: AuditWindow, withh
     sourceUrls: Array.from(new Set(urls)),
     description: shortenDescription(row.description),
     descriptionReadsDanish: row.description ? readsAsDanish(row.description) : false,
+    descriptionHiddenAsDanish: isDanishAboutText(row.description),
     withheldSourceDescription: shortenDescription(withheld),
     edgeFlags: edgeFlagsFor(start, window),
   };

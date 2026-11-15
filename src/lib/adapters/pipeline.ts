@@ -3,6 +3,7 @@ import type { GenreSlug } from "../taxonomy";
 import { isSelectableGenre } from "../taxonomy";
 import type { Venue } from "../types";
 import { resolveVenue, dedupeArtistList } from "../normalize";
+import { cleanArtistEntry } from "../enrichment/artistNameClassification";
 import { isDenAndenSideRoomsEnabled, isDenAndenSideVenueName, isSmallRoomVenueName, MAIN_ROOM as DAS_MAIN_ROOM, structureDenAndenSideRooms } from "../denAndenSideRooms";
 import { findBestDuplicateMatch, decideDuplicateAction, type DuplicateCandidate } from "../dedup";
 import { findBestMovedEventMatch } from "../movedEventDetection";
@@ -441,7 +442,14 @@ export function runIngestionPipeline(raw: RawCandidateEvent, options: PipelineOp
   if (raw.relevanceText) raw.relevanceText = normalizeExtractedText(raw.relevanceText);
   if (raw.structuredGenreField) raw.structuredGenreField = normalizeExtractedText(raw.structuredGenreField, { singleLine: true });
   if (raw.venueName) raw.venueName = normalizeExtractedText(raw.venueName, { singleLine: true });
-  raw.artists = raw.artists.map((a) => normalizeExtractedText(a, { singleLine: true }));
+  // ARTIST ENTRY CLEANUP (QA 2026-11-15): a documented role label
+  // ("Efterfest: SKAI"), a dash-separated status tail and a trailing country
+  // code ("Dengue Dengue Dengue PE – NEW DATE") are removed from each lineup
+  // entry, in place, so order is kept and dedupeArtistList below folds any
+  // entry that now repeats another. Conservative by design — see
+  // cleanArtistEntry. Existing events pick this up through the ordinary sync
+  // patch only, so an admin lock on artists still wins (override.ts).
+  raw.artists = raw.artists.map((a) => cleanArtistEntry(normalizeExtractedText(a, { singleLine: true })));
 
   // DEN ANDEN SIDE ROOMS (2026-10-27): the Culture Box room model for every
   // source's Den Anden Side candidates, at the same single choke point — see
