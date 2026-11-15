@@ -8,7 +8,7 @@ import { genreFilterUrlValue, parseGenreFilterUrlValue, type GenreFilterValue } 
  *
  *   /?when=weekend&genre=house&venue=culture-box&q=tim
  *
- * The page's canonical stays "/" (see src/app/(home)/page.tsx), so these views are
+ * The page's canonical stays "/" (see src/app/page.tsx), so these views are
  * never indexed as separate pages. Unknown or invalid values are ignored
  * rather than rejected — a stale or hand-edited link still opens the
  * homepage, just without that one filter (an unknown genre is reported on

@@ -15,7 +15,7 @@ import { indexableGenrePagePaths } from "@/lib/taxonomy";
 // columns, and admin_unpublish_note, all 2026-09-06/07). `revalidate = 0`
 // removes this route from the build-time prerender path entirely — the
 // same pattern already used by every other DB-touching route in this app
-// (src/app/(home)/page.tsx, venues/page.tsx, venues/[slug]/page.tsx,
+// (src/app/page.tsx, venues/page.tsx, venues/[slug]/page.tsx,
 // events/[slug]/page.tsx, admin/page.tsx) — so a lagging migration can only
 // ever 500 a single sitemap request until it lands, never block the build.
 export const revalidate = 0;

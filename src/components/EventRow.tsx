@@ -11,7 +11,7 @@ import { SITE_URL } from "@/lib/siteUrl";
 
 /**
  * hasArtistPreview (homepage VIDEO indicator work, 2026-09-26) is computed
- * once, batched, by the homepage (src/app/(home)/page.tsx) and attached to each
+ * once, batched, by the homepage (src/app/page.tsx) and attached to each
  * event object before it reaches EventExplorer/EventRow — optional so venue
  * pages (src/app/venues/[slug]/page.tsx), which don't compute it, keep
  * passing plain EventWithVenue objects unchanged and simply render no
