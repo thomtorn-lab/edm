@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { applyAdminEventEdit } from "@/db/writes";
 import { isEditableEventField } from "@/lib/override";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { HVADERPAA_OFFICIAL_URL_ERROR, isHvaderpaaUrl } from "@/lib/officialUrlPolicy";
 import { reconcileArtistsSoon } from "@/lib/artistAlerts/trigger";
 
 /**
@@ -36,6 +37,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (typeof value === "string" && !isValidHttpUrl(value)) {
       return NextResponse.json({ error: `${field}: enter a valid http(s) URL, or clear the field.` }, { status: 400 });
     }
+  }
+  // HvadErPå ban (src/lib/officialUrlPolicy.ts) — never a valid Official Event URL.
+  if (isHvaderpaaUrl((patch as Record<string, unknown>).officialEventUrl as string | null | undefined)) {
+    return NextResponse.json({ error: `officialEventUrl: ${HVADERPAA_OFFICIAL_URL_ERROR}` }, { status: 400 });
   }
 
   // Date-field type safety (unified event create/edit model addendum,

@@ -190,6 +190,15 @@ export interface RawCandidateEvent {
    */
   stableSourceUrl?: boolean;
   /**
+   * The URL recorded as this source's own source_event_links row (provenance,
+   * and what later syncs use to find an already-linked event). Defaults to
+   * officialEventUrl. Set by a source whose own page must never be the
+   * Official Event URL (HvadErPå, see src/lib/officialUrlPolicy.ts), so its
+   * page is still kept as provenance while officialEventUrl stays empty or
+   * points at the organizer/venue.
+   */
+  sourceLinkUrl?: string;
+  /**
    * Artist SoundCloud profile links the source's own listing gives for THIS
    * event (Culture Box only, see cultureBoxSoundcloudLinks.ts). `undefined`
    * means the adapter does not report links at all — the sync never touches

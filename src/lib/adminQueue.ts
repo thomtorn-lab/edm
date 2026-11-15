@@ -4,6 +4,9 @@ import { isPastEvent } from "./datetime";
 import { resolveVenue } from "./normalize";
 import type { DuplicateCandidate } from "./dedup";
 import { isManualReviewSource } from "./data/sources";
+import { allowedOfficialEventUrl } from "./officialUrlPolicy";
+
+const HVADERPAA_SOURCE_ID = "src-hvaderpaa";
 import { VENUES } from "./data/venues";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
 
@@ -51,6 +54,12 @@ export interface AdminQueueClassifiable {
   probableTitle: DiscoveryQueueItem["probableTitle"];
   detectedLineup: DiscoveryQueueItem["detectedLineup"];
   predictedGenre: DiscoveryQueueItem["predictedGenre"];
+  /**
+   * Used only by the HvadErPå missing-official-link routing below
+   * (src/lib/officialUrlPolicy.ts). Optional: a caller that omits it is
+   * treated as "no official link".
+   */
+  probableOfficialEventUrl?: DiscoveryQueueItem["probableOfficialEventUrl"];
   /** Used only by the Baggen no_genre_evidence routing exception below.
    *  Optional: a caller that omits it keeps the pre-existing routing. */
   probableVenueName?: DiscoveryQueueItem["probableVenueName"];
@@ -183,6 +192,24 @@ function hasHighPrecisionNegativeRelevanceSignal(item: AdminQueueClassifiable): 
  * that field exists at all.
  */
 export function classifyAdminQueueRow(
+  item: AdminQueueClassifiable,
+  ctx: { lastCompleteSyncAt: string | null; now: Date },
+): AdminQueueCategory {
+  const category = classifyAdminQueueRowByEvidence(item, ctx);
+  // HvadErPå without an Official Event URL (product rule, 2026-11-15 — see
+  // src/lib/officialUrlPolicy.ts): a HvadErPå candidate with no official
+  // link to the organizer, the venue or their own event page never hides in
+  // INSUFFICIENT — it is a Needs review item, so an admin can find and add
+  // the real link (or decide without one). Only INSUFFICIENT is redirected:
+  // past/stale, venue-blocked and every evidence-based rejection (including
+  // the high-precision negative-relevance rule) still apply as for any row.
+  if (category === "insufficient" && item.sourceId === HVADERPAA_SOURCE_ID && !allowedOfficialEventUrl(item.probableOfficialEventUrl)) {
+    return "needs_review";
+  }
+  return category;
+}
+
+function classifyAdminQueueRowByEvidence(
   item: AdminQueueClassifiable,
   ctx: { lastCompleteSyncAt: string | null; now: Date },
 ): AdminQueueCategory {

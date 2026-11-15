@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { allowedOfficialEventUrl } from "@/lib/officialUrlPolicy";
 import { NextRequest, NextResponse } from "next/server";
 import { getAllEventsAdmin, getDiscoveryQueueForAdmin, getVenues } from "@/lib/queries";
 import { runIngestionPipeline } from "@/lib/adapters/pipeline";
@@ -74,7 +75,10 @@ export async function POST(request: NextRequest) {
     startDatetime: null,
     endDatetime: null,
     venueName: null,
-    officialEventUrl: parsed.toString(),
+    // A pasted hvaderpaa.dk page is never an Official Event URL
+    // (src/lib/officialUrlPolicy.ts) — the field stays empty for the admin
+    // to fill with the organizer's/venue's own page.
+    officialEventUrl: allowedOfficialEventUrl(parsed.toString()),
     ticketUrl: null,
     // Facebook decision (unified event create/edit model, 2026-09-08):
     // Facebook is no longer a distinct public link role (src/lib/links.ts) —

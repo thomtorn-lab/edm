@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateDiscoveryItem } from "@/db/writes";
 import { isValidHttpUrl } from "@/lib/urlValidation";
+import { HVADERPAA_OFFICIAL_URL_ERROR, isHvaderpaaUrl } from "@/lib/officialUrlPolicy";
 
 /**
  * URL-shaped fields validated on this route (admin + public link integrity,
@@ -46,6 +47,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (typeof value === "string" && !isValidHttpUrl(value)) {
       return NextResponse.json({ error: `${field}: enter a valid http(s) URL, or clear the field.` }, { status: 400 });
     }
+  }
+  // HvadErPå ban (src/lib/officialUrlPolicy.ts) — never a valid Official Event URL.
+  if (isHvaderpaaUrl(cleaned.probableOfficialEventUrl as string | null | undefined)) {
+    return NextResponse.json({ error: `probableOfficialEventUrl: ${HVADERPAA_OFFICIAL_URL_ERROR}` }, { status: 400 });
   }
 
   try {

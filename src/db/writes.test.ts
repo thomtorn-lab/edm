@@ -1458,6 +1458,75 @@ describe("admin saves — end/start check on the values actually stored (editori
   });
 });
 
+describe("HvadErPå ban — hvaderpaa.dk is never written as an Official Event URL (2026-11-15)", () => {
+  const HVP = "https://hvaderpaa.dk/da/event/19246/";
+  const hvaderpaaPending = {
+    id: "dq-hvp-1",
+    status: "pending",
+    probableTitle: "Order Of Magnitude: Quake",
+    probableStart: new Date("2026-09-26T21:59:00Z"),
+    probableEnd: null,
+    probableSubVenue: null,
+    detectedLineup: [] as string[],
+    predictedGenre: "techno",
+    genreConfidence: "medium",
+    probableFree: false,
+    overallConfidence: "medium",
+    sourceId: "src-hvaderpaa",
+    sourceUrl: HVP,
+    suspectedDuplicateOfEventId: null,
+    probableTicketUrl: null as string | null,
+    probableOfficialEventUrl: null as string | null,
+    probableResidentAdvisorUrl: null as string | null,
+    description: null as string | null,
+    overriddenFields: [] as string[],
+  };
+  const eventInsert = () =>
+    insertValuesMock.mock.calls.find((call) => typeof call[0] === "object" && call[0] !== null && "slug" in (call[0] as object))?.[0] as
+      | Record<string, unknown>
+      | undefined;
+  const linkInsert = () =>
+    insertValuesMock.mock.calls.find((call) => typeof call[0] === "object" && call[0] !== null && "role" in (call[0] as object))?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+  beforeEach(() => {
+    updateSetMock.mockClear();
+    insertValuesMock.mockClear();
+  });
+
+  it("publishing a HvadErPå row with no organizer/venue link leaves Official Event URL empty — never the hvaderpaa page — while provenance keeps it", async () => {
+    selectResults = [[{ ...hvaderpaaPending }]];
+    await publishDiscoveryItem("dq-hvp-1", "v-den-anden-side");
+    expect(eventInsert()?.officialEventUrl).toBeNull();
+    expect(linkInsert()?.sourceUrl).toBe(HVP);
+  });
+
+  it("a legacy hvaderpaa.dk probableOfficialEventUrl on the row is ignored at publish", async () => {
+    selectResults = [[{ ...hvaderpaaPending, probableOfficialEventUrl: HVP }]];
+    await publishDiscoveryItem("dq-hvp-1", "v-den-anden-side");
+    expect(eventInsert()?.officialEventUrl).toBeNull();
+  });
+
+  it("the venue's own event page is published as the Official Event URL", async () => {
+    selectResults = [[{ ...hvaderpaaPending, probableOfficialEventUrl: "https://www.denandenside.com/events/x" }]];
+    await publishDiscoveryItem("dq-hvp-1", "v-den-anden-side");
+    expect(eventInsert()?.officialEventUrl).toBe("https://www.denandenside.com/events/x");
+  });
+
+  it("a sync clears a stored hvaderpaa.dk Official Event URL even when the field is admin-overridden", async () => {
+    selectResults = [[{ id: "e-hvp", overriddenFields: ["officialEventUrl"], officialEventUrl: HVP }]];
+    await applySourceSyncPatch("e-hvp", "src-hvaderpaa", { officialEventUrl: null });
+    expect(updateSetMock.mock.calls[0][0].officialEventUrl).toBeNull();
+  });
+
+  it("an admin-overridden real Official Event URL is still protected from the sync", async () => {
+    selectResults = [[{ id: "e-real", overriddenFields: ["officialEventUrl"], officialEventUrl: "https://organizer.example/e/1" }]];
+    await applySourceSyncPatch("e-real", "src-hvaderpaa", { officialEventUrl: null });
+    expect(updateSetMock.mock.calls[0][0]).not.toHaveProperty("officialEventUrl");
+  });
+});
+
 describe("applySourceSyncPatch — a locked start keeps the stored status (editorial screening, Gap B)", () => {
   beforeEach(() => {
     updateSetMock.mockClear();

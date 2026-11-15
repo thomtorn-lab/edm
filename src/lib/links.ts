@@ -1,6 +1,7 @@
 import type { EventRecord, Source } from "./types";
 import { getSourceById } from "./data/sources";
 import { normalizeUrl } from "./dedup";
+import { isHvaderpaaUrl } from "./officialUrlPolicy";
 
 export interface ExternalLink {
   label: string;
@@ -28,7 +29,6 @@ function hostnameOf(url: string): string | null {
   }
 }
 const RESIDENT_ADVISOR_HOSTNAMES = new Set(["ra.co"]);
-const HVADERPAA_HOSTNAMES = new Set(["hvaderpaa.dk"]);
 /**
  * Exported (RA link-integrity, 2026-10-17) so every "is this a Resident
  * Advisor URL?" check shares this exact hostname rule. A substring test like
@@ -38,10 +38,6 @@ const HVADERPAA_HOSTNAMES = new Set(["hvaderpaa.dk"]);
 export function isResidentAdvisorUrl(url: string): boolean {
   const h = hostnameOf(url);
   return h !== null && RESIDENT_ADVISOR_HOSTNAMES.has(h);
-}
-function isHvaderpaaUrl(url: string): boolean {
-  const h = hostnameOf(url);
-  return h !== null && HVADERPAA_HOSTNAMES.has(h);
 }
 
 /**

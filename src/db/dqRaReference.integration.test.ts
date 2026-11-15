@@ -87,7 +87,8 @@ const storedDq = {
   detectedLineup: ["Alarico"],
   predictedGenre: "techno",
   predictedSecondaryGenre: null as string | null,
-  probableOfficialEventUrl: "https://hvaderpaa.dk/da/event/19246/",
+  // A HvadErPå row never stores a hvaderpaa.dk Official Event URL (src/lib/officialUrlPolicy.ts).
+  probableOfficialEventUrl: null as string | null,
   probableTicketUrl: null as string | null,
   probableResidentAdvisorUrl: RA_AUTO as string | null,
   probableFree: false,
@@ -230,7 +231,7 @@ describe("#149 + #151: RA reference in the Discovery Queue", () => {
           startDatetime: null,
           endDatetime: null,
           venueName: "Den Anden Side",
-          officialEventUrl: "https://hvaderpaa.dk/da/event/19246/",
+          officialEventUrl: null,
           ticketUrl: null,
           facebookUrl: null,
           residentAdvisorUrl: RA_OTHER,
@@ -249,7 +250,7 @@ describe("#149 + #151: RA reference in the Discovery Queue", () => {
           subVenue: null,
           startDatetime: "2026-10-24T21:59:00Z",
           endDatetime: null,
-          officialEventUrl: event.officialEventUrl as string,
+          officialEventUrl: (event.officialEventUrl as string | null) ?? null,
           ticketUrl: (event.ticketUrl as string | null) ?? null,
           facebookUrl: null,
           residentAdvisorUrl: (event.residentAdvisorUrl as string | null) ?? null,
@@ -283,7 +284,7 @@ describe("#149 + #151: RA reference in the Discovery Queue", () => {
     expect(event.residentAdvisorUrl).toBe(RA_AUTO);
     expect(event.ticketUrl).toBeNull();
     const links = getExternalLinks({
-      officialEventUrl: event.officialEventUrl as string,
+      officialEventUrl: (event.officialEventUrl as string | null) ?? null,
       ticketUrl: null,
       facebookUrl: null,
       residentAdvisorUrl: RA_AUTO,

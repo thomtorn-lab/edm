@@ -7,6 +7,7 @@ import { addOverriddenFields, partitionAdminPatch, stripLockedSyncFields, type E
 import { isEndAfterStart, END_BEFORE_START_ERROR } from "../lib/datetime";
 import { assessDuplicate } from "../lib/dedup";
 import { isResidentAdvisorUrl } from "../lib/links";
+import { allowedOfficialEventUrl, isHvaderpaaUrl } from "../lib/officialUrlPolicy";
 import { planVenueCreation, type NewVenueInput } from "../lib/venueCreation";
 import type { DiscoveryQueueNotificationItem } from "../lib/discoveryNotification";
 import { shouldRecordWithheldDescription, WITHHELD_DESCRIPTION_CHANGE_TYPE } from "../lib/withheldDescriptions";
@@ -585,6 +586,12 @@ export async function applySourceSyncPatch(
   if (!existing) throw new Error(`Event ${eventId} not found`);
 
   const { safePatch, heldBack } = stripLockedSyncFields(proposedPatch, existing.overriddenFields);
+  // HvadErPå ban (src/lib/officialUrlPolicy.ts): a stored hvaderpaa.dk
+  // Official Event URL is replaced/cleared even under an admin override —
+  // the override protects an editorial choice, and this value never is one.
+  if ("officialEventUrl" in proposedPatch && isHvaderpaaUrl(existing.officialEventUrl)) {
+    (safePatch as Record<string, unknown>).officialEventUrl = allowedOfficialEventUrl(proposedPatch.officialEventUrl as string | null);
+  }
   const skippedFields = Object.keys(proposedPatch).filter((k) => !(k in safePatch));
   const lockedFields = skippedFields.filter((k) => !heldBack.includes(k));
 
@@ -699,6 +706,9 @@ export async function createEvent(input: NewEventInput, createdBy: string) {
   const { provenanceUrl, overriddenFields, ...eventFields } = input;
   await db.insert(events).values({
     ...eventFields,
+    // HvadErPå ban (src/lib/officialUrlPolicy.ts) — last line of defense on
+    // every create path.
+    officialEventUrl: allowedOfficialEventUrl(input.officialEventUrl),
     // One genre truth on every create path (sync, Discovery Queue publish,
     // admin paste): subgenres is authoritative, primaryGenre mirrors
     // subgenres[0], and an event never starts without a genre tag.
@@ -977,7 +987,11 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // decision and always wins; falling back to this row's own sourceUrl
       // (the discovery page itself) preserves every existing publish's
       // exact prior behavior when the admin never touched this field.
-      officialEventUrl: item.probableOfficialEventUrl ?? item.sourceUrl,
+      // HvadErPå ban (src/lib/officialUrlPolicy.ts): neither fallback may
+      // ever be a hvaderpaa.dk URL — the row's sourceUrl for a HvadErPå
+      // candidate is the aggregator page, so it publishes with no Official
+      // Event URL rather than that page.
+      officialEventUrl: allowedOfficialEventUrl(item.probableOfficialEventUrl) ?? allowedOfficialEventUrl(item.sourceUrl),
       ticketUrl: item.probableTicketUrl,
       // Facebook decision (unified event create/edit model, 2026-09-08):
       // Facebook is no longer a distinct public link role (see
@@ -1416,7 +1430,12 @@ export async function insertDiscoveryItem(item: {
   /** See discoveryQueue.holdReason's own doc comment. */
   holdReason?: HoldReason;
 }): Promise<DiscoveryQueueNotificationItem> {
-  await db.insert(discoveryQueue).values({ ...item, status: "pending" });
+  // HvadErPå ban (src/lib/officialUrlPolicy.ts) — never stored as the row's Official Event URL.
+  await db.insert(discoveryQueue).values({
+    ...item,
+    ...(item.probableOfficialEventUrl !== undefined ? { probableOfficialEventUrl: allowedOfficialEventUrl(item.probableOfficialEventUrl) } : {}),
+    status: "pending",
+  });
 
   // YouTube Artist Preview Discovery-stage enrichment (2026-09-26 rollout)
   // — see triggerDiscoveryEnrichment's own doc comment. Every field it needs

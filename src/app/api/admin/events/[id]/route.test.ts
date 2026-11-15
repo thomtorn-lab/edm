@@ -167,3 +167,14 @@ describe("PATCH /api/admin/events/[id] — date-field type safety (addendum, 202
     expect((forwarded.startDatetime as Date).toISOString()).toBe("2026-12-24T00:00:00.000Z");
   });
 });
+
+describe("PATCH — hvaderpaa.dk is never accepted as officialEventUrl (HvadErPå ban, 2026-11-15)", () => {
+  it.each(["https://hvaderpaa.dk/da/event/19246/", "https://www.hvaderpaa.dk/da/event/1/"])("rejects %s with 400 and never writes", async (url) => {
+    const res = await callPatch("x-1", { officialEventUrl: url });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/officialEventUrl/);
+    expect(json.error).toMatch(/hvaderpaa\.dk/);
+    expect(applyAdminEventEditMock).not.toHaveBeenCalled();
+  });
+});
