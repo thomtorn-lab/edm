@@ -11,8 +11,10 @@ const CLICK_FEEDBACK_MS = 400;
  * next/link <Link>: a thin accent underline, visible while `active` (set on
  * click by NavLink below) or while that link's navigation is pending, so
  * every header link confirms a click — fast (prefetched/static) and slow
- * (per-request) pages alike. Shows instantly, no pulse; absolutely
- * positioned so it never shifts layout.
+ * (per-request) pages alike. Shows instantly; pulses only while the
+ * navigation is still pending (data-loading), so a page that is still
+ * loading reads as "working". Absolutely positioned so it never shifts
+ * layout.
  */
 export default function NavPendingHint({ active = false }: { active?: boolean }) {
   const { pending } = useLinkStatus();
@@ -20,6 +22,7 @@ export default function NavPendingHint({ active = false }: { active?: boolean })
     <span
       aria-hidden="true"
       data-pending={active || pending ? "true" : undefined}
+      data-loading={pending ? "true" : undefined}
       className="nav-pending-hint pointer-events-none absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-accent"
     />
   );

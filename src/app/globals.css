@@ -144,8 +144,9 @@ body::before {
 }
 
 /* Header link click feedback (NavPendingHint, 2026-11-15). Hidden by
-   default; shown instantly on click and while a navigation is pending
-   (no delay, no pulse), then fades out briefly once done. */
+   default; shown instantly on click, pulsing while the navigation is still
+   pending (data-loading), then fades out briefly once done.
+   Reduced-motion: no pulse, no fade. */
 .nav-pending-hint {
   opacity: 0;
   transition: opacity 150ms ease-out;
@@ -154,8 +155,21 @@ body::before {
   opacity: 1;
   transition: none;
 }
+/* 600ms cycle down to 0.2 so the pulse is clearly visible even when the
+   wait is well under a second (a 900ms / 0.35 cycle barely dimmed before
+   the page arrived). */
+.nav-pending-hint[data-loading="true"] {
+  animation: nav-pending-pulse 600ms ease-in-out infinite;
+}
+@keyframes nav-pending-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
 @media (prefers-reduced-motion: reduce) {
   .nav-pending-hint {
     transition: none;
+  }
+  .nav-pending-hint[data-loading="true"] {
+    animation: none;
   }
 }
