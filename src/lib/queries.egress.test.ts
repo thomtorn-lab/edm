@@ -560,3 +560,43 @@ describe("public event lists (homepage, genre and venue pages) read upcoming eve
     expect(sent).toHaveLength(0);
   });
 });
+
+describe("admin-entered SoundCloud links (2026-11-15)", () => {
+  const venueLink = (eventId: string, artistName: string, url: string) =>
+    row(schema.eventSoundcloudLinks, { event_id: eventId, source_id: "src-culture-box", artist_name: artistName, url });
+  const adminLink = (eventId: string, artistName: string, url: string) =>
+    row(schema.eventAdminSoundcloudLinks, { event_id: eventId, artist_name: artistName, url });
+  const adminQueries = () => sent.filter((q) => /from "event_admin_soundcloud_links"/i.test(q.text));
+  const ADMIN_NOT_BLOCKED = /not exists \(select 1 from "soundcloud_link_blocks" where "soundcloud_link_blocks"\."url" = "event_admin_soundcloud_links"\."url"\)/;
+
+  it("event detail: shown for lineup names, and win over the venue's link for the same name", async () => {
+    tableRows.event_soundcloud_links = [venueLink("e-1", "GUY J", "https://soundcloud.com/venue-guess")];
+    tableRows.event_admin_soundcloud_links = [
+      adminLink("e-1", "GUY J", "https://soundcloud.com/guy-j"),
+      adminLink("e-1", "VEGA ARTIST", "https://soundcloud.com/vega-artist"),
+      adminLink("e-2", "OTHER", "https://soundcloud.com/other"),
+    ];
+    await expect(getSoundcloudLinksForLineup("e-1", ["VEGA ARTIST", "GUY J"])).resolves.toEqual([
+      { name: "VEGA ARTIST", url: "https://soundcloud.com/vega-artist" },
+      { name: "GUY J", url: "https://soundcloud.com/guy-j" },
+    ]);
+    const [query, ...extra] = adminQueries();
+    expect(extra).toHaveLength(0);
+    expect(query.text).toMatch(ADMIN_NOT_BLOCKED);
+    expect(query.values).toEqual(["e-1"]);
+  });
+
+  it("list pages: an admin link alone lights the AUDIO indicator, in one batched query", async () => {
+    tableRows.event_soundcloud_links = [];
+    tableRows.event_admin_soundcloud_links = [adminLink("e-2", "VEGA ARTIST", "https://soundcloud.com/vega-artist")];
+    await expect(
+      getSoundcloudAvailabilityForEvents([
+        { id: "e-1", artists: ["GUY J"] },
+        { id: "e-2", artists: ["VEGA ARTIST"] },
+      ]),
+    ).resolves.toEqual([false, true]);
+    const [query, ...extra] = adminQueries();
+    expect(extra).toHaveLength(0);
+    expect(query.values).toEqual(["e-1", "e-2"]);
+  });
+});

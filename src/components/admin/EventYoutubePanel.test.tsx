@@ -13,6 +13,8 @@ import type { EventWithVenue } from "@/lib/queries";
  */
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// Rendered next to this panel in EventManager; has its own tests.
+vi.mock("./EventSoundcloudPanel", () => ({ default: () => null }));
 
 afterEach(() => {
   cleanup();

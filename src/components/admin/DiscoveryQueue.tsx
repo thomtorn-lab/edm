@@ -10,6 +10,8 @@ import { isProtectedSubVenueName } from "@/lib/venueCreation";
 import { copenhagenDateTimeInputToIso, formatFullDateLabel, formatTimeLabel, toCopenhagenDateTimeInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
+import EventYoutubePanel from "./EventYoutubePanel";
+import EventSoundcloudPanel from "./EventSoundcloudPanel";
 
 interface Props {
   items: DiscoveryQueueItem[];
@@ -19,21 +21,62 @@ interface Props {
   emptyMessage?: string;
 }
 
+interface JustPublished {
+  eventId: string;
+  title: string;
+}
+
 export default function DiscoveryQueue({ items, venues, annotate, emptyMessage }: Props) {
-  if (items.length === 0) {
-    return <p className="text-sm text-text-secondary">{emptyMessage ?? "Queue is empty — nothing needs manual review right now."}</p>;
-  }
+  // Events published from this list in this visit (2026-11-15): the queue row
+  // disappears on publish, so the manual media step — YouTube video and
+  // artist SoundCloud links for the new event — is shown here instead.
+  const [justPublished, setJustPublished] = useState<JustPublished[]>([]);
+  const onPublished = (p: JustPublished) => setJustPublished((prev) => [p, ...prev.filter((x) => x.eventId !== p.eventId)]);
 
   return (
-    <ul>
-      {items.map((item) => (
-        <QueueRow key={item.id} item={item} venues={venues} annotation={annotate?.(item)} />
+    <>
+      {justPublished.map((p) => (
+        <div key={p.eventId} className="mb-4 space-y-3 rounded border border-accent/50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-accent-strong">
+              Published: <span className="font-semibold text-text-primary">{p.title}</span> — add a YouTube video and SoundCloud links (optional).
+            </p>
+            <button
+              type="button"
+              onClick={() => setJustPublished((prev) => prev.filter((x) => x.eventId !== p.eventId))}
+              className="rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
+            >
+              Done
+            </button>
+          </div>
+          <EventYoutubePanel eventId={p.eventId} />
+          <EventSoundcloudPanel eventId={p.eventId} />
+        </div>
       ))}
-    </ul>
+      {items.length === 0 ? (
+        <p className="text-sm text-text-secondary">{emptyMessage ?? "Queue is empty — nothing needs manual review right now."}</p>
+      ) : (
+        <ul>
+          {items.map((item) => (
+            <QueueRow key={item.id} item={item} venues={venues} annotation={annotate?.(item)} onPublished={onPublished} />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
-function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venues: Venue[]; annotation?: ReactNode }) {
+function QueueRow({
+  item,
+  venues,
+  annotation,
+  onPublished,
+}: {
+  item: DiscoveryQueueItem;
+  venues: Venue[];
+  annotation?: ReactNode;
+  onPublished?: (p: JustPublished) => void;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -157,7 +200,8 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
       setError("Pick a venue before publishing.");
       return;
     }
-    await callPost(`/api/admin/discovery/${item.id}/publish`, { venueId }, router, setBusy, setError);
+    const json = await callPost(`/api/admin/discovery/${item.id}/publish`, { venueId }, router, setBusy, setError);
+    if (json && typeof json.eventId === "string") onPublished?.({ eventId: json.eventId, title: item.probableTitle });
   }
 
   async function handleIgnore() {
@@ -529,6 +573,7 @@ function editorSnapshot(item: DiscoveryQueueItem): string {
   ]);
 }
 
+/** The JSON answer on success, null on failure (the error is already shown). */
 async function callPost(
   path: string,
   body: unknown,
@@ -543,13 +588,13 @@ async function callPost(
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(json.error ?? "Action failed.");
-      return false;
+      return null;
     }
     router.refresh();
-    return true;
+    return json as Record<string, unknown>;
   } catch {
     setError("Network error.");
-    return false;
+    return null;
   } finally {
     setBusy(false);
   }
