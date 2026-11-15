@@ -545,7 +545,7 @@ async function runSourceSyncLocked(
       // a candidate an admin already ignored, or one another owner already
       // has pending, so no existing safety check is bypassed.
       const selectiveAutoPublish =
-        isSelectiveAutoPublishCandidate(sourceId, result, raw.officialEventUrl) &&
+        isSelectiveAutoPublishCandidate(sourceId, result) &&
         !isIgnoredCandidate(dedupKey, ignoredByUrl) &&
         !otherOwnerPendingUrls.has(dedupKey);
 
@@ -588,6 +588,9 @@ async function runSourceSyncLocked(
             published: true,
             confidence: result.genreConfidence,
             canonicalSourceId: sourceId,
+            // This source's own link (provenance + later sync matching) —
+            // the HvadErPå page even when officialEventUrl is empty.
+            provenanceUrl: sourceLinkUrl,
           },
           sourceId,
         );

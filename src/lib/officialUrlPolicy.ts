@@ -7,8 +7,8 @@
  * never the organizer, the venue or their own event listing. An event
  * imported from HvadErPå must carry an official link that points directly at
  * the organizer, the venue or their own event page; when no such link
- * exists the field stays empty and the candidate is routed to Needs review
- * (see src/lib/adminQueue.ts).
+ * exists the field stays empty. A missing Official Event URL never blocks
+ * publishing or changes queue routing on its own.
  *
  * The HvadErPå page itself is still kept — as provenance only — in the
  * source's own source_event_links row and in discoveryQueue.sourceUrl, never

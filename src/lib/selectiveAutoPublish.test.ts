@@ -21,53 +21,44 @@ const qualifying: SelectiveAutoPublishInput = {
   duplicateConfidence: "none",
 };
 
-/** An Official Event URL on the organizer's/venue's own site (never hvaderpaa.dk). */
-const OFFICIAL = "https://jolene.example/events/1";
-
 describe("isSelectiveAutoPublishCandidate — rule", () => {
-  it("no Official Event URL, or a hvaderpaa.dk one, is never auto-published — it stays in Needs review (HvadErPå ban, 2026-11-15)", () => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", qualifying, null)).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", qualifying, "https://hvaderpaa.dk/da/event/1/")).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", qualifying, "https://www.hvaderpaa.dk/da/event/1/")).toBe(false);
-  });
-
   it.each(["v-den-anden-side", "v-module", "v-jolene", "v-baggen"])("HvadErPå at %s with strong relevance, a genre and no duplicate qualifies", (venue) => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: venue }, OFFICIAL)).toBe(true);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: venue })).toBe(true);
   });
 
   it("a specific genre and an auto_publish decision also qualify", () => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, genre: "techno", decision: "auto_publish" }, OFFICIAL)).toBe(true);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, genre: "techno", decision: "auto_publish" })).toBe(true);
   });
 
   it("Electronic / Other is accepted only alongside strong relevance", () => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, genre: "electronic-other", relevance: "weak" }, OFFICIAL)).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, genre: "electronic-other", relevance: "weak" })).toBe(false);
   });
 
   it("never a hold decision (e.g. Baggen no_genre_evidence)", () => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, decision: "hold", genre: null, resolvedVenueId: "v-baggen" }, OFFICIAL)).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, decision: "hold" }, OFFICIAL)).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, decision: "hold", genre: null, resolvedVenueId: "v-baggen" })).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, decision: "hold" })).toBe(false);
   });
 
   it("no genre, weak or no relevance -> not eligible", () => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, genre: null }, OFFICIAL)).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, relevance: "weak" }, OFFICIAL)).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, relevance: "none" }, OFFICIAL)).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, genre: null })).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, relevance: "weak" })).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, relevance: "none" })).toBe(false);
   });
 
   it.each(["high", "medium", "low"] as const)("any possible duplicate (%s) -> not eligible", (confidence) => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, duplicateOfEventId: "e-1", duplicateConfidence: confidence }, OFFICIAL)).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, duplicateOfEventId: "e-1", duplicateConfidence: confidence })).toBe(false);
   });
 
   it("unresolved venue or any venue outside the four -> not eligible", () => {
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: null }, OFFICIAL)).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: "v-vega" }, OFFICIAL)).toBe(false);
-    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: "v-culture-box" }, OFFICIAL)).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: null })).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: "v-vega" })).toBe(false);
+    expect(isSelectiveAutoPublishCandidate("src-hvaderpaa", { ...qualifying, resolvedVenueId: "v-culture-box" })).toBe(false);
   });
 
   it.each(["src-kultunaut", "src-pylonen", "src-culture-box", "src-billetto", "src-alice", "src-klub-werkstatt"])(
     "other sources are never affected, even with an otherwise-qualifying result (%s)",
     (source) => {
-      expect(isSelectiveAutoPublishCandidate(source, qualifying, OFFICIAL)).toBe(false);
+      expect(isSelectiveAutoPublishCandidate(source, qualifying)).toBe(false);
     },
   );
 });
@@ -84,8 +75,7 @@ function hvaderpaa(overrides: Partial<RawCandidateEvent>): RawCandidateEvent {
     startDatetime: "2026-11-20T23:00:00+01:00",
     endDatetime: "2026-11-21T05:00:00+01:00",
     venueName: "Jolene",
-    // The organizer's/venue's own event page — never the hvaderpaa.dk page.
-    officialEventUrl: (overrides.sourceUrl ?? "https://hvaderpaa.dk/da/event/1/").replace("https://hvaderpaa.dk/da/event/", "https://jolene.example/events/"),
+    officialEventUrl: overrides.sourceUrl ?? "https://hvaderpaa.dk/da/event/1/",
     ticketUrl: null,
     facebookUrl: null,
     residentAdvisorUrl: null,
@@ -99,7 +89,7 @@ function hvaderpaa(overrides: Partial<RawCandidateEvent>): RawCandidateEvent {
 
 function eligible(raw: RawCandidateEvent, existingEvents: ExistingEventForDedup[] = []) {
   const result = runIngestionPipeline(raw, { venues: VENUES, existingEvents });
-  return { result, eligible: isSelectiveAutoPublishCandidate("src-hvaderpaa", result, raw.officialEventUrl) };
+  return { result, eligible: isSelectiveAutoPublishCandidate("src-hvaderpaa", result) };
 }
 
 function asExisting(raw: RawCandidateEvent, id: string, artists: string[]): ExistingEventForDedup {
@@ -146,6 +136,20 @@ describe("selective auto-publish — real pipeline cases", () => {
       }),
     );
     expect(result.relevance).toBe("strong");
+    expect(ok).toBe(true);
+  });
+
+  it("a missing Official Event URL (the HvadErPå adapter never sets a hvaderpaa.dk one) does not block eligibility", () => {
+    const { eligible: ok } = eligible(
+      hvaderpaa({
+        title: "Some Traces Of House",
+        artists: ["Mendon", "DJ HNRKSN"],
+        description: "A night of deep house and techno on the Jolene dancefloor.",
+        genreHint: "house",
+        genreConfidenceHint: "medium",
+        officialEventUrl: null,
+      }),
+    );
     expect(ok).toBe(true);
   });
 

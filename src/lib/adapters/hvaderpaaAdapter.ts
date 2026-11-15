@@ -81,8 +81,8 @@ import { isHvaderpaaUrl } from "../officialUrlPolicy";
  * src/lib/officialUrlPolicy.ts): a hvaderpaa.dk URL is NEVER officialEventUrl.
  * The field is only set when offers.url points at the event's own venue's
  * website (the venue registry's websiteUrl host — a first-party page);
- * otherwise it stays null and the candidate lands in Needs review
- * (src/lib/adminQueue.ts). The hvaderpaa event page is still this source's
+ * otherwise it stays null (publishing and queue routing are unaffected).
+ * The hvaderpaa event page is still this source's
  * stable identity (sourceUrl + stableSourceUrl) and its provenance link
  * (sourceLinkUrl) — never an official link.
  *
@@ -442,7 +442,7 @@ export function parseEventJsonLd(html: string, eventUrl: string, venueDescriptio
     endDatetime,
     venueName,
     // Never a hvaderpaa.dk URL (HvadErPå ban, 2026-11-15): the venue's own
-    // page when offers.url is one, otherwise null -> Needs review.
+    // page when offers.url is one, otherwise null.
     officialEventUrl,
     ticketUrl,
     facebookUrl: null,

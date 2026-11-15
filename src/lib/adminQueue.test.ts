@@ -1105,16 +1105,7 @@ describe("classifyAdminQueueRow — Baggen no_genre_evidence routing (2026-11-13
   // Shape of the three real Production rows (src-hvaderpaa, pending, low,
   // no_genre_evidence, predictedGenre null) observed via inspect-source.
   const baggen = (overrides: Partial<AdminQueueClassifiable> = {}) =>
-    row({
-      sourceId: "src-hvaderpaa",
-      holdReason: "no_genre_evidence",
-      overallConfidence: "low",
-      probableVenueName: "Baggen",
-      // An organizer/venue link, so these cases test the Baggen rule alone —
-      // the missing-official-link rule has its own describe block below.
-      probableOfficialEventUrl: "https://organizer.example/events/1",
-      ...overrides,
-    });
+    row({ sourceId: "src-hvaderpaa", holdReason: "no_genre_evidence", overallConfidence: "low", probableVenueName: "Baggen", ...overrides });
 
   it.each(["DNMI", "MWAH x MASIV", "Ikigai presents Raresh"])("Production row %s -> NEEDS_REVIEW", (title) => {
     expect(classifyAdminQueueRow(baggen({ probableTitle: title }), SYNC)).toBe("needs_review");
@@ -1162,36 +1153,5 @@ describe("classifyAdminQueueRow — Baggen no_genre_evidence routing (2026-11-13
     );
     expect(groups.needs_review.map((r) => r.probableTitle)).toEqual(["DNMI"]);
     expect(groups.insufficient).toEqual([]);
-  });
-});
-
-describe("classifyAdminQueueRow — HvadErPå without an Official Event URL goes to Needs review (2026-11-15)", () => {
-  const hvaderpaa = (overrides: Partial<AdminQueueClassifiable> = {}) =>
-    row({ sourceId: "src-hvaderpaa", holdReason: "no_genre_evidence", overallConfidence: "low", probableVenueName: "Jolene", ...overrides });
-
-  it("an otherwise-insufficient HvadErPå row with no official link -> NEEDS_REVIEW", () => {
-    expect(classifyAdminQueueRow(hvaderpaa({ probableOfficialEventUrl: null }), SYNC)).toBe("needs_review");
-    expect(classifyAdminQueueRow(hvaderpaa({ probableOfficialEventUrl: undefined }), SYNC)).toBe("needs_review");
-    expect(classifyAdminQueueRow(hvaderpaa({ holdReason: "incomplete_data", probableOfficialEventUrl: null }), SYNC)).toBe("needs_review");
-  });
-
-  it("a stored hvaderpaa.dk URL never counts as an official link", () => {
-    expect(classifyAdminQueueRow(hvaderpaa({ probableOfficialEventUrl: "https://hvaderpaa.dk/da/event/1/" }), SYNC)).toBe("needs_review");
-  });
-
-  it("with a real organizer/venue link the normal routing applies", () => {
-    expect(classifyAdminQueueRow(hvaderpaa({ probableOfficialEventUrl: "https://organizer.example/e/1" }), SYNC)).toBe("insufficient");
-  });
-
-  it("past/stale and evidence-based rejections still win", () => {
-    expect(classifyAdminQueueRow(hvaderpaa({ holdReason: "negative_relevance" }), SYNC)).toBe("rejected");
-    expect(classifyAdminQueueRow(hvaderpaa({ probableTitle: "Guided meditation evening" }), SYNC)).toBe("rejected");
-    expect(
-      classifyAdminQueueRow(hvaderpaa({ probableStart: "2026-09-01T22:00:00+02:00", probableEnd: "2026-09-02T04:00:00+02:00" }), SYNC),
-    ).toBe("past_stale");
-  });
-
-  it("other sources are unaffected", () => {
-    expect(classifyAdminQueueRow(hvaderpaa({ sourceId: "src-kultunaut" }), SYNC)).toBe("insufficient");
   });
 });

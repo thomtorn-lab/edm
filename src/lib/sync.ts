@@ -285,11 +285,7 @@ export interface SyncMatch {
  *     context alone only ever yields "weak", see assessRelevance);
  *   - a genre resolved (the generic "electronic-other" is allowed when the
  *     strong relevance is documented but no specific subgenre is);
- *   - no possible duplicate at all (duplicateConfidence "none");
- *   - an Official Event URL that points directly at the organizer/venue or
- *     their own event page (HvadErPå ban, 2026-11-15 — see
- *     src/lib/officialUrlPolicy.ts). Without one, the candidate is never
- *     auto-published and stays in Needs review.
+ *   - no possible duplicate at all (duplicateConfidence "none").
  * The caller additionally refuses admin-ignored and other-owner-pending
  * candidates and keeps every existing venue/date/cancellation guard.
  */
@@ -306,14 +302,9 @@ export interface SelectiveAutoPublishInput {
   duplicateConfidence: DuplicateConfidence;
 }
 
-export function isSelectiveAutoPublishCandidate(
-  sourceId: string,
-  result: SelectiveAutoPublishInput,
-  officialEventUrl: string | null,
-): boolean {
+export function isSelectiveAutoPublishCandidate(sourceId: string, result: SelectiveAutoPublishInput): boolean {
   const venues = SELECTIVE_AUTO_PUBLISH_VENUES[sourceId];
   if (!venues) return false;
-  if (!allowedOfficialEventUrl(officialEventUrl)) return false;
   if (result.decision !== "review_queue" && result.decision !== "auto_publish") return false;
   if (result.relevance !== "strong") return false;
   if (result.genre == null) return false;
