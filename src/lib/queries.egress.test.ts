@@ -245,7 +245,8 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
     ]);
     const [query, ...extra] = soundcloudQueries();
     expect(extra).toHaveLength(0);
-    expect(selectedColumns(query.text)).toEqual(["artist_name", "url"]);
+    // source_id: a manual admin link (ADMIN_SOUNDCLOUD_SOURCE_ID) is ordered to win (2026-11-16).
+    expect(selectedColumns(query.text)).toEqual(["artist_name", "url", "source_id"]);
     expect(query.text).toMatch(/"event_soundcloud_links"\."event_id" = \$1/);
     expect(query.text).toMatch(NOT_BLOCKED);
     expect(query.values).toEqual(["e-1"]);
@@ -291,7 +292,9 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
       expect(selectedColumns(viaAppearances.text)).toEqual(["event_id", "lineup_entry", "lineup_entry", "url"]);
       expect(viaAppearances.text).toMatch(/inner join "artists" on \("artists"\."id" = "here"\."artist_id" and "artists"\."merged_into_id" is null and "artists"\."status" <> \$\d+\)/);
       expect(viaAppearances.text).toMatch(/inner join "event_artists" "other" on \("other"\."artist_id" = "here"\."artist_id" and "other"\."confidence" in \(\$\d+, \$\d+\) and "other"\."removed_at" is null\)/);
-      expect(viaAppearances.text).toMatch(/inner join "event_soundcloud_links" on \("event_soundcloud_links"\."event_id" = "other"\."event_id" and "event_soundcloud_links"\."artist_name" = "other"\."lineup_entry"\)/);
+      // Manual admin links (2026-11-16) are never reused on another event.
+      expect(viaAppearances.text).toMatch(/inner join "event_soundcloud_links" on \("event_soundcloud_links"\."event_id" = "other"\."event_id" and "event_soundcloud_links"\."artist_name" = "other"\."lineup_entry" and "event_soundcloud_links"\."source_id" <> \$\d+\)/);
+      expect(viaAppearances.values).toContain("src-admin-manual");
       expect(viaAppearances.text).toMatch(/"here"\."event_id" in \(\$\d+\) and "here"\."confidence" in \(\$\d+, \$\d+\) and "here"\."removed_at" is null/);
       expect(viaAppearances.text).toMatch(NOT_BLOCKED);
       expect(viaAppearances.values).toEqual(expect.arrayContaining(["rejected", "high", "confirmed", "e-1"]));

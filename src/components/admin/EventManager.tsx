@@ -9,6 +9,7 @@ import { isValidHttpUrl } from "@/lib/urlValidation";
 import { eventGenreTags } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 import EventYoutubePanel from "./EventYoutubePanel";
+import EventSoundcloudPanel from "./EventSoundcloudPanel";
 
 /** UNPUBLISH reasons offered in the admin UI (admin unpublish/cancellation
  *  safety, 2026-09-06) — must stay in sync with AdminUnpublishReason. */
@@ -442,6 +443,7 @@ function EventRow({ event, venues, withheldDescription }: { event: EventWithVenu
             </button>
           </div>
           <EventYoutubePanel eventId={event.id} />
+          <EventSoundcloudPanel eventId={event.id} />
         </div>
       )}
       {error && <p className="mt-2 text-xs text-status-bad">{error}</p>}

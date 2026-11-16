@@ -13,6 +13,8 @@ import type { EventWithVenue } from "@/lib/queries";
  */
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// The SoundCloud panel in the same edit view has its own tests (EventSoundcloudPanel.test.tsx).
+vi.mock("./EventSoundcloudPanel", () => ({ default: () => null }));
 
 afterEach(() => {
   cleanup();

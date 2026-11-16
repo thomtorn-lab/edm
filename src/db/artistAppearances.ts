@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gt, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "./client";
 import { alertFollows, artists, eventArtists, events, eventSoundcloudLinks, soundcloudLinkBlocks, venues } from "./schema";
 import { artistIdentityKey } from "../lib/artistIdentity/lineupIdentity";
 import { reconcileAppearances, type ReconcileAppearance, type ReconcileArtist, type Confidence } from "../lib/artistIdentity/reconcile";
+import { ADMIN_SOUNDCLOUD_SOURCE_ID } from "../lib/soundcloudLinks";
 
 /**
  * Postgres wiring for the appearance reconciler (src/lib/artistIdentity/
@@ -84,7 +85,12 @@ async function reconcileInTransaction(tx: Tx, now: Date, followedReview: Followe
   const publicEvents = await tx.select({ id: events.id, title: events.title, artists: events.artists }).from(events).where(publicUpcomingEventCondition(now));
   const artistRows = await tx.select().from(artists);
   const appearanceRows = await tx.select().from(eventArtists);
-  const linkRows = await tx.select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url }).from(eventSoundcloudLinks);
+  // Source links only: a manual admin link (src/lib/soundcloudLinks.ts ADMIN_SOUNDCLOUD_SOURCE_ID) is
+  // display for its own event, never identity evidence — Artist Alerts sees exactly what it saw before.
+  const linkRows = await tx
+    .select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
+    .from(eventSoundcloudLinks)
+    .where(ne(eventSoundcloudLinks.sourceId, ADMIN_SOUNDCLOUD_SOURCE_ID));
   const blockRows = await tx.select({ url: soundcloudLinkBlocks.url }).from(soundcloudLinkBlocks);
   const venueRows = await tx.select({ name: venues.name, aliases: venues.aliases, rooms: venues.rooms }).from(venues);
   const blocked = new Set(blockRows.map((b) => b.url));

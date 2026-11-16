@@ -13,6 +13,7 @@ vi.mock("next/navigation", () => ({
 // own tests (EventYoutubePanel.test.tsx) and is stubbed here so the fetch
 // assertions below only see the event form's own requests.
 vi.mock("./EventYoutubePanel", () => ({ default: () => null }));
+vi.mock("./EventSoundcloudPanel", () => ({ default: () => null }));
 
 afterEach(() => {
   cleanup();

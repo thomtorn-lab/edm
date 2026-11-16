@@ -140,3 +140,18 @@ export function matchStoredLinksByIdentityKey(
     stored.filter((s) => artistIdentityKey(s.artistName) === a.nameKey).map((s) => ({ eventId: a.eventId, lineupEntry: a.lineupEntry, otherEntry: s.artistName, url: s.url })),
   );
 }
+
+/**
+ * The source id of SoundCloud links an admin set by hand on one event
+ * (2026-11-16). Stored in event_soundcloud_links like a venue's links, under
+ * this one inactive source row that no adapter ever syncs, so no sync can
+ * overwrite or delete them (every sync only touches its own source's rows).
+ * Manual links apply to their own event only: the cross-event reuse and
+ * Artist Alerts' identity input leave them out.
+ */
+export const ADMIN_SOUNDCLOUD_SOURCE_ID = "src-admin-manual";
+
+/** An event's own link rows ordered so a manual link wins: selectLineupSoundcloudLinks keeps the last URL per name. */
+export function withManualLinksLast<T extends { sourceId: string }>(rows: T[]): T[] {
+  return [...rows.filter((r) => r.sourceId !== ADMIN_SOUNDCLOUD_SOURCE_ID), ...rows.filter((r) => r.sourceId === ADMIN_SOUNDCLOUD_SOURCE_ID)];
+}
