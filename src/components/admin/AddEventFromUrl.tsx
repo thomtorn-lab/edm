@@ -12,6 +12,7 @@ import { copenhagenDateTimeInputToIso, toCopenhagenDateTimeInput } from "@/lib/f
 import { getGenre, isGenreSlug } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 import EventYoutubePanel from "./EventYoutubePanel";
+import EventSoundcloudPanel from "./EventSoundcloudPanel";
 
 interface ExtractResponse {
   raw: RawCandidateEvent;
@@ -252,8 +253,9 @@ export default function AddEventFromUrl() {
                 Published directly (high confidence, complete record) —{" "}
                 <Link href={`/events/${data.persisted.id}`} className="underline">view on the site</Link>.
               </p>
-              {/* The existing manual YouTube choice, available right away (same panel as "All events"). */}
+              {/* The existing YouTube and SoundCloud panels, available right away (same panels as "All events"). */}
               <EventYoutubePanel eventId={data.persisted.id} />
+              <EventSoundcloudPanel eventId={data.persisted.id} />
             </>
           ) : (
             <p className="mt-3 text-xs text-text-secondary">

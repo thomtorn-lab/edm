@@ -4,6 +4,7 @@ import { events, eventSoundcloudLinks, soundcloudLinkBlocks, sources } from "./s
 import { soundcloudProfileUrl } from "@/lib/adapters/cultureBoxSoundcloudLinks";
 import { ADMIN_SOUNDCLOUD_SOURCE_ID } from "@/lib/soundcloudLinks";
 import { SITE_URL } from "@/lib/siteUrl";
+import { getReusedSoundcloudLinksForEvent } from "@/lib/queries";
 
 /**
  * Manual SoundCloud profile links per lineup artist, set in the event's
@@ -33,8 +34,14 @@ export interface EventSoundcloudArtistState {
   name: string;
   /** The admin's link for this event, or null. */
   manualUrl: string | null;
-  /** A source's own link for this name on this event (shown when there is no manual one), or null. */
+  /**
+   * The automatic link the public page uses when there is no manual one: the
+   * source's own link on this event, else a profile reused from another
+   * event (same rules as getSoundcloudLinksForLineup). Null when none.
+   */
   automaticUrl: string | null;
+  /** Where automaticUrl comes from: this event's source, or reused from another event / Discogs. Null when there is none. */
+  automaticFrom: "event-source" | "reused" | null;
   /** True when the manual link's profile is on the block list (it is not shown). */
   manualBlocked: boolean;
 }
@@ -90,14 +97,24 @@ export async function getEventSoundcloudAdminState(eventId: string): Promise<Eve
   const blocked = new Set(
     (await db.select({ url: soundcloudLinkBlocks.url }).from(soundcloudLinkBlocks)).map((b) => b.url),
   );
+  const sourceLink = (name: string) => rows.find((r) => r.artistName === name && r.sourceId !== ADMIN_SOUNDCLOUD_SOURCE_ID && !blocked.has(r.url)) ?? null;
+  // Reuse runs only when a name lacks its own source link, like the page.
+  const reused = lineup.some((name) => !sourceLink(name)) ? await getReusedSoundcloudLinksForEvent(eventId) : [];
   const seen = new Set<string>();
   const artists: EventSoundcloudArtistState[] = [];
   for (const name of lineup) {
     if (seen.has(name)) continue;
     seen.add(name);
     const manual = rows.find((r) => r.artistName === name && r.sourceId === ADMIN_SOUNDCLOUD_SOURCE_ID) ?? null;
-    const automatic = rows.find((r) => r.artistName === name && r.sourceId !== ADMIN_SOUNDCLOUD_SOURCE_ID && !blocked.has(r.url)) ?? null;
-    artists.push({ name, manualUrl: manual?.url ?? null, automaticUrl: automatic?.url ?? null, manualBlocked: manual ? blocked.has(manual.url) : false });
+    const own = sourceLink(name);
+    const reusedUrl = own ? null : (reused.find((r) => r.artistName === name)?.url ?? null);
+    artists.push({
+      name,
+      manualUrl: manual?.url ?? null,
+      automaticUrl: own?.url ?? reusedUrl,
+      automaticFrom: own ? "event-source" : reusedUrl ? "reused" : null,
+      manualBlocked: manual ? blocked.has(manual.url) : false,
+    });
   }
   return { eventId, artists };
 }

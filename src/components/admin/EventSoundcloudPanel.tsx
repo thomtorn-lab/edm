@@ -15,6 +15,11 @@ const buttonCls =
   "rounded border border-border-strong px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary hover:border-accent-dim hover:text-text-primary disabled:opacity-50";
 const inputCls = "w-full rounded border border-border-strong bg-surface-1 px-2 py-1 text-xs text-text-primary";
 const LOAD_FAILED = "Couldn't load this event's SoundCloud links.";
+/** The public page shows the automatic link when there is no manual one. */
+const AUTOMATIC_LABEL: Record<"event-source" | "reused", string> = {
+  "event-source": "Automatic (from this event's source)",
+  reused: "Automatic (reused from another event or Discogs)",
+};
 
 function ProfileLink({ url }: { url: string }) {
   return (
@@ -52,7 +57,7 @@ function ArtistRow({
           </>
         ) : artist.automaticUrl ? (
           <>
-            Automatic: <ProfileLink url={artist.automaticUrl} />
+            {AUTOMATIC_LABEL[artist.automaticFrom ?? "event-source"]}: <ProfileLink url={artist.automaticUrl} />
           </>
         ) : (
           "No link"
@@ -102,6 +107,8 @@ export default function EventSoundcloudPanel({ eventId }: { eventId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const url = `/api/admin/events/${eventId}/soundcloud`;
+  // Bumped by Reload to re-read the links (e.g. once automatic matching has finished after publishing).
+  const [reloads, setReloads] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -117,7 +124,14 @@ export default function EventSoundcloudPanel({ eventId }: { eventId: string }) {
     return () => {
       active = false;
     };
-  }, [url]);
+  }, [url, reloads]);
+
+  function reload() {
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    setReloads((n) => n + 1);
+  }
 
   async function send(method: "PUT" | "DELETE", body: unknown, done: string): Promise<boolean> {
     setBusy(true);
@@ -143,7 +157,12 @@ export default function EventSoundcloudPanel({ eventId }: { eventId: string }) {
 
   return (
     <section aria-label="SoundCloud links" className="space-y-2 rounded border border-border p-3">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">SoundCloud links</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">SoundCloud links</h3>
+        <button type="button" disabled={busy || loading} onClick={reload} className={buttonCls}>
+          Reload SoundCloud links
+        </button>
+      </div>
       <p className="text-[11px] text-text-tertiary">A manual link applies to this event only, replaces the automatic one, and is never changed by sync.</p>
       {loading && <p className="text-xs text-text-secondary">Loading…</p>}
       {state && state.artists.length === 0 && <p className="text-xs text-text-secondary">This event has no lineup.</p>}
