@@ -233,3 +233,15 @@ describe("EventManager integration", () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("e-bbbbbbbb"))).toBe(false);
   });
 });
+
+describe("EventYoutubePanel — Reload (2026-11-16)", () => {
+  it("re-reads the state without saving anything, e.g. once automatic matching has finished after publishing", async () => {
+    const fetchMock = stubFetch(ok({ ...AUTO, shown: null, autoMatch: null }), ok(AUTO));
+    render(<EventYoutubePanel eventId="e-1" />);
+    await status();
+    expect(screen.getByText("no video")).toBeTruthy();
+    fireEvent.click(button("Reload YouTube status"));
+    expect(await screen.findByRole("link", { name: "Auto set" })).toBeTruthy();
+    expect(fetchMock.mock.calls).toEqual([["/api/admin/events/e-1/youtube"], ["/api/admin/events/e-1/youtube"]]);
+  });
+});

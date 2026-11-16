@@ -137,6 +137,10 @@ export default function EventYoutubePanel({ eventId }: { eventId: string }) {
             {STATUS_LABEL[state.status]}
           </span>
         )}
+        {/* Re-reads the state, e.g. once automatic matching has finished after publishing. */}
+        <button type="button" disabled={busy || loading} onClick={retry} className={buttonCls}>
+          Reload YouTube status
+        </button>
       </div>
 
       {loading && !state && <p className="text-xs text-text-tertiary">Loading…</p>}

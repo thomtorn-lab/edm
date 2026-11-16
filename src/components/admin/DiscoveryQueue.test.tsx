@@ -13,6 +13,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("./EventYoutubePanel", () => ({
   default: ({ eventId }: { eventId: string }) => <div data-testid="youtube-panel">{eventId}</div>,
 }));
+vi.mock("./EventSoundcloudPanel", () => ({
+  default: ({ eventId }: { eventId: string }) => <div data-testid="soundcloud-panel">{eventId}</div>,
+}));
 
 afterEach(() => {
   cleanup();
@@ -744,6 +747,7 @@ describe("DiscoveryQueue — manual YouTube choice right after publishing", () =
     expect(screen.queryByTestId("youtube-panel")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     expect((await screen.findByTestId("youtube-panel")).textContent).toBe("e-new");
+    expect(screen.getByTestId("soundcloud-panel").textContent).toBe("e-new");
   });
 
   it("keeps the panel when the published item was the last one in the queue", async () => {
@@ -762,5 +766,6 @@ describe("DiscoveryQueue — manual YouTube choice right after publishing", () =
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     await screen.findByText("Publish failed");
     expect(screen.queryByTestId("youtube-panel")).toBeNull();
+    expect(screen.queryByTestId("soundcloud-panel")).toBeNull();
   });
 });

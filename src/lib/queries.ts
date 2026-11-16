@@ -716,6 +716,22 @@ async function reusedSoundcloudRows(eventIds: string[]) {
 }
 
 /**
+ * The profiles the event page reuses for this event's lineup from other
+ * events (Artist Alerts identities, identity key, Discogs) — exactly the
+ * rows getSoundcloudLinksForLineup falls back to, for the admin
+ * SoundCloud panel (2026-11-16), so it shows what the public page shows.
+ * A failure degrades to no reused links, like the page.
+ */
+export async function getReusedSoundcloudLinksForEvent(eventId: string): Promise<{ artistName: string; url: string }[]> {
+  try {
+    return selectReusedSoundcloudProfiles(await reusedSoundcloudRows([eventId]));
+  } catch (err) {
+    console.error(`[soundcloud-links] reuse lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+/**
  * Artist SoundCloud links for the event-detail page: the venue-provided
  * links stored for this event (2026-10-13), plus, for lineup names without
  * one, the single verified profile Artist Alerts' identity model ties to the

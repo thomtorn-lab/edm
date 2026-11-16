@@ -11,6 +11,7 @@ import { copenhagenDateTimeInputToIso, formatFullDateLabel, formatTimeLabel, toC
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
 import EventYoutubePanel from "./EventYoutubePanel";
+import EventSoundcloudPanel from "./EventSoundcloudPanel";
 
 interface Props {
   items: DiscoveryQueueItem[];
@@ -28,8 +29,8 @@ interface JustPublished {
 
 export default function DiscoveryQueue({ items, venues, annotate, emptyMessage }: Props) {
   // The published row leaves the queue on refresh, so the existing manual
-  // YouTube panel (EventYoutubePanel, unchanged) is shown here instead —
-  // the same panel "All events" shows for this event later.
+  // YouTube and SoundCloud panels are shown here instead — the same panels
+  // "All events" shows for this event later.
   const [justPublished, setJustPublished] = useState<JustPublished[]>([]);
   const onPublished = (p: JustPublished) => setJustPublished((prev) => [p, ...prev.filter((x) => x.eventId !== p.eventId)]);
 
@@ -38,9 +39,10 @@ export default function DiscoveryQueue({ items, venues, annotate, emptyMessage }
       {justPublished.map((p) => (
         <div key={p.eventId} className="mb-3 rounded border border-accent/40 p-3">
           <p className="text-xs text-accent-strong">
-            Published: <span className="font-semibold">{p.title}</span> — choose its YouTube video now, or later under &ldquo;All events&rdquo;.
+            Published: <span className="font-semibold">{p.title}</span> — check or set its YouTube video and SoundCloud links now, or later under &ldquo;All events&rdquo;.
           </p>
           <EventYoutubePanel eventId={p.eventId} />
+          <EventSoundcloudPanel eventId={p.eventId} />
         </div>
       ))}
       {items.length === 0 ? (

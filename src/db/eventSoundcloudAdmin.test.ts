@@ -25,6 +25,9 @@ const fakeClient = {
 };
 
 vi.mock("./client", () => ({ db: drizzle({ client: fakeClient as never, schema }) }));
+// The public page's reuse lookup (tested in queries.egress.test.ts); mocked so only this module's SQL is sent here.
+const getReusedSoundcloudLinksForEvent = vi.fn(async (): Promise<{ artistName: string; url: string }[]> => []);
+vi.mock("@/lib/queries", () => ({ getReusedSoundcloudLinksForEvent }));
 
 const { getEventSoundcloudAdminState, setManualSoundcloudLink, removeManualSoundcloudLink, EventSoundcloudAdminError } = await import("./eventSoundcloudAdmin");
 
@@ -35,6 +38,8 @@ const writes = () => sent.filter((q) => !/^select /i.test(q.text));
 beforeEach(() => {
   sent.length = 0;
   selectResults = [];
+  getReusedSoundcloudLinksForEvent.mockClear();
+  getReusedSoundcloudLinksForEvent.mockResolvedValue([]);
 });
 
 describe("setManualSoundcloudLink — add", () => {
@@ -49,7 +54,7 @@ describe("setManualSoundcloudLink — add", () => {
     expect(sourceInsert.values).toContain(false); // active: false — never synced
     expect(linkUpsert.text).toMatch(/^insert into "event_soundcloud_links" .* on conflict \("event_id","source_id","artist_name"\) do update set "url" = excluded\.url/);
     expect(linkUpsert.values.slice(0, 4)).toEqual(["e-1", "src-admin-manual", "TICON", "https://soundcloud.com/ticon"]);
-    expect(state.artists[0]).toEqual({ name: "TICON", manualUrl: "https://soundcloud.com/ticon", automaticUrl: null, manualBlocked: false });
+    expect(state.artists[0]).toEqual({ name: "TICON", manualUrl: "https://soundcloud.com/ticon", automaticUrl: null, automaticFrom: null, manualBlocked: false });
   });
 
   it("refuses a name that is not in this event's lineup, without writing", async () => {
@@ -100,7 +105,7 @@ describe("removeManualSoundcloudLink", () => {
     );
     expect(del.values).toEqual(["e-1", "src-admin-manual", "TICON"]);
     expect(writes()).toHaveLength(1);
-    expect(state.artists[0]).toEqual({ name: "TICON", manualUrl: null, automaticUrl: "https://soundcloud.com/ticon", manualBlocked: false });
+    expect(state.artists[0]).toEqual({ name: "TICON", manualUrl: null, automaticUrl: "https://soundcloud.com/ticon", automaticFrom: "event-source", manualBlocked: false });
   });
 });
 
@@ -117,9 +122,35 @@ describe("getEventSoundcloudAdminState", () => {
     ];
     const state = await getEventSoundcloudAdminState("e-1");
     expect(state.artists).toEqual([
-      { name: "TICON", manualUrl: "https://soundcloud.com/ticon-official", automaticUrl: "https://soundcloud.com/ticon", manualBlocked: false },
-      { name: "ZORA", manualUrl: "https://soundcloud.com/zora-blocked", automaticUrl: null, manualBlocked: true },
+      { name: "TICON", manualUrl: "https://soundcloud.com/ticon-official", automaticUrl: "https://soundcloud.com/ticon", automaticFrom: "event-source", manualBlocked: false },
+      { name: "ZORA", manualUrl: "https://soundcloud.com/zora-blocked", automaticUrl: null, automaticFrom: null, manualBlocked: true },
     ]);
     expect(writes()).toEqual([]);
+  });
+});
+
+describe("getEventSoundcloudAdminState — shows the link the public page uses (2026-11-16)", () => {
+  it("a profile reused from another event / Discogs is shown as automatic, marked reused", async () => {
+    getReusedSoundcloudLinksForEvent.mockResolvedValue([{ artistName: "ZORA", url: "https://soundcloud.com/zora_gry" }]);
+    selectResults = [...EVENT_ROW, [["src-culture-box", "TICON", "https://soundcloud.com/ticon"]], []];
+    const state = await getEventSoundcloudAdminState("e-1");
+    expect(getReusedSoundcloudLinksForEvent).toHaveBeenCalledWith("e-1");
+    expect(state.artists).toEqual([
+      { name: "TICON", manualUrl: null, automaticUrl: "https://soundcloud.com/ticon", automaticFrom: "event-source", manualBlocked: false },
+      { name: "ZORA", manualUrl: null, automaticUrl: "https://soundcloud.com/zora_gry", automaticFrom: "reused", manualBlocked: false },
+    ]);
+  });
+
+  it("the event's own source link wins over a reused one, as on the page; no reuse lookup when every name has one", async () => {
+    selectResults = [...EVENT_ROW, [["src-culture-box", "TICON", "https://soundcloud.com/ticon"], ["src-culture-box", "ZORA", "https://soundcloud.com/zora_gry"]], []];
+    await getEventSoundcloudAdminState("e-1");
+    expect(getReusedSoundcloudLinksForEvent).not.toHaveBeenCalled();
+  });
+
+  it("a manual link stays the one in force over a reused automatic link", async () => {
+    getReusedSoundcloudLinksForEvent.mockResolvedValue([{ artistName: "TICON", url: "https://soundcloud.com/ticon" }]);
+    selectResults = [...EVENT_ROW, [["src-admin-manual", "TICON", "https://soundcloud.com/ticon-official"]], []];
+    const [ticon] = (await getEventSoundcloudAdminState("e-1")).artists;
+    expect(ticon).toMatchObject({ manualUrl: "https://soundcloud.com/ticon-official", automaticUrl: "https://soundcloud.com/ticon", automaticFrom: "reused" });
   });
 });

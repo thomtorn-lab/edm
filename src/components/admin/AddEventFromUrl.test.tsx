@@ -19,6 +19,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("./EventYoutubePanel", () => ({
   default: ({ eventId }: { eventId: string }) => <div data-testid="youtube-panel">{eventId}</div>,
 }));
+vi.mock("./EventSoundcloudPanel", () => ({
+  default: ({ eventId }: { eventId: string }) => <div data-testid="soundcloud-panel">{eventId}</div>,
+}));
 
 afterEach(() => {
   cleanup();
@@ -245,6 +248,7 @@ describe("AddEventFromUrl — manual YouTube choice right after creation", () =>
     vi.stubGlobal("fetch", fetchMock);
     await analyze(fetchMock);
     expect(screen.getByTestId("youtube-panel").textContent).toBe("e-abc12345");
+    expect(screen.getByTestId("soundcloud-panel").textContent).toBe("e-abc12345");
   });
 
   it("shows no YouTube panel while the candidate is only a Discovery Queue row (no event yet)", async () => {
@@ -252,5 +256,6 @@ describe("AddEventFromUrl — manual YouTube choice right after creation", () =>
     vi.stubGlobal("fetch", fetchMock);
     await analyze(fetchMock);
     expect(screen.queryByTestId("youtube-panel")).toBeNull();
+    expect(screen.queryByTestId("soundcloud-panel")).toBeNull();
   });
 });
