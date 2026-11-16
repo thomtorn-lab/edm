@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./client";
 import { eventSoundcloudLinks, soundcloudLinkBlocks } from "./schema";
-import { planSoundcloudLinkChanges, type SoundcloudLinkPlan } from "@/lib/soundcloudLinks";
+import { ADMIN_SOUNDCLOUD_SOURCE_ID, planSoundcloudLinkChanges, type SoundcloudLinkPlan } from "@/lib/soundcloudLinks";
 import type { SoundcloudLinkReport } from "@/lib/adapters/types";
 
 /**
@@ -17,7 +17,8 @@ export async function reconcileSourceSoundcloudLinks(
   observed: Map<string, SoundcloudLinkReport>,
 ): Promise<SoundcloudLinkPlan> {
   const empty: SoundcloudLinkPlan = { upserts: [], deletes: [], suppressedDeletes: 0 };
-  if (observed.size === 0) return empty;
+  // Manual admin links are never a sync's to change (src/db/eventSoundcloudAdmin.ts).
+  if (observed.size === 0 || sourceId === ADMIN_SOUNDCLOUD_SOURCE_ID) return empty;
 
   const existing = await db
     .select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })

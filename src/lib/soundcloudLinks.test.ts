@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchStoredLinksByIdentityKey, planSoundcloudLinkChanges, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles, storedArtistName, type StoredSoundcloudLink } from "./soundcloudLinks";
+import { matchStoredLinksByIdentityKey, planSoundcloudLinkChanges, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles, storedArtistName, withManualLinksLast, ADMIN_SOUNDCLOUD_SOURCE_ID, type StoredSoundcloudLink } from "./soundcloudLinks";
 import type { ArtistSoundcloudLink, SoundcloudLinkReport } from "./adapters/types";
 
 const GUY_J = { name: "GUY J", url: "https://soundcloud.com/guy-j" };
@@ -162,5 +162,20 @@ describe("historical venue links by identity key (2026-11-06): exactly one profi
   it("a stored name with another key is ignored; a B2B stored entry never gives a profile", () => {
     expect(reuse([{ artistName: "B FROM EAST", url: "https://soundcloud.com/x" }])).toEqual([]);
     expect(reuse([{ artistName: "B FROM E b2b NAT", url: "https://soundcloud.com/x" }])).toEqual([]);
+  });
+});
+
+describe("manual admin links win on their own event (2026-11-16)", () => {
+  const venue = { sourceId: "src-culture-box", artistName: "TICON", url: "https://soundcloud.com/ticon" };
+  const manual = { sourceId: ADMIN_SOUNDCLOUD_SOURCE_ID, artistName: "TICON", url: "https://soundcloud.com/ticon-official" };
+
+  it("the manual link is shown instead of the source's link, whatever order the rows come in", () => {
+    for (const rows of [[venue, manual], [manual, venue]]) {
+      expect(selectLineupSoundcloudLinks(["TICON"], withManualLinksLast(rows))).toEqual([{ name: "TICON", url: manual.url }]);
+    }
+  });
+
+  it("without a manual link, the source's link is shown as before", () => {
+    expect(selectLineupSoundcloudLinks(["TICON"], withManualLinksLast([venue]))).toEqual([{ name: "TICON", url: venue.url }]);
   });
 });

@@ -148,3 +148,22 @@ describe("partial database failures — why no transaction is needed (see the co
     ]);
   });
 });
+
+describe("reconcileSourceSoundcloudLinks — manual admin links are never a sync's to change (2026-11-16)", () => {
+  it("a sync scoped to the admin source id does nothing at all", async () => {
+    await reconcileSourceSoundcloudLinks("src-admin-manual", new Map([["e-1", night()]]));
+    expect(sent).toEqual([]);
+  });
+
+  it("a venue sync that drops a name reads, writes and deletes only its own source's rows", async () => {
+    storedRows = [["e-1", "GUY J", GUY_J.url]];
+    await reconcileSourceSoundcloudLinks("src-culture-box", new Map([["e-1", night(TIM)]]));
+    for (const q of sent) {
+      expect(q.text).not.toContain("src-admin-manual");
+      expect(q.values).not.toContain("src-admin-manual");
+    }
+    const del = sent.find((q) => /^delete /i.test(q.text))!;
+    expect(del.text).toMatch(/"event_soundcloud_links"\."source_id" = \$1/);
+    expect(del.values[0]).toBe("src-culture-box");
+  });
+});

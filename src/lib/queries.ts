@@ -25,7 +25,7 @@ import {
 } from "@/db/mappers";
 import { cleanArtistDisplayName, normalizeArtistName } from "./enrichment/genreEnrichment";
 import { cachedVideoMeetsContentRules } from "./enrichment/youtubePreviewMatching";
-import { matchStoredLinksByIdentityKey, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles } from "./soundcloudLinks";
+import { ADMIN_SOUNDCLOUD_SOURCE_ID, matchStoredLinksByIdentityKey, selectLineupSoundcloudLinks, selectReusedSoundcloudProfiles, withManualLinksLast } from "./soundcloudLinks";
 import { discogsCacheKey, verifiedDiscogsProfile } from "./soundcloudEvidence/discogsSoundcloud";
 import { classifyAboutText, isDanishAboutText, type AboutKind } from "./aboutContent";
 import { isPastEvent } from "./datetime";
@@ -649,7 +649,14 @@ async function reusedSoundcloudRows(eventIds: string[]) {
     .from(here)
     .innerJoin(artistIdentities, and(eq(artistIdentities.id, here.artistId), isNull(artistIdentities.mergedIntoId), ne(artistIdentities.status, "rejected")))
     .innerJoin(other, and(eq(other.artistId, here.artistId), inArray(other.confidence, SHOWN_CONFIDENCE), isNull(other.removedAt)))
-    .innerJoin(eventSoundcloudLinks, and(eq(eventSoundcloudLinks.eventId, other.eventId), eq(eventSoundcloudLinks.artistName, other.lineupEntry)))
+    .innerJoin(
+      eventSoundcloudLinks,
+      and(
+        eq(eventSoundcloudLinks.eventId, other.eventId),
+        eq(eventSoundcloudLinks.artistName, other.lineupEntry),
+        ne(eventSoundcloudLinks.sourceId, ADMIN_SOUNDCLOUD_SOURCE_ID), // manual links apply to their own event only
+      ),
+    )
     .where(and(inArray(here.eventId, eventIds), inArray(here.confidence, SHOWN_CONFIDENCE), isNull(here.removedAt), soundcloudLinkNotBlocked()));
 
   const sameKey = alias(artistIdentities, "same_key");
@@ -677,7 +684,13 @@ async function reusedSoundcloudRows(eventIds: string[]) {
   const historical = await db
     .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
     .from(eventSoundcloudLinks)
-    .where(and(inArray(sql`lower(${eventSoundcloudLinks.artistName})`, lowered), soundcloudLinkNotBlocked()));
+    .where(
+      and(
+        inArray(sql`lower(${eventSoundcloudLinks.artistName})`, lowered),
+        ne(eventSoundcloudLinks.sourceId, ADMIN_SOUNDCLOUD_SOURCE_ID), // manual links apply to their own event only
+        soundcloudLinkNotBlocked(),
+      ),
+    );
 
   // Discogs-verified profiles (2026-11-07) for the same unique appearances,
   // from the Discogs integration's own cache; blocked URLs excluded.
@@ -714,12 +727,14 @@ async function reusedSoundcloudRows(eventIds: string[]) {
  */
 export async function getSoundcloudLinksForLineup(eventId: string, artists: string[]): Promise<{ name: string; url: string }[]> {
   if (artists.length === 0) return [];
-  let own: { artistName: string; url: string }[];
+  let own: { artistName: string; url: string; sourceId: string }[];
   try {
-    own = await db
-      .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url })
-      .from(eventSoundcloudLinks)
-      .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked()));
+    own = withManualLinksLast(
+      await db
+        .select({ artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url, sourceId: eventSoundcloudLinks.sourceId })
+        .from(eventSoundcloudLinks)
+        .where(and(eq(eventSoundcloudLinks.eventId, eventId), soundcloudLinkNotBlocked())),
+    );
   } catch (err) {
     console.error(`[soundcloud-links] lookup failed for ${eventId}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
