@@ -10,6 +10,7 @@ import { isProtectedSubVenueName } from "@/lib/venueCreation";
 import { copenhagenDateTimeInputToIso, formatFullDateLabel, formatTimeLabel, toCopenhagenDateTimeInput } from "@/lib/format";
 import { isValidHttpUrl } from "@/lib/urlValidation";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
+import EventYoutubePanel from "./EventYoutubePanel";
 
 interface Props {
   items: DiscoveryQueueItem[];
@@ -19,21 +20,53 @@ interface Props {
   emptyMessage?: string;
 }
 
+/** An item published from this queue during this visit: its new event, for the YouTube choice right after publishing. */
+interface JustPublished {
+  eventId: string;
+  title: string;
+}
+
 export default function DiscoveryQueue({ items, venues, annotate, emptyMessage }: Props) {
-  if (items.length === 0) {
-    return <p className="text-sm text-text-secondary">{emptyMessage ?? "Queue is empty — nothing needs manual review right now."}</p>;
-  }
+  // The published row leaves the queue on refresh, so the existing manual
+  // YouTube panel (EventYoutubePanel, unchanged) is shown here instead —
+  // the same panel "All events" shows for this event later.
+  const [justPublished, setJustPublished] = useState<JustPublished[]>([]);
+  const onPublished = (p: JustPublished) => setJustPublished((prev) => [p, ...prev.filter((x) => x.eventId !== p.eventId)]);
 
   return (
-    <ul>
-      {items.map((item) => (
-        <QueueRow key={item.id} item={item} venues={venues} annotation={annotate?.(item)} />
+    <>
+      {justPublished.map((p) => (
+        <div key={p.eventId} className="mb-3 rounded border border-accent/40 p-3">
+          <p className="text-xs text-accent-strong">
+            Published: <span className="font-semibold">{p.title}</span> — choose its YouTube video now, or later under &ldquo;All events&rdquo;.
+          </p>
+          <EventYoutubePanel eventId={p.eventId} />
+        </div>
       ))}
-    </ul>
+      {items.length === 0 ? (
+        <p className="text-sm text-text-secondary">{emptyMessage ?? "Queue is empty — nothing needs manual review right now."}</p>
+      ) : (
+        <ul>
+          {items.map((item) => (
+            <QueueRow key={item.id} item={item} venues={venues} annotation={annotate?.(item)} onPublished={onPublished} />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
-function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venues: Venue[]; annotation?: ReactNode }) {
+function QueueRow({
+  item,
+  venues,
+  annotation,
+  onPublished,
+}: {
+  item: DiscoveryQueueItem;
+  venues: Venue[];
+  annotation?: ReactNode;
+  onPublished?: (p: JustPublished) => void;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -157,7 +190,8 @@ function QueueRow({ item, venues, annotation }: { item: DiscoveryQueueItem; venu
       setError("Pick a venue before publishing.");
       return;
     }
-    await callPost(`/api/admin/discovery/${item.id}/publish`, { venueId }, router, setBusy, setError);
+    const json = await callPost(`/api/admin/discovery/${item.id}/publish`, { venueId }, router, setBusy, setError);
+    if (json && typeof json.eventId === "string") onPublished?.({ eventId: json.eventId, title: title || item.probableTitle });
   }
 
   async function handleIgnore() {
@@ -543,13 +577,13 @@ async function callPost(
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(json.error ?? "Action failed.");
-      return false;
+      return null;
     }
     router.refresh();
-    return true;
+    return json as Record<string, unknown>;
   } catch {
     setError("Network error.");
-    return false;
+    return null;
   } finally {
     setBusy(false);
   }

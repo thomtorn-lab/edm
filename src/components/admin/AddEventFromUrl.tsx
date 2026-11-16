@@ -11,6 +11,7 @@ import { isValidHttpUrl } from "@/lib/urlValidation";
 import { copenhagenDateTimeInputToIso, toCopenhagenDateTimeInput } from "@/lib/format";
 import { getGenre, isGenreSlug } from "@/lib/taxonomy";
 import { EventFieldEditorTop, EventFieldEditorBottom } from "./EventFieldEditor";
+import EventYoutubePanel from "./EventYoutubePanel";
 
 interface ExtractResponse {
   raw: RawCandidateEvent;
@@ -246,10 +247,14 @@ export default function AddEventFromUrl() {
           </p>
 
           {data.persisted.kind === "event" ? (
-            <p className="mt-3 text-xs text-accent-strong">
-              Published directly (high confidence, complete record) —{" "}
-              <Link href={`/events/${data.persisted.id}`} className="underline">view on the site</Link>.
-            </p>
+            <>
+              <p className="mt-3 text-xs text-accent-strong">
+                Published directly (high confidence, complete record) —{" "}
+                <Link href={`/events/${data.persisted.id}`} className="underline">view on the site</Link>.
+              </p>
+              {/* The existing manual YouTube choice, available right away (same panel as "All events"). */}
+              <EventYoutubePanel eventId={data.persisted.id} />
+            </>
           ) : (
             <p className="mt-3 text-xs text-text-secondary">
               Saved to:{" "}

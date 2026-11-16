@@ -8,6 +8,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
+// The manual YouTube panel has its own tests (EventYoutubePanel.test.tsx);
+// stubbed here to check only where and for which event it is shown.
+vi.mock("./EventYoutubePanel", () => ({
+  default: ({ eventId }: { eventId: string }) => <div data-testid="youtube-panel">{eventId}</div>,
+}));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -726,5 +732,35 @@ describe("DiscoveryQueue — editor re-opens with the saved data after a failed 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Typing…" } });
     rerender(<DiscoveryQueue items={[saved]} venues={VENUES} />);
     expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Typing…");
+  });
+});
+
+describe("DiscoveryQueue — manual YouTube choice right after publishing", () => {
+  afterEach(cleanup);
+
+  it("shows the existing YouTube panel for the event the publish created", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, eventId: "e-new" }) }));
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+    expect(screen.queryByTestId("youtube-panel")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    expect((await screen.findByTestId("youtube-panel")).textContent).toBe("e-new");
+  });
+
+  it("keeps the panel when the published item was the last one in the queue", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, eventId: "e-new" }) }));
+    const { rerender } = render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await screen.findByTestId("youtube-panel");
+    rerender(<DiscoveryQueue items={[]} venues={VENUES} />); // the refresh removes the published row
+    expect(screen.getByTestId("youtube-panel").textContent).toBe("e-new");
+    expect(screen.getByText(/Queue is empty/)).toBeTruthy();
+  });
+
+  it("shows no panel when publishing fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "Publish failed" }) }));
+    render(<DiscoveryQueue items={[makeItem({ probableVenueName: "Culture Box" })]} venues={VENUES} />);
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await screen.findByText("Publish failed");
+    expect(screen.queryByTestId("youtube-panel")).toBeNull();
   });
 });

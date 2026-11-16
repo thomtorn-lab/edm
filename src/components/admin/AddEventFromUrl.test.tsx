@@ -14,6 +14,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
+// The manual YouTube panel has its own tests (EventYoutubePanel.test.tsx);
+// stubbed here to check only where and for which event it is shown.
+vi.mock("./EventYoutubePanel", () => ({
+  default: ({ eventId }: { eventId: string }) => <div data-testid="youtube-panel">{eventId}</div>,
+}));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -225,5 +231,26 @@ describe("AddEventFromUrl — changing the genre of a published event is an expl
     await analyze(fetchMock);
     fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "house" } });
     expect(screen.queryByRole("note")).toBeNull();
+  });
+});
+
+describe("AddEventFromUrl — manual YouTube choice right after creation", () => {
+  it("shows the existing YouTube panel for an event Analyze published directly", async () => {
+    const response = discoveryExtractResponse({
+      result: { ...discoveryExtractResponse().result, genre: "techno", genreConfidence: "high", decision: "auto_publish" },
+      persisted: { kind: "event", id: "e-abc12345" },
+      category: undefined,
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => response });
+    vi.stubGlobal("fetch", fetchMock);
+    await analyze(fetchMock);
+    expect(screen.getByTestId("youtube-panel").textContent).toBe("e-abc12345");
+  });
+
+  it("shows no YouTube panel while the candidate is only a Discovery Queue row (no event yet)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => discoveryExtractResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    await analyze(fetchMock);
+    expect(screen.queryByTestId("youtube-panel")).toBeNull();
   });
 });
