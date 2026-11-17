@@ -1,0 +1,1 @@
+ALTER TABLE "discovery_queue" ADD COLUMN "probable_sold_out" boolean DEFAULT false NOT NULL;

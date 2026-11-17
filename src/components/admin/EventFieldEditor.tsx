@@ -75,6 +75,10 @@ export interface EventFieldEditorProps {
   free: boolean;
   onFreeChange: (v: boolean) => void;
 
+  // Sold out is the one exception (2026-11-17): it is also rendered in
+  // "draft" mode whenever the caller passes onSoldOutChange (Analyze and the
+  // Discovery Queue editor do — saved as the candidate's probableSoldOut and
+  // carried onto the event at publish).
   // Published-only lifecycle-adjacent status flags — never rendered in "draft" mode (a DQ candidate isn't a confirmed event yet; DQ already has an equivalent concept at the classification layer, holdReason "source_cancelled"/"negative_relevance" — see the unified event create/edit model audit's canonical field model, section C).
   soldOut?: boolean;
   onSoldOutChange?: (v: boolean) => void;
@@ -220,12 +224,14 @@ export function EventFieldEditorBottom(props: BottomProps) {
         <input type="checkbox" checked={props.free} onChange={(e) => props.onFreeChange(e.target.checked)} />
         Free entry (does not affect the Tickets link if a ticket URL is also set)
       </label>
+      {(mode === "published" || props.onSoldOutChange) && (
+        <label className="flex items-center gap-2 text-xs text-text-primary">
+          <input type="checkbox" checked={props.soldOut ?? false} onChange={(e) => props.onSoldOutChange?.(e.target.checked)} />
+          Sold out
+        </label>
+      )}
       {mode === "published" && (
         <>
-          <label className="flex items-center gap-2 text-xs text-text-primary">
-            <input type="checkbox" checked={props.soldOut ?? false} onChange={(e) => props.onSoldOutChange?.(e.target.checked)} />
-            Sold out
-          </label>
           <label className="flex items-center gap-2 text-xs text-text-primary">
             <input type="checkbox" checked={props.cancelled ?? false} onChange={(e) => props.onCancelledChange?.(e.target.checked)} />
             Cancelled

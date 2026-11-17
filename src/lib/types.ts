@@ -263,6 +263,8 @@ export interface DiscoveryQueueItem {
   /** Admin-entered/extracted description for an unpublished candidate — see src/db/schema.ts's description column comment. */
   description: string | null;
   probableFree: boolean;
+  /** Admin-set/source-hinted SOLD OUT flag for an unpublished candidate — see src/db/schema.ts's probableSoldOut column comment. Optional so older fixtures stay valid; absent means not sold out. */
+  probableSoldOut?: boolean;
   probableVenueName: string | null;
   /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06) — see src/db/schema.ts's column comment. */
   probableSubVenue: string | null;

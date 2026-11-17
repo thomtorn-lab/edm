@@ -176,6 +176,13 @@
       "when": 1793628869861,
       "tag": "0024_artist_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794909267511,
+      "tag": "0025_discovery_probable_sold_out",
+      "breakpoints": true
     }
   ]
 }

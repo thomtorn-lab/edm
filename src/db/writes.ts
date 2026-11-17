@@ -1024,11 +1024,11 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
       // price), never a guessed default.
       priceFrom: item.probableFree ? 0 : null,
       currency: item.probableFree ? "DKK" : null,
-      // Discovery Queue candidates carry no sold-out/cancelled signal (that
-      // schema predates and is out of scope for event lifecycle/status
-      // handling, 2026-08-28) — always false at publish time; an admin can
-      // set either afterward via the normal edit form if needed.
-      soldOut: false,
+      // SOLD OUT can be set on the candidate itself (probableSoldOut,
+      // 2026-11-17 — e.g. when the admin creates the event via Analyze).
+      // Cancelled is still never carried from the queue (a DQ candidate has
+      // its own holdReason concept for that) — always false at publish time.
+      soldOut: item.probableSoldOut ?? false,
       cancelled: false,
       published: true,
       confidence: item.overallConfidence as ConfidenceLevel,
@@ -1060,6 +1060,7 @@ export async function publishDiscoveryItem(queueId: string, resolvedVenueId: str
         ...(item.overriddenFields?.includes("probableVenueName") ? ["venueId"] : []),
         ...(item.overriddenFields?.includes("probableSubVenue") ? ["subVenue"] : []),
         ...(item.overriddenFields?.includes("detectedLineup") ? ["artists"] : []),
+        ...(item.overriddenFields?.includes("probableSoldOut") ? ["soldOut"] : []),
         ...(item.overriddenFields?.includes("predictedGenre") || item.overriddenFields?.includes("predictedSecondaryGenre")
           ? ["primaryGenre", "subgenres"]
           : []),
@@ -1123,6 +1124,8 @@ export interface DiscoveryEditPatch {
   /** Admin-entered/extracted description — see src/db/schema.ts's description column comment. */
   description?: string | null;
   probableFree?: boolean;
+  /** See src/db/schema.ts's probableSoldOut column comment. */
+  probableSoldOut?: boolean;
   probableVenueName?: string | null;
   probableSubVenue?: string | null;
   detectedLineup?: string[];
@@ -1394,6 +1397,8 @@ export async function insertDiscoveryItem(item: {
   /** Admin/Analyze-extracted description at insert time — see src/db/schema.ts's description column comment. */
   description?: string | null;
   probableFree?: boolean;
+  /** See src/db/schema.ts's probableSoldOut column comment. */
+  probableSoldOut?: boolean;
   probableVenueName: string | null;
   /** Which room the raw venue text resolved to (generalized sub-venue model, 2026-09-06). Null when not applicable/unknown. */
   probableSubVenue?: string | null;

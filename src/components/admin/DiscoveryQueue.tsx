@@ -88,6 +88,7 @@ function QueueRow({
   const [residentAdvisorUrl, setResidentAdvisorUrl] = useState(item.probableResidentAdvisorUrl ?? "");
   const [description, setDescription] = useState(item.description ?? "");
   const [free, setFree] = useState(item.probableFree);
+  const [soldOut, setSoldOut] = useState(item.probableSoldOut ?? false);
   const [venueNameText, setVenueNameText] = useState(item.probableVenueName ?? "");
   const [subVenueText, setSubVenueText] = useState(item.probableSubVenue ?? "");
   const [lineup, setLineup] = useState(item.detectedLineup.join(", "));
@@ -118,6 +119,7 @@ function QueueRow({
       setResidentAdvisorUrl(item.probableResidentAdvisorUrl ?? "");
       setDescription(item.description ?? "");
       setFree(item.probableFree);
+      setSoldOut(item.probableSoldOut ?? false);
       setVenueNameText(item.probableVenueName ?? "");
       setSubVenueText(item.probableSubVenue ?? "");
       setLineup(item.detectedLineup.join(", "));
@@ -258,6 +260,7 @@ function QueueRow({
       probableTicketUrl: ticketUrlTrimmed || null,
       probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
       probableFree: free,
+      probableSoldOut: soldOut,
     };
     if (startLocal) patch.probableStart = copenhagenDateTimeInputToIso(startLocal);
     if (endLocal) patch.probableEnd = copenhagenDateTimeInputToIso(endLocal);
@@ -381,6 +384,8 @@ function QueueRow({
             onResidentAdvisorUrlChange={setResidentAdvisorUrl}
             free={free}
             onFreeChange={setFree}
+            soldOut={soldOut}
+            onSoldOutChange={setSoldOut}
           />
           <div className="flex gap-2 pt-1">
             <button type="button" disabled={busy} onClick={handleSaveEdit} className="rounded border border-accent bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent-strong hover:bg-accent/20 disabled:opacity-50">
@@ -557,6 +562,7 @@ function editorSnapshot(item: DiscoveryQueueItem): string {
     item.probableResidentAdvisorUrl,
     item.description,
     item.probableFree,
+    item.probableSoldOut ?? false,
     item.probableVenueName,
     item.probableSubVenue,
     item.detectedLineup,

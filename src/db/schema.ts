@@ -261,6 +261,15 @@ export const discoveryQueue = pgTable("discovery_queue", {
    */
   probableOfficialEventUrl: text("probable_official_event_url"),
   probableFree: boolean("probable_free").notNull().default(false),
+  /**
+   * Admin-set (or source-hinted) SOLD OUT flag for an unpublished candidate
+   * (2026-11-17) — lets an event created via Analyze be marked sold out
+   * before it is published. Carried onto the created event's soldOut by
+   * publishDiscoveryItem; an admin edit is recorded in overriddenFields like
+   * every other DiscoveryEditPatch field and threaded through as a "soldOut"
+   * override so a later sync can't silently clear it.
+   */
+  probableSoldOut: boolean("probable_sold_out").notNull().default(false),
   probableVenueName: text("probable_venue_name"),
   /**
    * Companion to probableVenueName (generalized sub-venue model, 2026-09-06)
