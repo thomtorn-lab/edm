@@ -186,6 +186,7 @@ export async function POST(request: NextRequest) {
     probableResidentAdvisorUrl: raw.residentAdvisorUrl,
     description: raw.description,
     probableFree: raw.priceFrom === 0,
+    probableSoldOut: raw.soldOutHint ?? false,
     probableVenueName: raw.venueName,
     probableSubVenue: result.resolvedSubVenue,
     sourceName: "Admin: Add event from URL",

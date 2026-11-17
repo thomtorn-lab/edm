@@ -259,3 +259,59 @@ describe("AddEventFromUrl — manual YouTube choice right after creation", () =>
     expect(screen.queryByTestId("soundcloud-panel")).toBeNull();
   });
 });
+
+describe("AddEventFromUrl — Sold out can be set when creating an event", () => {
+  it("saves Sold out on a Discovery Queue candidate as probableSoldOut", async () => {
+    const extractMock = vi.fn().mockResolvedValue({ ok: true, json: async () => discoveryExtractResponse() });
+    vi.stubGlobal("fetch", extractMock);
+    await analyze(extractMock);
+
+    const checkbox = screen.getByRole("checkbox", { name: "Sold out" }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+
+    const saveMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", saveMock);
+    fireEvent.click(screen.getByRole("button", { name: "Save corrections" }));
+    await vi.waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const [path, options] = saveMock.mock.calls[0];
+    expect(path).toBe("/api/admin/discovery/dq-abc12345");
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.probableSoldOut).toBe(true);
+  });
+
+  it("saves Sold out directly on an event Analyze published", async () => {
+    const extractMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () =>
+        discoveryExtractResponse({
+          result: { ...discoveryExtractResponse().result, genre: "techno", genreConfidence: "high", decision: "auto_publish" },
+          persisted: { kind: "event", id: "e-abc12345" },
+          category: undefined,
+        }),
+    });
+    vi.stubGlobal("fetch", extractMock);
+    await analyze(extractMock);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sold out" }));
+
+    const saveMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", saveMock);
+    fireEvent.click(screen.getByRole("button", { name: "Save corrections" }));
+    await vi.waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const [path, options] = saveMock.mock.calls[0];
+    expect(path).toBe("/api/admin/events/e-abc12345");
+    const { patch } = JSON.parse((options as { body: string }).body);
+    expect(patch.soldOut).toBe(true);
+  });
+
+  it("pre-checks Sold out when the analyzed page already says sold out", async () => {
+    const base = discoveryExtractResponse();
+    const extractMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => discoveryExtractResponse({ raw: { ...base.raw, soldOutHint: true } }),
+    });
+    vi.stubGlobal("fetch", extractMock);
+    await analyze(extractMock);
+    expect((screen.getByRole("checkbox", { name: "Sold out" }) as HTMLInputElement).checked).toBe(true);
+  });
+});

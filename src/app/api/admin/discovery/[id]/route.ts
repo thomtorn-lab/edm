@@ -48,6 +48,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: `${field}: enter a valid http(s) URL, or clear the field.` }, { status: 400 });
     }
   }
+  if ("probableSoldOut" in cleaned && typeof cleaned.probableSoldOut !== "boolean") {
+    return NextResponse.json({ error: "probableSoldOut: must be true or false." }, { status: 400 });
+  }
   // HvadErPå ban (src/lib/officialUrlPolicy.ts) — never a valid Official Event URL.
   if (isHvaderpaaUrl(cleaned.probableOfficialEventUrl as string | null | undefined)) {
     return NextResponse.json({ error: `probableOfficialEventUrl: ${HVADERPAA_OFFICIAL_URL_ERROR}` }, { status: 400 });

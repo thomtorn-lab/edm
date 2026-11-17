@@ -72,6 +72,10 @@ export default function AddEventFromUrl() {
   const [ticketUrl, setTicketUrl] = useState("");
   const [residentAdvisorUrl, setResidentAdvisorUrl] = useState("");
   const [free, setFree] = useState(false);
+  // Sold out (2026-11-17): settable at creation time. Saved as soldOut on a
+  // directly published event, or as probableSoldOut on a Discovery Queue
+  // candidate (carried onto the event at publish).
+  const [soldOut, setSoldOut] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -108,6 +112,7 @@ export default function AddEventFromUrl() {
         setTicketUrl(raw.ticketUrl ?? "");
         setResidentAdvisorUrl(raw.residentAdvisorUrl ?? "");
         setFree(raw.priceFrom === 0);
+        setSoldOut(raw.soldOutHint ?? false);
         router.refresh(); // the discovery queue / event list below now includes this row
       }
     } catch {
@@ -156,6 +161,7 @@ export default function AddEventFromUrl() {
             officialEventUrl: officialEventUrlTrimmed || null,
             ticketUrl: ticketUrlTrimmed || null,
             residentAdvisorUrl: residentAdvisorUrlTrimmed || null,
+            soldOut,
           }
         : {
             probableTitle: title,
@@ -168,6 +174,7 @@ export default function AddEventFromUrl() {
             probableTicketUrl: ticketUrlTrimmed || null,
             probableResidentAdvisorUrl: residentAdvisorUrlTrimmed || null,
             probableFree: free,
+            probableSoldOut: soldOut,
           };
       if (startLocal) patch[isEvent ? "startDatetime" : "probableStart"] = copenhagenDateTimeInputToIso(startLocal);
       if (endLocal) patch[isEvent ? "endDatetime" : "probableEnd"] = copenhagenDateTimeInputToIso(endLocal);
@@ -322,6 +329,8 @@ export default function AddEventFromUrl() {
               onResidentAdvisorUrlChange={setResidentAdvisorUrl}
               free={free}
               onFreeChange={setFree}
+              soldOut={soldOut}
+              onSoldOutChange={setSoldOut}
             />
             {data.persisted.kind === "event" && genre && (genre !== analyzedGenre || (secondaryGenre && secondaryGenre !== genre)) && (
               <p id="analyze-genre-replace-note" role="note" className="text-[11px] text-status-warn">

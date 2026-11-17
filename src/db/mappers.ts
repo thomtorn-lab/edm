@@ -117,6 +117,7 @@ export function discoveryRowToRecord(row: DiscoveryQueueRow): DiscoveryQueueItem
     probableResidentAdvisorUrl: row.probableResidentAdvisorUrl,
     description: row.description,
     probableFree: row.probableFree,
+    probableSoldOut: row.probableSoldOut,
     probableVenueName: row.probableVenueName,
     probableSubVenue: row.probableSubVenue,
     sourceName: row.sourceName,
