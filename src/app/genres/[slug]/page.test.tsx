@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { EventWithVenue } from "@/lib/queries";
 import { GENRES, INDEXABLE_GENRE_PAGES, genrePagePath, matchesGenreSelection, parentOf, type GenreSlug } from "@/lib/taxonomy";
+import { FALLBACK_SHARE_IMAGE } from "@/lib/shareMetadata";
 import { GENRE_PAGE_CONTENT } from "@/lib/genrePages";
 import type { Venue } from "@/lib/types";
 
@@ -222,8 +223,8 @@ describe("/genres/[slug] — shared route", () => {
       expect(m.alternates?.canonical, g).toBe(expected[g].canonical);
       expect(m.robots, g).toBeUndefined();
       expect((m.description as string).length, g).toBeLessThanOrEqual(160);
-      expect(m.openGraph, g).toMatchObject({ type: "website", siteName: "Electronic CPH", url: expected[g].canonical, title: `${GENRE_PAGE_CONTENT[g].h1} — Electronic CPH`, description: m.description });
-      expect(m.twitter, g).toMatchObject({ card: "summary", title: `${GENRE_PAGE_CONTENT[g].h1} — Electronic CPH`, description: m.description });
+      expect(m.openGraph, g).toMatchObject({ type: "website", siteName: "Electronic CPH", locale: "en_GB", url: expected[g].canonical, title: `${GENRE_PAGE_CONTENT[g].h1} — Electronic CPH`, description: m.description, images: [FALLBACK_SHARE_IMAGE] });
+      expect(m.twitter, g).toMatchObject({ card: "summary_large_image", title: `${GENRE_PAGE_CONTENT[g].h1} — Electronic CPH`, description: m.description });
     }
     for (const key of ["h1", "seoTitle", "description"] as const) {
       expect(new Set(INDEXABLE_GENRE_PAGES.map((g) => GENRE_PAGE_CONTENT[g][key])).size, key).toBe(INDEXABLE_GENRE_PAGES.length);

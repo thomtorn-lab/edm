@@ -265,6 +265,25 @@ const COUNTRY_CODE_SUFFIX_RE = /\((?:[a-z]{2,3})(?:\s*[/,]\s*[a-z]{2,3})*\)\s*$/
  * single failure and continue, matching every other adapter's per-record
  * contract; nothing here is ever guessed.
  */
+/**
+ * KultuNaut detail pages declare the same event image in several sizes, the
+ * smallest (154×154) first and a 484×252 copy after it, each followed by its
+ * og:image:width. Picks the widest declared one (2026-11-19 — the first one
+ * is too small for a link preview); falls back to the first og:image when no
+ * widths are declared.
+ */
+function pickLargestOgImage(html: string): string | null {
+  let best: { url: string; width: number } | null = null;
+  let first: string | null = null;
+  for (const m of html.matchAll(/<meta property="og:image" content="([^"]+)"\s*\/?>(?:\s*<meta property="og:image:width" content="(\d+)"\s*\/?>)?/g)) {
+    const url = decodeHtmlEntities(m[1]);
+    first ??= url;
+    const width = m[2] ? Number(m[2]) : 0;
+    if (width > (best?.width ?? 0)) best = { url, width };
+  }
+  return best?.url ?? first;
+}
+
 export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandidateEvent {
   const detailUrl = buildDetailUrl(arrNr);
 
@@ -331,8 +350,7 @@ export function parseKultunautDetailHtml(html: string, arrNr: string): RawCandid
     : "";
   const description = structuredDescription || null;
 
-  const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
-  const imageUrl = imageMatch ? decodeHtmlEntities(imageMatch[1]) : null;
+  const imageUrl = pickLargestOgImage(html);
 
   // Genre evidence, same evidence-hierarchy order as poolenAdapter.ts/
   // aliceAdapter.ts — NEVER the site's own genre tag (see module doc

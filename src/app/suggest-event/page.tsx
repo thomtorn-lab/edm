@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import Link from "next/link";
 import SuggestEventForm from "./SuggestEventForm";
 
+const title = "Suggest an event";
+const description = "Know a Copenhagen electronic music event that's missing? Suggest it for review.";
+
 export const metadata: Metadata = {
-  title: "Suggest an event",
-  description: "Know a Copenhagen electronic music event that's missing? Suggest it for review.",
+  title,
+  description,
   alternates: { canonical: "/suggest-event" },
+  ...buildShareMetadata({ title: shareTitle(title), description, path: "/suggest-event" }),
 };
 
 export default function SuggestEventPage() {

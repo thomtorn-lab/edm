@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { Venue } from "@/lib/types";
+import { FALLBACK_SHARE_IMAGE } from "@/lib/shareMetadata";
 import type { EventWithVenue } from "@/lib/queries";
 
 const VENUE: Venue = {
@@ -195,6 +196,23 @@ describe("Venue detail page — SEO <title> and meta description (2026-10-06)", 
     expect(metadata.title).toEqual({ absolute: "MODULE Copenhagen - Upcoming Events | Electronic CPH" });
     expect(metadata.description).toBe("Upcoming electronic music events at MODULE, Copenhagen. A club.");
     expect(metadata.alternates).toEqual({ canonical: "/venues/module" });
+  });
+
+  it("link preview (2026-11-19): unchanged share title/description, plus canonical og:url, a large card and the approved fallback image", async () => {
+    const { generateMetadata } = await import("./page");
+    vi.mocked(getVenueBySlug).mockResolvedValue({ ...VENUE, name: "MODULE", slug: "module" });
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "module" }) } as never);
+    const shareDescription = `MODULE, ${VENUE.address} — upcoming electronic music events. A club.`;
+    expect(metadata.openGraph).toEqual({
+      type: "website",
+      siteName: "Electronic CPH",
+      locale: "en_GB",
+      url: "/venues/module",
+      title: "MODULE — Electronic CPH",
+      description: shareDescription,
+      images: [FALLBACK_SHARE_IMAGE],
+    });
+    expect(metadata.twitter).toMatchObject({ card: "summary_large_image", title: "MODULE — Electronic CPH", description: shareDescription });
   });
 });
 

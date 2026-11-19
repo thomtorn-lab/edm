@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import Link from "next/link";
 import { getUpcomingEventCountsByVenue, getVenuesBySlugs } from "@/lib/queries";
 import { CURATED_VENUE_SLUGS, PUBLIC_VENUE_GROUPS, publicVenueLabel } from "@/lib/data/venues";
 import type { Venue } from "@/lib/types";
 
+const title = "Venues";
+const description =
+  "A curated guide to Copenhagen venues where electronic music is the main focus: Culture Box, Hangaren, Den Anden Side, MODULE and more.";
+
 export const metadata: Metadata = {
-  title: "Venues",
-  description: "A curated guide to Copenhagen venues where electronic music is the main focus: Culture Box, Hangaren, Den Anden Side, MODULE and more.",
+  title,
+  description,
   alternates: { canonical: "/venues" },
+  ...buildShareMetadata({ title: shareTitle(title), description, path: "/venues" }),
 };
 
 export const revalidate = 0;

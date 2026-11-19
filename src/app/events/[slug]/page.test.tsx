@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EventWithVenue } from "@/lib/queries";
 import type { GenreSlug } from "@/lib/taxonomy";
+import { FALLBACK_SHARE_IMAGE } from "@/lib/shareMetadata";
 
 const VENUE = {
   id: "v-test",
@@ -1341,7 +1342,62 @@ describe("Event detail page — SEO <title> and meta description (2026-10-06)", 
     expect(metadata.alternates).toEqual({ canonical: "/events/eric-prydz-tap1" });
     expect(metadata.openGraph).toMatchObject({
       title: "Eric Prydz",
-      description: "Eric Prydz: Eric Prydz — Drum & Bass at TAP1, Copenhagen, on Friday 23 October 2026.",
+      // Since 2026-11-19 the share description no longer repeats a lineup the
+      // title already names ("Eric Prydz: Eric Prydz — ...").
+      description: "Eric Prydz — Drum & Bass at TAP1, Copenhagen, on Friday 23 October 2026.",
     });
+  });
+});
+
+describe("Event detail page — link-preview metadata (shared buildShareMetadata, 2026-11-19)", () => {
+  async function metadataFor(event: EventWithVenue) {
+    const { generateMetadata } = await import("./page");
+    vi.mocked(getEventBySlugWithVenue).mockResolvedValue(event);
+    return generateMetadata({ params: Promise.resolve({ slug: event.slug }) } as never);
+  }
+
+  it("keeps the SEO title, meta description and canonical exactly as before", async () => {
+    const m = await metadataFor(makeEvent({ artists: ["DJ One", "DJ Two"] }));
+    expect(m.title).toEqual({ absolute: "Test Event - Test Venue, Copenhagen - 10 Aug 2026 | Electronic CPH" });
+    expect(m.description).toBe("Test Event at Test Venue, Copenhagen on Monday 10 August 2026. Lineup: DJ One, DJ Two. Drum & Bass.");
+    expect(m.alternates).toEqual({ canonical: "/events/test-event" });
+    expect(m.robots).toBeUndefined();
+  });
+
+  it("emits the complete share set: title, description, canonical og:url, site name, locale and a large card", async () => {
+    const m = await metadataFor(makeEvent({ artists: ["DJ One", "DJ Two"] }));
+    expect(m.openGraph).toMatchObject({
+      type: "website",
+      siteName: "Electronic CPH",
+      locale: "en_GB",
+      url: "/events/test-event",
+      title: "Test Event",
+      description: "Test Event: DJ One, DJ Two — Drum & Bass at Test Venue, Copenhagen, on Monday 10 August 2026.",
+    });
+    expect(m.twitter).toMatchObject({ card: "summary_large_image", title: "Test Event", description: "Test Event: DJ One, DJ Two — Drum & Bass at Test Venue, Copenhagen, on Monday 10 August 2026." });
+  });
+
+  it("prefers the event's own suitable image (alt = event title, no invented size)", async () => {
+    const m = await metadataFor(makeEvent({ imageUrl: "https://culture-box.com/wp-content/uploads/2026/07/a-1300x746.jpg" }));
+    expect(m.openGraph?.images).toEqual([{ url: "https://culture-box.com/wp-content/uploads/2026/07/a-1300x746.jpg", alt: "Test Event" }]);
+    expect(m.twitter?.images).toEqual([{ url: "https://culture-box.com/wp-content/uploads/2026/07/a-1300x746.jpg", alt: "Test Event" }]);
+  });
+
+  it("uses the approved fallback when the event has no image or only an http one", async () => {
+    for (const imageUrl of [null, "http://example.com/a.jpg"]) {
+      const m = await metadataFor(makeEvent({ imageUrl }));
+      expect(m.openGraph?.images, String(imageUrl)).toEqual([FALLBACK_SHARE_IMAGE]);
+    }
+  });
+
+  it("serves the KultuNaut 484×252 copy instead of a stored 154×154 thumbnail", async () => {
+    const m = await metadataFor(makeEvent({ imageUrl: "https://www.kultunaut.dk/perl/images/billetto/W154H154_abc.jpg" }));
+    expect(m.openGraph?.images).toEqual([{ url: "https://www.kultunaut.dk/perl/images/billetto/W484H252_abc.jpg", width: 484, height: 252, alt: "Test Event" }]);
+  });
+
+  it("writes a clean description when the event has no genre and no lineup", async () => {
+    const m = await metadataFor(makeEvent({ artists: [], subgenres: [], primaryGenre: null as never }));
+    expect(m.openGraph?.description).toBe("Test Event at Test Venue, Copenhagen, on Monday 10 August 2026.");
+    expect(m.openGraph?.description).not.toMatch(/—\s+at|\s{2}/);
   });
 });

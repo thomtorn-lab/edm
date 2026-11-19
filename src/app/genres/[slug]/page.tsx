@@ -5,6 +5,7 @@ import { getSoundcloudAvailabilityForEvents, getUpcomingPublishedEventsForList }
 import { isPastEvent, sortByStart } from "@/lib/datetime";
 import { INDEXABLE_GENRE_PAGES, genrePagePath, getGenre, indexableGenreForUrlSlug, matchesGenreSelection } from "@/lib/taxonomy";
 import { GENRE_PAGE_CONTENT, genrePageIncludedLabels } from "@/lib/genrePages";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import EventRow from "@/components/EventRow";
 import EmptyState from "@/components/EmptyState";
 
@@ -31,17 +32,13 @@ export async function generateMetadata({ params }: PageProps<"/genres/[slug]">):
   if (!genre) return {};
   const content = GENRE_PAGE_CONTENT[genre];
   const path = genrePagePath(genre)!;
-  // A page-level openGraph replaces the layout's whole object, hence its
-  // fields are repeated here (same pattern as the venue pages).
-  const shareTitle = `${content.h1} — Electronic CPH`;
   return {
     // absolute: the SEO title already carries the brand, so the root
     // layout's "%s — Electronic CPH" template must not add it again.
     title: { absolute: content.seoTitle },
     description: content.description,
     alternates: { canonical: path },
-    openGraph: { type: "website", siteName: "Electronic CPH", locale: "en_GB", url: path, title: shareTitle, description: content.description },
-    twitter: { card: "summary", title: shareTitle, description: content.description },
+    ...buildShareMetadata({ title: shareTitle(content.h1), description: content.description, path }),
   };
 }
 

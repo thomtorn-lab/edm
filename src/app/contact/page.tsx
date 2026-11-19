@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import Link from "next/link";
 import ContactForm from "./ContactForm";
 
+const title = "Contact";
+const description = "Get in touch with Electronic CPH — corrections, tips, and general questions.";
+
 export const metadata: Metadata = {
-  title: "Contact",
-  description: "Get in touch with Electronic CPH — corrections, tips, and general questions.",
+  title,
+  description,
   alternates: { canonical: "/contact" },
+  ...buildShareMetadata({ title: shareTitle(title), description, path: "/contact" }),
 };
 
 export default function ContactPage() {
