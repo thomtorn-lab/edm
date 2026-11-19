@@ -7,6 +7,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import BackToTopButton from "@/components/BackToTopButton";
 import { SITE_URL } from "@/lib/siteUrl";
+import { buildShareMetadata, SITE_DEFAULT_DESCRIPTION, SITE_DEFAULT_TITLE } from "@/lib/shareMetadata";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -44,19 +45,16 @@ const bigShoulders = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Electronic CPH — Copenhagen Electronic Music Events",
+    default: SITE_DEFAULT_TITLE,
     template: "%s — Electronic CPH",
   },
-  description:
-    "Techno, house, trance, drum & bass and more — a fast, curated index of electronic music events in Copenhagen.",
-  openGraph: {
-    type: "website",
-    siteName: "Electronic CPH",
-    locale: "en_GB",
-  },
-  twitter: {
-    card: "summary",
-  },
+  description: SITE_DEFAULT_DESCRIPTION,
+  // Site-wide link-preview default (site name, locale, large card, branded
+  // fallback image) for any page that sets no share metadata of its own —
+  // e.g. the newsletter and admin pages, whose og:title/description Next.js
+  // still fills from their own <title>/description. No og:url: the layout
+  // can't know the page's URL.
+  ...buildShareMetadata({}),
   // No site-wide `robots` here: "index, follow" is already the default when
   // no robots tag exists, and an explicit layout value was also inherited
   // by the 404 page, contradicting the `noindex` Next.js injects there.

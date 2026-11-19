@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, SITE_DEFAULT_DESCRIPTION, SITE_DEFAULT_TITLE } from "@/lib/shareMetadata";
 import {
   getPreviewAvailabilityForEvents,
   getSoundcloudAvailabilityForEvents,
@@ -13,6 +14,9 @@ import { artistAlertsMode, subscriptionsEnabled } from "@/lib/artistAlerts/confi
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
+  // Title/description are the layout's site defaults; repeated here only so
+  // the link preview also carries og:url.
+  ...buildShareMetadata({ title: SITE_DEFAULT_TITLE, description: SITE_DEFAULT_DESCRIPTION, path: "/" }),
 };
 
 // Events are admin-editable now; always read the current DB state rather

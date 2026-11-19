@@ -9,6 +9,7 @@ import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLab
 import { buildEventJsonLd } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/siteUrl";
 import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
+import { buildEventShareDescription, buildShareMetadata, shareImageForEvent } from "@/lib/shareMetadata";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
@@ -29,18 +30,27 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
 
   const title = cleanEventTitle(event.title, event.venue.name);
   const genreLabels = displayGenres(event.subgenres).map((g) => g.label);
-  const genres = genreLabels.join(" · ");
-  // Open Graph keeps its existing title/description — the SEO work package
-  // (2026-10-06) is scoped to the HTML <title> and meta description only.
-  const ogDescription = `${title}${event.artists.length ? `: ${event.artists.map(formatArtistName).join(", ")}` : ""} — ${genres} at ${event.venue.name}, ${event.venue.city}, on ${formatFullDateLabel(event.startDatetime)}.`;
+  const artists = event.artists.map(formatArtistName);
+  const showArtists = shouldShowArtistPreview(title, event.artists);
   const seoInput = {
     title,
     venueName: event.venue.name,
     startDatetime: event.startDatetime,
-    artists: event.artists.map(formatArtistName),
+    artists,
     genres: genreLabels,
-    showArtists: shouldShowArtistPreview(title, event.artists),
+    showArtists,
   };
+  // Link previews keep the existing share title (the cleaned event title);
+  // the description drops missing parts cleanly (no genre / no lineup).
+  const shareDescription = buildEventShareDescription({
+    title,
+    artists,
+    showArtists,
+    genres: genreLabels,
+    venueName: event.venue.name,
+    city: event.venue.city,
+    dateLabel: formatFullDateLabel(event.startDatetime),
+  });
 
   return {
     // absolute: the SEO title already ends in "| Electronic CPH", so the
@@ -48,12 +58,12 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
     title: { absolute: buildEventSeoTitle(seoInput) },
     description: buildEventSeoDescription(seoInput),
     alternates: { canonical: `/events/${event.slug}` },
-    openGraph: {
+    ...buildShareMetadata({
       title,
-      description: ogDescription,
-      type: "website",
-      images: event.imageUrl ? [event.imageUrl] : undefined,
-    },
+      description: shareDescription,
+      path: `/events/${event.slug}`,
+      image: shareImageForEvent(event.imageUrl, title),
+    }),
   };
 }
 

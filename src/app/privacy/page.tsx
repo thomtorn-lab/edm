@@ -1,9 +1,14 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import Link from "next/link";
 import AnalyticsConsentSettings from "@/components/AnalyticsConsentSettings";
 import { artistAlertsMode, subscriptionsEnabled } from "@/lib/artistAlerts/config";
 import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
+
+const title = "Privacy";
+const description =
+  "How Electronic CPH handles personal data: hosting, visitor statistics only with your consent, YouTube videos loaded only when you press play, and the contact forms.";
 
 /**
  * Privacy page (GDPR review, 2026-10-30). Describes what the site does,
@@ -27,10 +32,10 @@ import { isNewsletterEnabled } from "@/lib/newsletter/featureFlag";
  * set cookies", not "no cookies".
  */
 export const metadata: Metadata = {
-  title: "Privacy",
-  description:
-    "How Electronic CPH handles personal data: hosting, visitor statistics only with your consent, YouTube videos loaded only when you press play, and the contact forms.",
+  title,
+  description,
   alternates: { canonical: "/privacy" },
+  ...buildShareMetadata({ title: shareTitle(title), description, path: "/privacy" }),
 };
 
 const linkClass = "underline hover:text-text-primary";

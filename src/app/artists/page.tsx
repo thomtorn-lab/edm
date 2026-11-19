@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArtistAlertsForm from "@/components/ArtistAlertsForm";
@@ -8,10 +9,13 @@ import { artistAlertsMode, subscriptionsEnabled } from "@/lib/artistAlerts/confi
 export const revalidate = 0;
 
 export async function generateMetadata(): Promise<Metadata> {
+  const title = "Artists";
+  const description = "Follow your favourite artists and get an email when they play in Copenhagen.";
   return {
-    title: "Artists",
-    description: "Follow your favourite artists and get an email when they play in Copenhagen.",
+    title,
+    description,
     alternates: { canonical: "/artists" },
+    ...buildShareMetadata({ title: shareTitle(title), description, path: "/artists" }),
     robots: artistAlertsMode() === "live" ? undefined : { index: false },
   };
 }

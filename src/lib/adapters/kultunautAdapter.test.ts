@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -438,5 +438,30 @@ describe("Link-role behavior (Section 8) — structural, via src/lib/links.ts's 
     const c = candidate("20137632");
     expect(c.facebookUrl).toBeNull();
     expect(c.residentAdvisorUrl).toBeNull();
+  });
+});
+
+describe("parseKultunautDetailHtml — event image (link-preview fix, 2026-11-19)", () => {
+  const detailIds = readdirSync(FIXTURES_DIR)
+    .map((f) => f.match(/^kultunaut-detail-(\d+)\.html$/)?.[1])
+    .filter((id): id is string => Boolean(id));
+
+  it("picks the 484×252 og:image, never the 154×154 thumbnail KultuNaut lists first, on every captured detail page", () => {
+    expect(detailIds.length).toBeGreaterThan(20);
+    for (const id of detailIds) {
+      const html = detailHtml(id);
+      const url = candidate(id).imageUrl;
+      expect(html, id).toMatch(/og:image" content="[^"]*W154H154_/);
+      expect(url, id).toMatch(/^https:\/\/www\.kultunaut\.dk\/perl\/images\/[^/]+\/W484H252_/);
+      expect(url, id).not.toContain("W154H154_");
+    }
+  });
+
+  it("falls back to the first og:image when no widths are declared, and to null when there is none", () => {
+    const one = '<meta property="og:image" content="https://www.kultunaut.dk/perl/images/x/W154H154_a.jpg" />';
+    expect(parseKultunautDetailHtml(detailHtml("20265870").replace(/<meta property="og:image[^>]*>/g, "").replace("</head>", `${one}</head>`), "20265870").imageUrl).toBe(
+      "https://www.kultunaut.dk/perl/images/x/W154H154_a.jpg",
+    );
+    expect(parseKultunautDetailHtml(detailHtml("20265870").replace(/<meta property="og:image[^>]*>/g, ""), "20265870").imageUrl).toBeNull();
   });
 });

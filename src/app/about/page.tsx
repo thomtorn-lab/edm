@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import Link from "next/link";
 
+const title = "About";
+const description = "What Electronic CPH is and what it covers.";
+
 export const metadata: Metadata = {
-  title: "About",
-  description: "What Electronic CPH is and what it covers.",
+  title,
+  description,
   alternates: { canonical: "/about" },
+  ...buildShareMetadata({ title: shareTitle(title), description, path: "/about" }),
 };
 
 export default function AboutPage() {

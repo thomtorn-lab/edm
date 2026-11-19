@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
+import { buildShareMetadata, shareTitle } from "@/lib/shareMetadata";
 import { FESTIVALS } from "@/lib/data/festivals";
 import FestivalExplorer from "@/components/FestivalExplorer";
 
+const title = "Festivals";
+const description = "A curated guide to the European electronic music festivals most worth knowing about, from Tomorrowland to Dekmantel.";
+
 export const metadata: Metadata = {
-  title: "Festivals",
-  description: "A curated guide to the European electronic music festivals most worth knowing about, from Tomorrowland to Dekmantel.",
+  title,
+  description,
   alternates: { canonical: "/festivals" },
+  ...buildShareMetadata({ title: shareTitle(title), description, path: "/festivals" }),
 };
 
 export default function FestivalsPage() {
