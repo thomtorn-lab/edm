@@ -9,7 +9,7 @@ import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLab
 import { buildEventJsonLd } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/siteUrl";
 import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
-import { buildEventShareDescription, buildShareMetadata, shareImageForEvent } from "@/lib/shareMetadata";
+import { buildEventShareDescription, buildShareMetadata, shareImageForEvent, SITE_NAME } from "@/lib/shareMetadata";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
@@ -59,7 +59,9 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
     description: buildEventSeoDescription(seoInput),
     alternates: { canonical: `/events/${event.slug}` },
     ...buildShareMetadata({
-      title,
+      // Brand suffix (2026-11-19): when the event's own image is used, the
+      // preview otherwise shows neither the name nor the domain.
+      title: `${title} | ${SITE_NAME}`,
       description: shareDescription,
       path: `/events/${event.slug}`,
       image: shareImageForEvent(event.imageUrl, title),
