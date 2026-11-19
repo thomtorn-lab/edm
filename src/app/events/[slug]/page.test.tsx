@@ -1341,7 +1341,7 @@ describe("Event detail page — SEO <title> and meta description (2026-10-06)", 
     expect(metadata.description).toBe("Eric Prydz at TAP1, Copenhagen on Friday 23 October 2026. Drum & Bass.");
     expect(metadata.alternates).toEqual({ canonical: "/events/eric-prydz-tap1" });
     expect(metadata.openGraph).toMatchObject({
-      title: "Eric Prydz",
+      title: "Eric Prydz | Electronic CPH",
       // Since 2026-11-19 the share description no longer repeats a lineup the
       // title already names ("Eric Prydz: Eric Prydz — ...").
       description: "Eric Prydz — Drum & Bass at TAP1, Copenhagen, on Friday 23 October 2026.",
@@ -1364,17 +1364,17 @@ describe("Event detail page — link-preview metadata (shared buildShareMetadata
     expect(m.robots).toBeUndefined();
   });
 
-  it("emits the complete share set: title, description, canonical og:url, site name, locale and a large card", async () => {
+  it("emits the complete share set: branded title (<event> | Electronic CPH), description, canonical og:url, site name, locale and a large card", async () => {
     const m = await metadataFor(makeEvent({ artists: ["DJ One", "DJ Two"] }));
     expect(m.openGraph).toMatchObject({
       type: "website",
       siteName: "Electronic CPH",
       locale: "en_GB",
       url: "/events/test-event",
-      title: "Test Event",
+      title: "Test Event | Electronic CPH",
       description: "Test Event: DJ One, DJ Two — Drum & Bass at Test Venue, Copenhagen, on Monday 10 August 2026.",
     });
-    expect(m.twitter).toMatchObject({ card: "summary_large_image", title: "Test Event", description: "Test Event: DJ One, DJ Two — Drum & Bass at Test Venue, Copenhagen, on Monday 10 August 2026." });
+    expect(m.twitter).toMatchObject({ card: "summary_large_image", title: "Test Event | Electronic CPH", description: "Test Event: DJ One, DJ Two — Drum & Bass at Test Venue, Copenhagen, on Monday 10 August 2026." });
   });
 
   it("prefers the event's own suitable image (alt = event title, no invented size)", async () => {
