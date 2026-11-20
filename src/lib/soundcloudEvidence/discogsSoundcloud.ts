@@ -84,3 +84,38 @@ export function discogsLookupCandidates(events: readonly { title: string; artist
   }
   return [...out.values()];
 }
+
+/**
+ * Whether a performer's cached Discogs row (or its absence) still needs a
+ * Discogs -> SoundCloud lookup: no row, an expired row, or a fresh "found"
+ * row not yet assessed for SoundCloud. A fresh row already assessed (any
+ * verdict), or cached as not found / ambiguous, needs nothing — so no
+ * artist is ever searched twice within the Discogs cache's own TTL. A
+ * profile once assessed "verifiable" is never re-assessed, even after the
+ * row expires: a later sync must not replace a verified link with a
+ * weaker verdict from a transient failure (a block removes a wrong one).
+ */
+export function needsDiscogsSoundcloudLookup(row: { lookupStatus: string; evidence: unknown; expiresAt: Date } | undefined, now: Date): boolean {
+  if (row && readDiscogsSoundcloud(row.evidence)?.verdict === "verifiable") return false;
+  if (!row || row.expiresAt.getTime() <= now.getTime()) return true;
+  return row.lookupStatus === "found" && !readDiscogsSoundcloud(row.evidence);
+}
+
+/**
+ * The evidence to store when the Discogs integration re-looks an artist up
+ * (its genre cache expired, e.g. during a later source sync): the new
+ * evidence, plus the earlier SoundCloud assessment when the re-lookup
+ * resolved to the same Discogs artist and carries none of its own. Without
+ * this a routine genre refresh would silently drop a verified SoundCloud
+ * profile from every event page. A different (or no) Discogs artist drops
+ * it: the old verification no longer describes this identity.
+ */
+export function keepDiscogsSoundcloud(
+  previous: { discogsArtistId: number | null; evidence: unknown } | undefined,
+  next: { discogsArtistId: number | null; evidence: unknown },
+): unknown {
+  if (!previous || previous.discogsArtistId === null || previous.discogsArtistId !== next.discogsArtistId) return next.evidence;
+  if (readDiscogsSoundcloud(next.evidence)) return next.evidence;
+  const earlier = readDiscogsSoundcloud(previous.evidence);
+  return earlier ? withDiscogsSoundcloud(next.evidence, earlier) : next.evidence;
+}

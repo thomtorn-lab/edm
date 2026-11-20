@@ -311,6 +311,18 @@ hour. The `sync-*.yml` and `artist-alerts.yml` GitHub workflows no longer have a
 for manual `workflow_dispatch` runs (POST with `x-sync-token`), e.g. to retry after a fix. GitHub's
 own scheduled runs proved too unreliable (Artist Alerts ran ~4 times a day instead of 48).
 
+- **Daily links** (`GET /api/enrichment/daily-links`, 03:10 UTC, `src/db/dailyLinks.ts`): for
+  upcoming published events, looks up artists whose page shows no SoundCloud link / no video,
+  through the existing rule-based matchers only (Discogs → SoundCloud, YouTube Rule A), cache-first,
+  earliest event first, with a per-run cap and a time budget well inside `maxDuration`; the rest is
+  picked up the next day. Events with a YouTube override, blocked artists/profiles and names with a
+  manual or existing link are never searched. It writes only the two artist caches, so the event
+  page and admin show the results through their existing read paths. A short report (events
+  checked, new SoundCloud links, new videos, errors — measured on the page's own read path) is
+  logged and emailed (`DAILY_LINKS_REPORT_EMAIL`, else `CONTACT_RECIPIENT_EMAIL`). The YouTube
+  part is **off** unless `DAILY_LINKS_YOUTUBE_ENABLED=true` (see `.env.example`). A Discogs-verified
+  SoundCloud profile is never re-assessed and survives a later genre re-lookup of the same Discogs
+  artist, so no source sync can overwrite or remove it (`keepDiscogsSoundcloud`).
 - **Auth**: `src/lib/scheduledRequestAuth.ts` accepts either Vercel Cron's
   `Authorization: Bearer $CRON_SECRET` or the manual workflows' `x-sync-token: $SYNC_TRIGGER_TOKEN`.
   `CRON_SECRET` must be set as a Production environment variable in Vercel.

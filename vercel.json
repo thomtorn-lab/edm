@@ -11,6 +11,7 @@
     { "path": "/api/sync/billetto", "schedule": "45 */6 * * *" },
     { "path": "/api/sync/pumpehuset", "schedule": "50 */6 * * *" },
     { "path": "/api/sync/hvaderpaa", "schedule": "55 */6 * * *" },
-    { "path": "/api/artist-alerts/run", "schedule": "17,47 * * * *" }
+    { "path": "/api/artist-alerts/run", "schedule": "17,47 * * * *" },
+    { "path": "/api/enrichment/daily-links", "schedule": "10 3 * * *" }
   ]
 }
