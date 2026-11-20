@@ -64,6 +64,7 @@ const {
   getArtistPreviewAvailabilityForLineups,
   getSoundcloudLinksForLineup,
   getSoundcloudAvailabilityForEvents,
+  getSoundcloudLinksForEvents,
   getRecentSyncIdentityChanges,
   getPublishedEventSitemapEntries,
   getVenueSitemapEntries,
@@ -307,6 +308,25 @@ describe("SoundCloud artist link reads (2026-10-13) select only what the pages u
     it("a reused profile is shown for a lineup name without its own link, in lineup order", async () => {
       tableRows.event_artists = [{ event_id: "e-1", lineup_entry: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" }];
       await expect(getSoundcloudLinksForLineup("e-1", ["Rexie Lex", "GUY J"])).resolves.toEqual([
+        { name: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" },
+        { name: "GUY J", url: "https://soundcloud.com/guy-j" },
+      ]);
+      delete tableRows.event_artists;
+    });
+
+    it("daily links job: the batched read shows exactly what each event page shows, in one own-links query", async () => {
+      tableRows.event_artists = [{ event_id: "e-1", lineup_entry: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" }];
+      const lineups = [
+        { id: "e-1", artists: ["Rexie Lex", "GUY J"] },
+        { id: "e-2", artists: ["ALX"] },
+        { id: "e-3", artists: [] },
+      ];
+      const batched = await getSoundcloudLinksForEvents(lineups);
+      const own = soundcloudQueries().filter((q) => /^select .* from "event_soundcloud_links" where \(?"event_soundcloud_links"\."event_id" in/i.test(q.text));
+      expect(own).toHaveLength(1);
+      expect(own[0].values).toEqual(["e-1", "e-2"]); // events without a lineup are not even sent
+      for (const e of lineups) expect(batched.get(e.id), e.id).toEqual(await getSoundcloudLinksForLineup(e.id, e.artists));
+      expect(batched.get("e-1")).toEqual([
         { name: "Rexie Lex", url: "https://soundcloud.com/rexie_lex" },
         { name: "GUY J", url: "https://soundcloud.com/guy-j" },
       ]);

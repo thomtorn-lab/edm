@@ -5,7 +5,7 @@ import { drizzleCacheStore } from "./enrichment";
 import * as discogsClient from "@/lib/enrichment/discogsClient";
 import { getOrLookupArtistGenre } from "@/lib/enrichment/genreEnrichment";
 import { assessDiscogsSoundcloud, soundcloudProfilesFromUrls } from "@/lib/soundcloudEvidence/discogsCandidate";
-import { discogsCacheKey, discogsLookupName, readDiscogsSoundcloud, withDiscogsSoundcloud } from "@/lib/soundcloudEvidence/discogsSoundcloud";
+import { discogsCacheKey, discogsLookupName, needsDiscogsSoundcloudLookup, withDiscogsSoundcloud } from "@/lib/soundcloudEvidence/discogsSoundcloud";
 
 /**
  * Discogs -> SoundCloud lookups, run by the existing sync after its own work
@@ -52,10 +52,8 @@ export async function resolveDiscogsSoundcloud(performers: readonly string[], ma
     for (const performer of performers) {
       if (summary.lookedUp >= maxLookups) break;
       const key = discogsCacheKey(performer);
-      const row = byKey.get(key);
-      const fresh = row && row.expiresAt.getTime() > now.getTime();
       // Nothing to gain: already assessed, or Discogs has no single artist for the name.
-      if (fresh && (row.lookupStatus !== "found" || readDiscogsSoundcloud(row.evidence))) continue;
+      if (!needsDiscogsSoundcloudLookup(byKey.get(key), now)) continue;
       summary.lookedUp++;
       try {
         const entry = await getOrLookupArtistGenre(discogsLookupName(performer), drizzleCacheStore, discogsClient, now);

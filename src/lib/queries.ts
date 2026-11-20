@@ -540,7 +540,7 @@ export async function getArtistPreviewAvailabilityForLineups(lineups: string[][]
  * artist-cache reads above. (Production applies migration 0023 before build,
  * so a missing table only happens on a database without it, e.g. Preview.)
  */
-async function readEventOverrides(eventIds: string[]): Promise<Map<string, EventOverrideRow> | null> {
+export async function readEventOverrides(eventIds: string[]): Promise<Map<string, EventOverrideRow> | null> {
   if (eventIds.length === 0) return new Map();
   try {
     const rows = await db
@@ -765,6 +765,49 @@ export async function getSoundcloudLinksForLineup(eventId: string, artists: stri
   }
   // Own rows last: selectLineupSoundcloudLinks keeps the last URL per name.
   return selectLineupSoundcloudLinks(artists, [...reused, ...own]);
+}
+
+/**
+ * getSoundcloudLinksForLineup for many events at once (daily links job,
+ * 2026-11-20): the same rows and the same selection, per event — the
+ * event's own unblocked links (manual last, so they win), plus, for events
+ * with a name lacking one, the reused profiles — in two batched reads plus
+ * one batched reuse query. Map of event id -> the links its page shows.
+ * Unlike the page it throws on a failed read: the caller must not mistake
+ * "couldn't read" for "no links".
+ */
+export async function getSoundcloudLinksForEvents(list: { id: string; artists: string[] }[]): Promise<Map<string, { name: string; url: string }[]>> {
+  const result = new Map<string, { name: string; url: string }[]>();
+  const withLineup = list.filter((e) => e.artists.length > 0);
+  for (const e of list) result.set(e.id, []);
+  if (withLineup.length === 0) return result;
+  const ownRows = await db
+    .select({ eventId: eventSoundcloudLinks.eventId, artistName: eventSoundcloudLinks.artistName, url: eventSoundcloudLinks.url, sourceId: eventSoundcloudLinks.sourceId })
+    .from(eventSoundcloudLinks)
+    .where(and(inArray(eventSoundcloudLinks.eventId, withLineup.map((e) => e.id)), soundcloudLinkNotBlocked()));
+  const ownByEvent = new Map<string, typeof ownRows>();
+  for (const r of ownRows) {
+    if (!ownByEvent.has(r.eventId)) ownByEvent.set(r.eventId, []);
+    ownByEvent.get(r.eventId)!.push(r);
+  }
+  const needsReuse = withLineup.filter((e) => {
+    const names = new Set((ownByEvent.get(e.id) ?? []).map((r) => r.artistName));
+    return !e.artists.every((name) => names.has(name));
+  });
+  const reuseByEvent = new Map<string, Awaited<ReturnType<typeof reusedSoundcloudRows>>>();
+  if (needsReuse.length > 0) {
+    for (const r of await reusedSoundcloudRows(needsReuse.map((e) => e.id))) {
+      if (!reuseByEvent.has(r.eventId)) reuseByEvent.set(r.eventId, []);
+      reuseByEvent.get(r.eventId)!.push(r);
+    }
+  }
+  for (const e of withLineup) {
+    const own = withManualLinksLast(ownByEvent.get(e.id) ?? []);
+    const reused = selectReusedSoundcloudProfiles(reuseByEvent.get(e.id) ?? []);
+    // Own rows last: selectLineupSoundcloudLinks keeps the last URL per name.
+    result.set(e.id, selectLineupSoundcloudLinks(e.artists, [...reused, ...own]));
+  }
+  return result;
 }
 
 /**

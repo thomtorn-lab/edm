@@ -52,3 +52,37 @@ describe("which names are worth a lookup (no expected gain -> no lookup)", () =>
     expect(discogsLookupCandidates([{ title: "A", artists: ["HATIKWA", "Aaaa Bbbb"] }, { title: "B", artists: ["Hatikwa", "Cccc Dddd"] }], new Set())).toEqual(["HATIKWA", "Aaaa Bbbb", "Cccc Dddd"]);
   });
 });
+
+describe("needsDiscogsSoundcloudLookup: no artist is searched twice, and a verified profile is never re-assessed", async () => {
+  const { needsDiscogsSoundcloudLookup } = await import("./discogsSoundcloud");
+  const now = new Date("2026-11-20T00:00:00.000Z");
+  const fresh = new Date("2027-01-01T00:00:00.000Z");
+  const expired = new Date("2026-11-01T00:00:00.000Z");
+  it.each([
+    ["no cache row", undefined, true],
+    ["expired row", { lookupStatus: "found", evidence: {}, expiresAt: expired }, true],
+    ["fresh found, not yet assessed", { lookupStatus: "found", evidence: {}, expiresAt: fresh }, true],
+    ["fresh found, assessed missing", { lookupStatus: "found", evidence: { soundcloud: { ...sc, verdict: "missing" } }, expiresAt: fresh }, false],
+    ["fresh not found", { lookupStatus: "not_found", evidence: {}, expiresAt: fresh }, false],
+    ["fresh ambiguous", { lookupStatus: "ambiguous", evidence: {}, expiresAt: fresh }, false],
+    ["verified, even after expiry", { lookupStatus: "found", evidence: { soundcloud: sc }, expiresAt: expired }, false],
+  ])("%s", (_label, row, expected) => {
+    expect(needsDiscogsSoundcloudLookup(row, now)).toBe(expected);
+  });
+});
+
+describe("keepDiscogsSoundcloud: a genre re-lookup never drops the verified profile of the same Discogs artist", async () => {
+  const { keepDiscogsSoundcloud } = await import("./discogsSoundcloud");
+  it("keeps it for the same Discogs artist", () => {
+    expect(keepDiscogsSoundcloud({ discogsArtistId: 42, evidence: { old: 1, soundcloud: sc } }, { discogsArtistId: 42, evidence: { fresh: 2 } })).toEqual({ fresh: 2, soundcloud: sc });
+  });
+  it("drops it when the re-lookup found a different, or no, Discogs artist", () => {
+    expect(keepDiscogsSoundcloud({ discogsArtistId: 42, evidence: { soundcloud: sc } }, { discogsArtistId: 7, evidence: { fresh: 2 } })).toEqual({ fresh: 2 });
+    expect(keepDiscogsSoundcloud({ discogsArtistId: 42, evidence: { soundcloud: sc } }, { discogsArtistId: null, evidence: { fresh: 2 } })).toEqual({ fresh: 2 });
+  });
+  it("leaves a new assessment and a first lookup alone", () => {
+    const newer = { ...sc, verdict: "missing" as const, profileUrl: null };
+    expect(keepDiscogsSoundcloud({ discogsArtistId: 42, evidence: { soundcloud: sc } }, { discogsArtistId: 42, evidence: { soundcloud: newer } })).toEqual({ soundcloud: newer });
+    expect(keepDiscogsSoundcloud(undefined, { discogsArtistId: 42, evidence: { fresh: 2 } })).toEqual({ fresh: 2 });
+  });
+});
