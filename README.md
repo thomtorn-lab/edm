@@ -319,7 +319,8 @@ own scheduled runs proved too unreliable (Artist Alerts ran ~4 times a day inste
   manual or existing link are never searched. It writes only the two artist caches, so the event
   page and admin show the results through their existing read paths. A short report (events
   checked, new SoundCloud links, new videos, errors — measured on the page's own read path) is
-  logged and emailed (`DAILY_LINKS_REPORT_EMAIL`, else `CONTACT_RECIPIENT_EMAIL`). The YouTube
+  always logged, and emailed only when a link was added or an error occurred
+  (`DAILY_LINKS_REPORT_EMAIL`, else `CONTACT_RECIPIENT_EMAIL`). The YouTube
   part is **off** unless `DAILY_LINKS_YOUTUBE_ENABLED=true` (see `.env.example`). A Discogs-verified
   SoundCloud profile is never re-assessed and survives a later genre re-lookup of the same Discogs
   artist, so no source sync can overwrite or remove it (`keepDiscogsSoundcloud`).

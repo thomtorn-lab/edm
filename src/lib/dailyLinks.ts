@@ -153,6 +153,11 @@ export interface DailyLinksReport {
   errors: string[];
 }
 
+/** The report is emailed only when a link was added or something failed; otherwise it is logged only. */
+export function shouldEmailDailyLinksReport(report: DailyLinksReport): boolean {
+  return report.soundcloud.added.length > 0 || report.youtube.added.length > 0 || report.errors.length > 0;
+}
+
 const MAX_LISTED = 15;
 
 /** The short daily email: counts first, then the actual new links (capped), then errors. */
