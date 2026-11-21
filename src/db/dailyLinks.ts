@@ -13,6 +13,7 @@ import {
   dailyLinksConfig,
   formatDailyLinksReport,
   newSoundcloudLinks,
+  shouldEmailDailyLinksReport,
   soundcloudCandidates,
   youtubeCandidateGroups,
   youtubeKey,
@@ -208,12 +209,16 @@ export async function runDailyLinks(deps: DailyLinksDeps = {}): Promise<DailyLin
 
   const { subject, text } = formatDailyLinksReport(report, new Map(list.map((e) => [e.id, e])));
   console.log(`[daily-links] ${subject}\n${text}`);
+  // Email only when there is something to act on: a new link or an error.
+  // A quiet day is in the log only.
   let emailSent = false;
-  try {
-    await (deps.send ?? sendEmail)({ subject, text, to: config.reportEmail });
-    emailSent = true;
-  } catch (err) {
-    console.error(`[daily-links] report email failed: ${message(err)}`);
+  if (shouldEmailDailyLinksReport(report)) {
+    try {
+      await (deps.send ?? sendEmail)({ subject, text, to: config.reportEmail });
+      emailSent = true;
+    } catch (err) {
+      console.error(`[daily-links] report email failed: ${message(err)}`);
+    }
   }
   return { ...report, emailSent };
 }

@@ -133,8 +133,24 @@ describe("runDailyLinks — YouTube", () => {
   });
 });
 
-it("a failed report email never fails the run", async () => {
-  send.mockRejectedValue(new Error("Email is not configured"));
-  const r = await run();
-  expect(r.emailSent).toBe(false);
+describe("report email", () => {
+  it("is not sent on a quiet day (no new links, no errors) — log only", async () => {
+    const r = await run();
+    expect(send).not.toHaveBeenCalled();
+    expect(r.emailSent).toBe(false);
+  });
+
+  it("is sent when there are errors", async () => {
+    resolveDiscogsSoundcloud.mockResolvedValueOnce(okSummary({ failed: 1, missing: 0 }));
+    const r = await run();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(r.emailSent).toBe(true);
+  });
+
+  it("a failed send never fails the run", async () => {
+    resolveDiscogsSoundcloud.mockResolvedValueOnce(okSummary({ failed: 1, missing: 0 }));
+    send.mockRejectedValue(new Error("Email is not configured"));
+    const r = await run();
+    expect(r.emailSent).toBe(false);
+  });
 });
