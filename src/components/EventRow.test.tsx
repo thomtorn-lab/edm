@@ -438,7 +438,7 @@ describe("EventRow — title-link affordance change introduces no nested-interac
   it("the Add to calendar control remains a separate button, independent of the title link", () => {
     render(<EventRow event={makeEvent()} />);
     const titleLink = screen.getByRole("link", { name: /Test Event/ });
-    const calendarButton = screen.getByRole("button", { name: /Add to calendar/i });
+    const [calendarButton] = screen.getAllByRole("button", { name: /Add to calendar/i });
     expect(titleLink.contains(calendarButton)).toBe(false);
     expect(calendarButton.contains(titleLink)).toBe(false);
   });
@@ -449,7 +449,7 @@ describe("EventRow — Apple Calendar / ICS uses a real HTTP endpoint, not a dat
 
   it("Apple Calendar / ICS points at the real per-event ICS route", () => {
     render(<EventRow event={makeEvent({ slug: "test-event" })} />);
-    fireEvent.click(screen.getByRole("button", { name: /Add to calendar/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Add to calendar/i })[0]);
     const icsLink = screen.getByRole("menuitem", { name: /Apple Calendar/i });
     expect(icsLink.getAttribute("href")).toBe("/events/test-event/calendar.ics");
     expect(icsLink.getAttribute("href")).not.toMatch(/^data:/);
@@ -457,7 +457,7 @@ describe("EventRow — Apple Calendar / ICS uses a real HTTP endpoint, not a dat
 
   it("Google Calendar and Outlook links remain unchanged by the ICS fix", () => {
     render(<EventRow event={makeEvent()} />);
-    fireEvent.click(screen.getByRole("button", { name: /Add to calendar/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Add to calendar/i })[0]);
     const google = screen.getByRole("menuitem", { name: /Google Calendar/i });
     const outlook = screen.getByRole("menuitem", { name: /Outlook/i });
     expect(google.getAttribute("href")).toContain("https://calendar.google.com/calendar/render");
@@ -1097,12 +1097,12 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
   });
 
   it("flattens the inner containers only below sm, so desktop keeps its three columns", () => {
-    const { container } = render(<EventRow event={makeEvent()} />);
+    const { container } = render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
     const row = container.querySelector("li > div") as HTMLElement;
     expect(cls(row)).toEqual(expect.arrayContaining(["flex-wrap", "sm:flex-nowrap", "sm:items-start", "sm:gap-5"]));
     const [, middle, actions] = Array.from(row.children);
     expect(cls(middle)).toEqual(expect.arrayContaining(["contents", "sm:block", "sm:min-w-0", "sm:flex-1"]));
-    expect(cls(actions)).toEqual(expect.arrayContaining(["contents", "sm:flex", "sm:shrink-0"]));
+    expect(cls(actions)).toEqual(expect.arrayContaining(["flex", "basis-full", "sm:flex", "sm:basis-auto", "sm:shrink-0"]));
   });
 
   it("colours genres in the muted accent purple on mobile, keeping the tertiary grey on desktop", () => {
@@ -1256,32 +1256,31 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     expect(screen.getAllByText("Calendar")[0].className).toBe("sm:hidden");
   });
 
-  it("binds the last external link to Calendar in one non-wrapping unit", () => {
-    render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
-    const tickets = screen.getByRole("link", { name: /Tickets/ });
-    const official = screen.getByRole("link", { name: /Official event/ });
-    const unit = tickets.parentElement as HTMLElement;
-    expect(cls(unit)).toEqual(["inline-flex", "items-center", "gap-x-4", "sm:contents"]);
-    expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
-    expect(unit.contains(official)).toBe(false);
+  it("puts Official event and Tickets alone on the primary mobile action line (2026-11-21)", () => {
+    const { container } = render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
+    const actions = (container.querySelector("li > div") as HTMLElement).children[2] as HTMLElement;
+    expect(cls(actions)).toEqual(expect.arrayContaining(["flex", "basis-full", "flex-wrap"]));
+    expect(actions.contains(screen.getByRole("link", { name: /Official event/ }))).toBe(true);
+    expect(actions.contains(screen.getByRole("link", { name: /Tickets/ }))).toBe(true);
+    // Its Calendar is desktop-only; the mobile one opens the secondary line.
+    const [mobileCal, desktopCal] = screen.getAllByRole("button", { name: "Add to calendar" });
+    expect(actions.contains(mobileCal)).toBe(false);
+    expect(cls(mobileCal.closest("div")?.parentElement as Element)).toEqual(["order-1", "flex", "sm:hidden"]);
+    expect(cls(desktopCal.closest("div")?.parentElement as Element)).toEqual(["hidden", "sm:contents"]);
     // Items outside the link group carry its typography themselves.
-    expect(cls(tickets)).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "font-medium", "uppercase", "tracking-wide"]));
+    expect(cls(screen.getByRole("link", { name: /Tickets/ }))).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "font-medium", "uppercase", "tracking-wide"]));
   });
 
-  it("does not bind when Video/Audio follow Calendar — links then fill the line by width alone", () => {
-    render(
-      <EventRow
-        event={{ ...makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" }), hasAudioLinks: true }}
-      />,
-    );
-    const unit = screen.getByRole("link", { name: /Tickets/ }).parentElement as HTMLElement;
-    expect(cls(unit)).toEqual(["contents", "sm:contents"]);
+  it("keeps FREE on the primary line with the links", () => {
+    const { container } = render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
+    const actions = (container.querySelector("li > div") as HTMLElement).children[2] as HTMLElement;
+    expect(actions.contains(screen.getByText("Free"))).toBe(true);
   });
 
-  it("binds FREE (when it is last) to Calendar", () => {
-    render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
-    const unit = screen.getByText("Free").parentElement as HTMLElement;
-    expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
+  it("renders no primary action line on mobile when there are no links", () => {
+    const { container } = render(<EventRow event={makeEvent()} />);
+    const actions = (container.querySelector("li > div") as HTMLElement).children[2] as HTMLElement;
+    expect(cls(actions)).toEqual(expect.arrayContaining(["hidden", "sm:flex"]));
   });
 });
 
@@ -1300,8 +1299,8 @@ describe("EventRow — mobile Calendar wraps together with the first media badge
     expect(cls(desktopCal.closest("div")?.parentElement as Element)).toEqual(["hidden", "sm:contents"]);
     // AUDIO follows freely, outside the unit.
     expect(unit.contains(screen.getByRole("link", { name: /audio links/ }))).toBe(false);
-    // Tickets is no longer bound to Calendar when media follow.
-    expect(cls(screen.getByRole("link", { name: /Tickets/ }).parentElement as Element)).toEqual(["contents", "sm:contents"]);
+    // Tickets stays on the primary line, never bound to Calendar.
+    expect(cls(screen.getByRole("link", { name: /Tickets/ }).parentElement as Element)).toEqual(["contents"]);
   });
 
   it("with AUDIO only: the mobile Calendar is bound to AUDIO", () => {
@@ -1311,8 +1310,10 @@ describe("EventRow — mobile Calendar wraps together with the first media badge
     expect((audio.parentElement as HTMLElement).contains(mobileCal)).toBe(true);
   });
 
-  it("without media: a single Calendar, no mobile copy", () => {
+  it("without media: the mobile Calendar alone forms the secondary line (2026-11-21)", () => {
     render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
-    expect(screen.getAllByRole("button", { name: "Add to calendar" })).toHaveLength(1);
+    const [mobileCal] = screen.getAllByRole("button", { name: "Add to calendar" });
+    expect(screen.getAllByRole("button", { name: "Add to calendar" })).toHaveLength(2);
+    expect(cls(mobileCal.closest("div")?.parentElement as Element)).toEqual(["order-1", "flex", "sm:hidden"]);
   });
 });

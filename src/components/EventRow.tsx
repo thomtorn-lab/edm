@@ -61,7 +61,6 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   ];
   const leadLinkItems = linkItems.slice(0, -1);
   const hasMedia = !!event.hasArtistPreview || !!event.hasAudioLinks;
-  const bindCalendarToLastLink = !hasMedia;
   const lastLinkItem = linkItems.at(-1);
   // Typography the link group gives its children; the last item sits
   // outside the group (in the Calendar unit), so each item carries it itself.
@@ -101,13 +100,13 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
       buttonClassName={CALENDAR_BUTTON_CLASSES}
     />
   );
-  // Mobile only (2026-11-13): when Video/Audio exist, a second Calendar
-  // instance sits in the metadata row, bound with the first media badge in
-  // one non-wrapping unit, so Calendar and that badge always wrap together
-  // and no lone pill is left on a line. The actions-column Calendar is then
-  // desktop-only (display:none below sm), so exactly one is ever rendered
-  // visibly/accessibly per breakpoint. At sm the unit is display:contents
-  // and this copy hidden, so desktop is unchanged.
+  // Mobile only (2026-11-13; 2026-11-21): a second Calendar instance sits in
+  // the metadata row and opens the secondary action line (Calendar → Video →
+  // Audio). With Video/Audio it is bound with the first media badge in one
+  // non-wrapping unit, so no lone pill is left on a line. The actions-column
+  // Calendar is desktop-only (display:none below sm), so exactly one is ever
+  // rendered visibly/accessibly per breakpoint. At sm the unit is
+  // display:contents and this copy hidden, so desktop is unchanged.
   const withMobileCalendar = (badge: ReactNode) => (
     <span className="order-1 inline-flex items-center gap-x-4 sm:contents">
       <span className="flex sm:hidden">{calendarButton}</span>
@@ -120,8 +119,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // actions), unchanged. Mobile reorders the same DOM — no duplicated links —
   // into one continuous unit: date + time + status badges → title → genres
   // (muted accent purple) → LINEUP: + artists → venue (own line) → one
-  // compact wrapping action line: Official event → Tickets/Free → Calendar →
-  // Video → Audio (only those present). No internal divider: the only line
+  // primary action line of plain text links (Official event → Tickets/Free)
+  // → a separate secondary line of pills (Calendar → Video → Audio; only
+  // those present). No internal divider: the only line
   // is the between-event border, with equal 10px padding above and below.
   //
   // It does that by making the middle column, the metadata row, the action
@@ -321,30 +321,27 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 )}
               </>
             )}
+            {!hasMedia && <span className="order-1 flex sm:hidden">{calendarButton}</span>}
           </div>
         </div>
 
-        <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
-          {/* Mobile: the link group is display:contents, so each link is its
-              own unit in the bottom section's single wrapping flow (venue →
-              Official event → Tickets/Free → Calendar → Video → Audio).
-              Everything wraps purely by available width. One exception keeps
-              Calendar from ever ending up alone on a line: when no Video/
-              Audio follows it, the last of Official event/Tickets/Free and
-              Calendar form one non-wrapping unit, so Calendar moves down
-              with that link. With media present, the mobile Calendar is the
-              copy bound to the first media badge in the metadata row (see
-              withMobileCalendar) and this one is desktop-only. At sm
-              both wrappers are display:contents / the original flex group,
+        <div className={`${linkItems.length > 0 ? "flex" : "hidden"} basis-full flex-wrap items-center gap-x-4 gap-y-1.5 sm:flex sm:basis-auto sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1`}>
+          {/* Mobile (2026-11-21): this column is its own full-width line
+              under the venue holding only the text links (Official event →
+              Tickets/Free); it is not rendered at all on mobile without
+              links. Calendar/Video/Audio follow on a separate line (order-1
+              items in the metadata row, see withMobileCalendar), so this
+              column's Calendar is desktop-only. At sm the column, link group
+              and wrappers are the original flex group / display:contents,
               so desktop renders exactly as before. */}
           {leadLinkItems.length > 0 && (
             <div className="contents text-[11px] font-medium uppercase tracking-wide sm:flex sm:text-xs sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
               {leadLinkItems.map(renderLinkItem)}
             </div>
           )}
-          <span className={`${bindCalendarToLastLink ? "inline-flex items-center gap-x-4" : "contents"} sm:contents`}>
+          <span className="contents">
             {lastLinkItem && renderLinkItem(lastLinkItem)}
-            {hasMedia ? <span className="hidden sm:contents">{calendarButton}</span> : calendarButton}
+            <span className="hidden sm:contents">{calendarButton}</span>
           </span>
         </div>
       </div>
