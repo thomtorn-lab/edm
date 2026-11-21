@@ -34,7 +34,7 @@ const TAP_AREA =
   "relative before:absolute before:-inset-x-1.5 before:-inset-y-1.5 before:content-[''] sm:static sm:before:hidden";
 
 const CALENDAR_BUTTON_CLASSES =
-  `${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-[1.3333] tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary sm:min-h-[2.25rem] sm:gap-1.5 sm:rounded sm:px-2.5 sm:py-1 sm:text-[11px] sm:font-medium sm:normal-case sm:leading-normal sm:tracking-normal [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5`;
+  `${TAP_AREA} flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-[1.3333] tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary sm:inline-flex sm:min-h-[2.25rem] sm:gap-1.5 sm:rounded sm:px-2.5 sm:py-1 sm:text-[11px] sm:font-medium sm:normal-case sm:leading-normal sm:tracking-normal [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5`;
 
 export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);
@@ -65,7 +65,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const lastLinkItem = linkItems.at(-1);
   // Typography the link group gives its children; the last item sits
   // outside the group (in the Calendar unit), so each item carries it itself.
-  const LINK_GROUP_TEXT = "text-[11px] font-medium uppercase tracking-wide sm:text-xs";
+  const LINK_GROUP_TEXT = "text-[11px] font-medium uppercase leading-3 tracking-wide sm:text-xs sm:leading-4";
   const renderLinkItem = (item: LinkItem) =>
     item.kind === "link" ? (
       <a
@@ -81,7 +81,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
       // FREE is an admission/status badge, not a link — rendered after the
       // links so it always sits to the right of Official Event, in white to
       // carry comparable visual weight.
-      <span key="free" className="-order-1 text-[11px] font-semibold sm:text-xs uppercase tracking-wide text-text-primary sm:order-none">
+      <span key="free" className="-order-1 text-[11px] font-semibold leading-3 sm:text-xs sm:leading-4 uppercase tracking-wide text-text-primary sm:order-none">
         Free
       </span>
     );
@@ -129,13 +129,21 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // children become items of the row's own wrapping flexbox, sequenced with
   // negative `order` (info lines are basis-full; actions keep their natural
   // width and wrap side by side with the row's 16px column gap). Vertical
-  // rhythm: a 6px row gap, with genres and the lineup pulled to 4px under
-  // the title. At `sm` every container is a real box again and every
-  // order/margin resets.
+  // rhythm (2026-11-22), three shared rules on a 6px row gap: (1) every info
+  // line under the date (title, genres, lineup, venue) sits 4px below the
+  // previous one (-mt-0.5), with the title on leading-tight so all lines
+  // carry similar half-leading (≈11–12px baseline→cap throughout); the venue
+  // adds mb-1 as a slightly larger step down to the actions. (2) Text action
+  // links use leading-3, so a text-only action line starts as close under
+  // the venue as a pill line does. (3) Pills/badges in a wrapper (Calendar,
+  // status badges) are block-level, so no inherited 24px line box pads them
+  // — every action line, and the gap from the last one to the border, is
+  // then the same whether the actions take one line or two. At `sm` every
+  // container is a real box again and every order/margin/leading resets.
   return (
     <li className="border-b border-border-strong/80 last:border-b-0 sm:border-border">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
-        <div className="-order-6 flex shrink-0 items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
+        <div className="-order-6 flex shrink-0 items-center gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateRangeLabel(event)}
           </span>
@@ -148,7 +156,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               SOLD OUT uses the "strong" tone: text and border in the title's
               white. Status logic unchanged. */}
           {statuses.map((s) => (
-            <span key={s.label} className="sm:mt-1">
+            <span key={s.label} className="flex sm:mt-1 sm:block">
               <StatusBadge label={s.label} tone={s.label === "Sold out" ? "strong" : s.tone} />
             </span>
           ))}
@@ -157,7 +165,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
         <div className="contents sm:block sm:min-w-0 sm:flex-1">
           <Link
             href={eventHref}
-            className="-order-5 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
+            className="-order-5 -mt-0.5 block basis-full cursor-pointer text-[15px] font-semibold leading-tight sm:leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
           >
             {title}
             {/* Discreet internal-navigation cue, mobile only (desktop already
@@ -195,7 +203,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 At sm the wrapper is display:contents and the pin hidden, so
                 desktop's metadata row is unchanged. */}
             <span
-              className="-order-1 flex min-w-0 basis-full items-center gap-x-2 sm:contents sm:order-none"
+              className="-order-1 -mt-0.5 mb-1 flex min-w-0 basis-full items-center gap-x-2 sm:contents sm:order-none"
             >
               <svg
                 aria-hidden="true"

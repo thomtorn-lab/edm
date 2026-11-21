@@ -1231,7 +1231,7 @@ describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
     for (const label of ["Postponed", "Sold out"]) {
       const wrap = screen.getByText(label).parentElement as HTMLElement;
       expect(wrap.parentElement).toBe(dateCol);
-      expect(cls(wrap)).toEqual(["sm:mt-1"]);
+      expect(cls(wrap)).toEqual(["flex", "sm:mt-1", "sm:block"]);
     }
     expect(dateCol.className).toContain("sm:flex-col");
   });
@@ -1246,7 +1246,10 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     // Two instances with media (mobile copy + desktop one; CSS shows one per breakpoint).
     const [button] = screen.getAllByRole("button", { name: "Add to calendar" });
     const video = screen.getByRole("link", { name: /artist preview video/ });
-    const shared = ["inline-flex", "items-center", "gap-1", "rounded-full", "border", "border-border-strong", "px-1.5", "py-0.5", "text-[10px]", "font-semibold", "uppercase", "tracking-wide", "text-text-tertiary"];
+    // Calendar is block-level (flex) on mobile so no inherited line box pads it; inline-flex again at sm.
+    expect(cls(button)).toEqual(expect.arrayContaining(["flex", "sm:inline-flex"]));
+    expect(cls(video)).toContain("inline-flex");
+    const shared = ["items-center", "gap-1", "rounded-full", "border", "border-border-strong", "px-1.5", "py-0.5", "text-[10px]", "font-semibold", "uppercase", "tracking-wide", "text-text-tertiary"];
     expect(cls(button)).toEqual(expect.arrayContaining(shared));
     expect(cls(video)).toEqual(expect.arrayContaining(shared));
     expect(cls(button)).toEqual(
@@ -1282,6 +1285,30 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
     const unit = screen.getByText("Free").parentElement as HTMLElement;
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
+  });
+});
+
+describe("EventRow — mobile vertical rhythm (2026-11-22)", () => {
+  afterEach(cleanup);
+  const cls = (el: Element) => el.className.split(/\s+/);
+
+  it("spaces every info line under the date by the same rule (-mt-0.5 on the 6px row gap)", () => {
+    render(<EventRow event={makeEvent({ artists: ["A", "B"], subgenres: ["techno"] as GenreSlug[] })} />);
+    const title = screen.getByRole("link", { name: /Test Event/ });
+    const genre = screen.getByText("Techno").closest("span") as Element;
+    const lineup = screen.getByText("A / B");
+    const venue = screen.getByRole("link", { name: "Test Venue" }).parentElement as Element;
+    for (const el of [title, genre, lineup, venue]) expect(cls(el)).toContain("-mt-0.5");
+    // Title: tighter leading on mobile only; venue: a slightly larger step down to the actions.
+    expect(cls(title)).toEqual(expect.arrayContaining(["leading-tight", "sm:leading-snug", "sm:mt-0"]));
+    expect(cls(venue)).toEqual(expect.arrayContaining(["mb-1", "sm:contents"]));
+  });
+
+  it("gives text action links a tight mobile line-height and restores the desktop one", () => {
+    render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
+    for (const name of [/Official event/, /Tickets/]) {
+      expect(cls(screen.getByRole("link", { name }))).toEqual(expect.arrayContaining(["leading-3", "sm:leading-4"]));
+    }
   });
 });
 
