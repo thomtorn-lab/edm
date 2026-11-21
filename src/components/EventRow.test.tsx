@@ -1072,7 +1072,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
   const cls = (el: Element) => el.className.split(/\s+/);
   const orderOf = (el: Element) => cls(el).find((c) => /^-?order-/.test(c));
 
-  it("orders mobile info as date (+ status) → title → genres → lineup → divider → venue → actions → video/audio", () => {
+  it("orders mobile info as date (+ status) → title → genres → lineup → venue → actions → video/audio", () => {
     const { container } = render(
       <EventRow
         event={{
@@ -1091,7 +1091,6 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
     expect(orderOf(screen.getByText("Naiva / Onsberg"))).toBe("-order-3");
-    expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-2");
     expect(orderOf(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toBe("-order-1");
     expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");
     expect(orderOf(screen.getByRole("link", { name: /audio links/ }))).toBe("order-1");
@@ -1113,10 +1112,9 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(classes.some((c) => c.startsWith("bg-") || c.startsWith("border"))).toBe(false);
   });
 
-  it("draws the divider on mobile only", () => {
+  it("draws no internal divider inside an event (2026-11-21)", () => {
     const { container } = render(<EventRow event={makeEvent()} />);
-    const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
-    expect(cls(divider)).toEqual(expect.arrayContaining(["basis-full", "bg-border/70", "sm:hidden"]));
+    expect(container.querySelector("[aria-hidden].h-px")).toBeNull();
   });
 
   it("hides the metadata · separators on mobile except between venue and sub-venue", () => {
@@ -1156,11 +1154,10 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(group.firstElementChild).toBe(pin);
   });
 
-  it("makes the venue one unit of the bottom flow, not a full line", () => {
+  it("gives the venue its own mobile line, with the actions grouped below it", () => {
     render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
     const group = screen.getByRole("link", { name: "Test Venue" }).parentElement as Element;
-    expect(cls(group)).toEqual(expect.arrayContaining(["-order-1", "min-w-0", "sm:contents"]));
-    expect(cls(group)).not.toContain("basis-full");
+    expect(cls(group)).toEqual(expect.arrayContaining(["-order-1", "min-w-0", "basis-full", "sm:contents"]));
     expect(cls(group)).not.toContain("grow");
   });
 
@@ -1193,12 +1190,20 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(calendar.previousElementSibling).toBeNull();
   });
 
-  it("uses a subtler internal divider than the between-event line on mobile; desktop line unchanged", () => {
+  it("keeps one between-event line with equal mobile padding above and below; desktop unchanged", () => {
     const { container } = render(<EventRow event={makeEvent()} />);
     const li = container.querySelector("li") as HTMLElement;
     expect(cls(li)).toEqual(expect.arrayContaining(["border-b", "border-border-strong/80", "sm:border-border"]));
-    const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
-    expect(cls(divider)).toContain("bg-border/70");
+    const row = li.firstElementChild as HTMLElement;
+    expect(cls(row)).toEqual(expect.arrayContaining(["py-2.5", "sm:py-3.5"]));
+  });
+
+  it("de-emphasises Official event/Tickets on mobile with an enlarged tap area; desktop styling unchanged", () => {
+    render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
+    for (const name of [/Official event/, /Tickets/]) {
+      const c = cls(screen.getByRole("link", { name }));
+      expect(c).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "text-text-secondary", "sm:text-text-secondary-strong", "before:absolute", "sm:before:hidden"]));
+    }
   });
 });
 
@@ -1260,7 +1265,7 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
     expect(unit.contains(official)).toBe(false);
     // Items outside the link group carry its typography themselves.
-    expect(cls(tickets)).toEqual(expect.arrayContaining(["text-xs", "font-medium", "uppercase", "tracking-wide"]));
+    expect(cls(tickets)).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "font-medium", "uppercase", "tracking-wide"]));
   });
 
   it("does not bind when Video/Audio follow Calendar — links then fill the line by width alone", () => {
