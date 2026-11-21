@@ -3,10 +3,15 @@
 A native React Native/Expo app on top of the existing website. It has no data
 of its own: every event comes from the website's public, read-only
 `GET /api/v1/events` (`src/app/api/v1/events/route.ts`), which reads the same
-published-and-upcoming events as the homepage. Unpublishing or editing an
-event on the site reaches the app on its next refresh (on launch,
-pull-to-refresh, or returning to the app after a minute; the CDN may reuse a
-response for up to 60 s).
+published-and-upcoming events as the homepage. The app holds no secrets —
+anything in an `EXPO_PUBLIC_*` variable is readable in the app bundle.
+
+Unpublished or edited events: Vercel's CDN reuses a response for at most 60 s
+(`Cache-Control: public, max-age=0, s-maxage=60`, no stale-while-revalidate),
+and the app re-fetches whenever its copy is older than 60 s (every minute while
+open, on returning to the app, before showing an event's details) and on
+pull-to-refresh. An unpublished event is gone from the app within about
+2 minutes; once it is gone, its ticket links are hidden.
 
 Shared with the website, unchanged: `src/lib/datetime.ts` (nightlife day,
 Tonight/This Weekend), `src/lib/format.ts` (date/time labels),
@@ -22,28 +27,21 @@ sharing.
 The website build ignores this folder (`tsconfig.json` exclude, `eslint.config.mjs`
 ignore, `.vercelignore`).
 
-## Try it on an iPhone (Expo Go)
+## Try it on an iPhone (Expo Go, no computer needed)
 
-1. Install **Expo Go** from the App Store on the iPhone.
-2. On a computer with Node 20+:
-   ```bash
-   git fetch origin claude/electroniccph-ios-app-fyf9q2
-   git checkout claude/electroniccph-ios-app-fyf9q2
-   cd mobile
-   npm ci
-   ```
-3. Point the app at a deployment that has `/api/v1/events`. Until this is
-   merged that is the branch's Vercel **Preview** deployment, which is behind
-   Vercel Deployment Protection, so also give it the project's
-   "Protection Bypass for Automation" secret. Create `mobile/.env.local`
-   (git-ignored, never commit it):
-   ```bash
-   EXPO_PUBLIC_API_URL=https://<preview-deployment>.vercel.app
-   EXPO_PUBLIC_VERCEL_BYPASS=<protection bypass secret>
-   ```
-   Without `.env.local` the app uses https://www.electroniccph.com.
-4. `npx expo start` and scan the QR code with the iPhone camera. If the phone
-   and computer are not on the same network, use `npx expo start --tunnel`.
+The app always talks to the public website, by default
+https://www.electroniccph.com, so `/api/v1/events` must be deployed there
+first. `EXPO_PUBLIC_API_URL` can point at another public deployment; never
+put a token or secret in it.
+
+1. Install **Expo Go** from the App Store and sign in with an Expo account.
+2. Publish the app's JavaScript as an EAS Update (`npx eas-cli@latest update`,
+   with `EXPO_TOKEN` set for that Expo account).
+3. Open the update in Expo Go from the project's Updates page on expo.dev, or
+   by scanning its QR code with the iPhone camera.
+
+With a computer instead: `npm ci && npx expo start` in `mobile/`, then scan the
+QR code with the iPhone camera.
 
 ## Checks
 

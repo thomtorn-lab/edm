@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -8,7 +9,9 @@ import { displayGenres, formatFullDateRangeLabel, formatTimeRangeLabel } from ".
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { events, favorites } = useEvents();
+  const { events, favorites, refreshIfStale } = useEvents();
+  // Make sure an event unpublished on the website is not shown with live ticket links.
+  useEffect(refreshIfStale, [refreshIfStale]);
   const listed = events?.find((e) => e.id === id);
   const event = listed ?? favorites[id];
 

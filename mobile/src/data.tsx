@@ -4,15 +4,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { AppEvent, AppEventsResponse } from "./shared";
 
 /**
- * Events come only from the website's GET /api/v1/events, so an event that is
- * unpublished or edited there changes here on the next refresh: on launch, on
- * pull-to-refresh, and when the app returns to the foreground after a minute.
- * Nothing is cached on the phone except saved events.
+ * Events come only from the website's public GET /api/v1/events; nothing is
+ * cached on the phone except saved events. The app holds no secrets: every
+ * EXPO_PUBLIC_* value ends up readable in the app bundle.
+ *
+ * Unpublished or edited events: the CDN reuses a response for at most 60 s
+ * (the route's Cache-Control), and the app re-fetches whenever its copy is
+ * older than 60 s — every minute while open, on returning to the app, and
+ * before showing an event's details — plus on pull-to-refresh. An event
+ * unpublished on the website therefore disappears within about 2 minutes,
+ * and its ticket links are hidden as soon as it is gone from the list.
  */
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? "https://www.electroniccph.com").replace(/\/$/, "");
-// Only for testing against a protected Vercel Preview deployment.
-const PREVIEW_BYPASS = process.env.EXPO_PUBLIC_VERCEL_BYPASS;
-const REFRESH_AFTER_MS = 60_000;
+const MAX_AGE_MS = 60_000;
 const FAVORITES_KEY = "favorites:v1";
 
 interface EventsState {
@@ -20,6 +24,8 @@ interface EventsState {
   error: string | null;
   refreshing: boolean;
   refresh: () => Promise<void>;
+  /** Re-fetches only when the current list is older than MAX_AGE_MS. */
+  refreshIfStale: () => void;
   /** Saved events by id, with the snapshot taken when they were saved. */
   favorites: Record<string, AppEvent>;
   isFavorite: (id: string) => boolean;
@@ -38,9 +44,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const response = await fetch(`${API_URL}/api/v1/events`, {
-        headers: PREVIEW_BYPASS ? { "x-vercel-protection-bypass": PREVIEW_BYPASS } : undefined,
-      });
+      const response = await fetch(`${API_URL}/api/v1/events`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = (await response.json()) as AppEventsResponse;
       setEvents(body.events);
@@ -53,13 +57,22 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshIfStale = useCallback(() => {
+    if (Date.now() - lastFetch.current >= MAX_AGE_MS) refresh();
+  }, [refresh]);
+
   useEffect(() => {
     refresh();
+    // iOS pauses timers in the background, so this only runs while the app is open.
+    const timer = setInterval(refreshIfStale, MAX_AGE_MS);
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && Date.now() - lastFetch.current > REFRESH_AFTER_MS) refresh();
+      if (state === "active") refreshIfStale();
     });
-    return () => sub.remove();
-  }, [refresh]);
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [refresh, refreshIfStale]);
 
   useEffect(() => {
     AsyncStorage.getItem(FAVORITES_KEY)
@@ -78,8 +91,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<EventsState>(
-    () => ({ events, error, refreshing, refresh, favorites, isFavorite: (id) => id in favorites, toggleFavorite }),
-    [events, error, refreshing, refresh, favorites, toggleFavorite],
+    () => ({ events, error, refreshing, refresh, refreshIfStale, favorites, isFavorite: (id) => id in favorites, toggleFavorite }),
+    [events, error, refreshing, refresh, refreshIfStale, favorites, toggleFavorite],
   );
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;
 }

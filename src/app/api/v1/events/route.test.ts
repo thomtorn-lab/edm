@@ -55,7 +55,7 @@ describe("GET /api/v1/events", () => {
     const response = await GET();
     const body = await response.json();
 
-    expect(response.headers.get("Cache-Control")).toBe("public, s-maxage=60, stale-while-revalidate=300");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=60");
     expect(body.events.map((e: { id: string }) => e.id)).toEqual(["e-1", "e-2"]);
 
     const [first, second] = body.events;

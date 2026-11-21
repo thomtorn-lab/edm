@@ -10,9 +10,14 @@ import type { AppEvent, AppEventsResponse } from "@/lib/appEvents";
  * Public, read-only event list for the mobile app (mobile/). Reads the same
  * published-and-upcoming projection as the homepage, so publishing,
  * unpublishing and edits reach the app exactly as they reach the site.
- * Never prerendered (same stance as the public pages); the CDN may reuse a
- * response for up to 60s, which keeps database egress flat however many
- * phones open the app.
+ * Never prerendered (same stance as the public pages).
+ *
+ * Caching, chosen so an unpublished event stops being served quickly:
+ * - s-maxage=60: Vercel's CDN may reuse a response for at most 60 s, which
+ *   keeps database egress flat however many phones open the app. No
+ *   stale-while-revalidate, so an expired response is never served again.
+ * - max-age=0: the phone itself never reuses a response without asking.
+ * The app's own refresh rule is in mobile/src/data.tsx.
  */
 export const revalidate = 0;
 
@@ -41,6 +46,6 @@ export async function GET() {
     .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime));
   const body: AppEventsResponse = { events: events.map(toAppEvent) };
   return Response.json(body, {
-    headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+    headers: { "Cache-Control": "public, max-age=0, s-maxage=60" },
   });
 }
