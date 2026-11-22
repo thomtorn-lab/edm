@@ -138,7 +138,7 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
       )}
 
       <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-accent">Event</p>
-      <h1 className="font-display mt-1 text-3xl font-extrabold uppercase leading-[1.05] tracking-tight text-text-primary sm:text-5xl">
+      <h1 className="font-display mt-1 text-3xl font-extrabold leading-[1.05] tracking-tight text-text-primary sm:text-5xl">
         {title}
       </h1>
 

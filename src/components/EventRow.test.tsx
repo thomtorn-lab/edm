@@ -468,7 +468,7 @@ describe("EventRow — Apple Calendar / ICS uses a real HTTP endpoint, not a dat
 describe("EventRow — redundant artist preview suppression (Round 12)", () => {
   afterEach(cleanup);
 
-  it("shows the lineup even when a per-room lineup title already names every artist (2026-11-13)", () => {
+  it("hides the lineup when a per-room lineup title already names every artist (2026-11-22)", () => {
     render(
       <EventRow
         event={makeEvent({
@@ -477,7 +477,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.getByText("Timo Maas / Ryan Dank / Baltza / Karina Lin / Asli")).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
     expect(screen.getByText(/Black Box: TIMO MAAS/)).toBeTruthy();
   });
 
@@ -490,7 +490,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.getByText(/Sophie Van Hayden \/ Naiva \/ Onsberg/)).toBeTruthy();
+    expect(screen.getByText(/SOPHIE VAN HAYDEN \/ NAIVA \/ ONSBERG/)).toBeTruthy();
   });
 
   it("renders no lineup text at all when the event has no artists", () => {
@@ -730,7 +730,7 @@ describe("EventRow — sub-venue title cleanup (Pumpehuset Byhaven / Culture Box
         })}
       />,
     );
-    expect(screen.getByText(/TECHNO SPECIAL · HOUSE SPECIAL/)).toBeTruthy();
+    expect(screen.getByText(/TECHNO SPECIAL, HOUSE SPECIAL/)).toBeTruthy();
     expect(screen.queryByText(/Black Box:/)).toBeNull();
     expect(screen.queryByText(/Red Box:/)).toBeNull();
   });
@@ -1023,7 +1023,7 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
   afterEach(cleanup);
 
   const SHOWCASE = { title: "HYGGELIT SHOWCASE", artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"] };
-  const LINEUP_TEXT = "Sophie Van Hayden / Naiva / Onsberg";
+  const LINEUP_TEXT = "SOPHIE VAN HAYDEN / NAIVA / ONSBERG";
   const cls = (el: Element) => el.className.split(/\s+/);
 
   it("renders the lineup outside the title link, directly after the title row, so the link's name is the title alone", () => {
@@ -1070,9 +1070,28 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
     expect(screen.queryByText("Lineup:")).toBeNull();
   });
 
-  it("keeps the lineup when the title holds more than the artist names", () => {
+  it("hides the lineup when the title names every artist among other words", () => {
     render(<EventRow event={makeEvent({ title: "Blikfang presents: Blikfang", artists: ["Blikfang"] })} />);
-    expect(screen.getByText("Lineup:")).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("hides the lineup for the real Culture Box two-room event despite b2b notation, and shows the comma title", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+          artists: ["STEAMBOI", "KARDINAL BERTRAM", "LMN", "QWENTY b2b OOOPS", "avoN", "SANDY P b2b MADITATION b2b VALENTINA", "SILK!"],
+          venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+        })}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!" })).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("keeps the lineup, in its official spelling, when one artist is missing from the title", () => {
+    render(<EventRow event={makeEvent({ title: "QWENTY", artists: ["QWENTY b2b OOOPS", "avoN"] })} />);
+    expect(screen.getByText("QWENTY b2b OOOPS / avoN", { exact: false })).toBeTruthy();
   });
 });
 
@@ -1100,7 +1119,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(soldOutWrap.parentElement).toBe(row.firstElementChild);
     expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
-    expect(orderOf(screen.getByText("Naiva / Onsberg"))).toBe("-order-3");
+    expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
     expect(orderOf(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toBe("-order-1");
     expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");
     expect(orderOf(screen.getByRole("link", { name: /audio links/ }))).toBe("order-1");

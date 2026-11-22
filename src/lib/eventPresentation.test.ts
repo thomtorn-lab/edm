@@ -89,14 +89,14 @@ describe("cleanEventTitle — Pumpehuset Byhaven prefix (real fixture titles)", 
 describe("cleanEventTitle — Culture Box room-prefixed titles (real fixture titles)", () => {
   it("strips both room prefixes from a two-room, differently-named night, keeping both showcase names", () => {
     expect(cleanEventTitle("Black Box: TIMO MAAS, RYAN DANK, BALTZA · Red Box: KARINA LIN, ASLI", "Culture Box")).toBe(
-      "TIMO MAAS, RYAN DANK, BALTZA · KARINA LIN, ASLI",
+      "TIMO MAAS, RYAN DANK, BALTZA, KARINA LIN, ASLI",
     );
-    expect(cleanEventTitle("Black Box: TECHNO SPECIAL · Red Box: HOUSE SPECIAL", "Culture Box")).toBe("TECHNO SPECIAL · HOUSE SPECIAL");
+    expect(cleanEventTitle("Black Box: TECHNO SPECIAL · Red Box: HOUSE SPECIAL", "Culture Box")).toBe("TECHNO SPECIAL, HOUSE SPECIAL");
     expect(cleanEventTitle("Black Box: HYGGELIT SHOWCASE · Red Box: SOMETHING ELSE ENTIRELY", "Culture Box")).toBe(
-      "HYGGELIT SHOWCASE · SOMETHING ELSE ENTIRELY",
+      "HYGGELIT SHOWCASE, SOMETHING ELSE ENTIRELY",
     );
     expect(cleanEventTitle("Black Box: WHAT HAPPENS 4 DECADES OF TIM ANDRESEN · Red Box: WHAT HAPPENS", "Culture Box")).toBe(
-      "WHAT HAPPENS 4 DECADES OF TIM ANDRESEN · WHAT HAPPENS",
+      "WHAT HAPPENS 4 DECADES OF TIM ANDRESEN, WHAT HAPPENS",
     );
   });
 
@@ -169,46 +169,71 @@ describe("cleanEventTitle — Den Anden Side rooms (2026-10-27)", () => {
     expect(cleanEventTitle("Den Anden Ende: Kilele x DAS", "Den Anden Side")).toBe("Kilele x DAS");
     expect(cleanEventTitle("GAG x DAS", "Den Anden Side")).toBe("GAG x DAS");
     expect(cleanEventTitle("Den Anden Ende: Kilele x DAS", "Culture Box")).toBe("Den Anden Ende: Kilele x DAS");
-    expect(cleanEventTitle("Black Box: X · Red Box: Y", "Culture Box")).toBe("X · Y");
+    expect(cleanEventTitle("Black Box: X · Red Box: Y", "Culture Box")).toBe("X, Y");
+  });
+
+  it("joins Den Anden Side's room segments with a comma once a prefix is removed (2026-11-22)", () => {
+    expect(cleanEventTitle("Den Anden Side: A · Den Anden Ende: B", "Den Anden Side")).toBe("A, B");
+    expect(cleanEventTitle("A · B", "Den Anden Side")).toBe("A · B");
   });
 });
 
-describe("formatArtistName — public lineup casing", () => {
-  it("capitalizes the first letter of every word and lower-cases the rest, however it was entered", () => {
-    expect(formatArtistName("ROSA MALENA")).toBe("Rosa Malena");
-    expect(formatArtistName("rosa malena")).toBe("Rosa Malena");
-    expect(formatArtistName("rOsA mAlEnA")).toBe("Rosa Malena");
-    expect(formatArtistName("baltza")).toBe("Baltza");
+describe("cleanEventTitle — Culture Box room separator becomes a comma (2026-11-22)", () => {
+  it("shows the real two-room shape as one comma-separated list", () => {
+    expect(
+      cleanEventTitle("Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SILK!", "Culture Box"),
+    ).toBe("STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SILK!");
   });
 
-  it("handles Danish letters, hyphens and stray whitespace", () => {
-    expect(formatArtistName("  ØLLE   ÅSE ")).toBe("Ølle Åse");
-    expect(formatArtistName("jean-michel")).toBe("Jean-Michel");
-  });
-
-  it("keeps DJ upper-case and b2b lower-case however they were entered", () => {
-    expect(formatArtistName("dj koze")).toBe("DJ Koze");
-    expect(formatArtistName("Dj KOZE")).toBe("DJ Koze");
-    expect(formatArtistName("ROSA MALENA B2B DJ BETA")).toBe("Rosa Malena b2b DJ Beta");
-    expect(formatArtistName("djane")).toBe("Djane");
+  it("never leaves a dangling separator when a room segment is empty", () => {
+    expect(cleanEventTitle("Black Box: LMN · Red Box:", "Culture Box")).toBe("LMN");
   });
 });
 
-describe("lineupDuplicatesTitle — listing lineup that only repeats the title (2026-11-22)", () => {
-  it("is true for an exact single-artist match, ignoring case and accents", () => {
+describe("formatArtistName — official spelling (2026-11-22)", () => {
+  it("keeps the source's own spelling and casing", () => {
+    expect(formatArtistName("ROSA MALENA")).toBe("ROSA MALENA");
+    expect(formatArtistName("avoN")).toBe("avoN");
+    expect(formatArtistName("LMN")).toBe("LMN");
+    expect(formatArtistName("Silk!")).toBe("Silk!");
+    expect(formatArtistName("dj koze")).toBe("dj koze");
+    expect(formatArtistName("QWENTY b2b OOOPS")).toBe("QWENTY b2b OOOPS");
+  });
+
+  it("only tidies stray whitespace", () => {
+    expect(formatArtistName("  ØLLE   ÅSE ")).toBe("ØLLE ÅSE");
+  });
+});
+
+describe("lineupDuplicatesTitle — hide the listing lineup when the title names every artist (2026-11-22)", () => {
+  it("is true for a single-artist title, ignoring case and accents", () => {
     expect(lineupDuplicatesTitle("BLIKFANG", ["Blikfang"])).toBe(true);
     expect(lineupDuplicatesTitle("Rosalía", ["ROSALIA"])).toBe(true);
   });
 
-  it("is true when the title is just the artists joined by punctuation", () => {
+  it("is true when every artist is in the title, whatever else the title says", () => {
     expect(lineupDuplicatesTitle("Ben Klock & Marcel Dettmann", ["Ben Klock", "Marcel Dettmann"])).toBe(true);
-    expect(lineupDuplicatesTitle("A / B, C", ["A", "B", "C"])).toBe(true);
+    expect(lineupDuplicatesTitle("Black Box: TIMO MAAS · Red Box: ASLI", ["TIMO MAAS", "ASLI"])).toBe(true);
+    expect(lineupDuplicatesTitle("Blikfang (live)", ["Blikfang"])).toBe(true);
   });
 
-  it("is false when the title carries anything beyond the names", () => {
+  it("splits b2b/vs/x entries so a b2b notation never keeps the lineup visible (real Culture Box event)", () => {
+    const title = "STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!";
+    const artists = ["STEAMBOI", "KARDINAL BERTRAM", "LMN", "QWENTY b2b OOOPS", "avoN", "SANDY P B2B MADITATION B2B VALENTINA", "SILK!"];
+    expect(lineupDuplicatesTitle(title, artists)).toBe(true);
+    expect(lineupDuplicatesTitle("A, B", ["A vs B"])).toBe(true);
+    expect(lineupDuplicatesTitle("A, B", ["A x B"])).toBe(true);
+  });
+
+  it("is false as soon as one artist is missing from the title", () => {
     expect(lineupDuplicatesTitle("HYGGELIT SHOWCASE", ["Naiva"])).toBe(false);
-    expect(lineupDuplicatesTitle("Black Box: TIMO MAAS · Red Box: ASLI", ["TIMO MAAS", "ASLI"])).toBe(false);
-    expect(lineupDuplicatesTitle("Blikfang (live)", ["Blikfang"])).toBe(false);
+    expect(lineupDuplicatesTitle("QWENTY", ["QWENTY b2b OOOPS"])).toBe(false);
+    expect(lineupDuplicatesTitle("Timo Maas, Ryan Dank, Baltza", ["Timo Maas", "Ryan Dank", "Baltza", "Asli"])).toBe(false);
+  });
+
+  it("never matches part of a longer name", () => {
+    expect(lineupDuplicatesTitle("Malena Rosa", ["Rosa Malena"])).toBe(false);
+    expect(lineupDuplicatesTitle("Asliana", ["Asli"])).toBe(false);
   });
 
   it("is false with no artists or an empty title", () => {
