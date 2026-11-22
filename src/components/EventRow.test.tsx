@@ -1059,10 +1059,20 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
     expect(screen.queryByText("Lineup:")).toBeNull();
   });
 
-  it("still renders the lineup line when the title already names every artist", () => {
+  it("hides the lineup line when it is the same as the event title (2026-11-22)", () => {
     render(<EventRow event={makeEvent({ title: "Blikfang", artists: ["Blikfang"] })} />);
-    const lineup = screen.getByText("Blikfang", { selector: "p" });
-    expect(lineup.textContent).toBe("Lineup: Blikfang");
+    expect(screen.getByRole("link", { name: "Blikfang" })).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("hides a multi-artist lineup that only repeats the title, ignoring case and separators", () => {
+    render(<EventRow event={makeEvent({ title: "BEN KLOCK & MARCEL DETTMANN", artists: ["Ben Klock", "Marcel Dettmann"] })} />);
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("keeps the lineup when the title holds more than the artist names", () => {
+    render(<EventRow event={makeEvent({ title: "Blikfang presents: Blikfang", artists: ["Blikfang"] })} />);
+    expect(screen.getByText("Lineup:")).toBeTruthy();
   });
 });
 

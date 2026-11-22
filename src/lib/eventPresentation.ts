@@ -91,6 +91,22 @@ function normalizeForComparison(text: string): string {
 }
 
 /**
+ * Whether the listing-row lineup only repeats the event title (2026-11-22):
+ * true when the title, compared case-, accent- and punctuation-insensitively,
+ * is exactly the lineup's artist names in order (e.g. title "Blikfang" with
+ * artists ["Blikfang"], or "Ben Klock & Marcel Dettmann" with both names).
+ * A title that carries anything beyond the names — a showcase name, room
+ * labels, "presents" — never counts, so those lineups stay visible.
+ */
+export function lineupDuplicatesTitle(title: string, artists: string[]): boolean {
+  if (artists.length === 0) return false;
+  const normalizedTitle = normalizeForComparison(title);
+  if (!normalizedTitle) return false;
+  const normalizedLineup = normalizeForComparison(artists.join(" "));
+  return normalizedLineup !== "" && normalizedTitle === normalizedLineup;
+}
+
+/**
  * Whether the grey artist/lineup preview should be shown next to the event
  * title. The preview is redundant — and should be suppressed — when the
  * canonical title already names all, or effectively all, of the artists it
