@@ -43,11 +43,9 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
-  // The lineup is shown when the event has artists — also when the title
-  // names them among other text (2026-11-13) — except when it would only
-  // repeat the title exactly (2026-11-22, e.g. title "Blikfang" with lineup
-  // "Blikfang"). Listing rows only — the event page keeps its
-  // shouldShowArtistPreview suppression.
+  // The lineup is hidden only when every artist (b2b/vs/x entries split) is
+  // already named in the title (2026-11-22) — the event page uses the same
+  // rule, so a lineup is shown or hidden identically in both places.
   const lineup =
     event.artists.length > 0 && !lineupDuplicatesTitle(title, event.artists)
       ? event.artists.map(formatArtistName).join(" / ")

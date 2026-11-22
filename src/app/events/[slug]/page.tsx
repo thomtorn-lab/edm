@@ -5,7 +5,7 @@ import { getEventBySlugWithVenue, getEventYoutubePreview, getSoundcloudLinksForL
 import { formatFullDateLabel, formatFullDateRangeLabel, formatTimeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks } from "@/lib/links";
-import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLabel } from "@/lib/eventPresentation";
+import { cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
 import { buildEventJsonLd } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/siteUrl";
 import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
@@ -31,7 +31,8 @@ export async function generateMetadata({ params }: PageProps<"/events/[slug]">):
   const title = cleanEventTitle(event.title, event.venue.name);
   const genreLabels = displayGenres(event.subgenres).map((g) => g.label);
   const artists = event.artists.map(formatArtistName);
-  const showArtists = shouldShowArtistPreview(title, event.artists);
+  // Same lineup rule as the listing rows (2026-11-22).
+  const showArtists = event.artists.length > 0 && !lineupDuplicatesTitle(title, event.artists);
   const seoInput = {
     title,
     venueName: event.venue.name,
@@ -93,7 +94,9 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
-  const showArtistPreview = shouldShowArtistPreview(title, event.artists);
+  // Lineup shown or hidden by exactly the listing rows' rule (2026-11-22):
+  // hidden only when every artist (b2b entries split) is named in the title.
+  const showArtistPreview = event.artists.length > 0 && !lineupDuplicatesTitle(title, event.artists);
   const [artistVideoPreview, soundcloudArtists] = await Promise.all([
     getEventYoutubePreview(event),
     getSoundcloudLinksForLineup(event.id, event.artists),

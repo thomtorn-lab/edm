@@ -624,6 +624,28 @@ describe("Event detail page — suppress redundant artist preview when the title
     expect(screen.queryByText(/Shaktu \/ Meoko/)).toBeNull();
   });
 
+  it("hides the lineup by the listing's rule despite b2b notation (real STEAMBOI/LMN Culture Box event, 2026-11-22)", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+        artists: ["STEAMBOI", "KARDINAL BERTRAM", "LMN", "QWENTY b2b OOOPS", "avoN", "SANDY P b2b MADITATION b2b VALENTINA", "SILK!"],
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!" })).toBeTruthy();
+    expect(screen.queryByText(/STEAMBOI \/ KARDINAL BERTRAM/)).toBeNull();
+  });
+
+  it("shows the lineup when one artist is missing from the title — no 'effectively all' tolerance, same as the listing", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Timo Maas, Ryan Dank, Baltza, Karina Lin",
+        artists: ["Timo Maas", "Ryan Dank", "Baltza", "Karina Lin", "Asli"],
+      }),
+    );
+    expect(screen.getByText("Timo Maas / Ryan Dank / Baltza / Karina Lin / Asli")).toBeTruthy();
+  });
+
   it("still shows the grey artist line for a non-Culture-Box event whose title never names the artists (no regression)", async () => {
     await renderPage(makeEvent({ title: "Test Event", artists: ["DJ Alpha", "DJ Beta"] }));
     expect(screen.getByText("DJ Alpha / DJ Beta")).toBeTruthy();
