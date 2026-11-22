@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanEventTitle, formatArtistName, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
+import { cleanEventTitle, formatArtistName, lineupDuplicatesTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
 
 describe("shouldShowArtistPreview — suppress when the title already carries the lineup", () => {
   it("suppresses when a per-room lineup title names every artist (real Culture Box shape, no hardcoding)", () => {
@@ -191,5 +191,28 @@ describe("formatArtistName — public lineup casing", () => {
     expect(formatArtistName("Dj KOZE")).toBe("DJ Koze");
     expect(formatArtistName("ROSA MALENA B2B DJ BETA")).toBe("Rosa Malena b2b DJ Beta");
     expect(formatArtistName("djane")).toBe("Djane");
+  });
+});
+
+describe("lineupDuplicatesTitle — listing lineup that only repeats the title (2026-11-22)", () => {
+  it("is true for an exact single-artist match, ignoring case and accents", () => {
+    expect(lineupDuplicatesTitle("BLIKFANG", ["Blikfang"])).toBe(true);
+    expect(lineupDuplicatesTitle("Rosalía", ["ROSALIA"])).toBe(true);
+  });
+
+  it("is true when the title is just the artists joined by punctuation", () => {
+    expect(lineupDuplicatesTitle("Ben Klock & Marcel Dettmann", ["Ben Klock", "Marcel Dettmann"])).toBe(true);
+    expect(lineupDuplicatesTitle("A / B, C", ["A", "B", "C"])).toBe(true);
+  });
+
+  it("is false when the title carries anything beyond the names", () => {
+    expect(lineupDuplicatesTitle("HYGGELIT SHOWCASE", ["Naiva"])).toBe(false);
+    expect(lineupDuplicatesTitle("Black Box: TIMO MAAS · Red Box: ASLI", ["TIMO MAAS", "ASLI"])).toBe(false);
+    expect(lineupDuplicatesTitle("Blikfang (live)", ["Blikfang"])).toBe(false);
+  });
+
+  it("is false with no artists or an empty title", () => {
+    expect(lineupDuplicatesTitle("Blikfang", [])).toBe(false);
+    expect(lineupDuplicatesTitle("", ["Blikfang"])).toBe(false);
   });
 });
