@@ -4,7 +4,7 @@ import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
-import { cleanEventTitle, formatArtistName, subVenueLabel } from "@/lib/eventPresentation";
+import { cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 import { SITE_URL } from "@/lib/siteUrl";
@@ -24,8 +24,17 @@ import { SITE_URL } from "@/lib/siteUrl";
  * border-strong, tertiary text) with a short "Calendar" label. sm and up:
  * exactly AddToCalendar's default row button (36px, rounded, 11px medium).
  */
+/**
+ * Mobile-only invisible hit-area extension (2026-11-21): the compact action
+ * links/pills keep their small visual size, while a transparent pseudo-element
+ * grows the tappable box by 6px on every side (up to the 6px row gap, so it
+ * never covers the venue line) without affecting layout. Off at sm (static, so desktop is untouched).
+ */
+const TAP_AREA =
+  "relative before:absolute before:-inset-x-1.5 before:-inset-y-1.5 before:content-[''] sm:static sm:before:hidden";
+
 const CALENDAR_BUTTON_CLASSES =
-  "inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-[1.3333] tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary sm:min-h-[2.25rem] sm:gap-1.5 sm:rounded sm:px-2.5 sm:py-1 sm:text-[11px] sm:font-medium sm:normal-case sm:leading-normal sm:tracking-normal [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5";
+  `${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-[1.3333] tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary sm:min-h-[2.25rem] sm:gap-1.5 sm:rounded sm:px-2.5 sm:py-1 sm:text-[11px] sm:font-medium sm:normal-case sm:leading-normal sm:tracking-normal [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5`;
 
 export default function EventRow({ event }: { event: EventRowEvent }) {
   const genres = displayGenres(event.subgenres);
@@ -34,10 +43,13 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
-  // The lineup is always shown when the event has artists — also when the
-  // title already names them (2026-11-13; listing rows only — the event
-  // page keeps its shouldShowArtistPreview suppression).
-  const lineup = event.artists.length > 0 ? event.artists.map(formatArtistName).join(" / ") : "";
+  // The lineup is hidden only when every artist (b2b/vs/x entries split) is
+  // already named in the title (2026-11-22) — the event page uses the same
+  // rule, so a lineup is shown or hidden identically in both places.
+  const lineup =
+    event.artists.length > 0 && !lineupDuplicatesTitle(title, event.artists)
+      ? event.artists.map(formatArtistName).join(" / ")
+      : "";
   // Single source of truth for this row's own event-detail URL (mobile/video
   // affordance polish, 2026-09-26) — reused by both the title link and the
   // VIDEO badge link below, so there is only ever one place that constructs
@@ -56,7 +68,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   const lastLinkItem = linkItems.at(-1);
   // Typography the link group gives its children; the last item sits
   // outside the group (in the Calendar unit), so each item carries it itself.
-  const LINK_GROUP_TEXT = "text-xs font-medium uppercase tracking-wide";
+  const LINK_GROUP_TEXT = "text-[11px] font-medium uppercase tracking-wide sm:text-xs";
   const renderLinkItem = (item: LinkItem) =>
     item.kind === "link" ? (
       <a
@@ -64,7 +76,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
         href={item.href}
         target="_blank"
         rel="noopener noreferrer"
-        className={`${LINK_GROUP_TEXT} -order-1 whitespace-nowrap text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none sm:whitespace-normal`}
+        className={`${LINK_GROUP_TEXT} ${TAP_AREA} -order-1 whitespace-nowrap text-text-secondary sm:text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none sm:whitespace-normal`}
       >
         {item.label} ↗<span className="sr-only"> (opens in a new tab)</span>
       </a>
@@ -72,7 +84,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
       // FREE is an admission/status badge, not a link — rendered after the
       // links so it always sits to the right of Official Event, in white to
       // carry comparable visual weight.
-      <span key="free" className="-order-1 text-xs font-semibold uppercase tracking-wide text-text-primary sm:order-none">
+      <span key="free" className="-order-1 text-[11px] font-semibold sm:text-xs uppercase tracking-wide text-text-primary sm:order-none">
         Free
       </span>
     );
@@ -106,30 +118,26 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
     </span>
   );
 
-  // Mobile vs desktop structure (2026-11-12). Desktop is the existing
-  // three-column row (date | title/lineup/metadata | actions), unchanged
-  // apart from the inline LINEUP: label and status badges (e.g. SOLD OUT)
-  // below the time in the date column. Mobile reorders the same DOM — no
-  // duplicated links — into: date + time + status badges on the top row →
-  // title → genres (muted accent purple) → LINEUP: + artists → divider →
-  // bottom section: one left-aligned wrapping flow of venue → Official
-  // event → Tickets/Free → Calendar → Video → Audio (only those present),
-  // so few elements share a line and more wrap as width requires.
+  // Mobile vs desktop structure (2026-11-12; compacted 2026-11-21). Desktop
+  // is the existing three-column row (date | title/lineup/metadata |
+  // actions), unchanged. Mobile reorders the same DOM — no duplicated links —
+  // into one continuous unit: date + time + status badges → title → genres
+  // (muted accent purple) → LINEUP: + artists → venue (own line) → one
+  // compact wrapping action line: Official event → Tickets/Free → Calendar →
+  // Video → Audio (only those present). No internal divider: the only line
+  // is the between-event border, with equal 10px padding above and below.
   //
   // It does that by making the middle column, the metadata row, the action
   // column and the link group `display: contents` below `sm`, so their
   // children become items of the row's own wrapping flexbox, sequenced with
   // negative `order` (info lines are basis-full; actions keep their natural
-  // width and wrap side by side with the row's 16px gap). Vertical rhythm
-  // (2026-11-13): the row gap is 10px so the bottom section's lines (venue/
-  // links ↔ Calendar/Video/Audio) sit as far apart as the divider above
-  // them; genres and the lineup take -4px to keep their tighter 6px under
-  // the title, and pb-3 trims the bottom so the badge row → event line gap
-  // matches too (≈10/11/13px; total row height unchanged for two lines). At `sm` every
-  // container is a real box again and every order/margin resets.
+  // width and wrap side by side with the row's 16px column gap). Vertical
+  // rhythm: a 6px row gap, with genres and the lineup pulled to 4px under
+  // the title. At `sm` every container is a real box again and every
+  // order/margin resets.
   return (
     <li className="border-b border-border-strong/80 last:border-b-0 sm:border-border">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 pb-3 pt-4 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
         <div className="-order-6 flex shrink-0 items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateRangeLabel(event)}
@@ -176,7 +184,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               background or border on either. Display only — event.artists
               itself is untouched. */}
           {lineup && (
-            <p className="-order-3 -mt-1 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
+            <p className="-order-3 -mt-0.5 min-w-0 basis-full break-words text-[12.5px] leading-snug text-text-secondary-strong sm:order-none sm:mt-0.5 sm:text-[14px]">
               <span className="uppercase sm:mr-1 sm:font-semibold sm:tracking-wide sm:text-accent">
                 Lineup:
               </span>{" "}
@@ -190,7 +198,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                 At sm the wrapper is display:contents and the pin hidden, so
                 desktop's metadata row is unchanged. */}
             <span
-              className="-order-1 flex min-w-0 items-center gap-x-2 sm:contents sm:order-none"
+              className="-order-1 flex min-w-0 basis-full items-center gap-x-2 sm:contents sm:order-none"
             >
               <svg
                 aria-hidden="true"
@@ -219,7 +227,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             {genres.length > 0 && (
               <>
                 <span aria-hidden className="hidden text-text-tertiary sm:inline">·</span>
-                <span className="-order-4 -mt-1 basis-full font-medium uppercase tracking-wide text-accent-dim sm:order-none sm:mt-0 sm:basis-auto sm:text-text-tertiary">
+                <span className="-order-4 -mt-0.5 basis-full font-medium uppercase tracking-wide text-accent-dim sm:order-none sm:mt-0 sm:basis-auto sm:text-text-tertiary">
                   {/* A genre that has its own landing page (only Techno so
                       far) is a plain crawlable link to it, a sibling of the
                       title link rather than nested in it; every other genre
@@ -270,7 +278,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                   <Link
                     href={`${eventHref}#video`}
                     aria-label={`Go to artist preview video for ${title}`}
-                    className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
+                    className={`${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none`}
                   >
                     <span aria-hidden="true" className="text-accent">▶</span>
                     Video
@@ -297,7 +305,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                   <Link
                     href={`${eventHref}#soundcloud`}
                     aria-label={`Go to audio links for ${title}`}
-                    className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
+                    className={`${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none`}
                   >
                     <span aria-hidden="true" className="text-accent">♫</span>
                     Audio
@@ -307,7 +315,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                     <Link
                       href={`${eventHref}#soundcloud`}
                       aria-label={`Go to audio links for ${title}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none"
+                      className={`${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none`}
                     >
                       <span aria-hidden="true" className="text-accent">♫</span>
                       Audio
@@ -317,10 +325,6 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               </>
             )}
           </div>
-          {/* Mobile-only internal divider between event info and the venue +
-              actions section — subtler (border at 70%) than the between-event
-              line, which is border-strong at 80% on mobile. */}
-          <div aria-hidden className="-order-2 h-px basis-full bg-border/70 sm:hidden" />
         </div>
 
         <div className="contents sm:flex sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
@@ -337,7 +341,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
               both wrappers are display:contents / the original flex group,
               so desktop renders exactly as before. */}
           {leadLinkItems.length > 0 && (
-            <div className="contents text-xs font-medium uppercase tracking-wide sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
+            <div className="contents text-[11px] font-medium uppercase tracking-wide sm:flex sm:text-xs sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
               {leadLinkItems.map(renderLinkItem)}
             </div>
           )}

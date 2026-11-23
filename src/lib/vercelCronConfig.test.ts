@@ -25,6 +25,10 @@ describe("vercel.json crons", () => {
     expect(crons.find((c) => c.path === "/api/artist-alerts/run")?.schedule).toBe("17,47 * * * *");
   });
 
+  it("runs the daily links job once a day, away from the 6-hourly syncs", () => {
+    expect(crons.find((c) => c.path === "/api/enrichment/daily-links")?.schedule).toBe("10 3 * * *");
+  });
+
   it("leaves no GitHub schedule on the moved workflows, but keeps manual dispatch", () => {
     for (const file of [...syncWorkflows, "artist-alerts.yml"]) {
       const yml = readFileSync(path.join(workflowsDir, file), "utf8");

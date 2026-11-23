@@ -9,6 +9,7 @@ import {
   type EventGenreEnrichmentResult,
 } from "@/lib/enrichment/genreEnrichment";
 import { isSelectableGenre, type GenreSlug } from "@/lib/taxonomy";
+import { keepDiscogsSoundcloud } from "@/lib/soundcloudEvidence/discogsSoundcloud";
 import type { ConfidenceLevel } from "@/lib/types";
 
 /**
@@ -44,6 +45,15 @@ export const drizzleCacheStore: ArtistGenreCacheStore = {
     };
   },
   async set(entry) {
+    // A re-lookup (expired genre cache, e.g. during a later source sync) keeps
+    // the verified SoundCloud assessment for the same Discogs artist — see
+    // keepDiscogsSoundcloud. Only real Discogs lookups reach set(), so this
+    // extra read is rare.
+    const [previous] = await db
+      .select({ discogsArtistId: artistGenreCache.discogsArtistId, evidence: artistGenreCache.evidence })
+      .from(artistGenreCache)
+      .where(eq(artistGenreCache.artistNameNormalized, entry.artistNameNormalized))
+      .limit(1);
     const row = {
       artistNameNormalized: entry.artistNameNormalized,
       lookupStatus: entry.lookupStatus,
@@ -51,7 +61,7 @@ export const drizzleCacheStore: ArtistGenreCacheStore = {
       genreConfidence: entry.genreConfidence,
       identityConfidence: entry.identityConfidence,
       discogsArtistId: entry.discogsArtistId,
-      evidence: entry.evidence,
+      evidence: keepDiscogsSoundcloud(previous, entry),
       classificationMethod: entry.classificationMethod,
       lookedUpAt: entry.lookedUpAt,
       expiresAt: entry.expiresAt,

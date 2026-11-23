@@ -76,7 +76,7 @@ export default async function VenueDetailPage({ params }: PageProps<"/venues/[sl
       </Link>
 
       <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-accent">Venue</p>
-      <h1 className="font-display mt-1 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
+      <h1 className="font-display mt-1 text-3xl font-extrabold leading-none tracking-tight text-text-primary sm:text-4xl">
         {label}
       </h1>
       <p className="mt-2 text-sm text-text-secondary">

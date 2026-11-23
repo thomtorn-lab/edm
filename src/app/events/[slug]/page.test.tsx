@@ -418,7 +418,7 @@ describe("Event detail page — sub-venue title cleanup (Pumpehuset Byhaven / Cu
         venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
       }),
     );
-    expect(screen.getByRole("heading", { level: 1, name: "TECHNO SPECIAL · HOUSE SPECIAL" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "TECHNO SPECIAL, HOUSE SPECIAL" })).toBeTruthy();
     expect(screen.queryByText(/Black Box:/)).toBeNull();
     // Room-specific lineup breakdown stays fully visible in the About section.
     expect(screen.getByText(/DJ One, DJ Two/)).toBeTruthy();
@@ -599,7 +599,7 @@ describe("Event detail page — suppress redundant artist preview when the title
         venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
       }),
     );
-    expect(screen.getByText("Sophie Van Hayden / Naiva / Onsberg")).toBeTruthy();
+    expect(screen.getByText("SOPHIE VAN HAYDEN / NAIVA / ONSBERG")).toBeTruthy();
   });
 
   it("still shows the grey artist line when only some artists are named in the title (partial overlap)", async () => {
@@ -610,7 +610,7 @@ describe("Event detail page — suppress redundant artist preview when the title
         venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
       }),
     );
-    expect(screen.getByText(/Erich Von Kollar/)).toBeTruthy();
+    expect(screen.getByText(/ERICH VON KOLLAR/)).toBeTruthy();
   });
 
   it("hides the grey artist line when the same artist name repeats across both rooms (real Culture Box shape)", async () => {
@@ -622,6 +622,28 @@ describe("Event detail page — suppress redundant artist preview when the title
       }),
     );
     expect(screen.queryByText(/Shaktu \/ Meoko/)).toBeNull();
+  });
+
+  it("hides the lineup by the listing's rule despite b2b notation (real STEAMBOI/LMN Culture Box event, 2026-11-22)", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+        artists: ["STEAMBOI", "KARDINAL BERTRAM", "LMN", "QWENTY b2b OOOPS", "avoN", "SANDY P b2b MADITATION b2b VALENTINA", "SILK!"],
+        venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+      }),
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!" })).toBeTruthy();
+    expect(screen.queryByText(/STEAMBOI \/ KARDINAL BERTRAM/)).toBeNull();
+  });
+
+  it("shows the lineup when one artist is missing from the title — no 'effectively all' tolerance, same as the listing", async () => {
+    await renderPage(
+      makeEvent({
+        title: "Timo Maas, Ryan Dank, Baltza, Karina Lin",
+        artists: ["Timo Maas", "Ryan Dank", "Baltza", "Karina Lin", "Asli"],
+      }),
+    );
+    expect(screen.getByText("Timo Maas / Ryan Dank / Baltza / Karina Lin / Asli")).toBeTruthy();
   });
 
   it("still shows the grey artist line for a non-Culture-Box event whose title never names the artists (no regression)", async () => {
@@ -1148,7 +1170,7 @@ describe("Event detail page — SoundCloud artist links (venue-provided, 2026-10
         .map((n) => n.textContent)
         .join(""),
     );
-    expect(visibleTexts.sort()).toEqual(["Rexie Lex ↗", "Tim Andresen ↗"]);
+    expect(visibleTexts.sort()).toEqual(["REXIE LEX ↗", "TIM ANDRESEN ↗"]);
     expect(anchor.textContent).not.toContain("on SoundCloud");
   });
 
@@ -1297,7 +1319,7 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(soundcloud.className).toContain("mt-8");
     expect(soundcloud.className).toContain("sm:mt-10");
     // Artist names stay on the SoundCloud links — only the video caption went.
-    expect(soundcloud.querySelector('a[href="https://soundcloud.com/tim-andresen"]')!.textContent).toContain("Tim Andresen");
+    expect(soundcloud.querySelector('a[href="https://soundcloud.com/tim-andresen"]')!.textContent).toContain("TIM ANDRESEN");
     expect(section.querySelector("figcaption")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2, name: "Get a taste" })).toHaveLength(1);
   });

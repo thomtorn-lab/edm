@@ -104,7 +104,7 @@ export interface EventSeoInput {
   artists: string[];
   /** Display genre labels as shown on the page, e.g. ["Techno", "House"]. */
   genres?: string[];
-  /** Whether the page itself shows the lineup under the title (shouldShowArtistPreview). */
+  /** Whether the page itself shows the lineup under the title (same rule as the listing: lineupDuplicatesTitle). */
   showArtists?: boolean;
 }
 

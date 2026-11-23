@@ -468,7 +468,7 @@ describe("EventRow — Apple Calendar / ICS uses a real HTTP endpoint, not a dat
 describe("EventRow — redundant artist preview suppression (Round 12)", () => {
   afterEach(cleanup);
 
-  it("shows the lineup even when a per-room lineup title already names every artist (2026-11-13)", () => {
+  it("hides the lineup when a per-room lineup title already names every artist (2026-11-22)", () => {
     render(
       <EventRow
         event={makeEvent({
@@ -477,7 +477,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.getByText("Timo Maas / Ryan Dank / Baltza / Karina Lin / Asli")).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
     expect(screen.getByText(/Black Box: TIMO MAAS/)).toBeTruthy();
   });
 
@@ -490,7 +490,7 @@ describe("EventRow — redundant artist preview suppression (Round 12)", () => {
         })}
       />,
     );
-    expect(screen.getByText(/Sophie Van Hayden \/ Naiva \/ Onsberg/)).toBeTruthy();
+    expect(screen.getByText(/SOPHIE VAN HAYDEN \/ NAIVA \/ ONSBERG/)).toBeTruthy();
   });
 
   it("renders no lineup text at all when the event has no artists", () => {
@@ -730,7 +730,7 @@ describe("EventRow — sub-venue title cleanup (Pumpehuset Byhaven / Culture Box
         })}
       />,
     );
-    expect(screen.getByText(/TECHNO SPECIAL · HOUSE SPECIAL/)).toBeTruthy();
+    expect(screen.getByText(/TECHNO SPECIAL, HOUSE SPECIAL/)).toBeTruthy();
     expect(screen.queryByText(/Black Box:/)).toBeNull();
     expect(screen.queryByText(/Red Box:/)).toBeNull();
   });
@@ -1023,7 +1023,7 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
   afterEach(cleanup);
 
   const SHOWCASE = { title: "HYGGELIT SHOWCASE", artists: ["SOPHIE VAN HAYDEN", "NAIVA", "ONSBERG"] };
-  const LINEUP_TEXT = "Sophie Van Hayden / Naiva / Onsberg";
+  const LINEUP_TEXT = "SOPHIE VAN HAYDEN / NAIVA / ONSBERG";
   const cls = (el: Element) => el.className.split(/\s+/);
 
   it("renders the lineup outside the title link, directly after the title row, so the link's name is the title alone", () => {
@@ -1059,10 +1059,39 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
     expect(screen.queryByText("Lineup:")).toBeNull();
   });
 
-  it("still renders the lineup line when the title already names every artist", () => {
+  it("hides the lineup line when it is the same as the event title (2026-11-22)", () => {
     render(<EventRow event={makeEvent({ title: "Blikfang", artists: ["Blikfang"] })} />);
-    const lineup = screen.getByText("Blikfang", { selector: "p" });
-    expect(lineup.textContent).toBe("Lineup: Blikfang");
+    expect(screen.getByRole("link", { name: "Blikfang" })).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("hides a multi-artist lineup that only repeats the title, ignoring case and separators", () => {
+    render(<EventRow event={makeEvent({ title: "BEN KLOCK & MARCEL DETTMANN", artists: ["Ben Klock", "Marcel Dettmann"] })} />);
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("hides the lineup when the title names every artist among other words", () => {
+    render(<EventRow event={makeEvent({ title: "Blikfang presents: Blikfang", artists: ["Blikfang"] })} />);
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("hides the lineup for the real Culture Box two-room event despite b2b notation, and shows the comma title", () => {
+    render(
+      <EventRow
+        event={makeEvent({
+          title: "Black Box: STEAMBOI, KARDINAL BERTRAM, LMN · Red Box: QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!",
+          artists: ["STEAMBOI", "KARDINAL BERTRAM", "LMN", "QWENTY b2b OOOPS", "avoN", "SANDY P b2b MADITATION b2b VALENTINA", "SILK!"],
+          venue: { ...VENUE, name: "Culture Box", slug: "culture-box" },
+        })}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!" })).toBeTruthy();
+    expect(screen.queryByText("Lineup:")).toBeNull();
+  });
+
+  it("keeps the lineup, in its official spelling, when one artist is missing from the title", () => {
+    render(<EventRow event={makeEvent({ title: "QWENTY", artists: ["QWENTY b2b OOOPS", "avoN"] })} />);
+    expect(screen.getByText("QWENTY b2b OOOPS / avoN", { exact: false })).toBeTruthy();
   });
 });
 
@@ -1072,7 +1101,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
   const cls = (el: Element) => el.className.split(/\s+/);
   const orderOf = (el: Element) => cls(el).find((c) => /^-?order-/.test(c));
 
-  it("orders mobile info as date (+ status) → title → genres → lineup → divider → venue → actions → video/audio", () => {
+  it("orders mobile info as date (+ status) → title → genres → lineup → venue → actions → video/audio", () => {
     const { container } = render(
       <EventRow
         event={{
@@ -1090,8 +1119,7 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(soldOutWrap.parentElement).toBe(row.firstElementChild);
     expect(orderOf(screen.getByRole("link", { name: "HYGGELIT SHOWCASE" }))).toBe("-order-5");
     expect(orderOf(screen.getByText("Techno").closest("span") as Element)).toBe("-order-4");
-    expect(orderOf(screen.getByText("Naiva / Onsberg"))).toBe("-order-3");
-    expect(orderOf(container.querySelector("[aria-hidden].h-px") as Element)).toBe("-order-2");
+    expect(orderOf(screen.getByText("NAIVA / ONSBERG"))).toBe("-order-3");
     expect(orderOf(screen.getByRole("link", { name: "Test Venue" }).parentElement as Element)).toBe("-order-1");
     expect(orderOf(screen.getByRole("link", { name: /artist preview video/ }))).toBe("order-1");
     expect(orderOf(screen.getByRole("link", { name: /audio links/ }))).toBe("order-1");
@@ -1113,10 +1141,9 @@ describe("EventRow — mobile restructure, desktop unchanged (2026-11-12)", () =
     expect(classes.some((c) => c.startsWith("bg-") || c.startsWith("border"))).toBe(false);
   });
 
-  it("draws the divider on mobile only", () => {
+  it("draws no internal divider inside an event (2026-11-21)", () => {
     const { container } = render(<EventRow event={makeEvent()} />);
-    const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
-    expect(cls(divider)).toEqual(expect.arrayContaining(["basis-full", "bg-border/70", "sm:hidden"]));
+    expect(container.querySelector("[aria-hidden].h-px")).toBeNull();
   });
 
   it("hides the metadata · separators on mobile except between venue and sub-venue", () => {
@@ -1156,11 +1183,10 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(group.firstElementChild).toBe(pin);
   });
 
-  it("makes the venue one unit of the bottom flow, not a full line", () => {
+  it("gives the venue its own mobile line, with the actions grouped below it", () => {
     render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
     const group = screen.getByRole("link", { name: "Test Venue" }).parentElement as Element;
-    expect(cls(group)).toEqual(expect.arrayContaining(["-order-1", "min-w-0", "sm:contents"]));
-    expect(cls(group)).not.toContain("basis-full");
+    expect(cls(group)).toEqual(expect.arrayContaining(["-order-1", "min-w-0", "basis-full", "sm:contents"]));
     expect(cls(group)).not.toContain("grow");
   });
 
@@ -1193,12 +1219,20 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(calendar.previousElementSibling).toBeNull();
   });
 
-  it("uses a subtler internal divider than the between-event line on mobile; desktop line unchanged", () => {
+  it("keeps one between-event line with equal mobile padding above and below; desktop unchanged", () => {
     const { container } = render(<EventRow event={makeEvent()} />);
     const li = container.querySelector("li") as HTMLElement;
     expect(cls(li)).toEqual(expect.arrayContaining(["border-b", "border-border-strong/80", "sm:border-border"]));
-    const divider = container.querySelector("[aria-hidden].h-px") as HTMLElement;
-    expect(cls(divider)).toContain("bg-border/70");
+    const row = li.firstElementChild as HTMLElement;
+    expect(cls(row)).toEqual(expect.arrayContaining(["py-2.5", "sm:py-3.5"]));
+  });
+
+  it("de-emphasises Official event/Tickets on mobile with an enlarged tap area; desktop styling unchanged", () => {
+    render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
+    for (const name of [/Official event/, /Tickets/]) {
+      const c = cls(screen.getByRole("link", { name }));
+      expect(c).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "text-text-secondary", "sm:text-text-secondary-strong", "before:absolute", "sm:before:hidden"]));
+    }
   });
 });
 
@@ -1260,7 +1294,7 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
     expect(unit.contains(official)).toBe(false);
     // Items outside the link group carry its typography themselves.
-    expect(cls(tickets)).toEqual(expect.arrayContaining(["text-xs", "font-medium", "uppercase", "tracking-wide"]));
+    expect(cls(tickets)).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "font-medium", "uppercase", "tracking-wide"]));
   });
 
   it("does not bind when Video/Audio follow Calendar — links then fill the line by width alone", () => {

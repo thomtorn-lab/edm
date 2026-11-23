@@ -47,10 +47,10 @@ export function cleanEventTitle(title: string, venueName: string): string {
     if (cleaned !== title) return cleaned;
   }
   if (venueName === "Culture Box") {
-    const cleaned = title
-      .split(" · ")
-      .map((segment) => segment.replace(CULTURE_BOX_ROOM_PREFIX, "").trim())
-      .join(" · ");
+    // Room prefixes removed; the rooms' " · " separator becomes a plain
+    // comma (2026-11-22) — without the room names it reads as one list.
+    const segments = title.split(" · ").map((segment) => segment.replace(CULTURE_BOX_ROOM_PREFIX, "").trim());
+    const cleaned = segments.filter(Boolean).join(", ");
     if (cleaned !== title) return cleaned;
   }
   return title;
@@ -84,10 +84,39 @@ export function subVenueLabel(title: string, venueName: string, subVenue?: strin
 function normalizeForComparison(text: string): string {
   return text
     .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Connectors that join individual artists inside one lineup entry
+// ("Qwenty b2b Ooops", "A B3B B", "A vs B", "A x B"). Each side is checked
+// against the title on its own, so a b2b notation never keeps a lineup
+// visible that the title already names in full.
+const LINEUP_ENTRY_CONNECTOR = /\s+(?:b\d?b|vs\.?|x)\s+/i;
+
+/**
+ * Whether the listing-row lineup only repeats the event title (2026-11-22):
+ * true when every individual lineup artist — entries split on b2b/b3b/vs/x —
+ * appears in the displayed title as a whole name, compared case-, accent-
+ * and punctuation-insensitively (room separators, commas and "&" ignored).
+ * Any single artist missing from the title keeps the lineup visible, so no
+ * artist ever disappears from the listing. Title "Blikfang" / lineup
+ * "Blikfang" → true; Culture Box "STEAMBOI, …, LMN, QWENTY, OOOPS" / lineup
+ * "… / Qwenty b2b Ooops" → true; "HYGGELIT SHOWCASE" → false.
+ */
+export function lineupDuplicatesTitle(title: string, artists: string[]): boolean {
+  const names = artists
+    .flatMap((entry) => entry.split(LINEUP_ENTRY_CONNECTOR))
+    .map(normalizeForComparison)
+    .filter(Boolean);
+  if (names.length === 0) return false;
+  const normalizedTitle = normalizeForComparison(title);
+  if (!normalizedTitle) return false;
+  const paddedTitle = ` ${normalizedTitle} `;
+  return names.every((name) => paddedTitle.includes(` ${name} `));
 }
 
 /**
@@ -123,33 +152,12 @@ export function shouldShowArtistPreview(title: string, artists: string[]): boole
   return true;
 }
 
-// Words that keep a fixed casing instead of the title-case rule, matched
-// case-insensitively against a whole word: "dj koze" → "DJ Koze",
-// "A B2B C" → "A b2b C".
-const ARTIST_WORD_EXCEPTIONS: Record<string, string> = {
-  dj: "DJ",
-  b2b: "b2b",
-};
-
 /**
- * Display casing for an artist name in the public lineup: every word starts
- * with a capital letter and the rest of the word is lower-case, regardless
- * of how the name was entered ("ROSA MALENA" / "rosa malena" → "Rosa
- * Malena"). Words are split on whitespace and hyphens ("jean-michel" →
- * "Jean-Michel"); the words in ARTIST_WORD_EXCEPTIONS keep their fixed
- * casing. Presentation-only — canonical `artists` data is never modified.
+ * Public display of an artist name (2026-11-22): the official spelling as
+ * the source gives it, casing included ("avoN", "LMN", "Silk!" stay as
+ * written) — only stray whitespace is tidied. Presentation-only; canonical
+ * `artists` data is never modified.
  */
 export function formatArtistName(name: string): string {
-  return name
-    .trim()
-    .split(/(\s+|-)/)
-    .map((part) => {
-      if (/^\s+$/.test(part)) return " ";
-      if (part === "-" || part === "") return part;
-      const lower = part.toLocaleLowerCase("da-DK");
-      const exception = ARTIST_WORD_EXCEPTIONS[lower];
-      if (exception) return exception;
-      return lower.replace(/^(\P{L}*)(\p{L})/u, (_, lead: string, letter: string) => lead + letter.toLocaleUpperCase("da-DK"));
-    })
-    .join("");
+  return name.trim().replace(/\s+/g, " ");
 }

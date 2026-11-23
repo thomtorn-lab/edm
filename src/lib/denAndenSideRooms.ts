@@ -528,10 +528,14 @@ export function structureDenAndenSideRooms(input: RoomInput): StructuredRooms {
   return { title, description, artists, analysis, changed };
 }
 
-/** Display title: room prefix removed per " · " segment, as cleanEventTitle does for Culture Box. */
+/**
+ * Display title: room prefix removed per " · " segment, as cleanEventTitle
+ * does for Culture Box. Once a prefix is removed the separator becomes a
+ * comma (2026-11-22); a title without room prefixes is returned unchanged.
+ */
 export function stripDenAndenSideRoomPrefix(title: string): string {
-  return title
-    .split(" · ")
-    .map((s) => s.replace(/^(?:Den Anden Side|Den Anden Ende):\s*/, "").trim())
-    .join(" · ");
+  const segments = title.split(" · ");
+  const stripped = segments.map((s) => s.replace(/^(?:Den Anden Side|Den Anden Ende):\s*/, "").trim());
+  if (stripped.every((s, i) => s === segments[i])) return title;
+  return stripped.filter(Boolean).join(", ");
 }
