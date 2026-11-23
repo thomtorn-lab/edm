@@ -1,0 +1,96 @@
+name: QA Export to Private Repo (Read-Only)
+
+# Manual only: no schedule, no push/PR trigger, starts nothing else.
+# Exports every current (upcoming or in-progress) published event with
+# src/db/exportQaSnapshot.ts, logged in as the shared read-only report role
+# (DATABASE_URL_REPORT_RO, proven unable to write before any data is read),
+# and commits the JSON to the PRIVATE repository below, which the owner's
+# external QA reads. This repository is public, so the snapshot is never
+# uploaded as an artifact or committed here.
+#
+# Needs two repository secrets:
+#   DATABASE_URL_REPORT_RO  the existing read-only report role
+#   QA_DATA_REPO_TOKEN      fine-grained token for the private repo only (Contents: read and write)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-export-readonly
+  cancel-in-progress: false
+
+env:
+  QA_DATA_REPO: thomtorn-lab/electroniccph-qa-data
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify secrets are configured
+        env:
+          DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
+          QA_DATA_REPO_TOKEN: ${{ secrets.QA_DATA_REPO_TOKEN }}
+        run: |
+          if [ -z "${DATABASE_URL_REPORT_RO:-}" ]; then
+            echo "::error::Repository secret DATABASE_URL_REPORT_RO is not set."
+            exit 1
+          fi
+          if [ -z "${QA_DATA_REPO_TOKEN:-}" ]; then
+            echo "::error::Repository secret QA_DATA_REPO_TOKEN is not set."
+            exit 1
+          fi
+
+      - name: Refuse unless the target repository is private
+        env:
+          GH_TOKEN: ${{ secrets.QA_DATA_REPO_TOKEN }}
+        run: |
+          visibility="$(gh api "repos/$QA_DATA_REPO" --jq '.visibility')"
+          if [ "$visibility" != "private" ]; then
+            echo "::error::$QA_DATA_REPO is not private (visibility: ${visibility:-unknown}). Nothing was exported."
+            exit 1
+          fi
+          echo "$QA_DATA_REPO is private."
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export QA snapshot (read-only)
+        env:
+          DATABASE_URL_REPORT_RO: ${{ secrets.DATABASE_URL_REPORT_RO }}
+        run: node --import tsx src/db/exportQaSnapshot.ts --out="$RUNNER_TEMP/qa-snapshot.json"
+
+      - name: Checkout private QA data repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.QA_DATA_REPO }}
+          token: ${{ secrets.QA_DATA_REPO_TOKEN }}
+          path: qa-data
+
+      - name: Commit snapshot to the private repository
+        working-directory: qa-data
+        run: |
+          cp "$RUNNER_TEMP/qa-snapshot.json" qa-snapshot.json
+          git add qa-snapshot.json
+          if git diff --cached --quiet; then
+            echo "Snapshot unchanged; nothing committed."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "QA snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q origin HEAD
+          echo "Snapshot committed to $QA_DATA_REPO."
