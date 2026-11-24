@@ -180,8 +180,18 @@ describe("categoryFingerprints", () => {
     const a = categoryFingerprints(e), b = categoryFingerprints({ ...e, ...over });
     return QA_CATEGORIES.filter((c) => a[c] !== b[c]);
   };
+  it("a changed description (ABOUT) reopens source_facts and about_language only", () => {
+    const fp = (description: string) => categoryFingerprints({ ...e, description });
+    const before = reconcileQaStatus(emptyQaStatus(), QA_CATEGORIES.map((category) => ({ subject_id: "e1", category, source_fingerprint: fp("About")[category] })), T0);
+    for (const c of before.checks) Object.assign(c, { status: "completed", checked_at: T0, evidence: ["https://venue.example/e1"] });
+    const after = reconcileQaStatus(before, QA_CATEGORIES.map((category) => ({ subject_id: "e1", category, source_fingerprint: fp("Now mostly a jazz concert")[category] })), T1);
+    expect(Object.fromEntries(after.checks.map((c) => [c.category, c.status]))).toEqual({
+      source_facts: "pending", music_genre: "completed", links: "completed", duplicates: "completed", about_language: "pending",
+    });
+  });
+
   it("changes only the categories the changed field belongs to", () => {
-    expect(diff({ description: "Om" })).toEqual(["about_language"]);
+    expect(diff({ description: "Om" })).toEqual(["source_facts", "about_language"]);
     expect(diff({ subgenres: ["house"] })).toEqual(["music_genre"]);
     expect(diff({ ticket_url: "https://t" })).toEqual(["links", "duplicates"]);
     expect(diff({ cancelled: true })).toEqual(["source_facts"]);

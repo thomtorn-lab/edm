@@ -28,7 +28,7 @@ workflow, the next export stops and changes nothing until it is restored.
 
 | Category | What the check covers |
 |---|---|
-| `source_facts` | Event facts, lineup, date/time, venue, cancellation, electronic relevance — against the official source |
+| `source_facts` | Event facts, lineup, date/time, venue, cancellation, electronic relevance (incl. the ABOUT text) — against the official source |
 | `music_genre` | Independent musical genre verification of the artists |
 | `links` | Official/ticket/RA/Facebook/other links and their destinations |
 | `duplicates` | Whether the event duplicates another listing |

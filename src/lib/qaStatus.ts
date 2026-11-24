@@ -156,8 +156,9 @@ export type CategoryFingerprintInput = {
 export function categoryFingerprints(e: CategoryFingerprintInput): Record<QaCategory, string> {
   const links = [...e.source_links].sort((a, b) => `${a.source_id}|${a.role}`.localeCompare(`${b.source_id}|${b.role}`));
   return {
+    // description is included: source_facts covers electronic relevance, which the ABOUT text can change.
     source_facts: fingerprint({
-      title: e.title, artists: e.artists, start: e.start_datetime, end: e.end_datetime, venue: e.venue_id, room: e.sub_venue,
+      title: e.title, description: e.description, artists: e.artists, start: e.start_datetime, end: e.end_datetime, venue: e.venue_id, room: e.sub_venue,
       cancelled: e.cancelled, postponed: e.postponed, sold_out: e.sold_out,
       source_links: links.filter((x) => x.role === "official").map((x) => [x.source_id, x.source_url]),
     }),
