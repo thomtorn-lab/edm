@@ -9,7 +9,7 @@
  * the change log, and a content fingerprint, so the external QA can tell
  * which events are new or changed since it last checked them.
  *
- * Run only by .github/workflows/qa-export-readonly.yml (manual start):
+ * Run only by .github/workflows/qa-export-readonly.yml (daily schedule and manual start):
  *
  *   node --import tsx src/db/exportQaSnapshot.ts --out=qa-snapshot.json
  *
@@ -25,11 +25,12 @@ import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { Client } from "pg";
 import { isPastEvent } from "@/lib/datetime";
+import { categoryFingerprints, type QaCategory } from "@/lib/qaStatus";
 import { SITE_URL } from "@/lib/siteUrl";
 import { assertReadOnlyTransaction } from "./readOnlyTransaction";
 import { assertReadOnlyRole, readReportConnectionString, type QueryClient, type ReportTable } from "./reportReadOnlyGuard";
 
-export const QA_SNAPSHOT_SCHEMA_VERSION = 2;
+export const QA_SNAPSHOT_SCHEMA_VERSION = 3;
 
 /** Must equal UPCOMING_PREFILTER_LOOKBACK_MS in src/lib/queries.ts (asserted by the test). */
 export const QA_PREFILTER_LOOKBACK_MS = 3 * 24 * 3_600_000;
@@ -128,6 +129,8 @@ export interface QaEvent {
   last_changed: string | null;
   /** sha256 of the event's QA-relevant content (everything above except timestamps, in_progress and change_log). Changes exactly when something the QA checks changed. */
   content_fingerprint: string;
+  /** One fingerprint per QA category (src/lib/qaStatus.ts); a check reopens only when its own one changes. */
+  category_fingerprints: Record<QaCategory, string>;
 }
 
 export interface QaSnapshot {
@@ -159,7 +162,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-export function contentFingerprint(e: Omit<QaEvent, "content_fingerprint">): string {
+export function contentFingerprint(e: Omit<QaEvent, "content_fingerprint" | "category_fingerprints">): string {
   const content = {
     id: e.id, slug: e.slug, title: e.title, description: e.description, artists: e.artists,
     start_datetime: e.start_datetime, end_datetime: e.end_datetime, timezone: e.timezone,
@@ -192,7 +195,7 @@ export function buildQaSnapshot(raw: QaRawData, now: Date): QaSnapshot {
     const id = String(r.id);
     const start = iso(r.start_datetime)!;
     const end = iso(r.end_datetime);
-    const base: Omit<QaEvent, "content_fingerprint"> = {
+    const base: Omit<QaEvent, "content_fingerprint" | "category_fingerprints"> = {
       id,
       slug: String(r.slug),
       page_url: `${SITE_URL}/events/${String(r.slug)}`,
@@ -232,7 +235,14 @@ export function buildQaSnapshot(raw: QaRawData, now: Date): QaSnapshot {
       last_source_check: iso(r.last_source_check),
       last_changed: iso(r.last_changed),
     };
-    return { ...base, content_fingerprint: contentFingerprint(base) };
+    return {
+      ...base,
+      content_fingerprint: contentFingerprint(base),
+      category_fingerprints: categoryFingerprints({
+        ...base, ...base.links, ...base.status, venue_id: base.venue.id,
+        source_links: base.source_links.map((l) => ({ source_id: l.source_id, source_url: l.source_url, role: l.role })),
+      }),
+    };
   });
 
   const sources = raw.sources.map((s) => ({ id: String(s.id), source_name: String(s.source_name), source_type: String(s.source_type), active: s.active === true }));
