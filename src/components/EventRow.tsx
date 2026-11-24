@@ -47,8 +47,8 @@ const MOBILE_PILL_BASE =
   "flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 text-[15px] font-semibold transition-colors";
 /** Primary: Tickets — the filled accent button. */
 const MOBILE_PRIMARY_PILL = `${MOBILE_PILL_BASE} bg-accent-strong text-accent-on group-hover:bg-accent`;
-/** Secondary: Official Event (and the rare Source fallback) — one outlined style, identical on every row. */
-const MOBILE_SECONDARY_PILL = `${MOBILE_PILL_BASE} border border-accent-dim text-accent-strong group-hover:border-accent group-hover:text-text-primary`;
+/** Secondary: Official Event (and the rare Source fallback) — one purple text-link style, identical on every row, with or without Tickets. */
+const MOBILE_SECONDARY_PILL = "flex h-9 items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold text-accent-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors group-hover:text-text-primary group-hover:decoration-current";
 /** Tertiary: Calendar / Video / Audio — 44×44 targets around a 36×36 outlined icon box. */
 const MOBILE_ICON_TARGET = "group flex h-11 w-11 items-center justify-center text-text-secondary-strong";
 const MOBILE_ICON_BOX =
@@ -409,9 +409,11 @@ export default function EventRow({
       </div>
       {/* Mobile row (below sm; 2026-11-24 redesign). Time + venue → title →
           genres → full lineup → actions. Actions: Tickets / Official Event as
-          a left group, Calendar / Video / Audio as a right group; when the two
-          don't fit on one line the whole icon group wraps to the next line,
-          left-aligned (justify-between with a single item per line). */}
+          a left group, Calendar / Video / Audio as a right group. All five fit
+          on one line from 390px (Official Event is a text link; the last icon's
+          44px target reaches 4px into the gutter so its visible box aligns with
+          the margin). On narrower screens the whole icon group wraps to the
+          next line, left-aligned (justify-between with a single item per line). */}
       <div data-mobile-only className="pb-1.5 pt-3 sm:hidden">
         <div className="flex min-h-[18px] items-center gap-1.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-secondary">
           {showMobileDate && (
@@ -462,9 +464,9 @@ export default function EventRow({
         {mobileLineup && (
           <p className="mt-[3px] break-words text-[17px] leading-[1.4] text-text-secondary-strong">{mobileLineup}</p>
         )}
-        <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-1">
+        <div className="mt-0.5 flex flex-wrap items-center justify-between">
           {mobileLinks.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {mobileLinks.map((l) => (
                 <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className={`group ${MOBILE_ACTION_BOX}`}>
                   <span className={l.label === "Tickets" ? MOBILE_PRIMARY_PILL : MOBILE_SECONDARY_PILL}>
@@ -476,7 +478,7 @@ export default function EventRow({
               ))}
             </div>
           )}
-          <div className="flex flex-none items-center">
+          <div className="-mr-1 flex flex-none items-center">
             <AddToCalendar
               event={calendarInput}
               icsHref={`/events/${event.slug}/calendar.ics`}

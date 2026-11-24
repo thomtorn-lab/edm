@@ -1399,7 +1399,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(meta()).toMatch(/Aug/i);
   });
 
-  it("orders actions Tickets (filled) → Official Event (outlined), then Calendar / Video / Audio as a separate group", () => {
+  it("orders actions Tickets (filled) → Official Event (text link), then Calendar / Video / Audio as a separate group", () => {
     const { container } = render(<EventRow event={FULL} dateInHeading />);
     const actions = mobile(container).lastElementChild as HTMLElement;
     expect(cls(actions)).toEqual(expect.arrayContaining(["flex", "flex-wrap", "justify-between"]));
@@ -1408,7 +1408,8 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(links.map((l) => l.textContent?.replace(" (opens in a new tab)", ""))).toEqual(["Tickets", "Official Event"]);
     expect(links.map((l) => l.getAttribute("href"))).toEqual(["https://billetto.dk/e/x", "https://venue.example.com/event"]);
     expect(cls(links[0].firstElementChild as Element)).toEqual(expect.arrayContaining(["bg-accent-strong"]));
-    expect(cls(links[1].firstElementChild as Element)).toEqual(expect.arrayContaining(["border", "border-accent-dim"]));
+    expect(cls(links[1].firstElementChild as Element)).toEqual(expect.arrayContaining(["text-accent-strong", "text-[15px]", "font-semibold"]));
+    expect(cls(links[1].firstElementChild as Element).some((c) => c.startsWith("border") || c.startsWith("bg-"))).toBe(false);
     expect(within(right).getByRole("button", { name: "Add to calendar", ...opts })).toBeTruthy();
     expect(within(right).getByRole("link", { name: /artist preview video/, ...opts }).getAttribute("href")).toBe("/events/test-event#video");
     expect(within(right).getByRole("link", { name: /audio links/, ...opts }).getAttribute("href")).toBe("/events/test-event#soundcloud");
