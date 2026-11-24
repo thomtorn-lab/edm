@@ -1376,7 +1376,12 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(within(meta).getByRole("link", { name: "Test Venue", ...opts }).getAttribute("href")).toBe("/venues/test-venue");
     const title = within(m).getByRole("link", { name: "Module X Moodyverse", ...opts });
     expect(title.getAttribute("href")).toBe("/events/test-event");
-    expect(cls(title.querySelector("span") as Element)).toEqual(expect.arrayContaining(["text-[26px]", "font-bold"]));
+    expect(cls(title)).toEqual(expect.arrayContaining(["text-[26px]", "font-bold"]));
+    // The arrow is inline after the title's last word, bound to it (nowrap), not pinned to the margin.
+    const tail = title.lastElementChild as HTMLElement;
+    expect(cls(tail)).toContain("whitespace-nowrap");
+    expect(tail.textContent).toBe("Moodyverse");
+    expect(tail.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     const [genre, lineup] = Array.from(m.querySelectorAll("p"));
     expect(genre.textContent).toBe("Techno · House");
     expect(cls(genre)).toEqual(expect.arrayContaining(["text-accent", "uppercase"]));
@@ -1385,10 +1390,10 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(cls(lineup).some((c) => c.includes("clamp") || c === "truncate")).toBe(false);
   });
 
-  it("keeps every artist name whole and every · at the end of a line (non-breaking spaces)", () => {
+  it("separates artists with / (as on desktop), keeping every name whole and every / at the end of a line", () => {
     const { container } = render(<EventRow event={FULL} />);
     const lineup = Array.from(mobile(container).querySelectorAll("p"))[1];
-    expect(lineup.textContent).toBe("Baime\u00a0· Fred\u00a0Lenix\u00a0· Denes\u00a0Toth");
+    expect(lineup.textContent).toBe("Baime\u00a0/ Fred\u00a0Lenix\u00a0/ Denes\u00a0Toth");
   });
 
   it("omits the single-day date when the list shows it in a day heading, keeps it otherwise", () => {
@@ -1448,5 +1453,26 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     sold.unmount();
     const free = render(<EventRow event={makeEvent({ priceFrom: 0, officialEventUrl: "https://venue.example.com/e" })} />);
     expect((mobile(free.container).firstElementChild as HTMLElement).textContent).toContain("Free");
+  });
+
+  it("draws SOLD OUT / FREE as fixed-height badges with leading-none (text centred in the box)", () => {
+    const { container } = render(<EventRow event={{ ...FULL, soldOut: true }} />);
+    const badge = within(mobile(container)).getByText("Sold out", { ignore: false });
+    expect(cls(badge)).toEqual(expect.arrayContaining(["h-[18px]", "leading-none", "items-center", "justify-center"]));
+  });
+
+  it("drops the separator line under the last row of a day on mobile only", () => {
+    const { container, rerender } = render(<EventRow event={FULL} />);
+    expect(cls(container.querySelector("li") as Element)).not.toContain("max-sm:border-b-0");
+    rerender(<EventRow event={FULL} lastInDay />);
+    expect(cls(container.querySelector("li") as Element)).toEqual(expect.arrayContaining(["border-b", "max-sm:border-b-0"]));
+  });
+
+  it("spaces every block of the mobile row with one gap (8px)", () => {
+    const { container } = render(<EventRow event={FULL} />);
+    expect(cls(mobile(container))).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-2", "pt-4", "pb-3"]));
+    for (const child of Array.from(mobile(container).children)) {
+      expect(cls(child).some((c) => /^-?m[tby]-/.test(c))).toBe(false);
+    }
   });
 });

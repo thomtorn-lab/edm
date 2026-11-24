@@ -1187,8 +1187,11 @@ function EventExplorerList({
                   <Fragment key={day.label}>
                     {/* Mobile-only sticky day heading: stays under the filter
                         bar until the next day's heading (later in the same
-                        list, painted above it) slides over it. */}
-                    <li data-mobile-only className="sticky top-[var(--event-list-sticky-top,0px)] z-20 -mx-4 border-b border-border-strong/80 bg-bg px-4 sm:hidden">
+                        list, painted above it) slides over it. No rule under
+                        it — a short fade to the page colour separates it from
+                        rows scrolling beneath; day groups are set apart by
+                        24px instead of a line. */}
+                    <li data-mobile-only className="sticky top-[var(--event-list-sticky-top,0px)] z-20 -mx-4 mt-6 bg-bg px-4 first:mt-0 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:from-50% after:to-transparent after:content-[''] sm:hidden">
                       <h3 className="flex h-10 items-baseline gap-2">
                         <span className="font-display text-2xl leading-10 font-extrabold uppercase tracking-[0.01em] text-text-primary">{day.label}</span>
                         <span className="text-xs leading-10 font-medium text-text-tertiary">
@@ -1196,8 +1199,8 @@ function EventExplorerList({
                         </span>
                       </h3>
                     </li>
-                    {day.events.map((event) => (
-                      <EventRow key={event.id} event={event} dateInHeading />
+                    {day.events.map((event, i) => (
+                      <EventRow key={event.id} event={event} dateInHeading lastInDay={i === day.events.length - 1} />
                     ))}
                   </Fragment>
                 ))}

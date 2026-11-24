@@ -56,6 +56,21 @@ const MOBILE_ICON_BOX =
 /** AddToCalendar's own button, styled as the same icon target (its svg is the icon). */
 const MOBILE_CALENDAR_BUTTON = `${MOBILE_ICON_TARGET} cursor-pointer [&>svg]:box-content [&>svg]:h-4 [&>svg]:w-4 [&>svg]:rounded-[10px] [&>svg]:border [&>svg]:border-border-strong [&>svg]:p-[9px] [&>svg]:transition-colors hover:[&>svg]:border-accent-dim hover:text-text-primary`;
 
+/**
+ * Mobile SOLD OUT / FREE badges: fixed 18px box, leading-none. Inter's caps sit
+ * high in their line box, and the uppercase letter-spacing trails to the right,
+ * so the padding is asymmetric (measured on the rendered badge: ink centred
+ * within 0.5px both ways).
+ */
+const MOBILE_BADGE =
+  "inline-flex h-[18px] items-center justify-center rounded-[3px] border pb-0 pl-[5.5px] pr-[6.5px] pt-1 text-[10px] font-semibold uppercase leading-none tracking-wide";
+const MOBILE_BADGE_TONE = {
+  strong: "border-text-primary text-text-primary",
+  bad: "border-status-bad/40 text-status-bad",
+  neutral: "border-border-strong text-text-secondary-strong",
+  free: "border-accent-dim text-accent-strong",
+} as const;
+
 function ExternalArrow() {
   return (
     <svg aria-hidden="true" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3 w-3 shrink-0">
@@ -67,6 +82,7 @@ function ExternalArrow() {
 export default function EventRow({
   event,
   dateInHeading = false,
+  lastInDay = false,
 }: {
   event: EventRowEvent;
   /**
@@ -77,6 +93,11 @@ export default function EventRow({
    * unaffected either way.
    */
   dateInHeading?: boolean;
+  /**
+   * Last row of a mobile day group: no separator line on mobile, since the
+   * next day group's spacing already separates it. Desktop unaffected.
+   */
+  lastInDay?: boolean;
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
@@ -97,14 +118,17 @@ export default function EventRow({
   // it.
   const eventHref = `/events/${event.slug}`;
   // Mobile lineup: every artist name is kept whole (non-breaking spaces) and
-  // each "·" separator stays at the end of a line, never the start of the next.
+  // each "/" separator stays at the end of a line, never the start of the next.
   const mobileLineup = lineup
-    ? event.artists.map((a) => formatArtistName(a).replace(/ /g, "\u00a0")).join("\u00a0· ")
+    ? event.artists.map((a) => formatArtistName(a).replace(/ /g, "\u00a0")).join("\u00a0/ ")
     : "";
   // Mobile actions: Tickets (primary) first, then Official Event / Source
   // (secondary) — same links, same rules as desktop, only the order differs.
   const mobileLinks = [...links].sort((a, b) => Number(b.label === "Tickets") - Number(a.label === "Tickets"));
   const showMobileDate = !dateInHeading || isMultiDayEvent(event);
+  const titleSplit = title.lastIndexOf(" ") + 1;
+  const titleHead = title.slice(0, titleSplit);
+  const titleTail = title.slice(titleSplit);
   // A genre that has its own landing page (only Techno so far) is a plain
   // crawlable link to it, a sibling of the title link rather than nested in
   // it; every other genre stays plain text. Shared by both layouts.
@@ -207,7 +231,7 @@ export default function EventRow({
   // the title. At `sm` every container is a real box again and every
   // order/margin resets.
   return (
-    <li className="border-b border-border last:border-b-0">
+    <li className={`border-b border-border last:border-b-0${lastInDay ? " max-sm:border-b-0" : ""}`}>
       {/* Desktop row (sm and up) — unchanged; display:none below sm, where the
           mobile layout further down renders instead. */}
       <div className="hidden flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 sm:flex sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
@@ -414,7 +438,7 @@ export default function EventRow({
           44px target reaches 4px into the gutter so its visible box aligns with
           the margin). On narrower screens the whole icon group wraps to the
           next line, left-aligned (justify-between with a single item per line). */}
-      <div data-mobile-only className="pb-1.5 pt-3 sm:hidden">
+      <div data-mobile-only className="flex flex-col gap-2 pb-3 pt-4 sm:hidden">
         <div className="flex min-h-[18px] items-center gap-1.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-secondary">
           {showMobileDate && (
             <>
@@ -438,33 +462,36 @@ export default function EventRow({
             </Link>
           </span>
           {(statuses.length > 0 || isFree) && (
-            <span className="ml-auto flex shrink-0 items-center gap-1 pl-1 leading-3">
+            <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
               {statuses.map((s) => (
-                <StatusBadge key={s.label} label={s.label} tone={s.label === "Sold out" ? "strong" : s.tone} />
-              ))}
-              {isFree && (
-                <span className="inline-flex items-center rounded-[3px] border border-accent-dim px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-strong">
-                  Free
+                <span key={s.label} className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE[s.label === "Sold out" ? "strong" : s.tone]}`}>
+                  {s.label}
                 </span>
-              )}
+              ))}
+              {isFree && <span className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.free}`}>Free</span>}
             </span>
           )}
         </div>
-        <Link href={eventHref} className="group mt-0.5 flex items-start gap-3">
-          <span className="min-w-0 flex-1 break-words text-[26px] font-bold leading-[1.18] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 group-hover:decoration-current">
-            {title}
+        <Link
+          href={eventHref}
+          className="group block break-words text-[26px] font-bold leading-[31px] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 hover:decoration-current focus-visible:decoration-current"
+        >
+          {titleHead}
+          {/* The arrow follows the title's last word (never wraps onto a line of its own). */}
+          <span className="whitespace-nowrap">
+            {titleTail}
+            <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} className="ml-1.5 inline-block h-[18px] w-[18px] align-[-1px] text-text-tertiary transition-colors group-hover:text-text-primary">
+              <path d="M2 9h13M10 4l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </span>
-          <svg aria-hidden="true" viewBox="0 0 18 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="mt-px h-[30px] w-5 shrink-0 text-text-tertiary transition-colors group-hover:text-text-primary">
-            <path d="M3 12h12M10 7l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
         </Link>
         {genres.length > 0 && (
-          <p className="mt-1 text-xs font-semibold uppercase leading-4 tracking-[0.08em] text-accent">{genreNodes}</p>
+          <p className="text-xs font-semibold uppercase leading-4 tracking-[0.08em] text-accent">{genreNodes}</p>
         )}
         {mobileLineup && (
-          <p className="mt-[3px] break-words text-[17px] leading-[1.4] text-text-secondary-strong">{mobileLineup}</p>
+          <p className="break-words text-[17px] leading-6 text-text-secondary-strong">{mobileLineup}</p>
         )}
-        <div className="mt-0.5 flex flex-wrap items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between">
           {mobileLinks.length > 0 && (
             <div className="flex items-center gap-3">
               {mobileLinks.map((l) => (
