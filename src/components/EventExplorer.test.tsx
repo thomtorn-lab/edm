@@ -425,7 +425,7 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
   // list — these helpers exclude <option> elements (and FilterSelect's
   // visible copy of the selected one, [data-select-value]) so assertions only
   // see real event-card content.
-  const ignoreOptions = { ignore: "option, [data-select-value], script, style" };
+  const ignoreOptions = { ignore: "option, [data-select-value], script, style, [data-mobile-only], [data-mobile-only] *" };
   const cardText = (text: string) => screen.getByText(text, ignoreOptions);
   const queryCardText = (text: string) => screen.queryByText(text, ignoreOptions);
   const allCardText = (text: string) => screen.getAllByText(text, ignoreOptions);
@@ -532,7 +532,10 @@ describe("EventExplorer — genre display integrity + filter inheritance (2026-0
         expect(shown, `${g.slug} filter, ${other.slug} event`).toBe(other.slug === g.slug || other.parent === g.slug);
       }
     }
-  });
+    // 27 genre filters × a re-render each; since the 2026-11-24 mobile redesign
+    // every row also renders its mobile layout, so this heavy test needs more
+    // than the 5s default (≈6s locally, was ≈2.6s).
+  }, 15_000);
 
   it("the drawn selected label (FilterSelect overlay) shows the chosen genre — grouped options included, not the 'All genres' fallback", () => {
     render(<EventExplorer events={ALL_EVENTS} serverNow="2026-08-01T12:00:00.000Z" />);
