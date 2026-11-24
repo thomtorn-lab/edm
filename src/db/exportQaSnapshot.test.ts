@@ -146,9 +146,21 @@ describe("runQaExport", () => {
 describe("qa-export-readonly.yml", () => {
   const yaml = readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", "qa-export-readonly.yml"), "utf-8");
 
-  it("starts only manually", () => {
-    expect(yaml).toMatch(/\non:\n {2}workflow_dispatch:\n\n/);
-    expect(yaml).not.toMatch(/\n {2}(schedule|push|pull_request|workflow_run|repository_dispatch):/);
+  it("starts manually or on the two daily crons only, and runs only the one matching Copenhagen time", () => {
+    expect(yaml).toMatch(/\non:\n {2}workflow_dispatch:\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "17 2 \* \* \*"\n {4}- cron: "17 3 \* \* \*"\n\n/);
+    expect(yaml).not.toMatch(/\n {2}(push|pull_request|pull_request_target|workflow_run|repository_dispatch):/);
+    expect(yaml).toContain('+0200) expected="17 2 * * *" ;;');
+    expect(yaml).toContain('+0100) expected="17 3 * * *" ;;');
+    expect(yaml).toContain("if: needs.clock.outputs.run == 'true'");
+  });
+
+  it("refuses to touch a register last changed by anyone but this workflow, before updating it", () => {
+    const guard = yaml.indexOf("Refuse unless qa-status.json was last written by this workflow");
+    expect(guard).toBeGreaterThan(yaml.indexOf("Checkout private QA data repository"));
+    expect(guard).toBeLessThan(yaml.indexOf("Update QA control register"));
+    expect(yaml).toContain('if [ "$author" != "$BOT_EMAIL" ]; then');
+    expect(yaml).toContain("node --import tsx src/lib/qaStatusCli.ts");
+    expect(yaml).not.toMatch(/push[^\n]*--force|push -f\b/);
   });
 
   it("never uses the read-write DATABASE_URL and keeps this repository's token read-only", () => {

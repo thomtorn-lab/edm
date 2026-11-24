@@ -1,12 +1,18 @@
 name: QA Export to Private Repo (Read-Only)
 
-# Manual only: no schedule, no push/PR trigger, starts nothing else.
-# Exports every current (upcoming or in-progress) published event with
-# src/db/exportQaSnapshot.ts, logged in as the shared read-only report role
-# (DATABASE_URL_REPORT_RO, proven unable to write before any data is read),
-# and commits the JSON to the PRIVATE repository below, which the owner's
-# external QA reads. This repository is public, so the snapshot is never
-# uploaded as an artifact or committed here.
+# Daily at ~04:17 Copenhagen time (before the external ChatGPT QA at 06:00),
+# plus manual start. Starts nothing else.
+#
+# 1. Exports every current (upcoming or in-progress) published event with
+#    src/db/exportQaSnapshot.ts, logged in as the shared read-only report role
+#    (DATABASE_URL_REPORT_RO, proven unable to write before any data is read).
+# 2. Updates the QA control register qa-status.json with src/lib/qaStatusCli.ts:
+#    applies ChatGPT's result files from qa-results/, then reconciles with the
+#    new snapshot. This workflow is the ONLY writer of qa-status.json; ChatGPT
+#    writes only files under qa-results/.
+# 3. Commits snapshot, register and QA_INSTRUCTIONS.md to the PRIVATE
+#    repository below. This repository is public, so nothing is uploaded as an
+#    artifact or committed here, and logs show counts only.
 #
 # Needs two repository secrets:
 #   DATABASE_URL_REPORT_RO  the existing read-only report role
@@ -14,6 +20,12 @@ name: QA Export to Private Repo (Read-Only)
 
 on:
   workflow_dispatch:
+  schedule:
+    # GitHub cron is UTC. 02:17 UTC = 04:17 CEST (summer), 03:17 UTC = 04:17 CET (winter).
+    # The clock job runs only the one matching today's Copenhagen offset, so a
+    # delayed run never exports twice.
+    - cron: "17 2 * * *"
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
@@ -24,9 +36,41 @@ concurrency:
 
 env:
   QA_DATA_REPO: thomtorn-lab/electroniccph-qa-data
+  BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
 
 jobs:
+  clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run: ${{ steps.clock.outputs.run }}
+    steps:
+      - name: Match the schedule to Copenhagen time
+        id: clock
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$EVENT_NAME" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          offset="$(TZ=Europe/Copenhagen date +%z)"
+          case "$offset" in
+            +0200) expected="17 2 * * *" ;;
+            +0100) expected="17 3 * * *" ;;
+            *) echo "::error::Unexpected Copenhagen UTC offset $offset"; exit 1 ;;
+          esac
+          if [ "$SCHEDULE" = "$expected" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Copenhagen offset $offset: the '$expected' schedule exports today; skipping '$SCHEDULE'."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   export:
+    needs: clock
+    if: needs.clock.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -80,17 +124,41 @@ jobs:
           repository: ${{ env.QA_DATA_REPO }}
           token: ${{ secrets.QA_DATA_REPO_TOKEN }}
           path: qa-data
+          fetch-depth: 0
 
-      - name: Commit snapshot to the private repository
+      - name: Refuse unless qa-status.json was last written by this workflow
+        working-directory: qa-data
+        run: |
+          if [ ! -f qa-status.json ]; then
+            echo "No qa-status.json yet; a new register will be started."
+            exit 0
+          fi
+          author="$(git log -1 --format=%ae -- qa-status.json)"
+          if [ "$author" != "$BOT_EMAIL" ]; then
+            echo "::error::qa-status.json was last changed by someone other than this workflow ($author). Only this workflow may write it; ChatGPT writes qa-results/ only. Nothing was changed."
+            exit 1
+          fi
+
+      - name: Update QA control register
+        run: |
+          node --import tsx src/lib/qaStatusCli.ts \
+            --snapshot="$RUNNER_TEMP/qa-snapshot.json" \
+            --status=qa-data/qa-status.json \
+            --results-dir=qa-data/qa-results \
+            --out="$RUNNER_TEMP/qa-status.json"
+
+      - name: Commit snapshot and register to the private repository
         working-directory: qa-data
         run: |
           cp "$RUNNER_TEMP/qa-snapshot.json" qa-snapshot.json
-          git add qa-snapshot.json
-          if git diff --cached --quiet; then
-            echo "Snapshot unchanged; nothing committed."
-            exit 0
+          cp "$RUNNER_TEMP/qa-status.json" qa-status.json
+          cp ../docs/qa-results-format.md QA_INSTRUCTIONS.md
+          git add qa-snapshot.json qa-status.json QA_INSTRUCTIONS.md
+          git -c user.name="github-actions[bot]" -c user.email="$BOT_EMAIL" \
+            commit -q -m "QA snapshot and register $(date -u +%Y-%m-%dT%H:%MZ)"
+          # ChatGPT may have added a result file meanwhile (other paths only): rebase once, never force.
+          if ! git push -q origin HEAD; then
+            git -c user.name="github-actions[bot]" -c user.email="$BOT_EMAIL" pull -q --rebase origin main
+            git push -q origin HEAD
           fi
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -q -m "QA snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -q origin HEAD
-          echo "Snapshot committed to $QA_DATA_REPO."
+          echo "Snapshot and register committed to $QA_DATA_REPO."
