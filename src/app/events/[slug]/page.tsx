@@ -279,14 +279,16 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
           then the venue-provided SoundCloud links with their own "Listen on
           SoundCloud" sub-heading after some extra air. Rendered only when
           there is at least one of the two. `#video` (homepage VIDEO badge)
-          now targets this section, so the jump lands with its heading in
-          view; it only exists when there is a video, exactly as before.
+          now targets this section; its scroll margin (`scroll-target-video`,
+          globals.css) lands the jump with the player roughly mid-screen
+          rather than at the top edge (2026-11-25). It only exists when
+          there is a video, exactly as before.
           `#soundcloud` (AUDIO badge) stays on the SoundCloud block. */}
       {hasMusic && (
         <section
           id={artistVideoPreview ? "video" : undefined}
           aria-labelledby="get-a-taste"
-          className="mt-8 scroll-mt-4 sm:mt-10"
+          className={`mt-8 sm:mt-10 ${artistVideoPreview ? "scroll-target-video" : ""}`}
         >
           <h2 id="get-a-taste" className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
             Get a taste
