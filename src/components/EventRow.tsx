@@ -42,10 +42,14 @@ const CALENDAR_BUTTON_CLASSES =
  * the anchor/button is the 44px box, the inner span draws the button.
  */
 const MOBILE_ACTION_BOX = "flex h-11 items-center";
-const MOBILE_PILL_BASE =
-  "flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 text-[15px] font-semibold transition-colors";
 /** Primary: Tickets — the filled accent button. */
-const MOBILE_PRIMARY_PILL = `${MOBILE_PILL_BASE} bg-accent-strong text-accent-on group-hover:bg-accent`;
+/**
+ * Primary: Tickets — the filled accent button, 36px visible inside the 44px
+ * target. Optically centred (measured on the rendered pill): Inter's text sits
+ * ~1px high, so 2px of top padding; the arrow glyph carries 3px of empty space
+ * on its right, so the right padding is 2px narrower than the left.
+ */
+const MOBILE_PRIMARY_PILL = "flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[10px] pl-3.5 pr-3 pt-0.5 text-[15px] font-semibold transition-colors bg-accent-strong text-accent-on group-hover:bg-accent";
 /** Secondary: Official Event (and the rare Source fallback) — one purple text-link style, identical on every row, with or without Tickets. */
 const MOBILE_SECONDARY_PILL = "flex h-9 items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold text-accent-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors group-hover:text-text-primary group-hover:decoration-current";
 /** Tertiary: Calendar / Video / Audio — 44×44 targets around a 36×36 outlined icon box. */
@@ -103,8 +107,10 @@ export default function EventRow({
   const eventHref = `/events/${event.slug}`;
   // Mobile lineup: every artist name is kept whole (non-breaking spaces) and
   // each "/" separator stays at the end of a line, never the start of the next.
+  // A lineup that is only "TBA" reads "Lineup: TBA", so it isn't mistaken for a name.
+  const lineupIsTba = event.artists.length === 1 && event.artists[0].trim().toUpperCase() === "TBA";
   const mobileLineup = lineup
-    ? event.artists.map((a) => formatArtistName(a).replace(/ /g, "\u00a0")).join("\u00a0/ ")
+    ? (lineupIsTba ? "Lineup: " : "") + event.artists.map((a) => formatArtistName(a).replace(/ /g, "\u00a0")).join("\u00a0/ ")
     : "";
   // Mobile actions: Tickets (primary) first, then Official Event / Source
   // (secondary) — same links, same rules as desktop, only the order differs.

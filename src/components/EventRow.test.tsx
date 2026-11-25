@@ -1479,4 +1479,12 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
       expect(cls(child).some((c) => /^-?m[tby]-/.test(c))).toBe(false);
     }
   });
+
+  it("prefixes a TBA-only lineup with \"Lineup:\" on mobile (2026-11-25)", () => {
+    const tba = render(<EventRow event={makeEvent({ title: "All We Need", artists: ["TBA"] })} />);
+    expect(Array.from(mobile(tba.container).querySelectorAll("p")).map((p) => p.textContent)).toContain("Lineup: TBA");
+    tba.unmount();
+    const named = render(<EventRow event={makeEvent({ title: "All We Need", artists: ["Baime"] })} />);
+    expect(Array.from(mobile(named.container).querySelectorAll("p")).map((p) => p.textContent)).toContain("Baime");
+  });
 });
