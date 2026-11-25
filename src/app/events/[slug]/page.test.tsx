@@ -1324,14 +1324,14 @@ describe("Event detail page — Get a taste (event-page action layout, 2026-10-1
     expect(screen.getAllByRole("heading", { level: 2, name: "Get a taste" })).toHaveLength(1);
   });
 
-  it("#video (homepage VIDEO badge) targets the section, so the jump lands with its heading in view; #soundcloud stays on the SoundCloud block", async () => {
+  it("#video (homepage VIDEO badge) targets the section and #soundcloud the SoundCloud block, each with a mid-screen scroll margin", async () => {
     vi.mocked(getEventYoutubePreview).mockResolvedValueOnce(VIDEO);
     await renderPage(makeEvent({ artists: ARTISTS }), [], LINKS);
     const video = document.getElementById("video")!;
     expect(video.tagName).toBe("SECTION");
-    expect(video.className).toContain("scroll-mt-4");
+    expect(video.className).toContain("scroll-target-video");
     expect(video.querySelector("h2")!.textContent).toBe("Get a taste");
-    expect(document.getElementById("soundcloud")!.className).toContain("scroll-mt-4");
+    expect(document.getElementById("soundcloud")!.className).toContain("scroll-target-audio");
   });
 
   it("SoundCloud artists are one wrapping row with ~44px tap targets on mobile and 32px from sm:", async () => {

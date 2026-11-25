@@ -5,9 +5,10 @@ import { formatArtistName } from "@/lib/eventPresentation";
  * to "AUDIO" on the overview and switched to the official wordmark here in
  * the UI-refinement round). Lists only verified lineup artists with their
  * own external SoundCloud profile — never an embed/player, never a
- * speculative match. `id="soundcloud"` + `scroll-mt-4` gives
+ * speculative match. `id="soundcloud"` + `scroll-target-audio` gives
  * `/events/<slug>#soundcloud` a stable target for the homepage's AUDIO badge
- * (see EventRow.tsx).
+ * (see EventRow.tsx); that class (globals.css) lands the jump with this
+ * block roughly mid-screen rather than at the top edge (2026-11-25).
  *
  * Event-page action layout (2026-10-17): rendered inside the page's "Get a
  * taste" section, so its own heading is an h3 — "Listen on" followed by the
@@ -26,7 +27,7 @@ export default function SoundcloudLinks({
   className?: string;
 }) {
   return (
-    <div id="soundcloud" className={`scroll-mt-4 ${className}`}>
+    <div id="soundcloud" className={`scroll-target-audio ${className}`}>
       <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
         {/* The explicit space keeps the accessible name "Listen on SoundCloud"
             rather than "Listen onSoundCloud" (flex gap is not text). */}

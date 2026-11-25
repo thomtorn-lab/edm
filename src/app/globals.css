@@ -173,3 +173,35 @@ body::before {
     animation: none;
   }
 }
+
+/* Event-page deep-link targets (homepage VIDEO / AUDIO badges →
+   /events/<slug>#video and #soundcloud). A plain `scroll-mt-4` parked the
+   player at the very top edge of the screen, where visitors don't look
+   first; instead the scroll margin is sized so the jump lands with the
+   target roughly in the middle of the viewport. Pure CSS, so it applies the
+   same way to Next <Link> navigation, direct loads and reloads. If the page
+   can't scroll that far (short page), the browser simply stops at the end —
+   never worse than before. `max(1rem, …)` keeps the old behaviour on short
+   or landscape viewports where centering isn't possible.
+
+   #video sits on the "Get a taste" section, so the margin centers the
+   16:9 player itself: its width is the event column (viewport minus the
+   page padding, 1rem per side below `sm` and 1.5rem from `sm`, capped at
+   max-w-3xl's 45rem content width), its height that width × 9/16, and
+   1.8rem accounts for the section heading + mt-3 above the player. */
+.scroll-target-video {
+  scroll-margin-top: max(1rem, calc((100vh - min(100vw - 2rem, 45rem) * 0.5625) / 2 - 1.8rem));
+  scroll-margin-top: max(1rem, calc((100svh - min(100vw - 2rem, 45rem) * 0.5625) / 2 - 1.8rem));
+}
+@media (min-width: 40rem) {
+  .scroll-target-video {
+    scroll-margin-top: max(1rem, calc((100vh - min(100vw - 3rem, 45rem) * 0.5625) / 2 - 1.8rem));
+    scroll-margin-top: max(1rem, calc((100svh - min(100vw - 3rem, 45rem) * 0.5625) / 2 - 1.8rem));
+  }
+}
+/* #soundcloud is a compact block ("Listen on SoundCloud" + one row of
+   ~44px artist links, ≈4rem), so it is centered as a whole. */
+.scroll-target-audio {
+  scroll-margin-top: max(1rem, calc((100vh - 4rem) / 2));
+  scroll-margin-top: max(1rem, calc((100svh - 4rem) / 2));
+}
