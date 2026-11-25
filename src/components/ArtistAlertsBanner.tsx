@@ -3,8 +3,8 @@ import Link from "next/link";
 /**
  * Homepage-only entry point to Artist Alerts (2026-11-12; layout 2026-11-25).
  * The whole banner is one link to /artists. Two rows on every width: the
- * heading row ("ARTIST ALERTS · Find Artists" on md+, "ARTIST ALERTS" alone
- * on smaller screens) with the arrow at the far right, then the explanation.
+ * heading row "ARTIST ALERTS · Find Artists" with the arrow at the far right,
+ * then the explanation.
  * The banner keeps its previous height: 50px inside on md+ (18px heading +
  * 4px + 16px explanation line + 2×6px padding), unchanged on mobile.
  */
@@ -20,10 +20,10 @@ export default function ArtistAlertsBanner() {
             <span className="shrink-0 font-display text-lg font-bold uppercase leading-none tracking-tight text-accent">
               Artist Alerts
             </span>
-            <span aria-hidden="true" className="hidden text-sm leading-none text-text-tertiary md:inline">
+            <span aria-hidden="true" className="text-sm leading-none text-text-tertiary">
               ·
             </span>
-            <span className="hidden text-sm font-medium leading-none text-accent md:inline">Find Artists</span>
+            <span className="whitespace-nowrap text-sm font-medium leading-none text-accent">Find Artists</span>
           </span>
           <span aria-hidden="true" className="text-xs font-semibold leading-none text-accent md:text-sm">
             →

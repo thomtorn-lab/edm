@@ -18,10 +18,11 @@ describe("ArtistAlertsBanner", () => {
 });
 
 describe("ArtistAlertsBanner layout (2026-11-25)", () => {
-  it("shows Find Artists only from md, with the arrow on its own at the end of the heading row", () => {
+  it("shows Find Artists on every width, with the arrow on its own at the end of the heading row", () => {
     render(<ArtistAlertsBanner />);
     const cta = screen.getByText("Find Artists");
-    expect(cta.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "md:inline", "font-medium", "text-sm"]));
+    expect(cta.className.split(/\s+/)).toEqual(expect.arrayContaining(["font-medium", "text-sm"]));
+    expect(cta.className.split(/\s+/)).not.toContain("hidden");
     const arrow = screen.getByText("→");
     expect(arrow.getAttribute("aria-hidden")).toBe("true");
     expect(arrow.previousElementSibling?.contains(screen.getByText("Artist Alerts"))).toBe(true);
