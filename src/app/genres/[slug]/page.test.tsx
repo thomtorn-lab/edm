@@ -121,7 +121,7 @@ describe("/genres/techno — page", () => {
     await renderPage([makeEvent("with-audio", ["techno"], FUTURE), makeEvent("without", ["techno"], FUTURE)]);
     expect(getSoundcloudAvailabilityForEvents).toHaveBeenCalledTimes(1);
     expect(screen.getAllByText("Audio")).toHaveLength(1);
-    expect(screen.getByLabelText("Go to audio links for Event with-audio")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Go to audio links for Event with-audio" })).toBeTruthy();
   });
 
   // Genre system revision (2026-10-24, intended change from #161): Techno is

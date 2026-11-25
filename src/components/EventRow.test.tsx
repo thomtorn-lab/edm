@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import EventRow from "./EventRow";
 import type { EventWithVenue } from "@/lib/queries";
 import { GENRES, genrePagePath, type GenreSlug } from "@/lib/taxonomy";
@@ -858,13 +858,13 @@ describe("EventRow — homepage VIDEO indicator (event-detail CTA hierarchy + ho
   it("shows the VIDEO indicator when hasArtistPreview is true", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
     expect(screen.getByText("Video")).toBeTruthy();
-    expect(screen.getByLabelText("Go to artist preview video for Test Event")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Go to artist preview video for Test Event" })).toBeTruthy();
   });
 
   it("shows no VIDEO indicator when hasArtistPreview is false", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: false }} />);
     expect(screen.queryByText("Video")).toBeNull();
-    expect(screen.queryByLabelText(/Go to artist preview video for/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Go to artist preview video for/ })).toBeNull();
   });
 
   it("shows no VIDEO indicator when hasArtistPreview is absent (e.g. the venue page, which doesn't compute it) — safe default, no regression", () => {
@@ -968,7 +968,7 @@ describe("EventRow — AUDIO indicator (venue-provided SoundCloud links)", () =>
     render(<EventRow event={withAudio({ id: PILOT_EVENT_ID, artists: PILOT_ARTISTS })} />);
     expect(screen.getByText("Audio")).toBeTruthy();
     expect(screen.queryByText("Soundcloud")).toBeNull();
-    expect(screen.getByLabelText("Go to audio links for Test Event")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Go to audio links for Test Event" })).toBeTruthy();
   });
 
   it("shows no AUDIO indicator when hasAudioLinks is false or unset", () => {
@@ -1055,7 +1055,9 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
 
   it("renders no lineup line when there are no artists", () => {
     const { container } = render(<EventRow event={makeEvent({ title: "HYGGELIT SHOWCASE", artists: [] })} />);
-    expect(container.querySelector("p")).toBeNull();
+    // Neither layout renders a lineup paragraph (the mobile layout's only <p> is its genre line).
+    expect(container.querySelector("li > div:first-child p")).toBeNull();
+    expect([...container.querySelectorAll("[data-mobile-only] p")].map((p) => p.textContent)).toEqual(["Drum & Bass"]);
     expect(screen.queryByText("Lineup:")).toBeNull();
   });
 
@@ -1219,12 +1221,13 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
     expect(calendar.previousElementSibling).toBeNull();
   });
 
-  it("keeps one between-event line with equal mobile padding above and below; desktop unchanged", () => {
+  it("keeps one discreet between-event line; the desktop row renders only from sm (2026-11-24)", () => {
     const { container } = render(<EventRow event={makeEvent()} />);
     const li = container.querySelector("li") as HTMLElement;
-    expect(cls(li)).toEqual(expect.arrayContaining(["border-b", "border-border-strong/80", "sm:border-border"]));
+    expect(cls(li)).toEqual(["border-b", "border-border", "last:border-b-0"]);
     const row = li.firstElementChild as HTMLElement;
-    expect(cls(row)).toEqual(expect.arrayContaining(["py-2.5", "sm:py-3.5"]));
+    expect(cls(row)).toEqual(expect.arrayContaining(["hidden", "sm:flex", "py-2.5", "sm:py-3.5"]));
+    expect(cls(li.lastElementChild as HTMLElement)).toEqual(expect.arrayContaining(["sm:hidden"]));
   });
 
   it("de-emphasises Official event/Tickets on mobile with an enlarged tap area; desktop styling unchanged", () => {
@@ -1343,5 +1346,133 @@ describe("EventRow — mobile Calendar wraps together with the first media badge
   it("without media: a single Calendar, no mobile copy", () => {
     render(<EventRow event={makeEvent({ ticketUrl: "https://example.com/t" })} />);
     expect(screen.getAllByRole("button", { name: "Add to calendar" })).toHaveLength(1);
+  });
+});
+
+describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
+  afterEach(cleanup);
+  const cls = (el: Element) => el.className.split(/\s+/);
+  const mobile = (c: HTMLElement) => c.querySelector("[data-mobile-only]") as HTMLElement;
+  // The mobile layout is display:none in the desktop-viewport test setup; query it with hidden: true / ignore: false.
+  const opts = { hidden: true } as const;
+
+  const FULL = {
+    ...makeEvent({
+      title: "Module X Moodyverse",
+      artists: ["Baime", "Fred Lenix", "Denes Toth"],
+      subgenres: ["techno", "house"] as GenreSlug[],
+      officialEventUrl: "https://venue.example.com/event",
+      ticketUrl: "https://billetto.dk/e/x",
+    }),
+    hasArtistPreview: true,
+    hasAudioLinks: true,
+  };
+
+  it("renders time + venue on one line, the 26px title, purple genre text and the full 17px lineup", () => {
+    const { container } = render(<EventRow event={FULL} dateInHeading />);
+    const m = mobile(container);
+    const meta = m.firstElementChild as HTMLElement;
+    expect(cls(meta)).toEqual(expect.arrayContaining(["flex", "font-mono", "text-[13px]"]));
+    expect(within(meta).getByRole("link", { name: "Test Venue", ...opts }).getAttribute("href")).toBe("/venues/test-venue");
+    const title = within(m).getByRole("link", { name: "Module X Moodyverse", ...opts });
+    expect(title.getAttribute("href")).toBe("/events/test-event");
+    expect(cls(title)).toEqual(expect.arrayContaining(["text-[26px]", "font-bold"]));
+    // The arrow is inline after the title's last word, bound to it (nowrap), not pinned to the margin.
+    const tail = title.lastElementChild as HTMLElement;
+    expect(cls(tail)).toContain("whitespace-nowrap");
+    expect(tail.textContent).toBe("Moodyverse");
+    expect(tail.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    const [genre, lineup] = Array.from(m.querySelectorAll("p"));
+    expect(genre.textContent).toBe("Techno · House");
+    expect(cls(genre)).toEqual(expect.arrayContaining(["text-accent", "uppercase"]));
+    expect(cls(genre).some((c) => c.startsWith("bg-") || c.startsWith("rounded"))).toBe(false);
+    expect(cls(lineup)).toEqual(expect.arrayContaining(["text-[17px]", "break-words"]));
+    expect(cls(lineup).some((c) => c.includes("clamp") || c === "truncate")).toBe(false);
+  });
+
+  it("separates artists with / (as on desktop), keeping every name whole and every / at the end of a line", () => {
+    const { container } = render(<EventRow event={FULL} />);
+    const lineup = Array.from(mobile(container).querySelectorAll("p"))[1];
+    expect(lineup.textContent).toBe("Baime\u00a0/ Fred\u00a0Lenix\u00a0/ Denes\u00a0Toth");
+  });
+
+  it("omits the single-day date when the list shows it in a day heading, keeps it otherwise", () => {
+    const { container, rerender } = render(<EventRow event={FULL} dateInHeading />);
+    const meta = () => (mobile(container).firstElementChild as HTMLElement).textContent ?? "";
+    expect(meta()).not.toMatch(/Aug/i);
+    rerender(<EventRow event={FULL} />);
+    expect(meta()).toMatch(/Aug/i);
+  });
+
+  it("orders actions Tickets (filled) → Official Event (text link), then Calendar / Video / Audio as a separate group", () => {
+    const { container } = render(<EventRow event={FULL} dateInHeading />);
+    const actions = mobile(container).lastElementChild as HTMLElement;
+    expect(cls(actions)).toEqual(expect.arrayContaining(["flex", "flex-wrap", "justify-between"]));
+    const [left, right] = Array.from(actions.children) as HTMLElement[];
+    const links = within(left).getAllByRole("link", opts);
+    expect(links.map((l) => l.textContent?.replace(" (opens in a new tab)", ""))).toEqual(["Tickets", "Official Event"]);
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(["https://billetto.dk/e/x", "https://venue.example.com/event"]);
+    expect(cls(links[0].firstElementChild as Element)).toEqual(expect.arrayContaining(["bg-accent-strong"]));
+    expect(cls(links[1].firstElementChild as Element)).toEqual(expect.arrayContaining(["text-accent-strong", "text-[15px]", "font-semibold"]));
+    expect(cls(links[1].firstElementChild as Element).some((c) => c.startsWith("border") || c.startsWith("bg-"))).toBe(false);
+    expect(within(right).getByRole("button", { name: "Add to calendar", ...opts })).toBeTruthy();
+    expect(within(right).getByRole("link", { name: /artist preview video/, ...opts }).getAttribute("href")).toBe("/events/test-event#video");
+    expect(within(right).getByRole("link", { name: /audio links/, ...opts }).getAttribute("href")).toBe("/events/test-event#soundcloud");
+    expect(cls(right)).toContain("flex-none");
+  });
+
+  it("draws Official Event identically with or without Tickets, always labelled 'Official Event'", () => {
+    const withTickets = render(<EventRow event={FULL} />);
+    const a = within(mobile(withTickets.container)).getByRole("link", { name: /Official Event/, ...opts });
+    const aClasses = (a.firstElementChild as Element).className;
+    withTickets.unmount();
+    const without = render(<EventRow event={{ ...FULL, ticketUrl: null }} />);
+    const b = within(mobile(without.container)).getByRole("link", { name: /Official Event/, ...opts });
+    expect((b.firstElementChild as Element).className).toBe(aClasses);
+    expect(a.className).toBe(b.className);
+    expect(b.textContent).toMatch(/^Official Event/);
+    expect(within(mobile(without.container)).queryByRole("link", { name: /Tickets/, ...opts })).toBeNull();
+  });
+
+  it("shows no Official Event button without an official link", () => {
+    const { container } = render(<EventRow event={{ ...FULL, officialEventUrl: null }} />);
+    expect(within(mobile(container)).queryByRole("link", { name: /Official/, ...opts })).toBeNull();
+  });
+
+  it("gives every action a touch target of at least 44×44px (h-11 / w-11)", () => {
+    const { container } = render(<EventRow event={FULL} />);
+    const actions = mobile(container).lastElementChild as HTMLElement;
+    for (const el of Array.from(actions.querySelectorAll("a, button"))) expect(cls(el)).toContain("h-11");
+    for (const el of Array.from((actions.lastElementChild as HTMLElement).querySelectorAll("a, button"))) expect(cls(el)).toContain("w-11");
+  });
+
+  it("shows SOLD OUT and FREE as badges on the time/venue line", () => {
+    const sold = render(<EventRow event={{ ...FULL, soldOut: true }} />);
+    expect((mobile(sold.container).firstElementChild as HTMLElement).textContent).toContain("Sold out");
+    expect(within(mobile(sold.container)).queryByRole("link", { name: /Tickets/, ...opts })).toBeNull();
+    sold.unmount();
+    const free = render(<EventRow event={makeEvent({ priceFrom: 0, officialEventUrl: "https://venue.example.com/e" })} />);
+    expect((mobile(free.container).firstElementChild as HTMLElement).textContent).toContain("Free");
+  });
+
+  it("draws SOLD OUT / FREE as fixed-height badges with leading-none (text centred in the box)", () => {
+    const { container } = render(<EventRow event={{ ...FULL, soldOut: true }} />);
+    const badge = within(mobile(container)).getByText("Sold out", { ignore: false });
+    expect(cls(badge)).toEqual(expect.arrayContaining(["h-[18px]", "leading-none", "items-center", "justify-center"]));
+  });
+
+  it("drops the separator line under the last row of a day on mobile only", () => {
+    const { container, rerender } = render(<EventRow event={FULL} />);
+    expect(cls(container.querySelector("li") as Element)).not.toContain("max-sm:border-b-0");
+    rerender(<EventRow event={FULL} lastInDay />);
+    expect(cls(container.querySelector("li") as Element)).toEqual(expect.arrayContaining(["border-b", "max-sm:border-b-0"]));
+  });
+
+  it("spaces every block of the mobile row with one gap (8px)", () => {
+    const { container } = render(<EventRow event={FULL} />);
+    expect(cls(mobile(container))).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-2", "pt-4", "pb-3"]));
+    for (const child of Array.from(mobile(container).children)) {
+      expect(cls(child).some((c) => /^-?m[tby]-/.test(c))).toBe(false);
+    }
   });
 });

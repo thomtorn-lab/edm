@@ -231,6 +231,6 @@ describe("Venue detail page — AUDIO indicator kept (venue-provided SoundCloud 
 
     expect(getSoundcloudAvailabilityForEvents).toHaveBeenCalledTimes(1);
     expect(screen.getAllByText("Audio")).toHaveLength(1);
-    expect(screen.getByLabelText("Go to audio links for Night With Links").getAttribute("href")).toBe("/events/with#soundcloud");
+    expect(screen.getByRole("link", { name: "Go to audio links for Night With Links" }).getAttribute("href")).toBe("/events/with#soundcloud");
   });
 });

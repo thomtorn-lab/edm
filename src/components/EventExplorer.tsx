@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import type { HomepageEvent } from "@/lib/homepageEvents";
 import {
@@ -11,7 +11,7 @@ import {
   isTonight,
   sortByStart,
 } from "@/lib/datetime";
-import { formatMonthAbbrTitleCase, formatMonthFull } from "@/lib/format";
+import { formatMonthAbbrTitleCase, formatMonthFull, formatRowDateLabel } from "@/lib/format";
 import { eventMatchesQuery } from "@/lib/search";
 import {
   EXPLORER_DATE_MODES,
@@ -411,6 +411,41 @@ function EventExplorerList({
   );
 
   const groups = useMemo(() => groupByMonth(filtered), [filtered]);
+
+  // Mobile day headings (2026-11-24 mobile redesign): within each month, the
+  // already chronologically sorted events are split into runs that share the
+  // row's own date label (its Copenhagen start date), so the sticky heading
+  // always names exactly the date the row used to show itself.
+  const dayGroupsByMonth = useMemo(
+    () =>
+      groups.map((g) => {
+        const days: { label: string; events: typeof g.events }[] = [];
+        for (const event of g.events) {
+          const label = formatRowDateLabel(event.startDatetime);
+          const last = days.at(-1);
+          if (last && last.label === label) last.events.push(event);
+          else days.push({ label, events: [event] });
+        }
+        return days;
+      }),
+    [groups],
+  );
+
+  // The mobile day headings stick directly below the sticky filter bar,
+  // whose height varies (quick-filter row, text size); keep its live height
+  // in a CSS variable the headings' `top` reads.
+  const stickyBarRef = useRef<HTMLDivElement>(null);
+  const explorerRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bar = stickyBarRef.current;
+    const root = explorerRootRef.current;
+    if (!bar || !root || typeof ResizeObserver === "undefined") return;
+    const update = () => root.style.setProperty("--event-list-sticky-top", `${bar.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   // Remembers the `groups` reference as of the last reconciliation effect
   // run (product rule, 2026-09-12 — see its use in that effect's "stay"
@@ -871,8 +906,8 @@ function EventExplorerList({
   );
 
   return (
-    <div>
-      <div className="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur supports-[backdrop-filter]:bg-bg/80">
+    <div ref={explorerRootRef}>
+      <div ref={stickyBarRef} className="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur supports-[backdrop-filter]:bg-bg/80">
         <div className="mx-auto max-w-6xl px-4 py-2.5 sm:px-6 sm:py-3">
           {/* ---- Mobile (< sm): search + Filters on one row, scrollable quick filters below ---- */}
           <div className="flex flex-col gap-2 sm:hidden">
@@ -1141,15 +1176,33 @@ function EventExplorerList({
             hint={hasActiveFilters ? "Try a different date range or clear your filters." : "Check back soon — new events are added every week."}
           />
         ) : (
-          groups.map((group) => (
+          groups.map((group, groupIndex) => (
             <section key={group.monthKey} id={`month-${group.monthKey}`} className="scroll-mt-40 py-6 sm:py-8">
               <h2 className="font-display mb-3 flex items-baseline gap-2 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
                 <span className="text-accent">{formatMonthFull(group.month)}</span>
                 <span className="text-base font-semibold tracking-normal text-text-tertiary">{group.year}</span>
               </h2>
               <ul>
-                {group.events.map((event) => (
-                  <EventRow key={event.id} event={event} />
+                {dayGroupsByMonth[groupIndex].map((day) => (
+                  <Fragment key={day.label}>
+                    {/* Mobile-only sticky day heading: stays under the filter
+                        bar until the next day's heading (later in the same
+                        list, painted above it) slides over it. No rule under
+                        it — a short fade to the page colour separates it from
+                        rows scrolling beneath; day groups are set apart by
+                        24px instead of a line. */}
+                    <li data-mobile-only className="sticky top-[var(--event-list-sticky-top,0px)] z-20 -mx-4 mt-6 bg-bg px-4 first:mt-0 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:from-50% after:to-transparent after:content-[''] sm:hidden">
+                      <h3 className="flex h-10 items-baseline gap-2">
+                        <span className="font-display text-2xl leading-10 font-extrabold uppercase tracking-[0.01em] text-text-primary">{day.label}</span>
+                        <span className="text-xs leading-10 font-medium text-text-tertiary">
+                          {day.events.length === 1 ? "1 event" : `${day.events.length} events`}
+                        </span>
+                      </h3>
+                    </li>
+                    {day.events.map((event, i) => (
+                      <EventRow key={event.id} event={event} dateInHeading lastInDay={i === day.events.length - 1} />
+                    ))}
+                  </Fragment>
                 ))}
               </ul>
             </section>

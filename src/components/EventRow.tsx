@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
+import { isMultiDayEvent } from "@/lib/datetime";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
@@ -36,7 +37,68 @@ const TAP_AREA =
 const CALENDAR_BUTTON_CLASSES =
   `${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-[1.3333] tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary sm:min-h-[2.25rem] sm:gap-1.5 sm:rounded sm:px-2.5 sm:py-1 sm:text-[11px] sm:font-medium sm:normal-case sm:leading-normal sm:tracking-normal [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5`;
 
-export default function EventRow({ event }: { event: EventRowEvent }) {
+/**
+ * Mobile action buttons (2026-11-24 mobile redesign). Every action keeps a
+ * 44×44px (or taller) touch target while the visible button is 36px tall:
+ * the anchor/button is the 44px box, the inner span draws the button.
+ */
+const MOBILE_ACTION_BOX = "flex h-11 items-center";
+const MOBILE_PILL_BASE =
+  "flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 text-[15px] font-semibold transition-colors";
+/** Primary: Tickets — the filled accent button. */
+const MOBILE_PRIMARY_PILL = `${MOBILE_PILL_BASE} bg-accent-strong text-accent-on group-hover:bg-accent`;
+/** Secondary: Official Event (and the rare Source fallback) — one purple text-link style, identical on every row, with or without Tickets. */
+const MOBILE_SECONDARY_PILL = "flex h-9 items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold text-accent-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors group-hover:text-text-primary group-hover:decoration-current";
+/** Tertiary: Calendar / Video / Audio — 44×44 targets around a 36×36 outlined icon box. */
+const MOBILE_ICON_TARGET = "group flex h-11 w-11 items-center justify-center text-text-secondary-strong";
+const MOBILE_ICON_BOX =
+  "flex h-9 w-9 items-center justify-center rounded-[10px] border border-border-strong transition-colors group-hover:border-accent-dim group-hover:text-text-primary";
+/** AddToCalendar's own button, styled as the same icon target (its svg is the icon). */
+const MOBILE_CALENDAR_BUTTON = `${MOBILE_ICON_TARGET} cursor-pointer [&>svg]:box-content [&>svg]:h-4 [&>svg]:w-4 [&>svg]:rounded-[10px] [&>svg]:border [&>svg]:border-border-strong [&>svg]:p-[9px] [&>svg]:transition-colors hover:[&>svg]:border-accent-dim hover:text-text-primary`;
+
+/**
+ * Mobile SOLD OUT / FREE badges: fixed 18px box, leading-none. Inter's caps sit
+ * high in their line box, and the uppercase letter-spacing trails to the right,
+ * so the padding is asymmetric (measured on the rendered badge: ink centred
+ * within 0.5px both ways).
+ */
+const MOBILE_BADGE =
+  "inline-flex h-[18px] items-center justify-center rounded-[3px] border pb-0 pl-[5.5px] pr-[6.5px] pt-1 text-[10px] font-semibold uppercase leading-none tracking-wide";
+const MOBILE_BADGE_TONE = {
+  strong: "border-text-primary text-text-primary",
+  bad: "border-status-bad/40 text-status-bad",
+  neutral: "border-border-strong text-text-secondary-strong",
+  free: "border-accent-dim text-accent-strong",
+} as const;
+
+function ExternalArrow() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3 w-3 shrink-0">
+      <path d="M3 9l6-6M4 3h5v5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export default function EventRow({
+  event,
+  dateInHeading = false,
+  lastInDay = false,
+}: {
+  event: EventRowEvent;
+  /**
+   * The homepage list groups rows under sticky mobile day headings, so on
+   * mobile the row then omits its own single-day date (a multi-day range is
+   * still shown, since the heading only names the start day). Venue and genre
+   * pages have no day headings and keep the date in the row. Desktop is
+   * unaffected either way.
+   */
+  dateInHeading?: boolean;
+  /**
+   * Last row of a mobile day group: no separator line on mobile, since the
+   * next day group's spacing already separates it. Desktop unaffected.
+   */
+  lastInDay?: boolean;
+}) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
   const isFree = showFreeCta(event);
@@ -55,6 +117,39 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // VIDEO badge link below, so there is only ever one place that constructs
   // it.
   const eventHref = `/events/${event.slug}`;
+  // Mobile lineup: every artist name is kept whole (non-breaking spaces) and
+  // each "/" separator stays at the end of a line, never the start of the next.
+  const mobileLineup = lineup
+    ? event.artists.map((a) => formatArtistName(a).replace(/ /g, "\u00a0")).join("\u00a0/ ")
+    : "";
+  // Mobile actions: Tickets (primary) first, then Official Event / Source
+  // (secondary) — same links, same rules as desktop, only the order differs.
+  const mobileLinks = [...links].sort((a, b) => Number(b.label === "Tickets") - Number(a.label === "Tickets"));
+  const showMobileDate = !dateInHeading || isMultiDayEvent(event);
+  const titleSplit = title.lastIndexOf(" ") + 1;
+  const titleHead = title.slice(0, titleSplit);
+  const titleTail = title.slice(titleSplit);
+  // A genre that has its own landing page (only Techno so far) is a plain
+  // crawlable link to it, a sibling of the title link rather than nested in
+  // it; every other genre stays plain text. Shared by both layouts.
+  const genreNodes = genres.map((g, i) => {
+    const href = genreLabelPagePath(g.slug);
+    return (
+      <Fragment key={g.slug}>
+        {i > 0 && " · "}
+        {href ? (
+          <Link
+            href={href}
+            className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+          >
+            {g.shortLabel}
+          </Link>
+        ) : (
+          g.shortLabel
+        )}
+      </Fragment>
+    );
+  });
   // External links + FREE as one ordered list, so the last one can share a
   // non-wrapping mobile unit with Calendar (see the actions column below).
   type LinkItem = { kind: "link"; label: string; href: string } | { kind: "free" };
@@ -136,8 +231,10 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
   // the title. At `sm` every container is a real box again and every
   // order/margin resets.
   return (
-    <li className="border-b border-border-strong/80 last:border-b-0 sm:border-border">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
+    <li className={`border-b border-border last:border-b-0${lastInDay ? " max-sm:border-b-0" : ""}`}>
+      {/* Desktop row (sm and up) — unchanged; display:none below sm, where the
+          mobile layout further down renders instead. */}
+      <div className="hidden flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 sm:flex sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
         <div className="-order-6 flex shrink-0 items-baseline gap-2 sm:order-none sm:w-[7.5rem] sm:flex-col sm:items-start sm:gap-0.5">
           <span className="font-display text-sm font-bold uppercase tracking-wide text-text-primary">
             {formatRowDateRangeLabel(event)}
@@ -233,24 +330,7 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
                       title link rather than nested in it; every other genre
                       stays plain text. The homepage genre filter is separate
                       UI and unaffected. */}
-                  {genres.map((g, i) => {
-                    const href = genreLabelPagePath(g.slug);
-                    return (
-                      <Fragment key={g.slug}>
-                        {i > 0 && " · "}
-                        {href ? (
-                          <Link
-                            href={href}
-                            className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors duration-150 hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
-                          >
-                            {g.shortLabel}
-                          </Link>
-                        ) : (
-                          g.shortLabel
-                        )}
-                      </Fragment>
-                    );
-                  })}
+                  {genreNodes}
                 </span>
               </>
             )}
@@ -349,6 +429,110 @@ export default function EventRow({ event }: { event: EventRowEvent }) {
             {lastLinkItem && renderLinkItem(lastLinkItem)}
             {hasMedia ? <span className="hidden sm:contents">{calendarButton}</span> : calendarButton}
           </span>
+        </div>
+      </div>
+      {/* Mobile row (below sm; 2026-11-24 redesign). Time + venue → title →
+          genres → full lineup → actions. Actions: Tickets / Official Event as
+          a left group, Calendar / Video / Audio as a right group. All five fit
+          on one line from 390px (Official Event is a text link; the last icon's
+          44px target reaches 4px into the gutter so its visible box aligns with
+          the margin). On narrower screens the whole icon group wraps to the
+          next line, left-aligned (justify-between with a single item per line). */}
+      <div data-mobile-only className="flex flex-col gap-2 pb-3 pt-4 sm:hidden">
+        <div className="flex min-h-[18px] items-center gap-1.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-secondary">
+          {showMobileDate && (
+            <>
+              <span className="uppercase">{formatRowDateRangeLabel(event)}</span>
+              <span aria-hidden="true" className="text-text-tertiary">•</span>
+            </>
+          )}
+          <span className="tabular-nums">{formatTimeRangeLabel(event)}</span>
+          <span aria-hidden="true" className="text-text-tertiary">•</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-3 w-3 shrink-0">
+              <path d="M10 17.5s-5.5-4.9-5.5-9.25a5.5 5.5 0 0 1 11 0c0 4.35-5.5 9.25-5.5 9.25Z" strokeLinejoin="round" />
+              <circle cx="10" cy="8.25" r="2" />
+            </svg>
+            <Link
+              href={`/venues/${event.venue.slug}`}
+              className="min-w-0 break-words uppercase underline decoration-1 decoration-transparent underline-offset-4 transition-colors hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+            >
+              {event.venue.name}
+              {subVenue && <span className="text-text-secondary-strong"> · {subVenue}</span>}
+            </Link>
+          </span>
+          {(statuses.length > 0 || isFree) && (
+            <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+              {statuses.map((s) => (
+                <span key={s.label} className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE[s.label === "Sold out" ? "strong" : s.tone]}`}>
+                  {s.label}
+                </span>
+              ))}
+              {isFree && <span className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.free}`}>Free</span>}
+            </span>
+          )}
+        </div>
+        <Link
+          href={eventHref}
+          className="group block break-words text-[26px] font-bold leading-[31px] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 hover:decoration-current focus-visible:decoration-current"
+        >
+          {titleHead}
+          {/* The arrow follows the title's last word (never wraps onto a line of its own). */}
+          <span className="whitespace-nowrap">
+            {titleTail}
+            <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} className="ml-1.5 inline-block h-[18px] w-[18px] align-[-1px] text-text-tertiary transition-colors group-hover:text-text-primary">
+              <path d="M2 9h13M10 4l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </Link>
+        {genres.length > 0 && (
+          <p className="text-xs font-semibold uppercase leading-4 tracking-[0.08em] text-accent">{genreNodes}</p>
+        )}
+        {mobileLineup && (
+          <p className="break-words text-[17px] leading-6 text-text-secondary-strong">{mobileLineup}</p>
+        )}
+        <div className="flex flex-wrap items-center justify-between">
+          {mobileLinks.length > 0 && (
+            <div className="flex items-center gap-3">
+              {mobileLinks.map((l) => (
+                <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className={`group ${MOBILE_ACTION_BOX}`}>
+                  <span className={l.label === "Tickets" ? MOBILE_PRIMARY_PILL : MOBILE_SECONDARY_PILL}>
+                    {l.label === "Official event" ? "Official Event" : l.label}
+                    <ExternalArrow />
+                  </span>
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ))}
+            </div>
+          )}
+          <div className="-mr-1 flex flex-none items-center">
+            <AddToCalendar
+              event={calendarInput}
+              icsHref={`/events/${event.slug}/calendar.ics`}
+              compact
+              buttonClassName={MOBILE_CALENDAR_BUTTON}
+            />
+            {event.hasArtistPreview && (
+              <Link href={`${eventHref}#video`} aria-label={`Go to artist preview video for ${title}`} className={MOBILE_ICON_TARGET}>
+                <span className={MOBILE_ICON_BOX}>
+                  <svg aria-hidden="true" viewBox="0 0 14 14" fill="currentColor" className="h-3.5 w-3.5">
+                    <path d="M3.5 2.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L4.4 1.7a.6.6 0 0 0-.9.5Z" />
+                  </svg>
+                </span>
+              </Link>
+            )}
+            {event.hasAudioLinks && (
+              <Link href={`${eventHref}#soundcloud`} aria-label={`Go to audio links for ${title}`} className={MOBILE_ICON_TARGET}>
+                <span className={MOBILE_ICON_BOX}>
+                  <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-4 w-4">
+                    <path d="M7.5 15V4.5l9-2V13" strokeLinejoin="round" />
+                    <circle cx="5.25" cy="15" r="2.25" />
+                    <circle cx="14.25" cy="13" r="2.25" />
+                  </svg>
+                </span>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </li>
