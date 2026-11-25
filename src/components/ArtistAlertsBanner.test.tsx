@@ -6,32 +6,29 @@ import ArtistAlertsBanner from "./ArtistAlertsBanner";
 afterEach(cleanup);
 
 describe("ArtistAlertsBanner", () => {
-  it("is one link to /artists with the agreed text, and no button or nested link", () => {
+  it("is one link to /artists, and no button or nested link", () => {
     const { container } = render(<ArtistAlertsBanner />);
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute("href")).toBe("/artists");
-    expect(links[0].textContent).toBe("Artist Alerts·Find Artists→Get email alerts for new events with artists you follow.");
     expect(screen.getByRole("link", { name: /Artist Alerts/ })).toBeTruthy();
     expect(container.querySelector("button")).toBeNull();
   });
-});
 
-describe("ArtistAlertsBanner layout (2026-11-25)", () => {
-  it("shows Find Artists on every width, with the arrow on its own at the end of the heading row", () => {
-    render(<ArtistAlertsBanner />);
-    const cta = screen.getByText("Find Artists");
-    expect(cta.className.split(/\s+/)).toEqual(expect.arrayContaining(["font-medium", "text-sm"]));
-    expect(cta.className.split(/\s+/)).not.toContain("hidden");
-    const arrow = screen.getByText("→");
-    expect(arrow.getAttribute("aria-hidden")).toBe("true");
-    expect(arrow.previousElementSibling?.contains(screen.getByText("Artist Alerts"))).toBe(true);
+  it("keeps the desktop layout (md+) exactly as before: label, explanation, FIND ARTISTS → at the right", () => {
+    const { container } = render(<ArtistAlertsBanner />);
+    const desktop = container.querySelector("a > span.md\\:flex") as HTMLElement;
+    expect(desktop.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "md:flex", "md:min-h-[50px]", "md:py-0"]));
+    expect(desktop.textContent).toBe("Artist AlertsFind artists →Get email alerts for new events with artists you follow.");
   });
 
-  it("keeps the previous height budget on md+ (50px inside: 18px + 4px + 16px + 2×6px)", () => {
+  it("shows ARTIST ALERTS · Find Artists with the arrow at the end, then the explanation, below md (2026-11-25)", () => {
     const { container } = render(<ArtistAlertsBanner />);
-    const inner = container.querySelector("a > span") as HTMLElement;
-    expect(inner.className.split(/\s+/)).toEqual(expect.arrayContaining(["md:min-h-[50px]", "md:py-1.5", "md:gap-y-1"]));
-    expect(screen.getByText(/Get email alerts/).className).toContain("md:leading-4");
+    const mobile = container.querySelector("a > span.md\\:hidden") as HTMLElement;
+    expect(mobile.textContent).toBe("Artist Alerts·Find Artists→Get email alerts for new events with artists you follow.");
+    const [heading, arrow] = Array.from(mobile.children) as HTMLElement[];
+    expect(heading.textContent).toBe("Artist Alerts·Find Artists");
+    expect(arrow.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByText("Find Artists").className).toContain("whitespace-nowrap");
   });
 });
