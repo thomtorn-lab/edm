@@ -4,9 +4,9 @@ import Link from "next/link";
  * Homepage-only entry point to Artist Alerts (2026-11-12). The whole banner
  * is one link to /artists; "Find artists" is part of it, not a button.
  *
- * Mobile (below md, 2026-11-25): two rows — "ARTIST ALERTS · Find Artists"
- * with the arrow at the far right, then the explanation; same height as
- * before (57.13px).
+ * Mobile (below md, 2026-11-25): "ARTIST ALERTS" above "Find artists to
+ * follow and get event alerts.", with the arrow at the far right, centred on
+ * both rows; same height as before (57.13px).
  *
  * Desktop (md+): unchanged since 2026-11-12 — one line, full-width band with
  * the content on the page's max-w-6xl column: label, explanation, "Find
@@ -19,23 +19,14 @@ export default function ArtistAlertsBanner() {
         href="/artists"
         className="block border border-border-strong bg-accent/10 transition-colors md:border-x-0 md:hover:bg-accent/15"
       >
-        {/* Mobile layout (below md). */}
+        {/* Mobile layout (below md): heading, then the call to action as the
+            explanation; the arrow sits at the far right, centred on both rows. */}
         <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-3 py-2 md:hidden">
-          <span className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 font-display text-lg font-bold uppercase leading-none tracking-tight text-accent">
-              Artist Alerts
-            </span>
-            <span aria-hidden="true" className="text-sm leading-none text-text-tertiary">
-              ·
-            </span>
-            <span className="whitespace-nowrap text-sm font-medium leading-none text-accent">Find Artists</span>
-          </span>
-          <span aria-hidden="true" className="text-xs font-semibold leading-none text-accent">
+          <span className="font-display text-lg font-bold uppercase leading-none tracking-tight text-accent">Artist Alerts</span>
+          <span aria-hidden="true" className="row-span-2 self-center text-base font-semibold leading-none text-accent">
             →
           </span>
-          <span className="col-span-2 text-[11px] leading-snug text-text-secondary sm:text-xs">
-            Get email alerts for new events with artists you follow.
-          </span>
+          <span className="text-[11px] leading-snug text-text-secondary sm:text-xs">Find artists to follow and get event alerts.</span>
         </span>
         {/* Desktop layout (md+), exactly as before. */}
         <span className="mx-auto hidden max-w-6xl flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-2 md:flex md:min-h-[50px] md:flex-nowrap md:gap-x-6 md:px-6 md:py-0">
