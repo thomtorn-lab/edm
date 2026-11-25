@@ -5,7 +5,7 @@ import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { isMultiDayEvent } from "@/lib/datetime";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
-import { cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
+import { artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
 import { SITE_URL } from "@/lib/siteUrl";
@@ -126,9 +126,11 @@ export default function EventRow({
   // (secondary) — same links, same rules as desktop, only the order differs.
   const mobileLinks = [...links].sort((a, b) => Number(b.label === "Tickets") - Number(a.label === "Tickets"));
   const showMobileDate = !dateInHeading || isMultiDayEvent(event);
-  const titleSplit = title.lastIndexOf(" ") + 1;
-  const titleHead = title.slice(0, titleSplit);
-  const titleTail = title.slice(titleSplit);
+  // Mobile title: an artist-only title shows each name as the artist data spells it.
+  const mobileTitle = artistTitleDisplay(title, event.artists);
+  const titleSplit = mobileTitle.lastIndexOf(" ") + 1;
+  const titleHead = mobileTitle.slice(0, titleSplit);
+  const titleTail = mobileTitle.slice(titleSplit);
   // A genre that has its own landing page (only Techno so far) is a plain
   // crawlable link to it, a sibling of the title link rather than nested in
   // it; every other genre stays plain text. Shared by both layouts.
@@ -474,13 +476,13 @@ export default function EventRow({
         </div>
         <Link
           href={eventHref}
-          className="group block break-words text-[21px] font-bold leading-[26px] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 hover:decoration-current focus-visible:decoration-current"
+          className="group block break-words text-[19px] font-bold leading-[25px] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 hover:decoration-current focus-visible:decoration-current"
         >
           {titleHead}
           {/* The arrow follows the title's last word (never wraps onto a line of its own). */}
           <span className="whitespace-nowrap">
             {titleTail}
-            <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} className="ml-1 inline-block h-[15px] w-[15px] align-[-1px] text-text-tertiary transition-colors group-hover:text-text-primary">
+            <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} className="ml-1 inline-block h-[14px] w-[14px] align-[-1px] text-text-tertiary transition-colors group-hover:text-text-primary">
               <path d="M2 9h13M10 4l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>

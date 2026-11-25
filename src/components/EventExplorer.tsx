@@ -1193,8 +1193,8 @@ function EventExplorerList({
                         24px instead of a line. */}
                     <li data-mobile-only className="sticky top-[var(--event-list-sticky-top,0px)] z-20 -mx-4 mt-6 bg-bg px-4 first:mt-0 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:from-50% after:to-transparent after:content-[''] sm:hidden">
                       <h3 className="flex h-9 items-baseline gap-2">
-                        <span className="font-display text-xl leading-9 font-extrabold uppercase tracking-[0.01em] text-text-primary">{day.label}</span>
-                        <span className="text-xs leading-9 font-medium text-text-tertiary">
+                        <span className="font-display text-lg leading-9 font-extrabold uppercase tracking-[0.01em] text-text-secondary-strong">{day.label}</span>
+                        <span className="text-[13px] leading-9 font-medium text-text-tertiary">
                           {day.events.length === 1 ? "1 event" : `${day.events.length} events`}
                         </span>
                       </h3>

@@ -1368,7 +1368,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     hasAudioLinks: true,
   };
 
-  it("renders time + venue on one line, the 21px title, purple genre text and the full 17px lineup", () => {
+  it("renders time + venue on one line, the 19px title, purple genre text and the full 17px lineup", () => {
     const { container } = render(<EventRow event={FULL} dateInHeading />);
     const m = mobile(container);
     const meta = m.firstElementChild as HTMLElement;
@@ -1376,7 +1376,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(within(meta).getByRole("link", { name: "Test Venue", ...opts }).getAttribute("href")).toBe("/venues/test-venue");
     const title = within(m).getByRole("link", { name: "Module X Moodyverse", ...opts });
     expect(title.getAttribute("href")).toBe("/events/test-event");
-    expect(cls(title)).toEqual(expect.arrayContaining(["text-[21px]", "font-bold"]));
+    expect(cls(title)).toEqual(expect.arrayContaining(["text-[19px]", "leading-[25px]", "font-bold"]));
     // The arrow is inline after the title's last word, bound to it (nowrap), not pinned to the margin.
     const tail = title.lastElementChild as HTMLElement;
     expect(cls(tail)).toContain("whitespace-nowrap");

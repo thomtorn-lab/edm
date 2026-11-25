@@ -152,6 +152,54 @@ export function shouldShowArtistPreview(title: string, artists: string[]): boole
   return true;
 }
 
+/** Separators allowed between artist names in an artist-only title; b2b/b3b/vs/x are shown in lower case. */
+const ARTIST_TITLE_SEPARATOR = /^(?:\s*(?:\/|,|&|\+|·|\||;)\s*|\s+(b\d?b|vs\.?|x)\s+)/i;
+
+/**
+ * Display casing for an event title that consists only of the event's own
+ * artist names (mobile listing, 2026-11-25). When the whole title can be read
+ * as names from `artists` — each compared case-insensitively, also without a
+ * trailing "(DJ set)"-style qualifier — joined only by separators (/ , & + ·
+ * | ; b2b b3b vs x), every name is shown with the spelling the artist data
+ * gives it ("DENIS HORVAT / ANASTASIA KRISTENSEN" → "Denis Horvat /
+ * Anastasia Kristensen", "BEN KLOCK B2B MARCEL DETTMANN" → "Ben Klock b2b
+ * Marcel Dettmann"). Any other text in the title (an event name, a concept)
+ * returns the title unchanged, and an artist whose own data is upper case
+ * ("BICEP", "KI/KI") stays upper case: casing is never guessed. Display
+ * only; the stored title is untouched.
+ */
+export function artistTitleDisplay(title: string, artists: string[]): string {
+  const names = new Map<string, string>();
+  for (const entry of artists) {
+    for (const raw of [entry, ...entry.split(LINEUP_ENTRY_CONNECTOR)]) {
+      const name = formatArtistName(raw);
+      const bare = name.replace(/\s*\([^)]*\)$/, "").trim();
+      for (const n of [name, bare]) if (n && !names.has(n.toLocaleLowerCase())) names.set(n.toLocaleLowerCase(), n);
+    }
+  }
+  if (names.size === 0) return title;
+  const candidates = [...names.entries()].sort((a, b) => b[0].length - a[0].length);
+  let rest = title.trim();
+  let out = "";
+  let expectName = true;
+  while (rest) {
+    if (expectName) {
+      const lower = rest.toLocaleLowerCase();
+      const hit = candidates.find(([key]) => lower.startsWith(key) && (rest.length === key.length || ARTIST_TITLE_SEPARATOR.test(rest.slice(key.length))));
+      if (!hit) return title;
+      out += hit[1];
+      rest = rest.slice(hit[0].length);
+    } else {
+      const sep = rest.match(ARTIST_TITLE_SEPARATOR);
+      if (!sep) return title;
+      out += sep[1] ? ` ${sep[1].toLowerCase()} ` : sep[0];
+      rest = rest.slice(sep[0].length);
+    }
+    expectName = !expectName;
+  }
+  return expectName ? title : out;
+}
+
 /**
  * Public display of an artist name (2026-11-22): the official spelling as
  * the source gives it, casing included ("avoN", "LMN", "Silk!" stay as
