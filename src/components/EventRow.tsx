@@ -115,11 +115,12 @@ export default function EventRow({
   // Mobile actions: Tickets (primary) first, then Official Event / Source
   // (secondary) — same links, same rules as desktop, only the order differs.
   const mobileLinks = [...links].sort((a, b) => Number(b.label === "Tickets") - Number(a.label === "Tickets"));
-  // Mobile title: an artist-only title shows each name as the artist data spells it.
-  const mobileTitle = artistTitleDisplay(title, event.artists);
-  const titleSplit = mobileTitle.lastIndexOf(" ") + 1;
-  const titleHead = mobileTitle.slice(0, titleSplit);
-  const titleTail = mobileTitle.slice(titleSplit);
+  // Displayed title (both layouts): an artist-only title shows each name with
+  // its display spelling (verified spelling, source mixed case, or default casing).
+  const displayTitle = artistTitleDisplay(title, event.artists);
+  const titleSplit = displayTitle.lastIndexOf(" ") + 1;
+  const titleHead = displayTitle.slice(0, titleSplit);
+  const titleTail = displayTitle.slice(titleSplit);
   // A genre that has its own landing page (only Techno so far) is a plain
   // crawlable link to it, a sibling of the title link rather than nested in
   // it; every other genre stays plain text. Shared by both layouts.
@@ -250,7 +251,7 @@ export default function EventRow({
             href={eventHref}
             className="-order-5 block basis-full cursor-pointer text-[15px] font-semibold leading-snug text-text-primary underline decoration-1 decoration-transparent underline-offset-4 transition-[filter,text-decoration-color] duration-150 hover:brightness-110 hover:decoration-current focus-visible:brightness-110 focus-visible:decoration-current active:decoration-current sm:order-none sm:mt-0 sm:line-clamp-2"
           >
-            {title}
+            {displayTitle}
             {/* Discreet internal-navigation cue, mobile only (desktop already
                 has the hover/focus underline as its affordance): a plain →
                 distinguishes this as Electronic CPH's own event-detail page,
@@ -348,7 +349,7 @@ export default function EventRow({
                 {withMobileCalendar(
                   <Link
                     href={`${eventHref}#video`}
-                    aria-label={`Go to artist preview video for ${title}`}
+                    aria-label={`Go to artist preview video for ${displayTitle}`}
                     className={`${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none`}
                   >
                     <span aria-hidden="true" className="text-accent">▶</span>
@@ -375,7 +376,7 @@ export default function EventRow({
                 {event.hasArtistPreview ? (
                   <Link
                     href={`${eventHref}#soundcloud`}
-                    aria-label={`Go to audio links for ${title}`}
+                    aria-label={`Go to audio links for ${displayTitle}`}
                     className={`${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none`}
                   >
                     <span aria-hidden="true" className="text-accent">♫</span>
@@ -385,7 +386,7 @@ export default function EventRow({
                   withMobileCalendar(
                     <Link
                       href={`${eventHref}#soundcloud`}
-                      aria-label={`Go to audio links for ${title}`}
+                      aria-label={`Go to audio links for ${displayTitle}`}
                       className={`${TAP_AREA} inline-flex items-center gap-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary transition-colors hover:border-accent-dim hover:text-text-primary focus-visible:border-accent-dim focus-visible:text-text-primary order-1 sm:order-none`}
                     >
                       <span aria-hidden="true" className="text-accent">♫</span>
@@ -503,7 +504,7 @@ export default function EventRow({
               buttonClassName={MOBILE_CALENDAR_BUTTON}
             />
             {event.hasArtistPreview && (
-              <Link href={`${eventHref}#video`} aria-label={`Go to artist preview video for ${title}`} className={MOBILE_ICON_TARGET}>
+              <Link href={`${eventHref}#video`} aria-label={`Go to artist preview video for ${displayTitle}`} className={MOBILE_ICON_TARGET}>
                 <span className={MOBILE_ICON_BOX}>
                   <svg aria-hidden="true" viewBox="0 0 14 14" fill="currentColor" className="h-3.5 w-3.5">
                     <path d="M3.5 2.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L4.4 1.7a.6.6 0 0 0-.9.5Z" />
@@ -512,7 +513,7 @@ export default function EventRow({
               </Link>
             )}
             {event.hasAudioLinks && (
-              <Link href={`${eventHref}#soundcloud`} aria-label={`Go to audio links for ${title}`} className={MOBILE_ICON_TARGET}>
+              <Link href={`${eventHref}#soundcloud`} aria-label={`Go to audio links for ${displayTitle}`} className={MOBILE_ICON_TARGET}>
                 <span className={MOBILE_ICON_BOX}>
                   <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-4 w-4">
                     <path d="M7.5 15V4.5l9-2V13" strokeLinejoin="round" />
