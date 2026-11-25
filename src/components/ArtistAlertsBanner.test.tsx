@@ -11,8 +11,26 @@ describe("ArtistAlertsBanner", () => {
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute("href")).toBe("/artists");
-    expect(links[0].textContent).toBe("Artist AlertsFind artists →Get email alerts for new events with artists you follow.");
+    expect(links[0].textContent).toBe("Artist Alerts·Find Artists→Get email alerts for new events with artists you follow.");
     expect(screen.getByRole("link", { name: /Artist Alerts/ })).toBeTruthy();
     expect(container.querySelector("button")).toBeNull();
+  });
+});
+
+describe("ArtistAlertsBanner layout (2026-11-25)", () => {
+  it("shows Find Artists only from md, with the arrow on its own at the end of the heading row", () => {
+    render(<ArtistAlertsBanner />);
+    const cta = screen.getByText("Find Artists");
+    expect(cta.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "md:inline", "font-medium", "text-sm"]));
+    const arrow = screen.getByText("→");
+    expect(arrow.getAttribute("aria-hidden")).toBe("true");
+    expect(arrow.previousElementSibling?.contains(screen.getByText("Artist Alerts"))).toBe(true);
+  });
+
+  it("keeps the previous height budget on md+ (50px inside: 18px + 4px + 16px + 2×6px)", () => {
+    const { container } = render(<ArtistAlertsBanner />);
+    const inner = container.querySelector("a > span") as HTMLElement;
+    expect(inner.className.split(/\s+/)).toEqual(expect.arrayContaining(["md:min-h-[50px]", "md:py-1.5", "md:gap-y-1"]));
+    expect(screen.getByText(/Get email alerts/).className).toContain("md:leading-4");
   });
 });

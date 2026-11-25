@@ -1087,7 +1087,8 @@ describe("EventRow — lineup with a discreet LINEUP text label (2026-11-12)", (
         })}
       />,
     );
-    expect(screen.getByRole("link", { name: "STEAMBOI, KARDINAL BERTRAM, LMN, QWENTY, OOOPS, avoN, SANDY P, MADITATION, VALENTINA, SILK!" })).toBeTruthy();
+    // Display casing (2026-11-25): verified spellings (steamboi, LMN, avoN), default casing for the rest.
+    expect(screen.getByRole("link", { name: "steamboi, Kardinal Bertram, LMN, Qwenty, Ooops, avoN, Sandy P, Maditation, Valentina, Silk!" })).toBeTruthy();
     expect(screen.queryByText("Lineup:")).toBeNull();
   });
 

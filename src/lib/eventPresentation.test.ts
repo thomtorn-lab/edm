@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
+import { artistDisplaySpelling, artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
 
 describe("shouldShowArtistPreview — suppress when the title already carries the lineup", () => {
   it("suppresses when a per-room lineup title names every artist (real Culture Box shape, no hardcoding)", () => {
@@ -262,6 +262,7 @@ describe("artistTitleDisplay — artist-only titles use the artist data's spelli
     expect(artistTitleDisplay("BICEP", ["BICEP"])).toBe("BICEP");
     expect(artistTitleDisplay("999999999", ["999999999"])).toBe("999999999");
     expect(artistTitleDisplay("ANNA & DJ 2LATE", ["ANNA", "DJ 2Late"])).toBe("ANNA & DJ 2Late");
+    expect(artistTitleDisplay("MSW COLLECTIVE x ADAPT (DK)", ["MSW COLLECTIVE", "ADAPT (DK)"])).toBe("MSW Collective x Adapt (DK)");
   });
 
   it("leaves any title with other words (an event name or concept) unchanged", () => {
@@ -270,5 +271,37 @@ describe("artistTitleDisplay — artist-only titles use the artist data's spelli
     expect(artistTitleDisplay("AETHR X MODULE", ["MSW COLLECTIVE", "Baime"])).toBe("AETHR X MODULE");
     expect(artistTitleDisplay("DENIS HORVAT /", ["Denis Horvat"])).toBe("DENIS HORVAT /");
     expect(artistTitleDisplay("Anything", [])).toBe("Anything");
+  });
+});
+
+describe("artistDisplaySpelling — default casing with verified exceptions (2026-11-25)", () => {
+  it("gives an all-capitals name a capital first letter per word", () => {
+    expect(artistDisplaySpelling("KARDINAL BERTRAM")).toBe("Kardinal Bertram");
+    expect(artistDisplaySpelling("SILK!")).toBe("Silk!");
+    expect(artistDisplaySpelling("SANDY P")).toBe("Sandy P");
+    expect(artistDisplaySpelling("I HATE MODELS")).toBe("I Hate Models");
+    expect(artistDisplaySpelling("JEAN-PAUL")).toBe("Jean-Paul");
+  });
+
+  it("puts verified spellings first", () => {
+    expect(artistDisplaySpelling("STEAMBOI")).toBe("steamboi");
+    expect(artistDisplaySpelling("AVON")).toBe("avoN");
+    expect(artistDisplaySpelling("BICEP")).toBe("BICEP");
+    expect(artistDisplaySpelling("KI/KI")).toBe("KI/KI");
+    expect(artistDisplaySpelling("ANNA")).toBe("ANNA");
+    expect(artistDisplaySpelling("LMN")).toBe("LMN");
+    expect(artistDisplaySpelling("SHERELLE")).toBe("SHERELLE");
+    expect(artistDisplaySpelling("BUNT")).toBe("BUNT.");
+    expect(artistDisplaySpelling("BUNT.")).toBe("BUNT.");
+    expect(artistTitleDisplay("BUNT", ["BUNT"])).toBe("BUNT.");
+  });
+
+  it("keeps the source's own mixed case, and words without vowels or with digits, symbols or non-Latin letters", () => {
+    expect(artistDisplaySpelling("dragongirl")).toBe("dragongirl");
+    expect(artistDisplaySpelling("DJ 2LATE")).toBe("DJ 2LATE");
+    expect(artistDisplaySpelling("EL*VIRA")).toBe("EL*VIRA");
+    expect(artistDisplaySpelling("ULDΛLL")).toBe("ULDΛLL");
+    expect(artistDisplaySpelling("HDN")).toBe("HDN");
+    expect(artistDisplaySpelling("999999999")).toBe("999999999");
   });
 });

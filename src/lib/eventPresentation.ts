@@ -152,21 +152,66 @@ export function shouldShowArtistPreview(title: string, artists: string[]): boole
   return true;
 }
 
+/**
+ * Verified official spellings (2026-11-25), keyed in lower case. They win over
+ * both the source data and the default casing below. Keep this list short and
+ * add a name only once its spelling is confirmed.
+ */
+const VERIFIED_ARTIST_SPELLINGS = new Map(
+  ["steamboi", "avoN", "LMN", "KI/KI", "BICEP", "ANNA", "SHERELLE", "BUNT."].map((name) => [verifiedKey(name), name]),
+);
+
+/** Lookup key for a verified spelling: lower case, a trailing full stop ignored ("BUNT" and "BUNT." both find "BUNT."). */
+function verifiedKey(name: string): string {
+  return name.toLocaleLowerCase().replace(/\.$/, "");
+}
+
+const VOWEL = /[AEIOUYÆØÅÄÖÜÉÈÊÁÀÍÓÚ]/u;
+
+/**
+ * Default display casing for an artist name the source writes entirely in
+ * capitals: each word gets a capital first letter ("KARDINAL BERTRAM" →
+ * "Kardinal Bertram", "SILK!" → "Silk!"). A word is left as written when it
+ * has no vowel (LMN, DJ, (DK)), is a single letter (P), or holds digits,
+ * symbols or non-Latin letters (EL*VIRA, 2LATE, ULDΛLL) — those are usually
+ * deliberate. A name that is not
+ * all capitals (avoN, Ooops) is the source's own spelling and is kept.
+ */
+function defaultArtistCase(name: string): string {
+  if (name !== name.toLocaleUpperCase() || !/\p{L}/u.test(name)) return name;
+  return name
+    .split(" ")
+    .map((word) =>
+      word
+        .split("-")
+        .map((part) => (/^[A-ZÆØÅÄÖÜÉÈÊÁÀÍÓÚÑÇ]{2,}[!?.']*$/u.test(part) && VOWEL.test(part) ? part[0] + part.slice(1).toLocaleLowerCase() : part))
+        .join("-"),
+    )
+    .join(" ");
+}
+
+/** The display spelling of one artist name: verified spelling, else the source's mixed-case spelling, else the default casing. */
+export function artistDisplaySpelling(name: string): string {
+  return VERIFIED_ARTIST_SPELLINGS.get(verifiedKey(name)) ?? defaultArtistCase(name);
+}
+
 /** Separators allowed between artist names in an artist-only title; b2b/b3b/vs/x are shown in lower case. */
 const ARTIST_TITLE_SEPARATOR = /^(?:\s*(?:\/|,|&|\+|·|\||;)\s*|\s+(b\d?b|vs\.?|x)\s+)/i;
 
 /**
  * Display casing for an event title that consists only of the event's own
- * artist names (mobile listing, 2026-11-25). When the whole title can be read
- * as names from `artists` — each compared case-insensitively, also without a
+ * artist names (listing, 2026-11-25). When the whole title can be read as
+ * names from `artists` — each compared case-insensitively, also without a
  * trailing "(DJ set)"-style qualifier — joined only by separators (/ , & + ·
- * | ; b2b b3b vs x), every name is shown with the spelling the artist data
- * gives it ("DENIS HORVAT / ANASTASIA KRISTENSEN" → "Denis Horvat /
- * Anastasia Kristensen", "BEN KLOCK B2B MARCEL DETTMANN" → "Ben Klock b2b
- * Marcel Dettmann"). Any other text in the title (an event name, a concept)
- * returns the title unchanged, and an artist whose own data is upper case
- * ("BICEP", "KI/KI") stays upper case: casing is never guessed. Display
- * only; the stored title is untouched.
+ * | ; b2b b3b vs x), every name is shown with artistDisplaySpelling(): a
+ * verified spelling first (steamboi, avoN, LMN, KI/KI, BICEP, ANNA,
+ * SHERELLE, BUNT.), else
+ * the source's own mixed-case spelling, else the default casing for an
+ * all-capitals name ("KARDINAL BERTRAM" → "Kardinal Bertram"); b2b/vs/x in
+ * lower case. Culture Box's room labels are already removed by
+ * cleanEventTitle() before this runs. Any other text in the title (an event
+ * name, a concept) returns the title unchanged. Display only; the stored
+ * title is untouched.
  */
 export function artistTitleDisplay(title: string, artists: string[]): string {
   const names = new Map<string, string>();
@@ -174,7 +219,11 @@ export function artistTitleDisplay(title: string, artists: string[]): string {
     for (const raw of [entry, ...entry.split(LINEUP_ENTRY_CONNECTOR)]) {
       const name = formatArtistName(raw);
       const bare = name.replace(/\s*\([^)]*\)$/, "").trim();
-      for (const n of [name, bare]) if (n && !names.has(n.toLocaleLowerCase())) names.set(n.toLocaleLowerCase(), n);
+      for (const n of [name, bare]) {
+        const key = n.toLocaleLowerCase();
+        const known = names.get(key);
+        if (n && (!known || (known === known.toLocaleUpperCase() && n !== n.toLocaleUpperCase()))) names.set(key, n);
+      }
     }
   }
   if (names.size === 0) return title;
@@ -187,7 +236,7 @@ export function artistTitleDisplay(title: string, artists: string[]): string {
       const lower = rest.toLocaleLowerCase();
       const hit = candidates.find(([key]) => lower.startsWith(key) && (rest.length === key.length || ARTIST_TITLE_SEPARATOR.test(rest.slice(key.length))));
       if (!hit) return title;
-      out += hit[1];
+      out += artistDisplaySpelling(hit[1]);
       rest = rest.slice(hit[0].length);
     } else {
       const sep = rest.match(ARTIST_TITLE_SEPARATOR);
