@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -146,12 +148,50 @@ describe("runQaExport", () => {
 describe("qa-export-readonly.yml", () => {
   const yaml = readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", "qa-export-readonly.yml"), "utf-8");
 
-  it("starts manually or on the two daily crons only, and runs only the one matching Copenhagen time", () => {
-    expect(yaml).toMatch(/\non:\n {2}workflow_dispatch:\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "17 2 \* \* \*"\n {4}- cron: "17 3 \* \* \*"\n\n/);
+  it("starts manually or on the 10-minute crons only, covering 01:07-04:57 Copenhagen time in CET and CEST", () => {
+    expect(yaml).toMatch(/\non:\n {2}workflow_dispatch:\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "7-59\/10 23 \* \* \*"\n {4}- cron: "7-59\/10 0-3 \* \* \*"\n\n/);
     expect(yaml).not.toMatch(/\n {2}(push|pull_request|pull_request_target|workflow_run|repository_dispatch):/);
-    expect(yaml).toContain('+0200) expected="17 2 * * *" ;;');
-    expect(yaml).toContain('+0100) expected="17 3 * * *" ;;');
     expect(yaml).toContain("if: needs.clock.outputs.run == 'true'");
+    // Firing times (UTC hours 23 and 0-3 at :07..:57) in CET and CEST: 01:07-04:57 local is always covered, and the
+    // only firings the 01:00-05:15 gate lets through after 05:00 are summer 05:07 (03:07 UTC); 05:17+ never export.
+    const fires = [23, 0, 1, 2, 3].flatMap((h) => [7, 17, 27, 37, 47, 57].map((m) => h * 60 + m));
+    for (const offset of [60, 120]) {
+      const local = fires.map((t) => (t + offset) % 1440);
+      for (let t = 67; t <= 4 * 60 + 57; t += 10) expect(local).toContain(t);
+      const allowed = local.filter((t) => t >= 60 && t < 5 * 60 + 15);
+      expect(allowed.filter((t) => t >= 5 * 60)).toEqual(offset === 120 ? [5 * 60 + 7] : []);
+    }
+  });
+
+  describe("clock gate (the step's real script, gh stubbed)", () => {
+    const start = yaml.indexOf("      - name: Allow one scheduled export per Copenhagen day");
+    const body = yaml.slice(yaml.indexOf("run: |\n", start) + "run: |\n".length, yaml.indexOf("\n\n  export:", start));
+    const script = body.split("\n").map((l) => l.replace(/^ {10}/, "")).join("\n");
+    const dir = mkdtempSync(path.join(tmpdir(), "qa-clock-"));
+    writeFileSync(path.join(dir, "gh"), '#!/bin/sh\nprintf "%s\\n" "$GH_STUB_LAST"\n', { mode: 0o755 });
+    function gate(event: string, now: string, last: string): string {
+      const out = path.join(dir, "out");
+      writeFileSync(out, "");
+      execFileSync("bash", ["-e", "-c", script], {
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`, EVENT_NAME: event, QA_CLOCK_NOW: now, GH_STUB_LAST: last, GITHUB_OUTPUT: out, QA_DATA_REPO: "o/r" },
+        stdio: "pipe",
+      });
+      return readFileSync(out, "utf8").trim();
+    }
+    it.each([
+      ["manual start always runs, even after 05:15 with today's export", "workflow_dispatch", "2026-11-25T10:00:00Z", "2026-11-25T03:00:00Z", "run=true"],
+      ["winter 04:57, no export yet today", "schedule", "2026-11-26T03:57:00Z", "2026-11-25T11:12:00Z", "run=true"],
+      ["winter 03:07, already exported today at 02:17", "schedule", "2026-11-26T02:07:00Z", "2026-11-26T01:17:00Z", "run=false"],
+      ["yesterday 23:30 Copenhagen does not count as today", "schedule", "2026-11-26T00:07:00Z", "2026-11-25T22:30:00Z", "run=true"],
+      ["winter 00:57 is before the window", "schedule", "2026-11-25T23:57:00Z", "", "run=false"],
+      ["delayed run at 05:14 still exports", "schedule", "2026-11-26T04:14:00Z", "2026-11-25T03:00:00Z", "run=true"],
+      ["delayed run at 05:15 never starts", "schedule", "2026-11-26T04:15:00Z", "2026-11-25T03:00:00Z", "run=false"],
+      ["summer 01:07 CEST (23:07 UTC the day before)", "schedule", "2026-06-14T23:07:00Z", "2026-06-14T01:00:00Z", "run=true"],
+      ["DST switch day (CET→CEST 29 Mar), 04:07 CEST", "schedule", "2026-03-29T02:07:00Z", "2026-03-28T02:00:00Z", "run=true"],
+      ["first ever export (no snapshot commit)", "schedule", "2026-11-26T02:07:00Z", "", "run=true"],
+    ])("%s", (_name, event, now, last, expected) => {
+      expect(gate(event, now, last)).toBe(expected);
+    });
   });
 
   it("refuses to touch a register last changed by anyone but this workflow, before updating it", () => {
