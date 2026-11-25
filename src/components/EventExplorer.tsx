@@ -1071,7 +1071,7 @@ function EventExplorerList({
       )}
 
       {/* Mobile-only result count, moved out of the top control row. */}
-      <p className="px-4 pt-2 text-[11px] text-text-tertiary sm:hidden">{countLabel}</p>
+      <p className="px-4 pt-2 text-[11px] leading-4 text-text-tertiary sm:hidden">{countLabel}</p>
 
       {/* ---- Mobile filters sheet: Genre + Venue ---- */}
       {mobileFiltersOpen && (
@@ -1177,10 +1177,10 @@ function EventExplorerList({
           />
         ) : (
           groups.map((group, groupIndex) => (
-            <section key={group.monthKey} id={`month-${group.monthKey}`} className="scroll-mt-40 py-6 sm:py-8">
-              <h2 className="font-display mb-3 flex items-baseline gap-2 text-3xl font-extrabold uppercase leading-none tracking-tight text-text-primary sm:text-4xl">
+            <section key={group.monthKey} id={`month-${group.monthKey}`} className="scroll-mt-40 pb-6 pt-3 sm:py-8">
+              <h2 className="font-display mb-1 flex items-baseline gap-2 text-[23px] font-extrabold uppercase leading-none tracking-tight text-text-primary sm:mb-3 sm:text-4xl">
                 <span className="text-accent">{formatMonthFull(group.month)}</span>
-                <span className="text-base font-semibold tracking-normal text-text-tertiary">{group.year}</span>
+                <span className="text-sm font-semibold tracking-normal text-text-tertiary sm:text-base">{group.year}</span>
               </h2>
               <ul>
                 {dayGroupsByMonth[groupIndex].map((day) => (
@@ -1192,9 +1192,9 @@ function EventExplorerList({
                         rows scrolling beneath; day groups are set apart by
                         24px instead of a line. */}
                     <li data-mobile-only className="sticky top-[var(--event-list-sticky-top,0px)] z-20 -mx-4 mt-6 bg-bg px-4 first:mt-0 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:from-50% after:to-transparent after:content-[''] sm:hidden">
-                      <h3 className="flex h-10 items-baseline gap-2">
-                        <span className="font-display text-2xl leading-10 font-extrabold uppercase tracking-[0.01em] text-text-primary">{day.label}</span>
-                        <span className="text-xs leading-10 font-medium text-text-tertiary">
+                      <h3 className="flex h-9 items-baseline gap-2">
+                        <span className="font-display text-xl leading-9 font-extrabold uppercase tracking-[0.01em] text-text-primary">{day.label}</span>
+                        <span className="text-xs leading-9 font-medium text-text-tertiary">
                           {day.events.length === 1 ? "1 event" : `${day.events.length} events`}
                         </span>
                       </h3>

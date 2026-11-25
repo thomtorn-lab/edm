@@ -439,7 +439,7 @@ export default function EventRow({
           the margin). On narrower screens the whole icon group wraps to the
           next line, left-aligned (justify-between with a single item per line). */}
       <div data-mobile-only className="flex flex-col gap-2 pb-3 pt-4 sm:hidden">
-        <div className="flex min-h-[18px] items-center gap-1.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-secondary">
+        <div className="flex min-h-[18px] items-center gap-1.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-tertiary">
           {showMobileDate && (
             <>
               <span className="uppercase">{formatRowDateRangeLabel(event)}</span>
@@ -474,13 +474,13 @@ export default function EventRow({
         </div>
         <Link
           href={eventHref}
-          className="group block break-words text-[26px] font-bold leading-[31px] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 hover:decoration-current focus-visible:decoration-current"
+          className="group block break-words text-[21px] font-bold leading-[26px] tracking-[-0.01em] text-text-primary underline decoration-1 decoration-transparent underline-offset-4 hover:decoration-current focus-visible:decoration-current"
         >
           {titleHead}
           {/* The arrow follows the title's last word (never wraps onto a line of its own). */}
           <span className="whitespace-nowrap">
             {titleTail}
-            <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} className="ml-1.5 inline-block h-[18px] w-[18px] align-[-1px] text-text-tertiary transition-colors group-hover:text-text-primary">
+            <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} className="ml-1 inline-block h-[15px] w-[15px] align-[-1px] text-text-tertiary transition-colors group-hover:text-text-primary">
               <path d="M2 9h13M10 4l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
