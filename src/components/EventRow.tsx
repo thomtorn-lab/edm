@@ -2,7 +2,6 @@ import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
-import { isMultiDayEvent } from "@/lib/datetime";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
 import { artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
@@ -81,23 +80,8 @@ function ExternalArrow() {
 
 export default function EventRow({
   event,
-  dateInHeading = false,
-  lastInDay = false,
 }: {
   event: EventRowEvent;
-  /**
-   * The homepage list groups rows under sticky mobile day headings, so on
-   * mobile the row then omits its own single-day date (a multi-day range is
-   * still shown, since the heading only names the start day). Venue and genre
-   * pages have no day headings and keep the date in the row. Desktop is
-   * unaffected either way.
-   */
-  dateInHeading?: boolean;
-  /**
-   * Last row of a mobile day group: no separator line on mobile, since the
-   * next day group's spacing already separates it. Desktop unaffected.
-   */
-  lastInDay?: boolean;
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
@@ -125,7 +109,6 @@ export default function EventRow({
   // Mobile actions: Tickets (primary) first, then Official Event / Source
   // (secondary) — same links, same rules as desktop, only the order differs.
   const mobileLinks = [...links].sort((a, b) => Number(b.label === "Tickets") - Number(a.label === "Tickets"));
-  const showMobileDate = !dateInHeading || isMultiDayEvent(event);
   // Mobile title: an artist-only title shows each name as the artist data spells it.
   const mobileTitle = artistTitleDisplay(title, event.artists);
   const titleSplit = mobileTitle.lastIndexOf(" ") + 1;
@@ -233,7 +216,7 @@ export default function EventRow({
   // the title. At `sm` every container is a real box again and every
   // order/margin resets.
   return (
-    <li className={`border-b border-border last:border-b-0${lastInDay ? " max-sm:border-b-0" : ""}`}>
+    <li className="border-b border-border last:border-b-0">
       {/* Desktop row (sm and up) — unchanged; display:none below sm, where the
           mobile layout further down renders instead. */}
       <div className="hidden flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 sm:flex sm:flex-nowrap sm:items-start sm:gap-5 sm:py-3.5">
@@ -441,23 +424,22 @@ export default function EventRow({
           the margin). On narrower screens the whole icon group wraps to the
           next line, left-aligned (justify-between with a single item per line). */}
       <div data-mobile-only className="flex flex-col gap-2 pb-3 pt-4 sm:hidden">
-        <div className="flex min-h-[18px] items-center gap-1.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-tertiary">
-          {showMobileDate && (
-            <>
-              <span className="uppercase">{formatRowDateRangeLabel(event)}</span>
-              <span aria-hidden="true" className="text-text-tertiary">•</span>
-            </>
-          )}
-          <span className="tabular-nums">{formatTimeRangeLabel(event)}</span>
-          <span aria-hidden="true" className="text-text-tertiary">•</span>
-          <span className="flex min-w-0 items-center gap-1.5">
-            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-3 w-3 shrink-0">
-              <path d="M10 17.5s-5.5-4.9-5.5-9.25a5.5 5.5 0 0 1 11 0c0 4.35-5.5 9.25-5.5 9.25Z" strokeLinejoin="round" />
-              <circle cx="10" cy="8.25" r="2" />
-            </svg>
+        <div className="flex min-h-[18px] flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[13px] leading-[18px] tracking-[0.02em] text-text-tertiary">
+          {/* Date · time · venue: the date first and a shade lighter; each part
+              wraps as a unit with its "·" (so a wrapped line never starts with
+              one); only a long venue name breaks inside itself. */}
+          <span className="whitespace-nowrap">
+            <span className="uppercase text-text-secondary-strong">{formatRowDateRangeLabel(event)}</span>
+            <span aria-hidden="true" className="ml-1.5">·</span>
+          </span>
+          <span className="whitespace-nowrap tabular-nums">
+            {formatTimeRangeLabel(event)}
+            <span aria-hidden="true" className="ml-1.5">·</span>
+          </span>
+          <span className="min-w-0 break-words uppercase">
             <Link
               href={`/venues/${event.venue.slug}`}
-              className="min-w-0 break-words uppercase underline decoration-1 decoration-transparent underline-offset-4 transition-colors hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
+              className="underline decoration-1 decoration-transparent underline-offset-4 transition-colors hover:text-text-primary hover:decoration-current focus-visible:text-text-primary focus-visible:decoration-current"
             >
               {event.venue.name}
               {subVenue && <span className="text-text-secondary-strong"> · {subVenue}</span>}

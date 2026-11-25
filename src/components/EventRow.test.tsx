@@ -1369,7 +1369,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
   };
 
   it("renders time + venue on one line, the 19px title, purple genre text and the full 17px lineup", () => {
-    const { container } = render(<EventRow event={FULL} dateInHeading />);
+    const { container } = render(<EventRow event={FULL} />);
     const m = mobile(container);
     const meta = m.firstElementChild as HTMLElement;
     expect(cls(meta)).toEqual(expect.arrayContaining(["flex", "font-mono", "text-[13px]"]));
@@ -1396,16 +1396,22 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(lineup.textContent).toBe("Baime\u00a0/ Fred\u00a0Lenix\u00a0/ Denes\u00a0Toth");
   });
 
-  it("omits the single-day date when the list shows it in a day heading, keeps it otherwise", () => {
-    const { container, rerender } = render(<EventRow event={FULL} dateInHeading />);
-    const meta = () => (mobile(container).firstElementChild as HTMLElement).textContent ?? "";
-    expect(meta()).not.toMatch(/Aug/i);
-    rerender(<EventRow event={FULL} />);
-    expect(meta()).toMatch(/Aug/i);
+  it("shows date · time · venue on the line above the title, the date a shade lighter (2026-11-25)", () => {
+    const { container } = render(<EventRow event={FULL} />);
+    const meta = mobile(container).firstElementChild as HTMLElement;
+    expect(meta.textContent).toBe("MON 10 AUG·22:00·Test Venue");
+    const [date, time, venue] = Array.from(meta.children) as HTMLElement[];
+    expect(cls(date)).toContain("whitespace-nowrap");
+    expect(cls(date.firstElementChild as Element)).toEqual(expect.arrayContaining(["text-text-secondary-strong", "uppercase"]));
+    expect(cls(time)).toContain("whitespace-nowrap");
+    expect(cls(venue)).toEqual(expect.arrayContaining(["break-words", "uppercase"]));
+    expect(cls(meta)).toEqual(expect.arrayContaining(["flex-wrap", "text-text-tertiary"]));
+    // Each "·" ends the part before it, so a wrapped line never starts with one.
+    for (const part of [date, time]) expect(part.lastElementChild?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("orders actions Tickets (filled) → Official Event (text link), then Calendar / Video / Audio as a separate group", () => {
-    const { container } = render(<EventRow event={FULL} dateInHeading />);
+    const { container } = render(<EventRow event={FULL} />);
     const actions = mobile(container).lastElementChild as HTMLElement;
     expect(cls(actions)).toEqual(expect.arrayContaining(["flex", "flex-wrap", "justify-between"]));
     const [left, right] = Array.from(actions.children) as HTMLElement[];
@@ -1461,11 +1467,9 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(cls(badge)).toEqual(expect.arrayContaining(["h-[18px]", "leading-none", "items-center", "justify-center"]));
   });
 
-  it("drops the separator line under the last row of a day on mobile only", () => {
-    const { container, rerender } = render(<EventRow event={FULL} />);
-    expect(cls(container.querySelector("li") as Element)).not.toContain("max-sm:border-b-0");
-    rerender(<EventRow event={FULL} lastInDay />);
-    expect(cls(container.querySelector("li") as Element)).toEqual(expect.arrayContaining(["border-b", "max-sm:border-b-0"]));
+  it("separates every row from the next with the same discreet line (no day groups)", () => {
+    const { container } = render(<EventRow event={FULL} />);
+    expect(cls(container.querySelector("li") as Element)).toEqual(["border-b", "border-border", "last:border-b-0"]);
   });
 
   it("spaces every block of the mobile row with one gap (8px)", () => {
