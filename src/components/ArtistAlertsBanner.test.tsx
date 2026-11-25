@@ -22,13 +22,15 @@ describe("ArtistAlertsBanner", () => {
     expect(desktop.textContent).toBe("Artist AlertsFind artists →Get email alerts for new events with artists you follow.");
   });
 
-  it("shows ARTIST ALERTS · Find Artists with the arrow at the end, then the explanation, below md (2026-11-25)", () => {
+  it("shows ARTIST ALERTS over the call-to-action text below md, with the arrow centred on both rows (2026-11-25)", () => {
     const { container } = render(<ArtistAlertsBanner />);
     const mobile = container.querySelector("a > span.md\\:hidden") as HTMLElement;
-    expect(mobile.textContent).toBe("Artist Alerts·Find Artists→Get email alerts for new events with artists you follow.");
-    const [heading, arrow] = Array.from(mobile.children) as HTMLElement[];
-    expect(heading.textContent).toBe("Artist Alerts·Find Artists");
+    expect(mobile.textContent).toBe("Artist Alerts→Find artists to follow and get event alerts.");
+    const [heading, arrow, text] = Array.from(mobile.children) as HTMLElement[];
+    expect(heading.textContent).toBe("Artist Alerts");
     expect(arrow.getAttribute("aria-hidden")).toBe("true");
-    expect(screen.getByText("Find Artists").className).toContain("whitespace-nowrap");
+    expect(arrow.className.split(/\s+/)).toEqual(expect.arrayContaining(["row-span-2", "self-center"]));
+    expect(text.textContent).toBe("Find artists to follow and get event alerts.");
+    expect(mobile.textContent).not.toContain("·");
   });
 });
