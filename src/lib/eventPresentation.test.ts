@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanEventTitle, formatArtistName, lineupDuplicatesTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
+import { artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, shouldShowArtistPreview, subVenueLabel } from "./eventPresentation";
 
 describe("shouldShowArtistPreview — suppress when the title already carries the lineup", () => {
   it("suppresses when a per-room lineup title names every artist (real Culture Box shape, no hardcoding)", () => {
@@ -239,5 +239,36 @@ describe("lineupDuplicatesTitle — hide the listing lineup when the title names
   it("is false with no artists or an empty title", () => {
     expect(lineupDuplicatesTitle("Blikfang", [])).toBe(false);
     expect(lineupDuplicatesTitle("", ["Blikfang"])).toBe(false);
+  });
+});
+
+describe("artistTitleDisplay — artist-only titles use the artist data's spelling (2026-11-25)", () => {
+  it("re-cases a title made only of the event's artists, keeping the separators", () => {
+    expect(artistTitleDisplay("DENIS HORVAT / ANASTASIA KRISTENSEN", ["Denis Horvat", "Anastasia Kristensen"])).toBe("Denis Horvat / Anastasia Kristensen");
+    expect(artistTitleDisplay("DEBBIE SINGS", ["Debbie Sings", "PONNY", "HEX ELECTRONIX (DJ)"])).toBe("Debbie Sings");
+  });
+
+  it("writes b2b / vs / x in lower case, from separate or combined lineup entries", () => {
+    expect(artistTitleDisplay("BEN KLOCK B2B MARCEL DETTMANN", ["Ben Klock", "Marcel Dettmann"])).toBe("Ben Klock b2b Marcel Dettmann");
+    expect(artistTitleDisplay("BEN KLOCK B2B MARCEL DETTMANN", ["Ben Klock b2b Marcel Dettmann"])).toBe("Ben Klock b2b Marcel Dettmann");
+  });
+
+  it("matches an artist entry without its trailing qualifier", () => {
+    expect(artistTitleDisplay("OVERMONO", ["Overmono (DJ set)", "Love Remain (DJ set)"])).toBe("Overmono");
+  });
+
+  it("keeps names the artist data itself writes in capitals, symbols or digits", () => {
+    expect(artistTitleDisplay("KI/KI", ["KI/KI"])).toBe("KI/KI");
+    expect(artistTitleDisplay("BICEP", ["BICEP"])).toBe("BICEP");
+    expect(artistTitleDisplay("999999999", ["999999999"])).toBe("999999999");
+    expect(artistTitleDisplay("ANNA & DJ 2LATE", ["ANNA", "DJ 2Late"])).toBe("ANNA & DJ 2Late");
+  });
+
+  it("leaves any title with other words (an event name or concept) unchanged", () => {
+    expect(artistTitleDisplay("HYGGELIT SHOWCASE", ["Naiva", "Onsberg"])).toBe("HYGGELIT SHOWCASE");
+    expect(artistTitleDisplay("BEN KLOCK SHOWCASE", ["Ben Klock"])).toBe("BEN KLOCK SHOWCASE");
+    expect(artistTitleDisplay("AETHR X MODULE", ["MSW COLLECTIVE", "Baime"])).toBe("AETHR X MODULE");
+    expect(artistTitleDisplay("DENIS HORVAT /", ["Denis Horvat"])).toBe("DENIS HORVAT /");
+    expect(artistTitleDisplay("Anything", [])).toBe("Anything");
   });
 });
