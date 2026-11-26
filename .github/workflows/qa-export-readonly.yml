@@ -1,7 +1,7 @@
 name: QA Export to Private Repo (Read-Only)
 
-# Daily, once per Copenhagen day between 01:00 and 05:15 (before the external
-# ChatGPT QA at 06:00), plus manual start. Starts nothing else.
+# Daily via Vercel Cron, once per Copenhagen day between 01:00 and 05:15 (before
+# the external ChatGPT QA at 06:00), plus manual start. Starts nothing else.
 #
 # 1. Exports every current (upcoming or in-progress) published event with
 #    src/db/exportQaSnapshot.ts, logged in as the shared read-only report role
@@ -19,15 +19,19 @@ name: QA Export to Private Repo (Read-Only)
 #   QA_DATA_REPO_TOKEN      fine-grained token for the private repo only (Contents: read and write)
 
 on:
+  # No GitHub schedule: GitHub dropped or delayed nearly every scheduled run in
+  # this repository (2026-11-25/26). Vercel Cron (vercel.json) starts this
+  # workflow at 01:37 and 02:07 UTC via /api/qa-export/trigger with
+  # trigger=scheduled. A manual start (trigger=manual, the default) always runs.
   workflow_dispatch:
-  schedule:
-    # GitHub drops most scheduled runs in this repository (an hourly workflow here
-    # fires ~2-3 times a day), so there are many attempts: every 10 minutes,
-    # 23:07-03:57 UTC, which covers 01:00-05:00 Copenhagen in both CET and CEST.
-    # The clock job lets at most one attempt per Copenhagen day export, and none
-    # outside 01:00-05:15 Copenhagen time. Manual starts always run.
-    - cron: "7-59/10 23 * * *"
-    - cron: "7-59/10 0-3 * * *"
+    inputs:
+      trigger:
+        description: "manual (always exports) or scheduled (used by Vercel Cron: once per Copenhagen day, 01:00-05:15)"
+        type: choice
+        options:
+          - manual
+          - scheduled
+        default: manual
 
 permissions:
   contents: read
@@ -50,11 +54,11 @@ jobs:
       - name: Allow one scheduled export per Copenhagen day, 01:00-05:15
         id: clock
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          TRIGGER: ${{ inputs.trigger }}
           GH_TOKEN: ${{ secrets.QA_DATA_REPO_TOKEN }}
         # QA_CLOCK_NOW is never set in real runs; src/db/exportQaSnapshot.test.ts sets it to test the clock.
         run: |
-          if [ "$EVENT_NAME" != "schedule" ]; then
+          if [ "$TRIGGER" != "scheduled" ]; then
             echo "Manual start: exporting."
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
