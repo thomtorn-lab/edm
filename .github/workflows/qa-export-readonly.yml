@@ -21,7 +21,7 @@ name: QA Export to Private Repo (Read-Only)
 on:
   # No GitHub schedule: GitHub dropped or delayed nearly every scheduled run in
   # this repository (2026-11-25/26). Vercel Cron (vercel.json) starts this
-  # workflow at 02:37 and 03:07 UTC via /api/qa-export/trigger with
+  # workflow at 01:37 and 02:07 UTC via /api/qa-export/trigger with
   # trigger=scheduled. A manual start (trigger=manual, the default) always runs.
   workflow_dispatch:
     inputs:

@@ -29,8 +29,8 @@ describe("vercel.json crons", () => {
     expect(crons.find((c) => c.path === "/api/enrichment/daily-links")?.schedule).toBe("10 3 * * *");
   });
 
-  it("starts the read-only QA export twice a night (02:37 and a 03:07 retry, UTC)", () => {
-    expect(crons.filter((c) => c.path === "/api/qa-export/trigger").map((c) => c.schedule)).toEqual(["37 2 * * *", "7 3 * * *"]);
+  it("starts the read-only QA export twice a night (01:37 and a 02:07 retry, UTC)", () => {
+    expect(crons.filter((c) => c.path === "/api/qa-export/trigger").map((c) => c.schedule)).toEqual(["37 1 * * *", "7 2 * * *"]);
   });
 
   it("leaves no GitHub schedule on the moved workflows, but keeps manual dispatch", () => {

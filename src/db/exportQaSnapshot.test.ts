@@ -159,7 +159,7 @@ describe("qa-export-readonly.yml", () => {
   it("both Vercel Cron times land inside the 01:00-05:15 Copenhagen window in CET and CEST", () => {
     const crons: { path: string; schedule: string }[] = JSON.parse(readFileSync(path.join(__dirname, "..", "..", "vercel.json"), "utf-8")).crons;
     const times = crons.filter((c) => c.path === "/api/qa-export/trigger").map((c) => c.schedule);
-    expect(times).toEqual(["37 2 * * *", "7 3 * * *"]);
+    expect(times).toEqual(["37 1 * * *", "7 2 * * *"]);
     for (const offset of [60, 120]) {
       for (const cron of times) {
         const [m, h] = cron.split(" ").map(Number);
@@ -188,9 +188,9 @@ describe("qa-export-readonly.yml", () => {
     it.each([
       ["manual start always runs, even after 05:15 with today's export", "manual", "2026-11-25T10:00:00Z", "2026-11-25T03:00:00Z", "run=true"],
       ["an empty trigger (older manual start) also counts as manual", "", "2026-11-25T10:00:00Z", "2026-11-25T03:00:00Z", "run=true"],
-      ["Vercel Cron 03:07 UTC = 04:07 CET, no export yet today", "scheduled", "2026-11-26T03:07:00Z", "2026-11-25T08:41:00Z", "run=true"],
-      ["Vercel Cron retry 03:07 UTC after the 02:37 run exported", "scheduled", "2026-11-26T03:07:00Z", "2026-11-26T02:38:30Z", "run=false"],
-      ["summer Vercel Cron 03:07 UTC = 05:07 CEST still exports", "scheduled", "2026-06-15T03:07:00Z", "2026-06-14T02:38:00Z", "run=true"],
+      ["Vercel Cron 02:07 UTC = 03:07 CET, no export yet today", "scheduled", "2026-11-26T02:07:00Z", "2026-11-25T08:41:00Z", "run=true"],
+      ["Vercel Cron retry 02:07 UTC after the 01:37 run exported", "scheduled", "2026-11-26T02:07:00Z", "2026-11-26T01:38:30Z", "run=false"],
+      ["summer Vercel Cron 02:07 UTC = 04:07 CEST exports", "scheduled", "2026-06-15T02:07:00Z", "2026-06-14T01:38:00Z", "run=true"],
       ["winter 04:57, no export yet today", "scheduled", "2026-11-26T03:57:00Z", "2026-11-25T11:12:00Z", "run=true"],
       ["winter 03:07, already exported today at 02:17", "scheduled", "2026-11-26T02:07:00Z", "2026-11-26T01:17:00Z", "run=false"],
       ["yesterday 23:30 Copenhagen does not count as today", "scheduled", "2026-11-26T00:07:00Z", "2026-11-25T22:30:00Z", "run=true"],
