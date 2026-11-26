@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { rejectUnauthorizedScheduledRequest } from "./scheduledRequestAuth";
+import { rejectUnauthorizedScheduledRequest, rejectUnlessVercelCron } from "./scheduledRequestAuth";
 
 const req = (headers: Record<string, string>) => new Request("https://x.test/api/sync/hangaren", { headers });
 
@@ -33,5 +33,21 @@ describe("rejectUnauthorizedScheduledRequest", () => {
 
   it("returns 500 when neither secret is configured", () => {
     expect(rejectUnauthorizedScheduledRequest(req({ authorization: "Bearer x" }))?.status).toBe(500);
+  });
+});
+
+describe("rejectUnlessVercelCron", () => {
+  it("accepts only the CRON_SECRET bearer, never SYNC_TRIGGER_TOKEN", () => {
+    process.env.CRON_SECRET = "cron";
+    process.env.SYNC_TRIGGER_TOKEN = "sync";
+    expect(rejectUnlessVercelCron(req({ authorization: "Bearer cron" }))).toBeNull();
+    expect(rejectUnlessVercelCron(req({ "x-sync-token": "sync" }))?.status).toBe(401);
+    expect(rejectUnlessVercelCron(req({ authorization: "Bearer sync" }))?.status).toBe(401);
+    expect(rejectUnlessVercelCron(req({}))?.status).toBe(401);
+  });
+
+  it("fails closed with 500 when CRON_SECRET is unset, even with a valid sync token", () => {
+    process.env.SYNC_TRIGGER_TOKEN = "sync";
+    expect(rejectUnlessVercelCron(req({ "x-sync-token": "sync", authorization: "Bearer " }))?.status).toBe(500);
   });
 });

@@ -12,6 +12,8 @@
     { "path": "/api/sync/pumpehuset", "schedule": "50 */6 * * *" },
     { "path": "/api/sync/hvaderpaa", "schedule": "55 */6 * * *" },
     { "path": "/api/artist-alerts/run", "schedule": "17,47 * * * *" },
-    { "path": "/api/enrichment/daily-links", "schedule": "10 3 * * *" }
+    { "path": "/api/enrichment/daily-links", "schedule": "10 3 * * *" },
+    { "path": "/api/qa-export/trigger", "schedule": "37 2 * * *" },
+    { "path": "/api/qa-export/trigger", "schedule": "7 3 * * *" }
   ]
 }

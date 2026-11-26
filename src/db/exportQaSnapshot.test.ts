@@ -148,18 +148,25 @@ describe("runQaExport", () => {
 describe("qa-export-readonly.yml", () => {
   const yaml = readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", "qa-export-readonly.yml"), "utf-8");
 
-  it("starts manually or on the 10-minute crons only, covering 01:07-04:57 Copenhagen time in CET and CEST", () => {
-    expect(yaml).toMatch(/\non:\n {2}workflow_dispatch:\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "7-59\/10 23 \* \* \*"\n {4}- cron: "7-59\/10 0-3 \* \* \*"\n\n/);
-    expect(yaml).not.toMatch(/\n {2}(push|pull_request|pull_request_target|workflow_run|repository_dispatch):/);
+  it("has no GitHub schedule: starts only via workflow_dispatch, with a manual/scheduled trigger input", () => {
+    expect(yaml).toMatch(/\non:\n(?: {2}#.*\n)* {2}workflow_dispatch:\n {4}inputs:\n {6}trigger:\n/);
+    expect(yaml).toMatch(/ {8}options:\n {10}- manual\n {10}- scheduled\n {8}default: manual\n/);
+    expect(yaml).not.toMatch(/\n {2}(schedule|push|pull_request|pull_request_target|workflow_run|repository_dispatch):/);
+    expect(yaml).toContain("TRIGGER: ${{ inputs.trigger }}");
     expect(yaml).toContain("if: needs.clock.outputs.run == 'true'");
-    // Firing times (UTC hours 23 and 0-3 at :07..:57) in CET and CEST: 01:07-04:57 local is always covered, and the
-    // only firings the 01:00-05:15 gate lets through after 05:00 are summer 05:07 (03:07 UTC); 05:17+ never export.
-    const fires = [23, 0, 1, 2, 3].flatMap((h) => [7, 17, 27, 37, 47, 57].map((m) => h * 60 + m));
+  });
+
+  it("both Vercel Cron times land inside the 01:00-05:15 Copenhagen window in CET and CEST", () => {
+    const crons: { path: string; schedule: string }[] = JSON.parse(readFileSync(path.join(__dirname, "..", "..", "vercel.json"), "utf-8")).crons;
+    const times = crons.filter((c) => c.path === "/api/qa-export/trigger").map((c) => c.schedule);
+    expect(times).toEqual(["37 2 * * *", "7 3 * * *"]);
     for (const offset of [60, 120]) {
-      const local = fires.map((t) => (t + offset) % 1440);
-      for (let t = 67; t <= 4 * 60 + 57; t += 10) expect(local).toContain(t);
-      const allowed = local.filter((t) => t >= 60 && t < 5 * 60 + 15);
-      expect(allowed.filter((t) => t >= 5 * 60)).toEqual(offset === 120 ? [5 * 60 + 7] : []);
+      for (const cron of times) {
+        const [m, h] = cron.split(" ").map(Number);
+        const local = h * 60 + m + offset;
+        expect(local).toBeGreaterThanOrEqual(60);
+        expect(local).toBeLessThan(5 * 60 + 15);
+      }
     }
   });
 
@@ -169,28 +176,32 @@ describe("qa-export-readonly.yml", () => {
     const script = body.split("\n").map((l) => l.replace(/^ {10}/, "")).join("\n");
     const dir = mkdtempSync(path.join(tmpdir(), "qa-clock-"));
     writeFileSync(path.join(dir, "gh"), '#!/bin/sh\nprintf "%s\\n" "$GH_STUB_LAST"\n', { mode: 0o755 });
-    function gate(event: string, now: string, last: string): string {
+    function gate(trigger: string, now: string, last: string): string {
       const out = path.join(dir, "out");
       writeFileSync(out, "");
       execFileSync("bash", ["-e", "-c", script], {
-        env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`, EVENT_NAME: event, QA_CLOCK_NOW: now, GH_STUB_LAST: last, GITHUB_OUTPUT: out, QA_DATA_REPO: "o/r" },
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`, TRIGGER: trigger, QA_CLOCK_NOW: now, GH_STUB_LAST: last, GITHUB_OUTPUT: out, QA_DATA_REPO: "o/r" },
         stdio: "pipe",
       });
       return readFileSync(out, "utf8").trim();
     }
     it.each([
-      ["manual start always runs, even after 05:15 with today's export", "workflow_dispatch", "2026-11-25T10:00:00Z", "2026-11-25T03:00:00Z", "run=true"],
-      ["winter 04:57, no export yet today", "schedule", "2026-11-26T03:57:00Z", "2026-11-25T11:12:00Z", "run=true"],
-      ["winter 03:07, already exported today at 02:17", "schedule", "2026-11-26T02:07:00Z", "2026-11-26T01:17:00Z", "run=false"],
-      ["yesterday 23:30 Copenhagen does not count as today", "schedule", "2026-11-26T00:07:00Z", "2026-11-25T22:30:00Z", "run=true"],
-      ["winter 00:57 is before the window", "schedule", "2026-11-25T23:57:00Z", "", "run=false"],
-      ["delayed run at 05:14 still exports", "schedule", "2026-11-26T04:14:00Z", "2026-11-25T03:00:00Z", "run=true"],
-      ["delayed run at 05:15 never starts", "schedule", "2026-11-26T04:15:00Z", "2026-11-25T03:00:00Z", "run=false"],
-      ["summer 01:07 CEST (23:07 UTC the day before)", "schedule", "2026-06-14T23:07:00Z", "2026-06-14T01:00:00Z", "run=true"],
-      ["DST switch day (CET→CEST 29 Mar), 04:07 CEST", "schedule", "2026-03-29T02:07:00Z", "2026-03-28T02:00:00Z", "run=true"],
-      ["first ever export (no snapshot commit)", "schedule", "2026-11-26T02:07:00Z", "", "run=true"],
-    ])("%s", (_name, event, now, last, expected) => {
-      expect(gate(event, now, last)).toBe(expected);
+      ["manual start always runs, even after 05:15 with today's export", "manual", "2026-11-25T10:00:00Z", "2026-11-25T03:00:00Z", "run=true"],
+      ["an empty trigger (older manual start) also counts as manual", "", "2026-11-25T10:00:00Z", "2026-11-25T03:00:00Z", "run=true"],
+      ["Vercel Cron 03:07 UTC = 04:07 CET, no export yet today", "scheduled", "2026-11-26T03:07:00Z", "2026-11-25T08:41:00Z", "run=true"],
+      ["Vercel Cron retry 03:07 UTC after the 02:37 run exported", "scheduled", "2026-11-26T03:07:00Z", "2026-11-26T02:38:30Z", "run=false"],
+      ["summer Vercel Cron 03:07 UTC = 05:07 CEST still exports", "scheduled", "2026-06-15T03:07:00Z", "2026-06-14T02:38:00Z", "run=true"],
+      ["winter 04:57, no export yet today", "scheduled", "2026-11-26T03:57:00Z", "2026-11-25T11:12:00Z", "run=true"],
+      ["winter 03:07, already exported today at 02:17", "scheduled", "2026-11-26T02:07:00Z", "2026-11-26T01:17:00Z", "run=false"],
+      ["yesterday 23:30 Copenhagen does not count as today", "scheduled", "2026-11-26T00:07:00Z", "2026-11-25T22:30:00Z", "run=true"],
+      ["winter 00:57 is before the window", "scheduled", "2026-11-25T23:57:00Z", "", "run=false"],
+      ["delayed run at 05:14 still exports", "scheduled", "2026-11-26T04:14:00Z", "2026-11-25T03:00:00Z", "run=true"],
+      ["delayed run at 05:15 never starts", "scheduled", "2026-11-26T04:15:00Z", "2026-11-25T03:00:00Z", "run=false"],
+      ["summer 01:07 CEST (23:07 UTC the day before)", "scheduled", "2026-06-14T23:07:00Z", "2026-06-14T01:00:00Z", "run=true"],
+      ["DST switch day (CET→CEST 29 Mar), 04:07 CEST", "scheduled", "2026-03-29T02:07:00Z", "2026-03-28T02:00:00Z", "run=true"],
+      ["first ever export (no snapshot commit)", "scheduled", "2026-11-26T02:07:00Z", "", "run=true"],
+    ])("%s", (_name, trigger, now, last, expected) => {
+      expect(gate(trigger, now, last)).toBe(expected);
     });
   });
 

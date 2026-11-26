@@ -23,6 +23,19 @@ export function rejectUnauthorizedScheduledRequest(request: Request): NextRespon
   return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 }
 
+/**
+ * Vercel Cron only: `Authorization: Bearer <CRON_SECRET>`. For endpoints that
+ * no manual caller may use (/api/qa-export/trigger) — SYNC_TRIGGER_TOKEN is
+ * deliberately not accepted. Returns null when authorized.
+ */
+export function rejectUnlessVercelCron(request: Request): NextResponse | null {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return NextResponse.json({ error: "CRON_SECRET is not configured." }, { status: 500 });
+  const bearer = request.headers.get("authorization");
+  if (bearer && safeEqual(bearer, `Bearer ${cronSecret}`)) return null;
+  return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+}
+
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
