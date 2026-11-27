@@ -1247,7 +1247,7 @@ describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
   it("renders SOLD OUT with text and border in text-primary, same badge otherwise", () => {
     render(<EventRow event={makeEvent({ soldOut: true })} />);
     const badge = screen.getByText("Sold out");
-    expect(cls(badge)).toEqual(expect.arrayContaining(["border-text-primary", "text-text-primary", "border", "px-1.5", "py-0.5", "text-[10px]", "rounded-[3px]"]));
+    expect(cls(badge)).toEqual(expect.arrayContaining(["border-text-primary", "text-text-primary", "border", "h-[18px]", "items-center", "justify-center", "leading-none", "text-[10px]", "rounded-[3px]"]));
     expect(cls(badge)).not.toContain("border-border-strong");
     // The title uses the same token.
     expect(cls(screen.getByRole("link", { name: /Test Event/ }))).toContain("text-text-primary");
