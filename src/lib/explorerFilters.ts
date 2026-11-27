@@ -1,4 +1,5 @@
 import { genreFilterUrlValue, parseGenreFilterUrlValue, type GenreFilterValue } from "./taxonomy";
+import { parseTimeOfDayList, type TimeOfDayPeriod } from "./timeOfDay";
 
 /**
  * URL-backed homepage filter state (homepage search/navigation work,
@@ -19,6 +20,10 @@ export type ExplorerMode = "all" | "tonight" | "weekend" | "next-weekend";
 
 export const EXPLORER_DATE_MODES = ["tonight", "weekend", "next-weekend"] as const;
 
+/** Admission filter values: Free Entry ("free") and Free Before ("free-before") — see admissionStatus(). */
+export const ADMISSION_FILTERS = ["free", "free-before"] as const;
+export type AdmissionFilter = (typeof ADMISSION_FILTERS)[number];
+
 /** Filter state as the URL carries it. `venueSlug` is resolved to a venue id by EventExplorer against the venues it actually lists. */
 export interface ExplorerUrlFilters {
   mode: ExplorerMode;
@@ -32,6 +37,10 @@ export interface ExplorerUrlFilters {
    * everything. Never written back to the URL.
    */
   unknownGenre?: string;
+  /** Admission checkboxes; omitted/empty = no admission filter. URL: `admission=free,free-before`. */
+  admission?: AdmissionFilter[];
+  /** Time of Day checkboxes; omitted/empty = all times. URL: `time=evening,night`. */
+  timeOfDay?: TimeOfDayPeriod[];
 }
 
 export const DEFAULT_EXPLORER_URL_FILTERS: ExplorerUrlFilters = {
@@ -42,7 +51,7 @@ export const DEFAULT_EXPLORER_URL_FILTERS: ExplorerUrlFilters = {
 };
 
 /** The query-string keys this module owns; every other key (e.g. utm_*) is left untouched. */
-const KEYS = { mode: "when", genre: "genre", venue: "venue", query: "q" } as const;
+const KEYS = { mode: "when", genre: "genre", venue: "venue", admission: "admission", time: "time", query: "q" } as const;
 
 const MAX_QUERY_LENGTH = 200;
 
@@ -67,7 +76,19 @@ export function parseExplorerFilters(params: ParamsLike | null | undefined): Exp
 
   const query = (params.get(KEYS.query) ?? "").slice(0, MAX_QUERY_LENGTH);
 
-  return { mode, genre, venueSlug, query, ...(unknownGenre ? { unknownGenre } : {}) };
+  const rawAdmission = (params.get(KEYS.admission) ?? "").split(",").map((v) => v.trim());
+  const admission = ADMISSION_FILTERS.filter((a) => rawAdmission.includes(a));
+  const timeOfDay = parseTimeOfDayList(params.get(KEYS.time));
+
+  return {
+    mode,
+    genre,
+    venueSlug,
+    query,
+    ...(unknownGenre ? { unknownGenre } : {}),
+    ...(admission.length > 0 ? { admission } : {}),
+    ...(timeOfDay.length > 0 ? { timeOfDay } : {}),
+  };
 }
 
 /**
@@ -81,6 +102,8 @@ export function serializeExplorerFilters(filters: ExplorerUrlFilters, current = 
   if (filters.mode !== "all") params.set(KEYS.mode, filters.mode);
   if (filters.genre !== "all") params.set(KEYS.genre, genreFilterUrlValue(filters.genre));
   if (filters.venueSlug) params.set(KEYS.venue, filters.venueSlug);
+  if (filters.admission?.length) params.set(KEYS.admission, filters.admission.join(","));
+  if (filters.timeOfDay?.length) params.set(KEYS.time, filters.timeOfDay.join(","));
   if (filters.query.trim() !== "") params.set(KEYS.query, filters.query);
   return params.toString();
 }

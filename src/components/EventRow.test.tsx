@@ -235,7 +235,7 @@ describe("EventRow — genre display and ticket/free CTA", () => {
     expect(screen.queryByText("Free")).toBeNull();
   });
 
-  it("places FREE to the right of OFFICIAL EVENT — never before it (frontend polish, Round 7)", () => {
+  it("shows FREE in SOLD OUT's place (under the time), keeping OFFICIAL EVENT as its own action", () => {
     render(
       <EventRow
         event={makeEvent({
@@ -246,10 +246,10 @@ describe("EventRow — genre display and ticket/free CTA", () => {
         })}
       />,
     );
-    const officialEvent = screen.getByText(/Official event/i);
     const free = screen.getByText("Free");
-    // DOCUMENT_POSITION_FOLLOWING (4) means `free` comes after `officialEvent`.
-    expect(officialEvent.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/Official event/i)).toBeTruthy();
+    expect(free.closest("a")).toBeNull();
+    expect(screen.getByText(/^\d{2}:\d{2}/).parentElement?.contains(free)).toBe(true);
   });
 
   it("renders FREE in white with comparable weight to OFFICIAL EVENT, not a dim secondary note", () => {
@@ -1311,10 +1311,11 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
     expect(cls(unit)).toEqual(["contents", "sm:contents"]);
   });
 
-  it("binds FREE (when it is last) to Calendar", () => {
+  it("binds the last link (not FREE, which sits with the date) to Calendar", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
-    const unit = screen.getByText("Free").parentElement as HTMLElement;
+    const unit = screen.getByText(/Official event/i).parentElement as HTMLElement;
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
+    expect(unit.contains(screen.getByText("Free"))).toBe(false);
   });
 });
 
@@ -1453,13 +1454,15 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     for (const el of Array.from((actions.lastElementChild as HTMLElement).querySelectorAll("a, button"))) expect(cls(el)).toContain("w-11");
   });
 
-  it("shows SOLD OUT and FREE as badges on the time/venue line", () => {
+  it("shows SOLD OUT and FREE in Tickets' place in the action row, not on the time/venue line", () => {
     const sold = render(<EventRow event={{ ...FULL, soldOut: true }} />);
-    expect((mobile(sold.container).firstElementChild as HTMLElement).textContent).toContain("Sold out");
+    expect((mobile(sold.container).firstElementChild as HTMLElement).textContent).not.toContain("Sold out");
+    expect((mobile(sold.container).lastElementChild as HTMLElement).textContent).toContain("Sold out");
     expect(within(mobile(sold.container)).queryByRole("link", { name: /Tickets/, ...opts })).toBeNull();
     sold.unmount();
     const free = render(<EventRow event={makeEvent({ priceFrom: 0, officialEventUrl: "https://venue.example.com/e" })} />);
-    expect((mobile(free.container).firstElementChild as HTMLElement).textContent).toContain("Free");
+    expect((mobile(free.container).firstElementChild as HTMLElement).textContent).not.toContain("Free");
+    expect((mobile(free.container).lastElementChild as HTMLElement).textContent).toContain("Free");
   });
 
   it("draws SOLD OUT / FREE as fixed-height badges with leading-none (text centred in the box)", () => {
@@ -1487,5 +1490,51 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     tba.unmount();
     const named = render(<EventRow event={makeEvent({ title: "All We Need", artists: ["Baime"] })} />);
     expect(Array.from(mobile(named.container).querySelectorAll("p")).map((p) => p.textContent)).toContain("Baime");
+  });
+});
+
+describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BEFORE > nothing", () => {
+  afterEach(cleanup);
+  const FREE_BEFORE_TEXT = "22:00 to 04:00 Free till 23:00 · 120 DKK after";
+  const START_22 = "2026-11-27T21:00:00.000Z"; // 22:00 Copenhagen
+  const shown = () => ["Tickets", "Sold out", "Free", "Free before"].filter((t) =>
+    t === "Tickets" ? screen.queryByRole("link", { name: /^Tickets/ }) : screen.queryByText(t, { exact: true }),
+  );
+
+  it("sold out wins, even with a ticket link and free text", () => {
+    render(<EventRow event={makeEvent({ soldOut: true, ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
+    expect(shown()).toEqual(["Sold out"]);
+  });
+
+  it("a ticket link hides FREE and FREE BEFORE", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
+    expect(shown()).toEqual(["Tickets"]);
+  });
+
+  it("without a ticket link: FREE, or FREE BEFORE (never both)", () => {
+    const free = render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, priceFrom: 0 })} />);
+    expect(shown()).toEqual(["Free"]);
+    free.unmount();
+    render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
+    expect(shown()).toEqual(["Free before"]);
+  });
+
+  it("nothing when there is no ticket link and no access status", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, priceFrom: null })} />);
+    expect(shown()).toEqual([]);
+  });
+
+  it("FREE BEFORE is a short badge whose time is available on hover/focus and on tap — not a link", () => {
+    render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
+    const badge = screen.getByRole("button", { name: "Free before" });
+    expect(badge.closest("a")).toBeNull();
+    expect(badge.textContent).toBe("Free before"); // the time is not part of the badge
+    const tooltip = document.getElementById(badge.getAttribute("aria-describedby") as string) as HTMLElement;
+    expect(tooltip.textContent).toBe("Free entry before 23:00");
+    expect(tooltip.className).toContain("group-hover/free:block");
+    expect(tooltip.className).toContain("group-focus-within/free:block");
+    fireEvent.click(badge);
+    expect(badge.getAttribute("aria-expanded")).toBe("true");
+    expect(tooltip.className.split(/\s+/)).toContain("block");
   });
 });

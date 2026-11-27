@@ -132,3 +132,18 @@ describe("list return target ('← All events')", () => {
     expect(isSafeListUrl("/?when=weekend")).toBe(true);
   });
 });
+
+describe("Admission and Time of Day URL params", () => {
+  it("reads both admission values and a time list, ignoring unknown values, and round-trips", () => {
+    const filters = parse("admission=free-before,free,early-bird&time=night,evening,noon&genre=house");
+    expect(filters.admission).toEqual(["free", "free-before"]);
+    expect(filters.timeOfDay).toEqual(["evening", "night"]);
+    expect(serializeExplorerFilters(filters)).toBe("genre=house&admission=free%2Cfree-before&time=evening%2Cnight");
+    expect(parseExplorerFilters(new URLSearchParams(serializeExplorerFilters(filters)))).toEqual(filters);
+  });
+
+  it("omits both when nothing is selected", () => {
+    expect(parse("admission=&time=bogus")).toEqual(DEFAULT_EXPLORER_URL_FILTERS);
+    expect(serializeExplorerFilters({ ...DEFAULT_EXPLORER_URL_FILTERS, admission: [], timeOfDay: [] })).toBe("");
+  });
+});

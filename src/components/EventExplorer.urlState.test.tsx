@@ -463,3 +463,116 @@ describe("EventExplorer — URL changes that don't remount the list", () => {
   });
 });
 
+
+describe("EventExplorer — Admission and Time of Day filters", () => {
+  // Saturday 1 Aug 2026 (summer, UTC+2).
+  const FREE_EVENING = makeEvent({ title: "Free Evening Night", startDatetime: "2026-08-01T17:00:00.000Z", priceFrom: 0 }); // 19:00, no end
+  const PAID_ALLNIGHTER = makeEvent({
+    title: "Paid Allnighter Night",
+    startDatetime: "2026-08-08T21:59:00.000Z", // 23:59
+    endDatetime: "2026-08-09T06:00:00.000Z", // 08:00
+    priceFrom: 150,
+    venue: KB18,
+  });
+  const UNKNOWN_PRICE_AFTERNOON = makeEvent({
+    title: "Unknown Price Afternoon Night",
+    startDatetime: "2026-08-15T12:00:00.000Z", // 14:00, no end — must NOT become evening/night
+    subgenres: ["house"] as GenreSlug[],
+    primaryGenre: "house" as GenreSlug,
+  });
+  const FREE_BEFORE_PAID = makeEvent({
+    title: "Free Before Night",
+    startDatetime: "2026-08-22T20:00:00.000Z", // 22:00, no end
+    description: "22:00 to 04:00 Free till 23:00 · 120 DKK after",
+    ticketUrl: "https://tickets.example.com/fb",
+    venue: KB18,
+  });
+  const LIST = [FREE_EVENING, PAID_ALLNIGHTER, UNKNOWN_PRICE_AFTERNOON, FREE_BEFORE_PAID];
+
+  function renderList(url: string) {
+    window.history.replaceState(null, "", url);
+    mockSearchParams = new URLSearchParams(window.location.search);
+    return render(<EventExplorer events={LIST} serverNow={SERVER_NOW} />);
+  }
+  const desktopFiltersButton = () => document.querySelector('[aria-controls="desktop-filters-panel"]') as HTMLButtonElement;
+  const desktopBox = (name: string) => {
+    if ((document.getElementById("desktop-filters-panel") as HTMLElement).hidden) fireEvent.click(desktopFiltersButton());
+    return screen.getAllByRole("checkbox", { name })[0] as HTMLInputElement;
+  };
+
+  it("shows every event when nothing is checked, with the panel closed", () => {
+    renderList("/");
+    expect(titles()).toHaveLength(4);
+    expect((document.getElementById("desktop-filters-panel") as HTMLElement).hidden).toBe(true);
+    expect(desktopFiltersButton().textContent).toBe("More Filters");
+  });
+
+  it("Free Before keeps only events whose description states it; combined with Free Entry by OR", () => {
+    renderList("/?admission=free-before");
+    expect(titles()).toEqual([expect.stringContaining("Free Before Night")]);
+    expect(desktopFiltersButton().textContent).toBe("More Filters · 1");
+    cleanup();
+    renderList("/?admission=free,free-before");
+    expect(titles()).toEqual([expect.stringContaining("Free Evening Night"), expect.stringContaining("Free Before Night")]);
+    cleanup();
+    renderList("/?admission=free-before&time=afternoon");
+    expect(titles()).toEqual([]);
+  });
+
+  it("filters by the actual admission even when the row shows Tickets instead of FREE BEFORE", () => {
+    renderList("/?admission=free-before");
+    expect(titles()).toEqual([expect.stringContaining("Free Before Night")]);
+    expect(screen.getAllByRole("link", { name: /Tickets/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Free before" })).toBeNull();
+  });
+
+  it("puts Genre and Venue in the desktop Filters panel and counts them", () => {
+    renderList("/?genre=house&venue=kb18&time=night");
+    expect(desktopFiltersButton().textContent).toBe("More Filters · 3");
+    expect(document.getElementById("desktop-filters-panel")?.contains(document.getElementById("genre-filter"))).toBe(true);
+    expect(document.getElementById("desktop-filters-panel")?.contains(document.getElementById("venue-filter"))).toBe(true);
+  });
+
+  it("Free Entry keeps only explicitly free events — an unknown price is not free", () => {
+    renderList("/?admission=free");
+    expect(desktopBox("Free Entry").checked).toBe(true);
+    expect(titles()).toEqual([expect.stringContaining("Free Evening Night")]);
+  });
+
+  it("Time of Day matches overlap for known end times, and only the start period otherwise", () => {
+    renderList("/?time=early-morning");
+    expect(titles()).toEqual([expect.stringContaining("Paid Allnighter Night")]);
+    cleanup();
+    renderList("/?time=night");
+    expect(titles()).toEqual([expect.stringContaining("Paid Allnighter Night")]);
+    cleanup();
+    renderList("/?time=afternoon,evening");
+    expect(titles()).toHaveLength(4);
+  });
+
+  it("combines with Admission and the existing filters, and Clear filters resets everything", () => {
+    renderList("/?time=evening&venue=kb18");
+    expect(titles()).toEqual([expect.stringContaining("Paid Allnighter Night"), expect.stringContaining("Free Before Night")]);
+    cleanup();
+    renderList("/?time=evening,afternoon&genre=house");
+    expect(titles()).toEqual([expect.stringContaining("Unknown Price Afternoon Night")]);
+    cleanup();
+    renderList("/?time=evening&admission=free");
+    expect(titles()).toEqual([expect.stringContaining("Free Evening Night")]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Clear filters" })[0]);
+    expect(titles()).toHaveLength(4);
+    expect(desktopBox("Evening").checked).toBe(false);
+    expect(desktopBox("Free Entry").checked).toBe(false);
+    expect(window.location.search).toBe("");
+  });
+
+  it("checking and unchecking a box updates the list and the URL", () => {
+    renderList("/");
+    fireEvent.click(desktopBox("Night"));
+    fireEvent.click(desktopBox("Evening"));
+    expect(window.location.search).toBe("?time=evening%2Cnight");
+    expect(titles()).toHaveLength(3);
+    fireEvent.click(desktopBox("Night"));
+    expect(window.location.search).toBe("?time=evening");
+  });
+});
