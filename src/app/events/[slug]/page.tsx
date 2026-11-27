@@ -11,6 +11,7 @@ import { SITE_URL } from "@/lib/siteUrl";
 import { buildEventSeoDescription, buildEventSeoTitle } from "@/lib/seoMetadata";
 import { buildEventShareDescription, buildShareMetadata, shareImageForEvent, SITE_NAME } from "@/lib/shareMetadata";
 import StatusBadge, { getEventStatuses } from "@/components/StatusBadge";
+import { admissionStatus } from "@/lib/freeBefore";
 import VenueAddressLink from "@/components/VenueAddressLink";
 import ShareButton from "@/components/ShareButton";
 import AddToCalendar from "@/components/AddToCalendar";
@@ -92,6 +93,9 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
   const primaryLink = links.find((l) => l.label === "Tickets") ?? links.find((l) => l.label === "Official event") ?? null;
   const secondaryLinks = primaryLink ? links.filter((l) => l !== primaryLink) : links;
   const statuses = getEventStatuses(event);
+  // Free admission as plain information (the listing shows only a short
+  // FREE / FREE BEFORE badge; here the stated time is spelled out).
+  const admission = admissionStatus(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   // Lineup shown or hidden by exactly the listing rows' rule (2026-11-22):
@@ -185,6 +189,14 @@ export default async function EventDetailPage({ params }: PageProps<"/events/[sl
               <VenueAddressLink address={event.venue.address} className="text-text-secondary" />
             </dd>
           </div>
+          {admission && (
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Admission</dt>
+              <dd className="mt-1 text-sm text-text-primary">
+                {admission.kind === "free-before" ? `Free entry before ${admission.time}` : "Free entry"}
+              </dd>
+            </div>
+          )}
           {genres.length > 0 && (
             <div className="sm:col-span-2">
               <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Genre</dt>

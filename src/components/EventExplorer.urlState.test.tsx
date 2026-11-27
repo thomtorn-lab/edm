@@ -496,14 +496,14 @@ describe("EventExplorer — Admission and Time of Day filters", () => {
   }
   const desktopFiltersButton = () => document.querySelector('[aria-controls="desktop-filters-panel"]') as HTMLButtonElement;
   const desktopBox = (name: string) => {
-    if (!document.getElementById("desktop-filters-panel")) fireEvent.click(desktopFiltersButton());
+    if ((document.getElementById("desktop-filters-panel") as HTMLElement).hidden) fireEvent.click(desktopFiltersButton());
     return screen.getAllByRole("checkbox", { name })[0] as HTMLInputElement;
   };
 
   it("shows every event when nothing is checked, with the panel closed", () => {
     renderList("/");
     expect(titles()).toHaveLength(4);
-    expect(document.getElementById("desktop-filters-panel")).toBeNull();
+    expect((document.getElementById("desktop-filters-panel") as HTMLElement).hidden).toBe(true);
     expect(desktopFiltersButton().textContent).toBe("More Filters");
   });
 
@@ -519,11 +519,18 @@ describe("EventExplorer — Admission and Time of Day filters", () => {
     expect(titles()).toEqual([]);
   });
 
-  it("shows FREE BEFORE beside Tickets, not instead of it, and not as a link", () => {
+  it("filters by the actual admission even when the row shows Tickets instead of FREE BEFORE", () => {
     renderList("/?admission=free-before");
-    expect(screen.getAllByText("Free before 23:00").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /Free before 23:00/i })).toBeNull();
+    expect(titles()).toEqual([expect.stringContaining("Free Before Night")]);
     expect(screen.getAllByRole("link", { name: /Tickets/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Free before" })).toBeNull();
+  });
+
+  it("puts Genre and Venue in the desktop Filters panel and counts them", () => {
+    renderList("/?genre=house&venue=kb18&time=night");
+    expect(desktopFiltersButton().textContent).toBe("More Filters · 3");
+    expect(document.getElementById("desktop-filters-panel")?.contains(document.getElementById("genre-filter"))).toBe(true);
+    expect(document.getElementById("desktop-filters-panel")?.contains(document.getElementById("venue-filter"))).toBe(true);
   });
 
   it("Free Entry keeps only explicitly free events — an unknown price is not free", () => {

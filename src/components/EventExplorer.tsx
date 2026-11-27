@@ -873,7 +873,6 @@ function EventExplorerList({
     };
   }, [groups]);
 
-  const desktopFilterCount = admission.length + timeOfDay.length;
   const activeDrawerFilterCount =
     (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0) + admission.length + timeOfDay.length;
   const draftDrawerFilterCount =
@@ -940,9 +939,10 @@ function EventExplorerList({
     setUnknownGenre(null);
   }
 
-  const genreSelect = (id: string) => (
+  const genreSelect = (id: string, wrapperClassName?: string) => (
     <FilterSelect
       id={id}
+      wrapperClassName={wrapperClassName}
       value={genre}
       onChange={(e) => changeGenre(e.target.value as GenreFilterValue | "all")}
       className={selectClasses(genre !== "all")}
@@ -953,9 +953,10 @@ function EventExplorerList({
     </FilterSelect>
   );
 
-  const venueSelect = (id: string) => (
+  const venueSelect = (id: string, wrapperClassName?: string) => (
     <FilterSelect
       id={id}
+      wrapperClassName={wrapperClassName}
       value={venueId}
       onChange={(e) => setVenueId(e.target.value)}
       className={selectClasses(venueId !== "all")}
@@ -1052,15 +1053,11 @@ function EventExplorerList({
               ))}
             </div>
 
-            <label className="sr-only" htmlFor="genre-filter">Genre</label>
-            {genreSelect("genre-filter")}
-
-            <label className="sr-only" htmlFor="venue-filter">Venue</label>
-            {venueSelect("venue-filter")}
-
-            {/* Admission + Time of Day live behind one Filters button: a
-                compact panel anchored to it, applied live like the other
-                desktop controls, reusing the mobile sheet's checkbox groups. */}
+            {/* Genre, Venue, Admission and Time of Day live behind one
+                Filters button: a compact panel anchored to it, applied live,
+                reusing the existing selects and the mobile sheet's checkbox
+                groups. Kept in the DOM while closed (hidden), so the
+                controls keep their ids and state. */}
             <div ref={desktopFiltersRef} className="relative">
               <button
                 type="button"
@@ -1069,7 +1066,7 @@ function EventExplorerList({
                 aria-controls="desktop-filters-panel"
                 className={
                   "inline-flex h-[31px] items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-semibold transition-colors " +
-                  (desktopFilterCount > 0
+                  (activeDrawerFilterCount > 0
                     ? "border-accent bg-accent/15 text-accent-strong"
                     : "border-border-strong text-text-secondary hover:text-text-primary")
                 }
@@ -1078,29 +1075,38 @@ function EventExplorerList({
                 {/* "More Filters" to assistive tech: distinct from the mobile
                     sheet's own Filters trigger, still containing the visible label. */}
                 <span className="sr-only">More </span>
-                {desktopFilterCount > 0 ? `Filters · ${desktopFilterCount}` : "Filters"}
+                {activeDrawerFilterCount > 0 ? `Filters · ${activeDrawerFilterCount}` : "Filters"}
               </button>
-              {desktopFiltersOpen && (
-                <div
-                  id="desktop-filters-panel"
-                  role="group"
-                  aria-label="More filters"
-                  className="absolute left-0 top-full z-40 mt-2 flex w-[22rem] flex-col gap-4 rounded border border-border bg-surface-1 p-4 shadow-2xl"
-                >
+              <div
+                id="desktop-filters-panel"
+                role="group"
+                aria-label="Filters"
+                hidden={!desktopFiltersOpen}
+                className="absolute left-0 top-full z-40 mt-2 w-[22rem] rounded border border-border bg-surface-1 p-4 shadow-2xl"
+              >
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <label htmlFor="genre-filter" className="mb-1.5 block text-xs font-semibold text-text-secondary">Genre</label>
+                    {genreSelect("genre-filter", "w-full")}
+                  </div>
+                  <div>
+                    <label htmlFor="venue-filter" className="mb-1.5 block text-xs font-semibold text-text-secondary">Venue</label>
+                    {venueSelect("venue-filter", "w-full")}
+                  </div>
                   <CheckboxGroup
                     legend="Admission"
                     options={ADMISSION_OPTIONS}
                     selected={admission}
                     onToggle={(v) => setAdmission((cur) => toggleIn(cur, v, ADMISSION_FILTERS_ORDER))}
-                    />
+                  />
                   <CheckboxGroup
                     legend="Time of Day"
                     options={TIME_OF_DAY_OPTIONS}
                     selected={timeOfDay}
                     onToggle={(v) => setTimeOfDay((cur) => toggleIn(cur, v, TIME_OF_DAY_PERIODS))}
-                    />
+                  />
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="relative w-48 lg:w-64">

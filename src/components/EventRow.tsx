@@ -3,11 +3,12 @@ import Link from "next/link";
 import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
-import { getExternalLinks, showFreeCta } from "@/lib/links";
-import { detectFreeBefore } from "@/lib/freeBefore";
+import { getExternalLinks } from "@/lib/links";
+import { admissionStatus } from "@/lib/freeBefore";
 import { artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
+import AccessStatus, { type AccessStatusValue } from "./AccessStatus";
 import { SITE_URL } from "@/lib/siteUrl";
 
 /**
@@ -72,8 +73,11 @@ const MOBILE_BADGE_TONE = {
   strong: "border-text-primary text-text-primary",
   bad: "border-status-bad/40 text-status-bad",
   neutral: "border-border-strong text-text-secondary-strong",
-  free: "border-accent-dim text-accent-strong",
 } as const;
+
+/** Desktop SOLD OUT / FREE / FREE BEFORE: StatusBadge's "strong" (SOLD OUT) look. */
+const DESKTOP_ACCESS_BADGE =
+  "inline-flex items-center rounded-[3px] border border-text-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-primary";
 
 function ExternalArrow() {
   return (
@@ -90,14 +94,23 @@ export default function EventRow({
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
-  // Admission status: FREE BEFORE hh:mm (read from the description) is the
-  // more precise status and is shown even beside a Tickets link, since paid
-  // entry later in the night is expected; bare FREE keeps its existing rule
-  // (no ticket destination) and is never shown together with FREE BEFORE.
-  const freeBefore = detectFreeBefore(event);
-  const isFree = !freeBefore && showFreeCta(event);
-  const admissionLabel = freeBefore ? `Free before ${freeBefore}` : isFree ? "Free" : null;
-  const statuses = getEventStatuses(event);
+  // Tickets and the access status are mutually exclusive in the listing
+  // (at most one of SOLD OUT / FREE / FREE BEFORE, never beside Tickets):
+  //   1. sold out            -> SOLD OUT (getExternalLinks already drops Tickets)
+  //   2. a Tickets link      -> Tickets, no FREE / FREE BEFORE
+  //   3./4. no Tickets link  -> FREE BEFORE or FREE (admissionStatus: a stated
+  //      "free before <time>" means the event is not confirmed free all
+  //      night, so it wins over a bare price of 0 — never both)
+  //   5. otherwise           -> nothing
+  // Display only: the Admission filter still uses admissionStatus itself.
+  const showsTickets = links.some((l) => l.label === "Tickets");
+  const accessStatus: AccessStatusValue | null = event.soldOut
+    ? { kind: "sold-out" }
+    : showsTickets
+      ? null
+      : admissionStatus(event);
+  // Lifecycle statuses other than SOLD OUT (i.e. Postponed) are unchanged.
+  const statuses = getEventStatuses(event).filter((s) => s.label !== "Sold out");
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
   // The lineup is hidden only when every artist (b2b/vs/x entries split) is
@@ -149,13 +162,10 @@ export default function EventRow({
       </Fragment>
     );
   });
-  // External links + FREE as one ordered list, so the last one can share a
+  // External links as one ordered list, so the last one can share a
   // non-wrapping mobile unit with Calendar (see the actions column below).
-  type LinkItem = { kind: "link"; label: string; href: string } | { kind: "free" };
-  const linkItems: LinkItem[] = [
-    ...links.map((l) => ({ kind: "link" as const, label: l.label, href: l.href })),
-    ...(admissionLabel ? [{ kind: "free" as const }] : []),
-  ];
+  type LinkItem = { label: string; href: string };
+  const linkItems: LinkItem[] = links.map((l) => ({ label: l.label, href: l.href }));
   const leadLinkItems = linkItems.slice(0, -1);
   const hasMedia = !!event.hasArtistPreview || !!event.hasAudioLinks;
   const bindCalendarToLastLink = !hasMedia;
@@ -163,8 +173,7 @@ export default function EventRow({
   // Typography the link group gives its children; the last item sits
   // outside the group (in the Calendar unit), so each item carries it itself.
   const LINK_GROUP_TEXT = "text-[11px] font-medium uppercase tracking-wide sm:text-xs";
-  const renderLinkItem = (item: LinkItem) =>
-    item.kind === "link" ? (
+  const renderLinkItem = (item: LinkItem) => (
       <a
         key={item.href}
         href={item.href}
@@ -174,13 +183,6 @@ export default function EventRow({
       >
         {item.label} ↗<span className="sr-only"> (opens in a new tab)</span>
       </a>
-    ) : (
-      // FREE is an admission/status badge, not a link — rendered after the
-      // links so it always sits to the right of Official Event, in white to
-      // carry comparable visual weight.
-      <span key="free" className="-order-1 whitespace-nowrap text-[11px] font-semibold sm:text-xs uppercase tracking-wide text-text-primary sm:order-none">
-        {admissionLabel}
-      </span>
     );
   const calendarInput = {
     title,
@@ -245,12 +247,17 @@ export default function EventRow({
               time on mobile (the column is a row there), directly below it on
               desktop — the same place regardless of title length or actions.
               SOLD OUT uses the "strong" tone: text and border in the title's
-              white. Status logic unchanged. */}
+              white. FREE and FREE BEFORE share this place and look. */}
           {statuses.map((s) => (
             <span key={s.label} className="sm:mt-1">
-              <StatusBadge label={s.label} tone={s.label === "Sold out" ? "strong" : s.tone} />
+              <StatusBadge label={s.label} tone={s.tone} />
             </span>
           ))}
+          {accessStatus && (
+            <span className="sm:mt-1">
+              <AccessStatus status={accessStatus} badgeClassName={DESKTOP_ACCESS_BADGE} />
+            </span>
+          )}
         </div>
 
         <div className="contents sm:block sm:min-w-0 sm:flex-1">
@@ -459,14 +466,13 @@ export default function EventRow({
               {subVenue && <span className="text-text-secondary-strong"> · {subVenue}</span>}
             </Link>
           </span>
-          {(statuses.length > 0 || admissionLabel) && (
+          {statuses.length > 0 && (
             <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
               {statuses.map((s) => (
-                <span key={s.label} className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE[s.label === "Sold out" ? "strong" : s.tone]}`}>
+                <span key={s.label} className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE[s.tone]}`}>
                   {s.label}
                 </span>
               ))}
-              {admissionLabel && <span className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.free}`}>{admissionLabel}</span>}
             </span>
           )}
         </div>
@@ -490,8 +496,14 @@ export default function EventRow({
           <p className="break-words text-[17px] leading-6 text-text-secondary-strong">{mobileLineup}</p>
         )}
         <div className="flex flex-wrap items-center justify-between">
-          {mobileLinks.length > 0 && (
+          {(mobileLinks.length > 0 || accessStatus) && (
             <div className="flex items-center gap-3">
+              {/* SOLD OUT / FREE / FREE BEFORE take Tickets' place (never both). */}
+              {accessStatus && (
+                <span className={MOBILE_ACTION_BOX}>
+                  <AccessStatus status={accessStatus} badgeClassName={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.strong}`} />
+                </span>
+              )}
               {mobileLinks.map((l) => (
                 <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className={`group ${MOBILE_ACTION_BOX}`}>
                   <span className={l.label === "Tickets" ? MOBILE_PRIMARY_PILL : MOBILE_SECONDARY_PILL}>
