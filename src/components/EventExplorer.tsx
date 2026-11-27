@@ -23,7 +23,7 @@ import {
   type AdmissionFilter,
   type ExplorerMode,
 } from "@/lib/explorerFilters";
-import { isFreeAdmission } from "@/lib/links";
+import { admissionStatus } from "@/lib/freeBefore";
 import { TIME_OF_DAY_LABEL, TIME_OF_DAY_PERIODS, matchesTimeOfDay, type TimeOfDayPeriod } from "@/lib/timeOfDay";
 import { genreFilterLabel, isLegacyGenreFilter, matchesGenreSelection, type GenreFilterValue } from "@/lib/taxonomy";
 import { renderGenreOptions } from "./GenreOptions";
@@ -47,7 +47,7 @@ const MODE_EMPTY_TITLE: Record<Exclude<Mode, "all">, string> = {
 
 const DATE_MODES = EXPLORER_DATE_MODES;
 
-const ADMISSION_LABEL: Record<AdmissionFilter, string> = { free: "Free Entry" };
+const ADMISSION_LABEL: Record<AdmissionFilter, string> = { free: "Free Entry", "free-before": "Free Before" };
 const ADMISSION_OPTIONS = (Object.keys(ADMISSION_LABEL) as AdmissionFilter[]).map((value) => ({ value, label: ADMISSION_LABEL[value] }));
 const TIME_OF_DAY_OPTIONS = TIME_OF_DAY_PERIODS.map((value) => ({ value, label: TIME_OF_DAY_LABEL[value] }));
 
@@ -58,37 +58,32 @@ function toggleIn<T>(list: readonly T[], value: T, order: readonly T[]): T[] {
 }
 
 /**
- * Multi-select checkbox group (Admission, Time of Day). Nothing checked
- * means no filter; each box is unchecked on its own or via Clear filters.
+ * Multi-select checkbox group (Admission, Time of Day), shared by the mobile
+ * Filters sheet and the desktop Filters panel. Nothing checked means no
+ * filter; each box is unchecked on its own or via Clear filters.
  */
 function CheckboxGroup<T extends string>({
   legend,
   options,
   selected,
   onToggle,
-  variant,
 }: {
   legend: string;
   options: { value: T; label: string }[];
   selected: readonly T[];
   onToggle: (value: T) => void;
-  variant: "bar" | "sheet";
 }) {
-  const sheet = variant === "sheet";
   return (
-    <fieldset className={sheet ? "" : "flex flex-wrap items-center gap-x-3 gap-y-1"}>
-      <legend className={sheet ? "mb-1.5 block text-xs font-semibold text-text-secondary" : "float-left mr-1 text-[11px] font-semibold text-text-tertiary"}>
-        {legend}
-      </legend>
-      <div className={sheet ? "grid grid-cols-2 gap-x-3" : "contents"}>
+    <fieldset>
+      <legend className="mb-1.5 block text-xs font-semibold text-text-secondary">{legend}</legend>
+      <div className="grid grid-cols-2 gap-x-3">
         {options.map((o) => {
           const checked = selected.includes(o.value);
           return (
             <label
               key={o.value}
               className={
-                "inline-flex cursor-pointer items-center gap-2 font-semibold transition-colors " +
-                (sheet ? "min-h-[2.75rem] text-sm " : "text-xs ") +
+                "inline-flex min-h-[2.75rem] cursor-pointer items-center gap-2 text-sm font-semibold transition-colors " +
                 (checked ? "text-accent-strong" : "text-text-secondary hover:text-text-primary")
               }
             >
@@ -96,7 +91,7 @@ function CheckboxGroup<T extends string>({
                 type="checkbox"
                 checked={checked}
                 onChange={() => onToggle(o.value)}
-                className={(sheet ? "h-4 w-4" : "h-3.5 w-3.5") + " shrink-0 accent-accent"}
+                className="h-4 w-4 shrink-0 accent-accent"
               />
               {o.label}
             </label>
@@ -144,7 +139,10 @@ function applyFilters(
     if (genre !== "all" && !matchesGenreSelection(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
-    if (admission.includes("free") && !isFreeAdmission(e)) return false;
+    if (admission.length > 0) {
+      const status = admissionStatus(e);
+      if (!status || !admission.includes(status.kind)) return false;
+    }
     if (!matchesTimeOfDay(e, timeOfDay)) return false;
     return true;
   });
@@ -301,6 +299,8 @@ function EventExplorerList({
   // a genre or dismisses it, so "all events" is never a silent fallback.
   const [unknownGenre, setUnknownGenre] = useState(initialUrlFilters.unknownGenre ?? null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [desktopFiltersOpen, setDesktopFiltersOpen] = useState(false);
+  const desktopFiltersRef = useRef<HTMLDivElement>(null);
   // Draft copies of genre/venue, edited only while the mobile filters sheet
   // is open (filter-state architecture rework, 2026-09-12): the sheet used
   // to write straight into `genre`/`venueId`, so the live event list behind
@@ -386,6 +386,23 @@ function EventExplorerList({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [events]);
+
+  // The desktop Filters panel closes on Escape or a click outside it.
+  useEffect(() => {
+    if (!desktopFiltersOpen) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!desktopFiltersRef.current?.contains(e.target as Node)) setDesktopFiltersOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setDesktopFiltersOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [desktopFiltersOpen]);
 
   // Lock background scroll while the mobile filters sheet is open.
   useEffect(() => {
@@ -856,6 +873,7 @@ function EventExplorerList({
     };
   }, [groups]);
 
+  const desktopFilterCount = admission.length + timeOfDay.length;
   const activeDrawerFilterCount =
     (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0) + admission.length + timeOfDay.length;
   const draftDrawerFilterCount =
@@ -1040,6 +1058,51 @@ function EventExplorerList({
             <label className="sr-only" htmlFor="venue-filter">Venue</label>
             {venueSelect("venue-filter")}
 
+            {/* Admission + Time of Day live behind one Filters button: a
+                compact panel anchored to it, applied live like the other
+                desktop controls, reusing the mobile sheet's checkbox groups. */}
+            <div ref={desktopFiltersRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setDesktopFiltersOpen((open) => !open)}
+                aria-expanded={desktopFiltersOpen}
+                aria-controls="desktop-filters-panel"
+                className={
+                  "inline-flex h-[31px] items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-semibold transition-colors " +
+                  (desktopFilterCount > 0
+                    ? "border-accent bg-accent/15 text-accent-strong"
+                    : "border-border-strong text-text-secondary hover:text-text-primary")
+                }
+              >
+                <FilterIcon />
+                {/* "More Filters" to assistive tech: distinct from the mobile
+                    sheet's own Filters trigger, still containing the visible label. */}
+                <span className="sr-only">More </span>
+                {desktopFilterCount > 0 ? `Filters · ${desktopFilterCount}` : "Filters"}
+              </button>
+              {desktopFiltersOpen && (
+                <div
+                  id="desktop-filters-panel"
+                  role="group"
+                  aria-label="More filters"
+                  className="absolute left-0 top-full z-40 mt-2 flex w-[22rem] flex-col gap-4 rounded border border-border bg-surface-1 p-4 shadow-2xl"
+                >
+                  <CheckboxGroup
+                    legend="Admission"
+                    options={ADMISSION_OPTIONS}
+                    selected={admission}
+                    onToggle={(v) => setAdmission((cur) => toggleIn(cur, v, ADMISSION_FILTERS_ORDER))}
+                    />
+                  <CheckboxGroup
+                    legend="Time of Day"
+                    options={TIME_OF_DAY_OPTIONS}
+                    selected={timeOfDay}
+                    onToggle={(v) => setTimeOfDay((cur) => toggleIn(cur, v, TIME_OF_DAY_PERIODS))}
+                    />
+                </div>
+              )}
+            </div>
+
             <div className="relative w-48 lg:w-64">
               <input
                 type="search"
@@ -1062,23 +1125,6 @@ function EventExplorerList({
             )}
 
             <span className="ml-auto text-[11px] text-text-tertiary">{countLabel}</span>
-          </div>
-
-          <div className="mt-2 hidden sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-1.5">
-            <CheckboxGroup
-              legend="Admission"
-              options={ADMISSION_OPTIONS}
-              selected={admission}
-              onToggle={(v) => setAdmission((cur) => toggleIn(cur, v, ADMISSION_FILTERS_ORDER))}
-              variant="bar"
-            />
-            <CheckboxGroup
-              legend="Time of Day"
-              options={TIME_OF_DAY_OPTIONS}
-              selected={timeOfDay}
-              onToggle={(v) => setTimeOfDay((cur) => toggleIn(cur, v, TIME_OF_DAY_PERIODS))}
-              variant="bar"
-            />
           </div>
         </div>
 
@@ -1210,7 +1256,6 @@ function EventExplorerList({
                   options={ADMISSION_OPTIONS}
                   selected={draftAdmission}
                   onToggle={(v) => setDraftAdmission((cur) => toggleIn(cur, v, ADMISSION_FILTERS_ORDER))}
-                  variant="sheet"
                 />
 
                 <CheckboxGroup
@@ -1218,7 +1263,6 @@ function EventExplorerList({
                   options={TIME_OF_DAY_OPTIONS}
                   selected={draftTimeOfDay}
                   onToggle={(v) => setDraftTimeOfDay((cur) => toggleIn(cur, v, TIME_OF_DAY_PERIODS))}
-                  variant="sheet"
                 />
               </div>
             </div>

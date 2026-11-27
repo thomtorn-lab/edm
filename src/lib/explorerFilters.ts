@@ -20,8 +20,8 @@ export type ExplorerMode = "all" | "tonight" | "weekend" | "next-weekend";
 
 export const EXPLORER_DATE_MODES = ["tonight", "weekend", "next-weekend"] as const;
 
-/** Admission filter values. Only "free" (isFreeAdmission) for now. */
-export const ADMISSION_FILTERS = ["free"] as const;
+/** Admission filter values: Free Entry ("free") and Free Before ("free-before") — see admissionStatus(). */
+export const ADMISSION_FILTERS = ["free", "free-before"] as const;
 export type AdmissionFilter = (typeof ADMISSION_FILTERS)[number];
 
 /** Filter state as the URL carries it. `venueSlug` is resolved to a venue id by EventExplorer against the venues it actually lists. */
@@ -37,7 +37,7 @@ export interface ExplorerUrlFilters {
    * everything. Never written back to the URL.
    */
   unknownGenre?: string;
-  /** Admission checkboxes; omitted/empty = no admission filter. URL: `admission=free`. */
+  /** Admission checkboxes; omitted/empty = no admission filter. URL: `admission=free,free-before`. */
   admission?: AdmissionFilter[];
   /** Time of Day checkboxes; omitted/empty = all times. URL: `time=evening,night`. */
   timeOfDay?: TimeOfDayPeriod[];

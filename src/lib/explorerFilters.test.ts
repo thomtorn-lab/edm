@@ -134,11 +134,11 @@ describe("list return target ('← All events')", () => {
 });
 
 describe("Admission and Time of Day URL params", () => {
-  it("reads admission=free and a time list, ignoring unknown values, and round-trips", () => {
-    const filters = parse("admission=free,free-before&time=night,evening,noon&genre=house");
-    expect(filters.admission).toEqual(["free"]);
+  it("reads both admission values and a time list, ignoring unknown values, and round-trips", () => {
+    const filters = parse("admission=free-before,free,early-bird&time=night,evening,noon&genre=house");
+    expect(filters.admission).toEqual(["free", "free-before"]);
     expect(filters.timeOfDay).toEqual(["evening", "night"]);
-    expect(serializeExplorerFilters(filters)).toBe("genre=house&admission=free&time=evening%2Cnight");
+    expect(serializeExplorerFilters(filters)).toBe("genre=house&admission=free%2Cfree-before&time=evening%2Cnight");
     expect(parseExplorerFilters(new URLSearchParams(serializeExplorerFilters(filters)))).toEqual(filters);
   });
 

@@ -4,6 +4,7 @@ import type { EventRowEvent } from "@/lib/homepageEvents";
 import { formatRowDateRangeLabel, formatTimeRangeLabel } from "@/lib/format";
 import { displayGenres, genreLabelPagePath } from "@/lib/taxonomy";
 import { getExternalLinks, showFreeCta } from "@/lib/links";
+import { detectFreeBefore } from "@/lib/freeBefore";
 import { artistTitleDisplay, cleanEventTitle, formatArtistName, lineupDuplicatesTitle, subVenueLabel } from "@/lib/eventPresentation";
 import AddToCalendar from "./AddToCalendar";
 import StatusBadge, { getEventStatuses } from "./StatusBadge";
@@ -89,7 +90,13 @@ export default function EventRow({
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
-  const isFree = showFreeCta(event);
+  // Admission status: FREE BEFORE hh:mm (read from the description) is the
+  // more precise status and is shown even beside a Tickets link, since paid
+  // entry later in the night is expected; bare FREE keeps its existing rule
+  // (no ticket destination) and is never shown together with FREE BEFORE.
+  const freeBefore = detectFreeBefore(event);
+  const isFree = !freeBefore && showFreeCta(event);
+  const admissionLabel = freeBefore ? `Free before ${freeBefore}` : isFree ? "Free" : null;
   const statuses = getEventStatuses(event);
   const title = cleanEventTitle(event.title, event.venue.name);
   const subVenue = subVenueLabel(event.title, event.venue.name, event.subVenue);
@@ -147,7 +154,7 @@ export default function EventRow({
   type LinkItem = { kind: "link"; label: string; href: string } | { kind: "free" };
   const linkItems: LinkItem[] = [
     ...links.map((l) => ({ kind: "link" as const, label: l.label, href: l.href })),
-    ...(isFree ? [{ kind: "free" as const }] : []),
+    ...(admissionLabel ? [{ kind: "free" as const }] : []),
   ];
   const leadLinkItems = linkItems.slice(0, -1);
   const hasMedia = !!event.hasArtistPreview || !!event.hasAudioLinks;
@@ -171,8 +178,8 @@ export default function EventRow({
       // FREE is an admission/status badge, not a link — rendered after the
       // links so it always sits to the right of Official Event, in white to
       // carry comparable visual weight.
-      <span key="free" className="-order-1 text-[11px] font-semibold sm:text-xs uppercase tracking-wide text-text-primary sm:order-none">
-        Free
+      <span key="free" className="-order-1 whitespace-nowrap text-[11px] font-semibold sm:text-xs uppercase tracking-wide text-text-primary sm:order-none">
+        {admissionLabel}
       </span>
     );
   const calendarInput = {
@@ -452,14 +459,14 @@ export default function EventRow({
               {subVenue && <span className="text-text-secondary-strong"> · {subVenue}</span>}
             </Link>
           </span>
-          {(statuses.length > 0 || isFree) && (
+          {(statuses.length > 0 || admissionLabel) && (
             <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
               {statuses.map((s) => (
                 <span key={s.label} className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE[s.label === "Sold out" ? "strong" : s.tone]}`}>
                   {s.label}
                 </span>
               ))}
-              {isFree && <span className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.free}`}>Free</span>}
+              {admissionLabel && <span className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.free}`}>{admissionLabel}</span>}
             </span>
           )}
         </div>
