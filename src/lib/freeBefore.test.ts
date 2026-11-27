@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { admissionStatus, detectFreeBefore } from "./freeBefore";
 
-// 22:00 Copenhagen (winter, UTC+1) unless stated otherwise.
-const START = "2026-11-27T21:00:00.000Z";
-const detect = (description: string | null, startDatetime = START) => detectFreeBefore({ description, startDatetime });
+const detect = (description: string | null) => detectFreeBefore({ description });
 
 describe("detectFreeBefore — accepts explicit free-before phrasing", () => {
   it("reads the phrasings seen in real descriptions", () => {
     expect(detect("Sigurdsgade 39, 2200 22:00 to 04:00 Free till 23:00 · 120 DKK after 21+ · Free wardrobe")).toBe("23:00");
-    expect(detect("20/11/26 21+  Free until 23, 75kr (After 23) @Baggen", "2026-11-20T18:00:00.000Z")).toBe("23:00");
-    expect(detect("Music all night. Free entrance if you arrive before 23:00", "2026-09-26T17:00:00.000Z")).toBe("23:00");
-    expect(detect("COME EARLY. STAY LATE. Free before 21:00 | 70 DKK after", "2026-10-15T15:30:00.000Z")).toBe("21:00");
+    expect(detect("20/11/26 21+  Free until 23, 75kr (After 23) @Baggen")).toBe("23:00");
+    expect(detect("Music all night. Free entrance if you arrive before 23:00")).toBe("23:00");
+    expect(detect("COME EARLY. STAY LATE. Free before 21:00 | 70 DKK after")).toBe("21:00");
+    expect(detect("COME EARLY: Entrance is free from 22:00 to 23:00. TICKET PRICES")).toBe("23:00");
+  });
+
+  it("states it whatever the listed start time (doors often open before the programme)", () => {
+    expect(detect("Sat 05.12 23.00–05.00 Free entry until 22.00, 75kr after 22.00")).toBe("22:00");
+    expect(detect("Jake McKay 22:30-05:00 75 DKK (free entry before 22:00)")).toBe("22:00");
   });
 
   it("reads the agreed English and Danish forms", () => {
@@ -46,11 +50,7 @@ describe("detectFreeBefore — leaves out anything that isn't clearly free admis
     expect(detect("Gratis entré før kl. 23 for medlemmer")).toBeNull();
   });
 
-  it("ambiguous or contradictory text", () => {
-    // A free window, not "free before".
-    expect(detect("COME EARLY: Entrance is free from 22:00 to 23:00.")).toBeNull();
-    // A templated free time before the event even starts (doors 23:00).
-    expect(detect("Sat 05.12 23.00–05.00 Free entry until 22.00, 75kr after 22.00", "2026-12-05T22:00:00.000Z")).toBeNull();
+  it("ambiguous text", () => {
     // Two different free-before times.
     expect(detect("Free before 23:00. Saturday: free before 22:00")).toBeNull();
     // A date, not a time; and the bare Danish weekday "Fri".
@@ -62,8 +62,21 @@ describe("detectFreeBefore — leaves out anything that isn't clearly free admis
 
 describe("admissionStatus", () => {
   it("prefers Free Before over a bare FREE price and never reports both", () => {
-    expect(admissionStatus({ description: "Free till 23:00", startDatetime: START, priceFrom: 0 })).toEqual({ kind: "free-before", time: "23:00" });
-    expect(admissionStatus({ description: null, startDatetime: START, priceFrom: 0 })).toEqual({ kind: "free" });
-    expect(admissionStatus({ description: "Tickets 120 DKK", startDatetime: START, priceFrom: null })).toBeNull();
+    expect(admissionStatus({ description: "Free till 23:00", priceFrom: 0 })).toEqual({ kind: "free-before", time: "23:00" });
+    expect(admissionStatus({ description: null, priceFrom: 0 })).toEqual({ kind: "free" });
+    expect(admissionStatus({ description: "Tickets 120 DKK", priceFrom: null })).toBeNull();
+  });
+
+  it("uses Jolene's standard free-before time when the description states none", () => {
+    const jolene = { slug: "jolene" };
+    expect(admissionStatus({ description: "Techno all night", priceFrom: null, venue: jolene })).toEqual({ kind: "free-before", time: "22:00" });
+    expect(admissionStatus({ description: null, priceFrom: null, venue: jolene })).toEqual({ kind: "free-before", time: "22:00" });
+    // The description's own time wins; a confirmed free price stays FREE.
+    expect(admissionStatus({ description: "Free before 23:00", priceFrom: null, venue: jolene })).toEqual({ kind: "free-before", time: "23:00" });
+    expect(admissionStatus({ description: null, priceFrom: 0, venue: jolene })).toEqual({ kind: "free" });
+    // A conditional statement is not overridden by the venue default.
+    expect(admissionStatus({ description: "Free before 23:00 for members", priceFrom: null, venue: jolene })).toBeNull();
+    // Other venues get no default.
+    expect(admissionStatus({ description: null, priceFrom: null, venue: { slug: "kb18" } })).toBeNull();
   });
 });

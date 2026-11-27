@@ -21,11 +21,16 @@ describe("matchesTimeOfDay — known end time: every overlapped period", () => {
     expect(periods("2026-01-16T17:00:00Z", "2026-01-16T20:00:00Z")).toEqual(["evening"]);
   });
 
-  it("a multi-day festival matches every period", () => {
-    expect(periods("2026-06-12T12:00:00Z", "2026-06-14T21:00:00Z")).toEqual([...TIME_OF_DAY_PERIODS]);
+  it("a multi-day event uses its daily hours, as the listing shows them", () => {
+    // Distortion: WED 2 JUN – SUN 6 JUN · 14:00–06:00 (summer, UTC+2): not the mornings.
+    expect(periods("2027-06-02T12:00:00Z", "2027-06-07T04:00:00Z")).toEqual(["afternoon", "evening", "night"]);
+    // A run of club nights: SAT 30 JAN – SAT 20 FEB · 23:00–06:00 (winter, UTC+1).
+    expect(periods("2027-01-30T22:00:00Z", "2027-02-20T05:00:00Z")).toEqual(["evening", "night"]);
+    // A daytime festival: FRI 12 JUN – SUN 14 JUN · 12:00–23:00.
+    expect(periods("2026-06-12T10:00:00Z", "2026-06-14T21:00:00Z")).toEqual(["afternoon", "evening"]);
   });
 
-  it("an all-day event spanning two dates matches its daytime periods on both", () => {
+  it("an event running through to the next day (not multi-day) matches every hour it covers", () => {
     // Fri 10:00 -> Sat 11:00 (summer, UTC+2): every period.
     expect(periods("2026-06-12T08:00:00Z", "2026-06-13T09:00:00Z")).toEqual([...TIME_OF_DAY_PERIODS]);
   });

@@ -4,6 +4,7 @@ import {
   copenhagenWallClockToUtc,
   getCopenhagenParts,
   hasTrustworthyEndDatetime,
+  isMultiDayEvent,
   type DateKey,
   type NightlifeEvent,
 } from "./datetime";
@@ -58,6 +59,11 @@ function periodInstants(key: DateKey, period: TimeOfDayPeriod): [number, number]
  *   the half-open span [start, end) overlaps, on every Copenhagen date it
  *   touches — so 23:59-08:00 is Evening + Night + Early Morning, and an
  *   event ending exactly 18:00 is not Evening.
+ * - Multi-day event (end 2+ calendar days after start, which the listing
+ *   shows as a date range with daily hours, e.g. "WED 2 JUN – SUN 6 JUN ·
+ *   14:00–06:00"): the start and end clock times are read as the daily
+ *   opening hours, so it matches the periods that window overlaps — not
+ *   every hour of every day in between.
  * - Missing or invalid end time: matches only the period it starts in. The
  *   06:00-next-morning fallback (effectiveEndInstant) is deliberately NOT
  *   used here — it decides when an event expires, not when it happens.
@@ -69,6 +75,8 @@ export function matchesTimeOfDay(event: NightlifeEvent, selected: readonly TimeO
   if (!hasTrustworthyEndDatetime(event)) {
     return selected.includes(periodAtHour(getCopenhagenParts(start).hour));
   }
+
+  if (isMultiDayEvent(event)) return dailyWindowMatches(start, new Date(event.endDatetime as string), selected);
 
   const startMs = start.getTime();
   const end = new Date(event.endDatetime as string);
@@ -87,6 +95,20 @@ export function matchesTimeOfDay(event: NightlifeEvent, selected: readonly TimeO
   }
   // Only reachable for a span longer than MAX_DAYS, which covers every period.
   return compareDateKeys(key, lastKey) <= 0;
+}
+
+/** Daily opening hours [start clock, end clock) — wrapping past midnight — against each selected period. */
+function dailyWindowMatches(start: Date, end: Date, selected: readonly TimeOfDayPeriod[]): boolean {
+  const s = getCopenhagenParts(start);
+  const e = getCopenhagenParts(end);
+  const from = s.hour * 60 + s.minute;
+  const to = e.hour * 60 + e.minute;
+  // Same clock time at both ends: open around the clock.
+  const windows: [number, number][] = from === to ? [[0, 1440]] : from < to ? [[from, to]] : [[from, 1440], [0, to]];
+  return selected.some((period) => {
+    const [ph, pe] = PERIOD_HOURS[period];
+    return windows.some(([ws, we]) => ws < pe * 60 && we > ph * 60);
+  });
 }
 
 export function parseTimeOfDayList(raw: string | null | undefined): TimeOfDayPeriod[] {
