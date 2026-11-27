@@ -62,22 +62,24 @@ const MOBILE_ICON_BOX =
 const MOBILE_CALENDAR_BUTTON = `${MOBILE_ICON_TARGET} cursor-pointer [&>svg]:box-content [&>svg]:h-4 [&>svg]:w-4 [&>svg]:rounded-[10px] [&>svg]:border [&>svg]:border-border-strong [&>svg]:p-[9px] [&>svg]:transition-colors hover:[&>svg]:border-accent-dim hover:text-text-primary`;
 
 /**
- * Mobile SOLD OUT / FREE badges: fixed 18px box, leading-none. Inter's caps sit
- * high in their line box, and the uppercase letter-spacing trails to the right,
- * so the padding is asymmetric (measured on the rendered badge: ink centred
- * within 0.5px both ways).
+ * Mobile lifecycle badge on the time/venue line (Postponed): fixed 18px box,
+ * leading-none, padding calibrated for that line's monospace font.
  */
 const MOBILE_BADGE =
   "inline-flex h-[18px] items-center justify-center rounded-[3px] border pb-0 pl-[5.5px] pr-[6.5px] pt-1 text-[10px] font-semibold uppercase leading-none tracking-wide";
 const MOBILE_BADGE_TONE = {
-  strong: "border-text-primary text-text-primary",
   bad: "border-status-bad/40 text-status-bad",
   neutral: "border-border-strong text-text-secondary-strong",
 } as const;
 
-/** Desktop SOLD OUT / FREE / FREE BEFORE: StatusBadge's "strong" (SOLD OUT) look. */
-const DESKTOP_ACCESS_BADGE =
-  "inline-flex items-center rounded-[3px] border border-text-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-primary";
+/**
+ * SOLD OUT / FREE / FREE BEFORE, identical on desktop and mobile: a fixed
+ * 18px box with the text centred both ways. leading-none puts Inter's caps
+ * in the vertical middle of the line box, and the right padding is 0.25px
+ * smaller to offset tracking-wide's trailing letter-space.
+ */
+const ACCESS_BADGE =
+  "inline-flex h-[18px] items-center justify-center rounded-[3px] border border-text-primary pl-1.5 pr-[5.75px] text-[10px] font-semibold uppercase leading-none tracking-wide text-text-primary";
 
 function ExternalArrow() {
   return (
@@ -255,7 +257,7 @@ export default function EventRow({
           ))}
           {accessStatus && (
             <span className="sm:mt-1">
-              <AccessStatus status={accessStatus} badgeClassName={DESKTOP_ACCESS_BADGE} />
+              <AccessStatus status={accessStatus} badgeClassName={ACCESS_BADGE} />
             </span>
           )}
         </div>
@@ -501,7 +503,7 @@ export default function EventRow({
               {/* SOLD OUT / FREE / FREE BEFORE take Tickets' place (never both). */}
               {accessStatus && (
                 <span className={MOBILE_ACTION_BOX}>
-                  <AccessStatus status={accessStatus} badgeClassName={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.strong}`} />
+                  <AccessStatus status={accessStatus} badgeClassName={ACCESS_BADGE} />
                 </span>
               )}
               {mobileLinks.map((l) => (
