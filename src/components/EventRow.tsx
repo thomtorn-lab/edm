@@ -96,21 +96,21 @@ export default function EventRow({
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
-  // Tickets and the access status are mutually exclusive in the listing
-  // (at most one of SOLD OUT / FREE / FREE BEFORE, never beside Tickets):
-  //   1. sold out            -> SOLD OUT (getExternalLinks already drops Tickets)
-  //   2. a Tickets link      -> Tickets, no FREE / FREE BEFORE
-  //   3./4. no Tickets link  -> FREE BEFORE or FREE (admissionStatus: a stated
-  //      "free before <time>" means the event is not confirmed free all
-  //      night, so it wins over a bare price of 0 — never both)
-  //   5. otherwise           -> nothing
-  // Display only: the Admission filter still uses admissionStatus itself.
+  // At most one access status per row (SOLD OUT / FREE / FREE BEFORE):
+  //   1. sold out     -> SOLD OUT only (getExternalLinks already drops Tickets)
+  //   2. FREE BEFORE  -> shown, also beside Tickets: free early, paid later
+  //   3. FREE         -> only without a Tickets link (Tickets wins)
+  //   4. otherwise    -> no status
+  // admissionStatus never returns both FREE and FREE BEFORE (a stated
+  // "free before <time>" means not confirmed free all night, so it wins).
+  // The Admission filter uses admissionStatus itself.
   const showsTickets = links.some((l) => l.label === "Tickets");
+  const admission = admissionStatus(event);
   const accessStatus: AccessStatusValue | null = event.soldOut
     ? { kind: "sold-out" }
-    : showsTickets
-      ? null
-      : admissionStatus(event);
+    : admission?.kind === "free-before" || (admission && !showsTickets)
+      ? admission
+      : null;
   // Lifecycle statuses other than SOLD OUT (i.e. Postponed) are unchanged.
   const statuses = getEventStatuses(event).filter((s) => s.label !== "Sold out");
   const title = cleanEventTitle(event.title, event.venue.name);
@@ -500,7 +500,7 @@ export default function EventRow({
         <div className="flex flex-wrap items-center justify-between">
           {(mobileLinks.length > 0 || accessStatus) && (
             <div className="flex items-center gap-3">
-              {/* SOLD OUT / FREE / FREE BEFORE take Tickets' place (never both). */}
+              {/* SOLD OUT / FREE / FREE BEFORE sit first in the action row; only FREE BEFORE can sit beside Tickets. */}
               {accessStatus && (
                 <span className={MOBILE_ACTION_BOX}>
                   <AccessStatus status={accessStatus} badgeClassName={ACCESS_BADGE} />

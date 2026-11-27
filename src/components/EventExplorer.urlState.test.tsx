@@ -519,11 +519,11 @@ describe("EventExplorer — Admission and Time of Day filters", () => {
     expect(titles()).toEqual([]);
   });
 
-  it("filters by the actual admission even when the row shows Tickets instead of FREE BEFORE", () => {
+  it("shows FREE BEFORE beside Tickets, so a Free Before match is visible in the list", () => {
     renderList("/?admission=free-before");
     expect(titles()).toEqual([expect.stringContaining("Free Before Night")]);
     expect(screen.getAllByRole("link", { name: /Tickets/i }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Free before" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Free before" }).length).toBeGreaterThan(0);
   });
 
   it("puts Genre and Venue in the desktop Filters panel and counts them", () => {

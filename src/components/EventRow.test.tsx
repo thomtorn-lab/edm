@@ -1493,7 +1493,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
   });
 });
 
-describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BEFORE > nothing", () => {
+describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Tickets) > FREE (only without Tickets) > nothing", () => {
   afterEach(cleanup);
   const FREE_BEFORE_TEXT = "22:00 to 04:00 Free till 23:00 · 120 DKK after";
   const START_22 = "2026-11-27T21:00:00.000Z"; // 22:00 Copenhagen
@@ -1506,8 +1506,11 @@ describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BE
     expect(shown()).toEqual(["Sold out"]);
   });
 
-  it("a ticket link hides FREE and FREE BEFORE", () => {
-    render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
+  it("FREE BEFORE is shown beside Tickets; FREE is not", () => {
+    const fb = render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
+    expect(shown()).toEqual(["Tickets", "Free before"]);
+    fb.unmount();
+    render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0 })} />);
     expect(shown()).toEqual(["Tickets"]);
   });
 
