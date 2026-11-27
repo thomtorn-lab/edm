@@ -14,13 +14,17 @@ import {
 import { formatMonthAbbrTitleCase, formatMonthFull } from "@/lib/format";
 import { eventMatchesQuery } from "@/lib/search";
 import {
+  ADMISSION_FILTERS as ADMISSION_FILTERS_ORDER,
   EXPLORER_DATE_MODES,
   parseExplorerFilters,
   serializeExplorerFilters,
   updateListReturnUrl,
   writeListReturn,
+  type AdmissionFilter,
   type ExplorerMode,
 } from "@/lib/explorerFilters";
+import { isFreeAdmission } from "@/lib/links";
+import { TIME_OF_DAY_LABEL, TIME_OF_DAY_PERIODS, matchesTimeOfDay, type TimeOfDayPeriod } from "@/lib/timeOfDay";
 import { genreFilterLabel, isLegacyGenreFilter, matchesGenreSelection, type GenreFilterValue } from "@/lib/taxonomy";
 import { renderGenreOptions } from "./GenreOptions";
 import EventRow from "./EventRow";
@@ -42,6 +46,66 @@ const MODE_EMPTY_TITLE: Record<Exclude<Mode, "all">, string> = {
 };
 
 const DATE_MODES = EXPLORER_DATE_MODES;
+
+const ADMISSION_LABEL: Record<AdmissionFilter, string> = { free: "Free Entry" };
+const ADMISSION_OPTIONS = (Object.keys(ADMISSION_LABEL) as AdmissionFilter[]).map((value) => ({ value, label: ADMISSION_LABEL[value] }));
+const TIME_OF_DAY_OPTIONS = TIME_OF_DAY_PERIODS.map((value) => ({ value, label: TIME_OF_DAY_LABEL[value] }));
+
+/** Toggles `value` in `list`, keeping `order`'s canonical order (stable URLs). */
+function toggleIn<T>(list: readonly T[], value: T, order: readonly T[]): T[] {
+  const next = list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+  return order.filter((v) => next.includes(v));
+}
+
+/**
+ * Multi-select checkbox group (Admission, Time of Day). Nothing checked
+ * means no filter; each box is unchecked on its own or via Clear filters.
+ */
+function CheckboxGroup<T extends string>({
+  legend,
+  options,
+  selected,
+  onToggle,
+  variant,
+}: {
+  legend: string;
+  options: { value: T; label: string }[];
+  selected: readonly T[];
+  onToggle: (value: T) => void;
+  variant: "bar" | "sheet";
+}) {
+  const sheet = variant === "sheet";
+  return (
+    <fieldset className={sheet ? "" : "flex flex-wrap items-center gap-x-3 gap-y-1"}>
+      <legend className={sheet ? "mb-1.5 block text-xs font-semibold text-text-secondary" : "float-left mr-1 text-[11px] font-semibold text-text-tertiary"}>
+        {legend}
+      </legend>
+      <div className={sheet ? "grid grid-cols-2 gap-x-3" : "contents"}>
+        {options.map((o) => {
+          const checked = selected.includes(o.value);
+          return (
+            <label
+              key={o.value}
+              className={
+                "inline-flex cursor-pointer items-center gap-2 font-semibold transition-colors " +
+                (sheet ? "min-h-[2.75rem] text-sm " : "text-xs ") +
+                (checked ? "text-accent-strong" : "text-text-secondary hover:text-text-primary")
+              }
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => onToggle(o.value)}
+                className={(sheet ? "h-4 w-4" : "h-3.5 w-3.5") + " shrink-0 accent-accent"}
+              />
+              {o.label}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 /**
  * Whether any part of `el` currently falls within the viewport's vertical
@@ -69,7 +133,9 @@ function applyFilters(
   mode: Mode,
   genre: GenreFilterValue | "all",
   venueId: string | "all",
-  query: string
+  query: string,
+  admission: readonly AdmissionFilter[],
+  timeOfDay: readonly TimeOfDayPeriod[]
 ): HomepageEvent[] {
   return upcoming.filter((e) => {
     if (mode === "tonight" && !isTonight(e, now)) return false;
@@ -78,6 +144,8 @@ function applyFilters(
     if (genre !== "all" && !matchesGenreSelection(e.subgenres, genre)) return false;
     if (venueId !== "all" && e.venue.id !== venueId) return false;
     if (!eventMatchesQuery(e, e.venue, query)) return false;
+    if (admission.includes("free") && !isFreeAdmission(e)) return false;
+    if (!matchesTimeOfDay(e, timeOfDay)) return false;
     return true;
   });
 }
@@ -227,6 +295,8 @@ function EventExplorerList({
     return match ? match.venue.id : "all";
   });
   const [query, setQuery] = useState(initialUrlFilters.query);
+  const [admission, setAdmission] = useState<AdmissionFilter[]>(initialUrlFilters.admission ?? []);
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDayPeriod[]>(initialUrlFilters.timeOfDay ?? []);
   // An unrecognised ?genre= value: shown as a notice until the visitor picks
   // a genre or dismisses it, so "all events" is never a silent fallback.
   const [unknownGenre, setUnknownGenre] = useState(initialUrlFilters.unknownGenre ?? null);
@@ -243,6 +313,8 @@ function EventExplorerList({
   // values anyway.
   const [draftGenre, setDraftGenre] = useState<GenreFilterValue | "all">("all");
   const [draftVenueId, setDraftVenueId] = useState<string | "all">("all");
+  const [draftAdmission, setDraftAdmission] = useState<AdmissionFilter[]>([]);
+  const [draftTimeOfDay, setDraftTimeOfDay] = useState<TimeOfDayPeriod[]>([]);
   const mobileFiltersDialogRef = useRef<HTMLDivElement>(null);
   const mobileFiltersTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
@@ -406,8 +478,8 @@ function EventExplorerList({
   }, [upcoming]);
 
   const filtered = useMemo(
-    () => applyFilters(upcoming, now, mode, genre, venueId, query),
-    [upcoming, now, mode, genre, venueId, query]
+    () => applyFilters(upcoming, now, mode, genre, venueId, query, admission, timeOfDay),
+    [upcoming, now, mode, genre, venueId, query, admission, timeOfDay]
   );
 
   const groups = useMemo(() => groupByMonth(filtered), [filtered]);
@@ -429,21 +501,22 @@ function EventExplorerList({
   // reconciliation must stay completely untouched while the sheet is open,
   // reacting only once the draft is actually committed on tap.
   const draftFiltered = useMemo(
-    () => applyFilters(upcoming, now, mode, draftGenre, draftVenueId, query),
-    [upcoming, now, mode, draftGenre, draftVenueId, query]
+    () => applyFilters(upcoming, now, mode, draftGenre, draftVenueId, query, draftAdmission, draftTimeOfDay),
+    [upcoming, now, mode, draftGenre, draftVenueId, query, draftAdmission, draftTimeOfDay]
   );
 
-  const hasActiveFilters = mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "";
+  const hasActiveFilters =
+    mode !== "all" || genre !== "all" || venueId !== "all" || query.trim() !== "" || admission.length > 0 || timeOfDay.length > 0;
 
   // The committed filter values as one comparable key — see its use in the
   // month reconciliation effect below.
-  const filterKey = JSON.stringify([mode, genre, venueId, query]);
+  const filterKey = JSON.stringify([mode, genre, venueId, query, admission, timeOfDay]);
   const lastFilterKeyRef = useRef(filterKey);
 
   // The current list URL ("/" or "/?when=…&q=…"), mirrored from the
   // committed filter state — never the mobile drawer's uncommitted drafts.
   const venueSlug = venueId === "all" ? null : (upcoming.find((e) => e.venue.id === venueId)?.venue.slug ?? null);
-  const listSearch = serializeExplorerFilters({ mode, genre, venueSlug, query });
+  const listSearch = serializeExplorerFilters({ mode, genre, venueSlug, query, admission, timeOfDay });
   const listUrl = listSearch ? `/?${listSearch}` : "/";
 
   // Reports the committed filters to the EventExplorer wrapper, which
@@ -461,12 +534,12 @@ function EventExplorerList({
   // nothing is fetched. Query keys this list doesn't own (utm_* etc.) and
   // the #month-… hash are carried over unchanged.
   useEffect(() => {
-    const search = serializeExplorerFilters({ mode, genre, venueSlug, query }, window.location.search);
+    const search = serializeExplorerFilters({ mode, genre, venueSlug, query, admission, timeOfDay }, window.location.search);
     const current = window.location.search.replace(/^\?/, "");
     if (search === current) return;
     const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", url);
-  }, [mode, genre, venueSlug, query]);
+  }, [mode, genre, venueSlug, query, admission, timeOfDay]);
 
   // Keeps an existing "← All events" record pointing at this list's
   // CURRENT view: after back from an event and a filter change, the list's
@@ -783,8 +856,10 @@ function EventExplorerList({
     };
   }, [groups]);
 
-  const activeDrawerFilterCount = (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0);
-  const draftDrawerFilterCount = (draftGenre !== "all" ? 1 : 0) + (draftVenueId !== "all" ? 1 : 0);
+  const activeDrawerFilterCount =
+    (genre !== "all" ? 1 : 0) + (venueId !== "all" ? 1 : 0) + admission.length + timeOfDay.length;
+  const draftDrawerFilterCount =
+    (draftGenre !== "all" ? 1 : 0) + (draftVenueId !== "all" ? 1 : 0) + draftAdmission.length + draftTimeOfDay.length;
 
   function clearFilters() {
     setMode("all");
@@ -792,6 +867,8 @@ function EventExplorerList({
     setUnknownGenre(null);
     setVenueId("all");
     setQuery("");
+    setAdmission([]);
+    setTimeOfDay([]);
   }
 
   const countLabel = `${filtered.length} event${filtered.length === 1 ? "" : "s"}`;
@@ -805,6 +882,8 @@ function EventExplorerList({
   function openMobileFilters() {
     setDraftGenre(genre);
     setDraftVenueId(venueId);
+    setDraftAdmission(admission);
+    setDraftTimeOfDay(timeOfDay);
     setMobileFiltersOpen(true);
   }
 
@@ -816,6 +895,8 @@ function EventExplorerList({
   function applyMobileFilters() {
     if (draftGenre !== genre) changeGenre(draftGenre);
     setVenueId(draftVenueId);
+    setAdmission(draftAdmission);
+    setTimeOfDay(draftTimeOfDay);
     setMobileFiltersOpen(false);
   }
 
@@ -982,6 +1063,23 @@ function EventExplorerList({
 
             <span className="ml-auto text-[11px] text-text-tertiary">{countLabel}</span>
           </div>
+
+          <div className="mt-2 hidden sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-1.5">
+            <CheckboxGroup
+              legend="Admission"
+              options={ADMISSION_OPTIONS}
+              selected={admission}
+              onToggle={(v) => setAdmission((cur) => toggleIn(cur, v, ADMISSION_FILTERS_ORDER))}
+              variant="bar"
+            />
+            <CheckboxGroup
+              legend="Time of Day"
+              options={TIME_OF_DAY_OPTIONS}
+              selected={timeOfDay}
+              onToggle={(v) => setTimeOfDay((cur) => toggleIn(cur, v, TIME_OF_DAY_PERIODS))}
+              variant="bar"
+            />
+          </div>
         </div>
 
         {groups.length > 1 && (
@@ -1038,7 +1136,7 @@ function EventExplorerList({
       {/* Mobile-only result count, moved out of the top control row. */}
       <p className="px-4 pt-2 text-[11px] leading-4 text-text-tertiary sm:hidden">{countLabel}</p>
 
-      {/* ---- Mobile filters sheet: Genre + Venue ---- */}
+      {/* ---- Mobile filters sheet: Genre + Venue + Admission + Time of Day ---- */}
       {mobileFiltersOpen && (
         <div className="fixed inset-0 z-50 sm:hidden">
           <div
@@ -1106,6 +1204,22 @@ function EventExplorerList({
                     ))}
                   </FilterSelect>
                 </div>
+
+                <CheckboxGroup
+                  legend="Admission"
+                  options={ADMISSION_OPTIONS}
+                  selected={draftAdmission}
+                  onToggle={(v) => setDraftAdmission((cur) => toggleIn(cur, v, ADMISSION_FILTERS_ORDER))}
+                  variant="sheet"
+                />
+
+                <CheckboxGroup
+                  legend="Time of Day"
+                  options={TIME_OF_DAY_OPTIONS}
+                  selected={draftTimeOfDay}
+                  onToggle={(v) => setDraftTimeOfDay((cur) => toggleIn(cur, v, TIME_OF_DAY_PERIODS))}
+                  variant="sheet"
+                />
               </div>
             </div>
 
@@ -1116,6 +1230,8 @@ function EventExplorerList({
                   onClick={() => {
                     setDraftGenre("all");
                     setDraftVenueId("all");
+                    setDraftAdmission([]);
+                    setDraftTimeOfDay([]);
                   }}
                   className="min-h-[2.75rem] flex-1 rounded border border-border-strong text-xs font-semibold uppercase tracking-wide text-text-secondary hover:text-text-primary"
                 >
