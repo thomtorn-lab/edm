@@ -62,12 +62,14 @@ const MOBILE_ICON_BOX =
 const MOBILE_CALENDAR_BUTTON = `${MOBILE_ICON_TARGET} cursor-pointer [&>svg]:box-content [&>svg]:h-4 [&>svg]:w-4 [&>svg]:rounded-[10px] [&>svg]:border [&>svg]:border-border-strong [&>svg]:p-[9px] [&>svg]:transition-colors hover:[&>svg]:border-accent-dim hover:text-text-primary`;
 
 /**
- * Mobile lifecycle badge on the time/venue line (Postponed): fixed 18px box,
- * leading-none, padding calibrated for that line's monospace font.
+ * Mobile status badges on the date · time · venue line (SOLD OUT / FREE /
+ * FREE BEFORE, and Postponed): fixed 18px box, leading-none, padding
+ * calibrated for that line's monospace font.
  */
 const MOBILE_BADGE =
   "inline-flex h-[18px] items-center justify-center rounded-[3px] border pb-0 pl-[5.5px] pr-[6.5px] pt-1 text-[10px] font-semibold uppercase leading-none tracking-wide";
 const MOBILE_BADGE_TONE = {
+  strong: "border-text-primary text-text-primary",
   bad: "border-status-bad/40 text-status-bad",
   neutral: "border-border-strong text-text-secondary-strong",
 } as const;
@@ -96,21 +98,19 @@ export default function EventRow({
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
-  // At most one access status per row (SOLD OUT / FREE / FREE BEFORE):
-  //   1. sold out     -> SOLD OUT only (getExternalLinks already drops Tickets)
-  //   2. FREE BEFORE  -> shown, also beside Tickets: free early, paid later
-  //   3. FREE         -> only without a Tickets link (Tickets wins)
-  //   4. otherwise    -> no status
-  // admissionStatus never returns both FREE and FREE BEFORE (a stated
-  // "free before <time>" means not confirmed free all night, so it wins).
-  // The Admission filter uses admissionStatus itself.
+  // At most one access indicator per row, never Tickets and a status together:
+  //   1. sold out        -> SOLD OUT (getExternalLinks already drops Tickets)
+  //   2. a Tickets link  -> Tickets, no FREE / FREE BEFORE
+  //   3. no Tickets link -> FREE BEFORE or FREE when documented
+  //      (admissionStatus never returns both)
+  //   4. otherwise       -> nothing
+  // Display only: the Admission filter uses admissionStatus itself.
   const showsTickets = links.some((l) => l.label === "Tickets");
-  const admission = admissionStatus(event);
   const accessStatus: AccessStatusValue | null = event.soldOut
     ? { kind: "sold-out" }
-    : admission?.kind === "free-before" || (admission && !showsTickets)
-      ? admission
-      : null;
+    : showsTickets
+      ? null
+      : admissionStatus(event);
   // Lifecycle statuses other than SOLD OUT (i.e. Postponed) are unchanged.
   const statuses = getEventStatuses(event).filter((s) => s.label !== "Sold out");
   const title = cleanEventTitle(event.title, event.venue.name);
@@ -468,13 +468,18 @@ export default function EventRow({
               {subVenue && <span className="text-text-secondary-strong"> · {subVenue}</span>}
             </Link>
           </span>
-          {statuses.length > 0 && (
+          {/* SOLD OUT / FREE / FREE BEFORE: SOLD OUT's original place, at the
+              right end of the date · time · venue line. */}
+          {(statuses.length > 0 || accessStatus) && (
             <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
               {statuses.map((s) => (
                 <span key={s.label} className={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE[s.tone]}`}>
                   {s.label}
                 </span>
               ))}
+              {accessStatus && (
+                <AccessStatus status={accessStatus} badgeClassName={`${MOBILE_BADGE} ${MOBILE_BADGE_TONE.strong}`} align="right" />
+              )}
             </span>
           )}
         </div>
@@ -498,14 +503,8 @@ export default function EventRow({
           <p className="break-words text-[17px] leading-6 text-text-secondary-strong">{mobileLineup}</p>
         )}
         <div className="flex flex-wrap items-center justify-between">
-          {(mobileLinks.length > 0 || accessStatus) && (
+          {mobileLinks.length > 0 && (
             <div className="flex items-center gap-3">
-              {/* SOLD OUT / FREE / FREE BEFORE sit first in the action row; only FREE BEFORE can sit beside Tickets. */}
-              {accessStatus && (
-                <span className={MOBILE_ACTION_BOX}>
-                  <AccessStatus status={accessStatus} badgeClassName={ACCESS_BADGE} />
-                </span>
-              )}
               {mobileLinks.map((l) => (
                 <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className={`group ${MOBILE_ACTION_BOX}`}>
                   <span className={l.label === "Tickets" ? MOBILE_PRIMARY_PILL : MOBILE_SECONDARY_PILL}>

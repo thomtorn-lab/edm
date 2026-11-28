@@ -1454,15 +1454,19 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     for (const el of Array.from((actions.lastElementChild as HTMLElement).querySelectorAll("a, button"))) expect(cls(el)).toContain("w-11");
   });
 
-  it("shows SOLD OUT and FREE in Tickets' place in the action row, not on the time/venue line", () => {
+  it("shows SOLD OUT, FREE and FREE BEFORE in SOLD OUT's original place on the time/venue line, never in the action row", () => {
     const sold = render(<EventRow event={{ ...FULL, soldOut: true }} />);
-    expect((mobile(sold.container).firstElementChild as HTMLElement).textContent).not.toContain("Sold out");
-    expect((mobile(sold.container).lastElementChild as HTMLElement).textContent).toContain("Sold out");
+    expect((mobile(sold.container).firstElementChild as HTMLElement).textContent).toContain("Sold out");
+    expect((mobile(sold.container).lastElementChild as HTMLElement).textContent).not.toContain("Sold out");
     expect(within(mobile(sold.container)).queryByRole("link", { name: /Tickets/, ...opts })).toBeNull();
     sold.unmount();
     const free = render(<EventRow event={makeEvent({ priceFrom: 0, officialEventUrl: "https://venue.example.com/e" })} />);
-    expect((mobile(free.container).firstElementChild as HTMLElement).textContent).not.toContain("Free");
-    expect((mobile(free.container).lastElementChild as HTMLElement).textContent).toContain("Free");
+    expect((mobile(free.container).firstElementChild as HTMLElement).textContent).toContain("Free");
+    expect((mobile(free.container).lastElementChild as HTMLElement).textContent).not.toContain("Free");
+    free.unmount();
+    const fb = render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, description: "Free till 23:00", officialEventUrl: "https://venue.example.com/e" })} />);
+    expect((mobile(fb.container).firstElementChild as HTMLElement).textContent).toContain("Free before");
+    expect((mobile(fb.container).lastElementChild as HTMLElement).textContent).not.toContain("Free before");
   });
 
   it("draws SOLD OUT / FREE as fixed-height badges with leading-none (text centred in the box)", () => {
@@ -1493,7 +1497,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
   });
 });
 
-describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Tickets) > FREE (only without Tickets) > nothing", () => {
+describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BEFORE > nothing", () => {
   afterEach(cleanup);
   const FREE_BEFORE_TEXT = "22:00 to 04:00 Free till 23:00 · 120 DKK after";
   const START_22 = "2026-11-27T21:00:00.000Z"; // 22:00 Copenhagen
@@ -1506,9 +1510,9 @@ describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Ti
     expect(shown()).toEqual(["Sold out"]);
   });
 
-  it("FREE BEFORE is shown beside Tickets; FREE is not", () => {
+  it("a ticket link hides FREE and FREE BEFORE", () => {
     const fb = render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
-    expect(shown()).toEqual(["Tickets", "Free before"]);
+    expect(shown()).toEqual(["Tickets"]);
     fb.unmount();
     render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0 })} />);
     expect(shown()).toEqual(["Tickets"]);
@@ -1534,8 +1538,8 @@ describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Ti
     expect(badge.textContent).toBe("Free before"); // the time is not part of the badge
     const tooltip = document.getElementById(badge.getAttribute("aria-describedby") as string) as HTMLElement;
     expect(tooltip.textContent).toBe("Free entry before 23:00");
-    expect(tooltip.className).toContain("group-hover/free:block");
-    expect(tooltip.className).toContain("group-focus-within/free:block");
+    expect(tooltip.className).toContain("group-hover/tip:block");
+    expect(tooltip.className).toContain("group-focus-within/tip:block");
     fireEvent.click(badge);
     expect(badge.getAttribute("aria-expanded")).toBe("true");
     expect(tooltip.className.split(/\s+/)).toContain("block");
