@@ -1498,7 +1498,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
   });
 });
 
-describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BEFORE > nothing", () => {
+describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Tickets) > FREE (only without Tickets) > nothing", () => {
   afterEach(cleanup);
   const FREE_BEFORE_TEXT = "22:00 to 04:00 Free till 23:00 · 120 DKK after";
   const START_22 = "2026-11-27T21:00:00.000Z"; // 22:00 Copenhagen
@@ -1511,12 +1511,27 @@ describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BE
     expect(shown()).toEqual(["Sold out"]);
   });
 
-  it("a ticket link hides FREE and FREE BEFORE", () => {
+  it("FREE BEFORE is shown beside Tickets; FREE is not", () => {
     const fb = render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
-    expect(shown()).toEqual(["Tickets"]);
+    expect(shown()).toEqual(["Tickets", "Free before"]);
     fb.unmount();
     render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0 })} />);
     expect(shown()).toEqual(["Tickets"]);
+  });
+
+  it("with FREE BEFORE and Tickets on one mobile line, Audio then Video only show where they fit; Calendar always", () => {
+    const withAll = { ...makeEvent({ ticketUrl: "https://billetto.dk/e/x", officialEventUrl: "https://venue.example.com/e", description: FREE_BEFORE_TEXT, startDatetime: START_22 }), hasArtistPreview: true, hasAudioLinks: true };
+    const crowded = render(<EventRow event={withAll} />);
+    const m = crowded.container.querySelector("[data-mobile-only]") as HTMLElement;
+    const video = within(m).getByRole("link", { name: /artist preview video/, hidden: true });
+    const audio = within(m).getByRole("link", { name: /audio links/, hidden: true });
+    expect(video.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "min-[412px]:flex"]));
+    expect(audio.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "min-[456px]:flex"]));
+    crowded.unmount();
+    // Without FREE BEFORE the icons are never narrowed.
+    const plain = render(<EventRow event={{ ...withAll, description: null }} />);
+    const m2 = plain.container.querySelector("[data-mobile-only]") as HTMLElement;
+    expect(within(m2).getByRole("link", { name: /audio links/, hidden: true }).className.split(/\s+/)).not.toContain("hidden");
   });
 
   it("without a ticket link: FREE, or FREE BEFORE (never both)", () => {

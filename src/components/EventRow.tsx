@@ -56,6 +56,28 @@ const MOBILE_PRIMARY_PILL = "flex h-9 items-center gap-1.5 whitespace-nowrap rou
 const MOBILE_SECONDARY_PILL = "flex h-9 items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold text-accent-strong underline decoration-1 decoration-transparent underline-offset-4 transition-colors group-hover:text-text-primary group-hover:decoration-current";
 /** Tertiary: Calendar / Video / Audio — 44×44 targets around a 36×36 outlined icon box. */
 const MOBILE_ICON_TARGET = "group flex h-11 w-11 items-center justify-center text-text-secondary-strong";
+/**
+ * FREE BEFORE + Tickets on one mobile action line: the row is then too wide
+ * for every icon on small screens, so the 2nd and 3rd icons (Video, then
+ * Audio — Audio goes first) only show from the viewport width where they
+ * still fit beside FREE BEFORE · Tickets [· Event] with a 12px gap; Calendar
+ * always stays. Widths measured on the rendered row: FREE BEFORE 104px,
+ * Tickets 97px, Event 59px, 12px gaps, 16px gutters (the icon group reaches
+ * 4px into the right one), 44px icon targets:
+ *   with Event:    324 + 44n px  (n = icons kept)
+ *   without Event: 253 + 44n px
+ * Literal class strings so Tailwind generates them.
+ */
+const MOBILE_ICON_TARGET_FROM = {
+  withEvent: {
+    2: "group hidden min-[412px]:flex h-11 w-11 items-center justify-center text-text-secondary-strong",
+    3: "group hidden min-[456px]:flex h-11 w-11 items-center justify-center text-text-secondary-strong",
+  },
+  withoutEvent: {
+    2: "group hidden min-[341px]:flex h-11 w-11 items-center justify-center text-text-secondary-strong",
+    3: "group hidden min-[385px]:flex h-11 w-11 items-center justify-center text-text-secondary-strong",
+  },
+} as const;
 const MOBILE_ICON_BOX =
   "flex h-9 w-9 items-center justify-center rounded-[10px] border border-border-strong transition-colors group-hover:border-accent-dim group-hover:text-text-primary";
 /** AddToCalendar's own button, styled as the same icon target (its svg is the icon). */
@@ -108,19 +130,28 @@ export default function EventRow({
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
-  // At most one access indicator per row, never Tickets and a status together:
-  //   1. sold out        -> SOLD OUT (getExternalLinks already drops Tickets)
-  //   2. a Tickets link  -> Tickets, no FREE / FREE BEFORE
-  //   3. no Tickets link -> FREE BEFORE or FREE when documented
-  //      (admissionStatus never returns both)
-  //   4. otherwise       -> nothing
-  // Display only: the Admission filter uses admissionStatus itself.
+  // At most one access status per row (SOLD OUT / FREE / FREE BEFORE):
+  //   1. sold out     -> SOLD OUT (getExternalLinks already drops Tickets)
+  //   2. FREE BEFORE  -> shown, also beside Tickets (free early, paid later)
+  //   3. FREE         -> only without a Tickets link (Tickets wins)
+  //   4. otherwise    -> no status
+  // admissionStatus never returns both FREE and FREE BEFORE. Display only:
+  // the Admission filter uses admissionStatus itself.
   const showsTickets = links.some((l) => l.label === "Tickets");
+  const admission = admissionStatus(event);
   const accessStatus: AccessStatusValue | null = event.soldOut
     ? { kind: "sold-out" }
-    : showsTickets
-      ? null
-      : admissionStatus(event);
+    : admission?.kind === "free-before" || (admission && !showsTickets)
+      ? admission
+      : null;
+  // Mobile icon k (1 = Calendar, 2/3 = Video/Audio as present): only narrowed
+  // when FREE BEFORE and Tickets share the action line — see
+  // MOBILE_ICON_TARGET_FROM.
+  const crowdedActionLine = accessStatus?.kind === "free-before" && showsTickets;
+  const mobileIconClass = (k: 2 | 3) =>
+    crowdedActionLine
+      ? MOBILE_ICON_TARGET_FROM[links.some((l) => l.label !== "Tickets") ? "withEvent" : "withoutEvent"][k]
+      : MOBILE_ICON_TARGET;
   // Lifecycle statuses other than SOLD OUT (i.e. Postponed) are unchanged.
   const statuses = getEventStatuses(event).filter((s) => s.label !== "Sold out");
   const title = cleanEventTitle(event.title, event.venue.name);
@@ -510,7 +541,7 @@ export default function EventRow({
         <div className="flex flex-wrap items-center justify-between">
           {(mobileLinks.length > 0 || accessStatus) && (
             <div className="flex items-center gap-3">
-              {/* SOLD OUT / FREE / FREE BEFORE take Tickets' place (never both). */}
+              {/* SOLD OUT / FREE / FREE BEFORE first; only FREE BEFORE can sit beside Tickets. */}
               {accessStatus && (
                 <span className={MOBILE_ACTION_BOX}>
                   <AccessStatus status={accessStatus} badgeClassName={MOBILE_ACCESS_BADGE} />
@@ -535,7 +566,7 @@ export default function EventRow({
               buttonClassName={MOBILE_CALENDAR_BUTTON}
             />
             {event.hasArtistPreview && (
-              <Link href={`${eventHref}#video`} aria-label={`Go to artist preview video for ${displayTitle}`} className={MOBILE_ICON_TARGET}>
+              <Link href={`${eventHref}#video`} aria-label={`Go to artist preview video for ${displayTitle}`} className={mobileIconClass(2)}>
                 <span className={MOBILE_ICON_BOX}>
                   <svg aria-hidden="true" viewBox="0 0 14 14" fill="currentColor" className="h-3.5 w-3.5">
                     <path d="M3.5 2.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L4.4 1.7a.6.6 0 0 0-.9.5Z" />
@@ -544,7 +575,7 @@ export default function EventRow({
               </Link>
             )}
             {event.hasAudioLinks && (
-              <Link href={`${eventHref}#soundcloud`} aria-label={`Go to audio links for ${displayTitle}`} className={MOBILE_ICON_TARGET}>
+              <Link href={`${eventHref}#soundcloud`} aria-label={`Go to audio links for ${displayTitle}`} className={mobileIconClass(event.hasArtistPreview ? 3 : 2)}>
                 <span className={MOBILE_ICON_BOX}>
                   <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-4 w-4">
                     <path d="M7.5 15V4.5l9-2V13" strokeLinejoin="round" />
