@@ -745,6 +745,11 @@ describe("publication rule: a public Tickets or Event link is required (2026-11-
     expect(hasPublicEventLink(event({ officialEventUrl: "https://venue.example.com/e", ticketUrl: null, facebookUrl: null }))).toBe(true);
     expect(hasPublicEventLink(event({ officialEventUrl: "https://hvaderpaa.dk/da/event/1/", ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null }))).toBe(false);
     expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: null, facebookUrl: null, residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(false);
+    // A "Source" link (aggregator listing or admin-merged other source) does not count.
+    expect(hasPublicEventLink(event({ officialEventUrl: "https://www.kultunaut.dk/perl/arrmore/type-nynaut?ArrNr=1", canonicalSourceId: "src-kultunaut", ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null }))).toBe(false);
+    expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null, otherSourceUrls: ["https://allevents.in/copenhagen/x"] }))).toBe(false);
+    // The event's own Facebook page is its Official event link, so it counts.
+    expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: null, facebookUrl: "https://www.facebook.com/events/1", residentAdvisorUrl: null }))).toBe(true);
     // A Tickets link hidden only because the event sold out still counts.
     expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null, soldOut: true }))).toBe(true);
   });

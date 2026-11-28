@@ -350,17 +350,21 @@ export function isFreeAdmission(event: Pick<EventRecord, "priceFrom">): boolean 
 }
 
 /**
- * Publication rule (2026-11-28): an event is only published when it has at
- * least one public link — Tickets, Official event ("Event" in the list) or
- * the rare "Source" fallback — exactly what getExternalLinks would show.
- * HvadErPå/RA links never count, since they are never shown. Sold out is
- * ignored here: a Tickets link hidden only because the event sold out
- * still counts as a link.
+ * Publication rule (2026-11-28): an event is only published when it has a
+ * public Tickets or Official event ("Event" in the list) link, as
+ * getExternalLinks would show it. A "Source" link (an aggregator/social
+ * listing such as KultuNaut, AllEvents or Eventbrite, or an admin-merged
+ * other source URL) does not count — like HvadErPå/RA it is a third-party
+ * page about the event, not the organiser's own page or a ticket seller.
+ * Sold out is ignored here: a Tickets link hidden only because the event
+ * sold out still counts.
  */
 export function hasPublicEventLink(
   event: Pick<EventRecord, "officialEventUrl" | "ticketUrl" | "facebookUrl" | "residentAdvisorUrl" | "otherSourceUrls" | "canonicalSourceId" | "overriddenFields">,
 ): boolean {
-  return getExternalLinks({ ...event, otherSourceUrls: event.otherSourceUrls ?? [], overriddenFields: event.overriddenFields ?? [], soldOut: false }).length > 0;
+  return getExternalLinks({ ...event, otherSourceUrls: event.otherSourceUrls ?? [], overriddenFields: event.overriddenFields ?? [], soldOut: false }).some(
+    (l) => l.label === "Tickets" || l.label === "Official event",
+  );
 }
 
 /** Whether the FREE CTA should be shown in place of a Tickets link. */
