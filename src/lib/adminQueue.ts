@@ -6,6 +6,7 @@ import type { DuplicateCandidate } from "./dedup";
 import { isManualReviewSource } from "./data/sources";
 import { VENUES } from "./data/venues";
 import { hasExplicitDjOrRaveSignal } from "./adapters/deterministicGenreMapping";
+import { hasPublicEventLink } from "./links";
 
 /**
  * Admin Discovery Queue cleanup/actionable views, 2026-09-06. The single
@@ -523,4 +524,38 @@ export function deriveAdminUnpublishedRows(
     }))
     // Most recent admin action first (Section 6).
     .sort((a, b) => (b.unpublishedAt ? new Date(b.unpublishedAt).getTime() : 0) - (a.unpublishedAt ? new Date(a.unpublishedAt).getTime() : 0));
+}
+
+/** An upcoming event held back because it has no Tickets or Event link (publication rule, 2026-11-28). */
+export interface MissingLinkRow {
+  eventId: string;
+  title: string;
+  startDatetime: string;
+  venueName: string;
+  sourceName: string | null;
+}
+
+/**
+ * Upcoming events that are unpublished (but not by an admin's own unpublish
+ * decision) and have neither a Tickets nor an Event link — the ones the
+ * sync's missing-link rule (sync.ts::shouldUnpublishForMissingLink) holds
+ * back. Listed under Needs review so an admin can add a link and publish
+ * again; soonest first.
+ */
+export function deriveMissingLinkRows(
+  events: EventRecord[],
+  venuesById: Map<string, Venue>,
+  sourcesById: Map<string, Source>,
+  now: Date,
+): MissingLinkRow[] {
+  return events
+    .filter((e) => !e.published && e.adminUnpublishReason == null && !isPastEvent(e, now) && !hasPublicEventLink(e))
+    .map((e) => ({
+      eventId: e.id,
+      title: e.title,
+      startDatetime: e.startDatetime,
+      venueName: venuesById.get(e.venueId)?.name ?? "Unknown venue",
+      sourceName: e.canonicalSourceId ? (sourcesById.get(e.canonicalSourceId)?.sourceName ?? null) : null,
+    }))
+    .sort((a, b) => new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime());
 }

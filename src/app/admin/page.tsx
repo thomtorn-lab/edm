@@ -4,7 +4,7 @@ import { buildDataQualityReport } from "@/lib/dataQuality";
 import DataQualityPanel from "@/components/admin/DataQualityPanel";
 import { describeSourceHealth, getSourceHealth } from "@/lib/sourceHealth";
 import { formatRelativeTime } from "@/lib/format";
-import { buildPublishedQueueRows, deriveAdminUnpublishedRows, groupAdminQueueRows } from "@/lib/adminQueue";
+import { buildPublishedQueueRows, deriveAdminUnpublishedRows, deriveMissingLinkRows, groupAdminQueueRows } from "@/lib/adminQueue";
 import { buildReviewPriorityList, groupReviewList, prioritizeNotInSource, splitPastStale } from "@/lib/reviewPriority";
 import { buildSeriesIndex } from "@/lib/seriesMemory";
 import AddEventFromUrl from "@/components/admin/AddEventFromUrl";
@@ -56,6 +56,7 @@ export default async function AdminPage() {
   const adminQueueGroups = groupAdminQueueRows(pendingItems, sourceLastCompleteSync, now);
   const publishedRows = buildPublishedQueueRows(publishedItems, allEvents, venuesById);
   const adminUnpublishedRows = deriveAdminUnpublishedRows(allEvents, venuesById, sourcesById);
+  const missingLinkRows = deriveMissingLinkRows(allEvents, venuesById, sourcesById, now);
   // Series memory reads the events already loaded for "All events" — no extra query.
   const seriesIndex = buildSeriesIndex(allEvents, venues);
   const priorityContext = { venues, sourceTrust: new Map(sources.map((s) => [s.id, s.trustLevel])), now, seriesIndex };
@@ -96,6 +97,7 @@ export default async function AdminPage() {
             groups={adminQueueGroups}
             published={publishedRows}
             adminUnpublished={adminUnpublishedRows}
+            missingLink={missingLinkRows}
             venues={venues}
             priorityList={priorityList}
             pastStaleSplit={pastStaleSplit}

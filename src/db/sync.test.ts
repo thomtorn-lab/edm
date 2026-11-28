@@ -2648,7 +2648,10 @@ describe("HvadErPå sync flow without an Official Event URL (hvaderpaa.dk ban, 2
     genreHint: "house",
     genreConfidenceHint: "medium",
   };
-  const adapter: SourceAdapter = { sourceId: "src-hvaderpaa", fetchCandidates: () => Promise.resolve([{ ...candidate }]) };
+  const TICKETS = "https://billetto.dk/e/some-traces-of-house-billetter-1";
+  // With a Tickets link it may be auto-published (publication rule, 2026-11-28).
+  const adapter: SourceAdapter = { sourceId: "src-hvaderpaa", fetchCandidates: () => Promise.resolve([{ ...candidate, ticketUrl: TICKETS }]) };
+  const noLinkAdapter: SourceAdapter = { sourceId: "src-hvaderpaa", fetchCandidates: () => Promise.resolve([{ ...candidate }]) };
 
   /** sourceEventLinks rows for the first select; every other table empty. */
   async function mockSourceLinks(rows: { eventId: string; sourceUrl: string; role: string }[]) {
@@ -2665,7 +2668,7 @@ describe("HvadErPå sync flow without an Official Event URL (hvaderpaa.dk ban, 2
     );
   }
 
-  it("auto-publishes with an empty Official Event URL, keeps the HvadErPå page as Source, and recognises the event on the next sync without a duplicate", async () => {
+  it("auto-publishes with an empty Official Event URL when it has a Tickets link, never shows the HvadErPå page, and recognises the event on the next sync without a duplicate", async () => {
     const { VENUES } = await import("@/lib/data/venues");
     const { getExternalLinks, getSourceProvenance } = await import("@/lib/links");
 
@@ -2716,11 +2719,13 @@ describe("HvadErPå sync flow without an Official Event URL (hvaderpaa.dk ban, 2
         primaryGenre: created.primaryGenre,
         subgenres: created.subgenres,
         officialEventUrl: null,
+        ticketUrl: TICKETS,
         canonicalSourceId: "src-hvaderpaa",
       }),
     ]);
     await mockSourceLinks([{ eventId: created.id, sourceUrl: HVP, role: "official" }]);
     const second = await runSourceSync("src-hvaderpaa", "HvadErPå", adapter);
+    expect(applySyncHoldUnpublish).not.toHaveBeenCalled();
 
     expect(second.created).toBe(0);
     expect(createEvent).not.toHaveBeenCalled();
@@ -2730,5 +2735,45 @@ describe("HvadErPå sync flow without an Official Event URL (hvaderpaa.dk ban, 2
     for (const [, , patch] of vi.mocked(applySourceSyncPatch).mock.calls) {
       expect((patch as Record<string, unknown>).officialEventUrl ?? null).toBeNull();
     }
+  });
+
+  it("never auto-publishes a candidate with neither a Tickets nor an Event link — it goes to the Discovery Queue instead", async () => {
+    const { VENUES } = await import("@/lib/data/venues");
+    vi.mocked(getVenues).mockResolvedValue(VENUES);
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([]);
+    await mockSourceLinks([]);
+    const result = await runSourceSync("src-hvaderpaa", "HvadErPå", noLinkAdapter);
+
+    expect(result.created).toBe(0);
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(insertDiscoveryItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("unpublishes an already-published event that has no Tickets or Event link, unless an admin has edited it", async () => {
+    const { VENUES } = await import("@/lib/data/venues");
+    const linkless = existingCultureBoxEvent({
+      id: "e-linkless",
+      title: candidate.title,
+      artists: candidate.artists,
+      startDatetime: candidate.startDatetime as string,
+      officialEventUrl: null,
+      ticketUrl: null,
+      canonicalSourceId: "src-hvaderpaa",
+    });
+
+    vi.mocked(getVenues).mockResolvedValue(VENUES);
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([linkless]);
+    await mockSourceLinks([{ eventId: "e-linkless", sourceUrl: HVP, role: "official" }]);
+    await runSourceSync("src-hvaderpaa", "HvadErPå", noLinkAdapter);
+    expect(applySyncHoldUnpublish).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(applySyncHoldUnpublish).mock.calls[0][0]).toBe("e-linkless");
+    expect(vi.mocked(applySyncHoldUnpublish).mock.calls[0][2]).toMatch(/no Tickets or Event link/);
+
+    vi.clearAllMocks();
+    vi.mocked(getVenues).mockResolvedValue(VENUES);
+    vi.mocked(getAllEventsAdmin).mockResolvedValueOnce([{ ...linkless, manualOverride: true, overriddenFields: ["title"] } as EventWithVenue]);
+    await mockSourceLinks([{ eventId: "e-linkless", sourceUrl: HVP, role: "official" }]);
+    await runSourceSync("src-hvaderpaa", "HvadErPå", noLinkAdapter);
+    expect(applySyncHoldUnpublish).not.toHaveBeenCalled();
   });
 });
