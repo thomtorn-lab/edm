@@ -211,6 +211,9 @@ describe("qa-export-readonly.yml", () => {
     expect(guard).toBeLessThan(yaml.indexOf("Update QA control register"));
     expect(yaml).toContain('if [ "$author" != "$BOT_EMAIL" ]; then');
     expect(yaml).toContain("node --import tsx src/lib/qaStatusCli.ts");
+    expect(yaml).toContain('--worklist-out="$RUNNER_TEMP/qa-worklist.json"');
+    expect(yaml).toContain('cp "$RUNNER_TEMP/qa-worklist.json" qa-worklist.json');
+    expect(yaml).toContain("git add qa-snapshot.json qa-status.json qa-worklist.json QA_INSTRUCTIONS.md");
     expect(yaml).not.toMatch(/push[^\n]*--force|push -f\b/);
   });
 

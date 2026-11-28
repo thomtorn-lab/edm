@@ -6,13 +6,16 @@
  *     --status=qa-status.json --results-dir=qa-results --out=qa-status.json
  *
  * 1. applies new ChatGPT result files (against the fingerprints they checked),
- * 2. reconciles the register with the new snapshot (new → pending, changed → reopened).
+ * 2. reconciles the register with the new snapshot (new → pending, changed → reopened),
+ * 3. with --worklist-out, writes qa-worklist.json (src/lib/qaWorklist.ts) from both.
  * Files only: no database, no network. Prints counts and rejection reasons,
  * never event content (this repository's Actions logs are public).
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { QaSnapshot } from "@/db/exportQaSnapshot";
 import { applyQaResults, emptyQaStatus, QA_CATEGORIES, reconcileQaStatus, validateQaStatus, type QaInput, type QaStatus } from "./qaStatus";
+import { buildQaWorklist, serializeQaWorklist } from "./qaWorklist";
 
 export const QA_SNAPSHOT_SCHEMA = 3;
 
@@ -49,6 +52,11 @@ function arg(name: string): string {
   return a.slice(name.length + 3);
 }
 
+function optionalArg(name: string): string | null {
+  const a = process.argv.slice(2).find((x) => x.startsWith(`--${name}=`));
+  return a ? a.slice(name.length + 3) : null;
+}
+
 function main() {
   const statusPath = arg("status");
   const resultsDir = arg("results-dir");
@@ -66,6 +74,13 @@ function main() {
     : [];
   const next = updateRegister(previous, snapshot, results, new Date());
   writeFileSync(arg("out"), JSON.stringify(next, null, 2) + "\n");
+  // Worklist (2026-11-28): derived from the same snapshot and the register just written; it changes neither.
+  const worklistOut = optionalArg("worklist-out");
+  if (worklistOut) {
+    const worklist = buildQaWorklist(snapshot as unknown as QaSnapshot, next);
+    writeFileSync(worklistOut, serializeQaWorklist(worklist));
+    console.log(`Worklist: ${worklist.summary.events_listed} events, findings ${JSON.stringify(worklist.summary.findings_by_kind)}.`);
+  }
 
   const newRuns = next.runs.slice(previous.runs.length);
   console.log(`Register generation ${next.generation}, snapshot ${next.snapshot_generated_at}.`);

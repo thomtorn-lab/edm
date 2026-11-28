@@ -159,15 +159,17 @@ jobs:
             --snapshot="$RUNNER_TEMP/qa-snapshot.json" \
             --status=qa-data/qa-status.json \
             --results-dir=qa-data/qa-results \
-            --out="$RUNNER_TEMP/qa-status.json"
+            --out="$RUNNER_TEMP/qa-status.json" \
+            --worklist-out="$RUNNER_TEMP/qa-worklist.json"
 
       - name: Commit snapshot and register to the private repository
         working-directory: qa-data
         run: |
           cp "$RUNNER_TEMP/qa-snapshot.json" qa-snapshot.json
           cp "$RUNNER_TEMP/qa-status.json" qa-status.json
+          cp "$RUNNER_TEMP/qa-worklist.json" qa-worklist.json
           cp ../docs/qa-results-format.md QA_INSTRUCTIONS.md
-          git add qa-snapshot.json qa-status.json QA_INSTRUCTIONS.md
+          git add qa-snapshot.json qa-status.json qa-worklist.json QA_INSTRUCTIONS.md
           git -c user.name="github-actions[bot]" -c user.email="$BOT_EMAIL" \
             commit -q -m "QA snapshot and register $(date -u +%Y-%m-%dT%H:%MZ)"
           # ChatGPT may have added a result file meanwhile (other paths only): rebase once, never force.
