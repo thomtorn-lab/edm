@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import DiscoveryQueue from "./DiscoveryQueue";
 import type { DiscoveryQueueItem, Venue } from "@/lib/types";
-import type { AdminQueueCategory, AdminUnpublishedRow, PublishedQueueRow } from "@/lib/adminQueue";
+import type { AdminQueueCategory, AdminUnpublishedRow, MissingLinkRow, PublishedQueueRow } from "@/lib/adminQueue";
 import { ADMIN_QUEUE_CATEGORY_LABELS } from "@/lib/adminQueue";
 import { formatFullDateLabel, formatRowDateLabel } from "@/lib/format";
 import {
@@ -31,6 +31,8 @@ interface Props {
   groups: Record<AdminQueueCategory, DiscoveryQueueItem[]>;
   published: PublishedQueueRow[];
   adminUnpublished: AdminUnpublishedRow[];
+  /** Upcoming events held back for having no Tickets or Event link — shown at the top of Needs review. */
+  missingLink?: MissingLinkRow[];
   venues: Venue[];
   /** Ranked likely/possible-relevant rows from Insufficient evidence (see src/lib/reviewPriority.ts). */
   priorityList?: GroupedReviewList;
@@ -56,6 +58,7 @@ export default function AdminQueueTabs({
   groups,
   published,
   adminUnpublished,
+  missingLink = [],
   venues,
   priorityList = EMPTY_PRIORITY_LIST,
   pastStaleSplit,
@@ -76,7 +79,7 @@ export default function AdminQueueTabs({
   const [tab, setTab] = useState<Tab>(initialTab);
 
   const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: "needs_review", label: ADMIN_QUEUE_CATEGORY_LABELS.needs_review, count: groups.needs_review.length },
+    { key: "needs_review", label: ADMIN_QUEUE_CATEGORY_LABELS.needs_review, count: groups.needs_review.length + missingLink.length },
     { key: "likely_relevant", label: "Likely relevant", count: priorityList.likely.length + priorityList.possible.length },
     { key: "venue_blocked", label: ADMIN_QUEUE_CATEGORY_LABELS.venue_blocked, count: groups.venue_blocked.length },
     { key: "insufficient", label: ADMIN_QUEUE_CATEGORY_LABELS.insufficient, count: groups.insufficient.length },
@@ -129,7 +132,12 @@ export default function AdminQueueTabs({
       </div>
 
       <div className="mt-4">
-        {tab === "needs_review" && <DiscoveryQueue items={groups.needs_review} venues={venues} />}
+        {tab === "needs_review" && (
+          <>
+            <MissingLinkList rows={missingLink} />
+            <DiscoveryQueue items={groups.needs_review} venues={venues} />
+          </>
+        )}
         {tab === "likely_relevant" && <LikelyRelevantList list={priorityList} venues={venues} />}
         {tab === "venue_blocked" && <DiscoveryQueue items={groups.venue_blocked} venues={venues} />}
         {tab === "insufficient" && <DiscoveryQueue items={groups.insufficient} venues={venues} />}
@@ -432,6 +440,37 @@ function PublishedList({ rows }: { rows: PublishedQueueRow[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Events held back by the publication rule: no Tickets or Event link yet. */
+function MissingLinkList({ rows }: { rows: MissingLinkRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <section className="mb-6 rounded border border-status-warn/40 p-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-status-warn">
+        No Tickets or Event link · unpublished ({rows.length})
+      </h3>
+      <p className="mt-1 text-xs text-text-secondary">
+        Add a Tickets or Official event URL in All events below, then use Publish again.
+      </p>
+      <ul className="mt-2">
+        {rows.map((row) => (
+          <li key={row.eventId} className="border-b border-border py-2 last:border-b-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold text-text-primary">{row.title}</p>
+              <a href={`#event-${row.eventId}`} className="text-xs font-medium text-accent hover:text-accent-strong">
+                Edit event
+              </a>
+            </div>
+            <p className="mt-1 text-xs text-text-secondary">
+              {formatFullDateLabel(row.startDatetime)} · {row.venueName}
+              {row.sourceName ? ` · source: ${row.sourceName}` : ""}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

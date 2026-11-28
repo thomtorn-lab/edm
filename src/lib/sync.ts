@@ -1099,6 +1099,19 @@ export function decidePublishedEventSyncAction(
   return "no_change";
 }
 
+/**
+ * Missing-link safety (publication rule, 2026-11-28): an already-published
+ * event that, after this sync, has neither a Tickets nor an Event link
+ * (see links.ts::hasPublicEventLink) is unpublished so it can be reviewed —
+ * it then appears under the admin's Needs review (adminQueue.ts::
+ * deriveMissingLinkRows). Same guards as decidePublishedEventSyncAction: an
+ * event an admin has edited (manualOverride) is left alone, and an
+ * unpublished event is never touched. Never republishes on its own.
+ */
+export function shouldUnpublishForMissingLink(current: { published: boolean; manualOverride: boolean }, hasPublicLink: boolean): boolean {
+  return current.published && !current.manualOverride && !hasPublicLink;
+}
+
 export type SourceCancellationSyncAction = "no_change" | "unpublish" | "restore";
 
 /**

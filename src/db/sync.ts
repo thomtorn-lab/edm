@@ -20,6 +20,7 @@ import { getAllEventsAdmin, getVenues } from "@/lib/queries";
 import { notifyDiscoveryQueueInsertBatch, type DiscoveryQueueNotificationItem } from "@/lib/discoveryNotification";
 import { runIngestionPipeline, applyEnrichedGenre, type ExistingEventForDedup } from "@/lib/adapters/pipeline";
 import { GENERIC_ELECTRONIC_GENRE } from "@/lib/relevance";
+import { hasPublicEventLink } from "@/lib/links";
 import { usableDiscoveryDescription } from "@/lib/descriptionQuality";
 import { isTrustedElectronicSource, getSourceById, getSourceCancellationPolicy } from "@/lib/data/sources";
 import type { SourceAdapter, RawCandidateEvent, SoundcloudLinkReport } from "@/lib/adapters/types";
@@ -27,6 +28,7 @@ import {
   buildDiscoveryQueueClassificationPatch,
   buildSyncPatch,
   decidePublishedEventSyncAction,
+  shouldUnpublishForMissingLink,
   decideSourceCancellationSyncAction,
   findPendingRowToResolve,
   indexPendingRowsForSource,
@@ -443,6 +445,25 @@ async function runSourceSyncLocked(
           currentlyPublished = false;
         }
 
+        // Publication rule (2026-11-28): no Tickets and no Event link after
+        // this sync's patch -> unpublished, to be reviewed under Needs review.
+        // See src/lib/sync.ts::shouldUnpublishForMissingLink.
+        const afterPatch = { ...existing, ...patch };
+        if (
+          shouldUnpublishForMissingLink(
+            { published: currentlyPublished, manualOverride: existing.manualOverride },
+            hasPublicEventLink(afterPatch),
+          )
+        ) {
+          await applySyncHoldUnpublish(
+            match.eventId,
+            sourceId,
+            "Automated sync: no Tickets or Event link (publication rule) — listed under Needs review until a link is added. Row preserved, not deleted; provenance untouched.",
+          );
+          unpublished++;
+          currentlyPublished = false;
+        }
+
         // Source-driven cancellation safety (2026-09-07) — see
         // src/lib/sync.ts::decideSourceCancellationSyncAction for the full
         // safety rules this enforces (trusted-only, admin-override-always-
@@ -549,8 +570,22 @@ async function runSourceSyncLocked(
         !isIgnoredCandidate(dedupKey, ignoredByUrl) &&
         !otherOwnerPendingUrls.has(dedupKey);
 
+      // Publication rule (2026-11-28): a candidate with neither a Tickets
+      // nor an Event link is never auto-published; it falls through to the
+      // Discovery Queue below and is reviewed there.
+      const candidateHasPublicLink = hasPublicEventLink({
+        officialEventUrl: raw.officialEventUrl,
+        ticketUrl: raw.ticketUrl,
+        facebookUrl: raw.facebookUrl ?? null,
+        residentAdvisorUrl: raw.residentAdvisorUrl,
+        otherSourceUrls: [],
+        canonicalSourceId: sourceId,
+        overriddenFields: [],
+      });
+
       if (
         ((result.decision === "auto_publish" && sourceAutoPublishAllowed) || selectiveAutoPublish) &&
+        candidateHasPublicLink &&
         result.resolvedVenueId &&
         raw.startDatetime &&
         raw.cancelledHint !== true

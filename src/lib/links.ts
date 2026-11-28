@@ -349,6 +349,20 @@ export function isFreeAdmission(event: Pick<EventRecord, "priceFrom">): boolean 
   return event.priceFrom === 0;
 }
 
+/**
+ * Publication rule (2026-11-28): an event is only published when it has at
+ * least one public link — Tickets, Official event ("Event" in the list) or
+ * the rare "Source" fallback — exactly what getExternalLinks would show.
+ * HvadErPå/RA links never count, since they are never shown. Sold out is
+ * ignored here: a Tickets link hidden only because the event sold out
+ * still counts as a link.
+ */
+export function hasPublicEventLink(
+  event: Pick<EventRecord, "officialEventUrl" | "ticketUrl" | "facebookUrl" | "residentAdvisorUrl" | "otherSourceUrls" | "canonicalSourceId" | "overriddenFields">,
+): boolean {
+  return getExternalLinks({ ...event, otherSourceUrls: event.otherSourceUrls ?? [], overriddenFields: event.overriddenFields ?? [], soldOut: false }).length > 0;
+}
+
 /** Whether the FREE CTA should be shown in place of a Tickets link. */
 export function showFreeCta(event: Pick<EventRecord, "ticketUrl" | "priceFrom">): boolean {
   return !hasTicketDestination(event) && isFreeAdmission(event);

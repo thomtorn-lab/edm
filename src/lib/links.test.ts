@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { getExternalLinks, getSourceProvenance, hasTicketDestination, isFreeAdmission, isResidentAdvisorUrl, showFreeCta } from "./links";
+import { getExternalLinks, getSourceProvenance, hasPublicEventLink, hasTicketDestination, isFreeAdmission, isResidentAdvisorUrl, showFreeCta } from "./links";
+import { shouldUnpublishForMissingLink } from "./sync";
+import { deriveMissingLinkRows } from "./adminQueue";
 import type { EventRecord } from "./types";
 
 function event(overrides: Partial<EventRecord> = {}): EventRecord {
@@ -734,5 +736,45 @@ describe("getExternalLinks — sold-out hides Tickets (public link-integrity rul
     getExternalLinks(input);
     expect(input).toEqual(snapshot);
     expect(input.ticketUrl).toBe("https://billetto.dk/e/x");
+  });
+});
+
+describe("publication rule: a public Tickets or Event link is required (2026-11-28)", () => {
+  it("counts Tickets and Official event links, never HvadErPå or an unverified RA link", () => {
+    expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null }))).toBe(true);
+    expect(hasPublicEventLink(event({ officialEventUrl: "https://venue.example.com/e", ticketUrl: null, facebookUrl: null }))).toBe(true);
+    expect(hasPublicEventLink(event({ officialEventUrl: "https://hvaderpaa.dk/da/event/1/", ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null }))).toBe(false);
+    expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: null, facebookUrl: null, residentAdvisorUrl: "https://ra.co/events/1" }))).toBe(false);
+    // A Tickets link hidden only because the event sold out still counts.
+    expect(hasPublicEventLink(event({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null, soldOut: true }))).toBe(true);
+  });
+
+  it("unpublishes only a published, admin-untouched event without a link", () => {
+    expect(shouldUnpublishForMissingLink({ published: true, manualOverride: false }, false)).toBe(true);
+    expect(shouldUnpublishForMissingLink({ published: true, manualOverride: false }, true)).toBe(false);
+    expect(shouldUnpublishForMissingLink({ published: true, manualOverride: true }, false)).toBe(false);
+    expect(shouldUnpublishForMissingLink({ published: false, manualOverride: false }, false)).toBe(false);
+  });
+
+  it("lists upcoming, sync-unpublished events without a link under Needs review, soonest first", () => {
+    const now = new Date("2026-08-01T12:00:00Z");
+    const venues = new Map([["v-hangaren", { id: "v-hangaren", name: "Hangaren" } as never]]);
+    const sources = new Map([["src-hvaderpaa", { id: "src-hvaderpaa", sourceName: "HvadErPå" } as never]]);
+    const noLink = { officialEventUrl: null, ticketUrl: null, facebookUrl: null, residentAdvisorUrl: null, canonicalSourceId: "src-hvaderpaa" };
+    const rows = deriveMissingLinkRows(
+      [
+        event({ ...noLink, id: "later", title: "Later", startDatetime: "2026-08-20T21:00:00Z", published: false }),
+        event({ ...noLink, id: "sooner", title: "Sooner", startDatetime: "2026-08-10T21:00:00Z", published: false }),
+        event({ ...noLink, id: "live", startDatetime: "2026-08-10T21:00:00Z", published: true }),
+        event({ ...noLink, id: "by-admin", startDatetime: "2026-08-10T21:00:00Z", published: false, adminUnpublishReason: "other" }),
+        event({ ...noLink, id: "past", startDatetime: "2026-07-01T21:00:00Z", published: false }),
+        event({ id: "has-link", officialEventUrl: "https://venue.example.com/e", startDatetime: "2026-08-10T21:00:00Z", published: false }),
+      ],
+      venues,
+      sources,
+      now,
+    );
+    expect(rows.map((r) => r.eventId)).toEqual(["sooner", "later"]);
+    expect(rows[0]).toMatchObject({ title: "Sooner", venueName: "Hangaren", sourceName: "HvadErPå" });
   });
 });
