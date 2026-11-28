@@ -92,7 +92,7 @@ describe("EventRow — Source CTA visibility rule (public source-link visibility
         })}
       />,
     );
-    expect(screen.getByText(/Official event/i)).toBeTruthy();
+    expect(screen.getByText(/^Event ↗/)).toBeTruthy();
     expect(screen.queryByText(/^Source/)).toBeNull();
   });
 
@@ -247,17 +247,16 @@ describe("EventRow — genre display and ticket/free CTA", () => {
       />,
     );
     const free = screen.getByText("Free");
-    expect(screen.getByText(/Official event/i)).toBeTruthy();
+    expect(screen.getByText(/^Event ↗/)).toBeTruthy();
     expect(free.closest("a")).toBeNull();
     expect(screen.getByText(/^\d{2}:\d{2}/).parentElement?.contains(free)).toBe(true);
   });
 
-  it("renders FREE in white with comparable weight to OFFICIAL EVENT, not a dim secondary note", () => {
+  it("renders FREE as a discreet purple status: purple frame, muted background, no arrow", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null })} />);
     const free = screen.getByText("Free");
-    expect(free.className).toContain("text-text-primary");
-    expect(free.className).toContain("font-semibold");
-    expect(free.className).not.toContain("text-accent-strong");
+    expect(free.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-accent-dim", "bg-accent/10", "text-accent-strong", "font-semibold"]));
+    expect(free.textContent).toBe("Free");
   });
 });
 
@@ -423,7 +422,7 @@ describe("EventRow — title-link affordance change introduces no nested-interac
       />,
     );
     const titleLink = screen.getByRole("link", { name: /Test Event/ });
-    const officialEvent = screen.getByRole("link", { name: /Official event/i });
+    const officialEvent = screen.getByRole("link", { name: /^Event\b/ });
     const tickets = screen.getByRole("link", { name: /Tickets/i });
 
     expect(titleLink.contains(officialEvent)).toBe(false);
@@ -558,17 +557,15 @@ describe("EventRow — three-level text hierarchy (Round 18: new secondary-stron
         })}
       />,
     );
-    const officialEvent = screen.getByText(/Official event/i);
+    const officialEvent = screen.getByText(/^Event ↗/);
     const tickets = screen.getByText(/Tickets/i);
     expect(officialEvent.className).toContain("text-text-secondary-strong");
     expect(tickets.className).toContain("text-text-secondary-strong");
   });
 
-  it("keeps FREE on primary off-white, untouched by the new secondary-strong level", () => {
+  it("keeps FREE off the links' secondary-strong grey", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null })} />);
-    const free = screen.getByText("Free");
-    expect(free.className).toContain("text-text-primary");
-    expect(free.className).not.toContain("text-text-secondary-strong");
+    expect(screen.getByText("Free").className).not.toContain("text-text-secondary-strong");
   });
 });
 
@@ -596,13 +593,13 @@ describe("EventRow — sold-out hides Tickets (public link-integrity rule, 2026-
       />,
     );
     expect(screen.queryByText(/^Tickets/i)).toBeNull();
-    expect(screen.getByText(/^Official event/i)).toBeTruthy();
+    expect(screen.getByText(/^Event ↗/)).toBeTruthy();
   });
 
   it("sold-out + no Official event -> no CTA link at all (consistent with the event-detail page's 'no primary CTA' outcome)", () => {
     render(<EventRow event={makeEvent({ officialEventUrl: null, ticketUrl: "https://billetto.dk/e/x", facebookUrl: null, soldOut: true })} />);
     expect(screen.queryByText(/^Tickets/i)).toBeNull();
-    expect(screen.queryByText(/^Official event/i)).toBeNull();
+    expect(screen.queryByText(/^Event ↗/)).toBeNull();
   });
 
   it("sold-out does not mutate the stored event data", () => {
@@ -692,14 +689,14 @@ describe("EventRow — public/internal status separation (dateChanged and timeCh
     expect(screen.queryByText(/Date changed/i)).toBeNull();
   });
 
-  it("POSTPONED uses the existing status-bad red tone, SOLD OUT uses a neutral secondary tone (not amber, not purple)", () => {
+  it("POSTPONED uses the existing status-bad red tone; SOLD OUT uses the shared purple access-status look", () => {
     render(<EventRow event={makeEvent({ postponed: true, soldOut: true })} />);
     const postponed = screen.getByText("Postponed");
     const soldOut = screen.getByText("Sold out");
     expect(postponed.className).toContain("text-status-bad");
     expect(soldOut.className).not.toContain("text-status-bad");
     expect(soldOut.className).not.toContain("text-status-warn");
-    expect(soldOut.className).not.toContain("text-accent");
+    expect(soldOut.className).toContain("text-accent-strong");
   });
 });
 
@@ -1203,7 +1200,7 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
         }}
       />,
     );
-    const official = screen.getByRole("link", { name: /Official event/ });
+    const official = screen.getByRole("link", { name: /^Event\b/ });
     const tickets = screen.getByRole("link", { name: /Tickets/ });
     for (const link of [official, tickets]) {
       expect(cls(link)).toEqual(expect.arrayContaining(["-order-1", "whitespace-nowrap", "sm:order-none", "sm:whitespace-normal"]));
@@ -1217,7 +1214,7 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
 
   it("renders no link row at all when there are no external links", () => {
     render(<EventRow event={{ ...makeEvent(), hasArtistPreview: true }} />);
-    expect(screen.queryByRole("link", { name: /Official event|Tickets/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Event\b|Tickets/ })).toBeNull();
     const calendar = screen.getAllByRole("button", { name: /calendar/i })[1].closest("div") as HTMLElement;
     expect(calendar.previousElementSibling).toBeNull();
   });
@@ -1233,7 +1230,7 @@ describe("EventRow — mobile bottom section: venue + actions (2026-11-12)", () 
 
   it("de-emphasises Official event/Tickets on mobile with an enlarged tap area; desktop styling unchanged", () => {
     render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
-    for (const name of [/Official event/, /Tickets/]) {
+    for (const name of [/^Event\b/, /Tickets/]) {
       const c = cls(screen.getByRole("link", { name }));
       expect(c).toEqual(expect.arrayContaining(["text-[11px]", "sm:text-xs", "text-text-secondary", "sm:text-text-secondary-strong", "before:absolute", "sm:before:hidden"]));
     }
@@ -1244,13 +1241,16 @@ describe("EventRow — SOLD OUT in the title's white (2026-11-12)", () => {
   afterEach(cleanup);
   const cls = (el: Element) => el.className.split(/\s+/);
 
-  it("renders SOLD OUT with text and border in text-primary, same badge otherwise", () => {
-    render(<EventRow event={makeEvent({ soldOut: true })} />);
-    const badge = screen.getByText("Sold out");
-    expect(cls(badge)).toEqual(expect.arrayContaining(["border-text-primary", "text-text-primary", "border", "h-[18px]", "items-center", "justify-center", "leading-none", "text-[10px]", "rounded-[3px]"]));
-    expect(cls(badge)).not.toContain("border-border-strong");
-    // The title uses the same token.
-    expect(cls(screen.getByRole("link", { name: /Test Event/ }))).toContain("text-text-primary");
+  it("renders SOLD OUT, FREE and FREE BEFORE with one shared badge: centred 18px box, purple frame, muted background", () => {
+    const shared = ["border", "border-accent-dim", "bg-accent/10", "text-accent-strong", "h-[18px]", "items-center", "justify-center", "leading-none", "text-[10px]", "rounded-[4px]"];
+    const sold = render(<EventRow event={makeEvent({ soldOut: true })} />);
+    expect(cls(screen.getByText("Sold out"))).toEqual(expect.arrayContaining(shared));
+    sold.unmount();
+    const free = render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null })} />);
+    expect(cls(screen.getByText("Free"))).toEqual(expect.arrayContaining(shared));
+    free.unmount();
+    render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, description: "Free till 23:00" })} />);
+    expect(cls(screen.getByRole("button", { name: "Free before" }))).toEqual(expect.arrayContaining(shared));
   });
 
   it("leaves other statuses' styling unchanged", () => {
@@ -1292,7 +1292,7 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
   it("binds the last external link to Calendar in one non-wrapping unit", () => {
     render(<EventRow event={makeEvent({ officialEventUrl: "https://example.com/e", ticketUrl: "https://example.com/t" })} />);
     const tickets = screen.getByRole("link", { name: /Tickets/ });
-    const official = screen.getByRole("link", { name: /Official event/ });
+    const official = screen.getByRole("link", { name: /^Event\b/ });
     const unit = tickets.parentElement as HTMLElement;
     expect(cls(unit)).toEqual(["inline-flex", "items-center", "gap-x-4", "sm:contents"]);
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
@@ -1313,7 +1313,7 @@ describe("EventRow — mobile calendar pill and grouping (2026-11-12)", () => {
 
   it("binds the last link (not FREE, which sits with the date) to Calendar", () => {
     render(<EventRow event={makeEvent({ priceFrom: 0, ticketUrl: null, residentAdvisorUrl: null, officialEventUrl: "https://example.com/e" })} />);
-    const unit = screen.getByText(/Official event/i).parentElement as HTMLElement;
+    const unit = screen.getByText(/^Event ↗/).parentElement as HTMLElement;
     expect(unit.contains(screen.getByRole("button", { name: "Add to calendar" }))).toBe(true);
     expect(unit.contains(screen.getByText("Free"))).toBe(false);
   });
@@ -1418,7 +1418,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     expect(cls(actions)).toEqual(expect.arrayContaining(["flex", "flex-wrap", "justify-between"]));
     const [left, right] = Array.from(actions.children) as HTMLElement[];
     const links = within(left).getAllByRole("link", opts);
-    expect(links.map((l) => l.textContent?.replace(" (opens in a new tab)", ""))).toEqual(["Tickets", "Official Event"]);
+    expect(links.map((l) => l.textContent?.replace(" (opens in a new tab)", ""))).toEqual(["Tickets", "Event"]);
     expect(links.map((l) => l.getAttribute("href"))).toEqual(["https://billetto.dk/e/x", "https://venue.example.com/event"]);
     expect(cls(links[0].firstElementChild as Element)).toEqual(expect.arrayContaining(["bg-accent-strong"]));
     expect(cls(links[1].firstElementChild as Element)).toEqual(expect.arrayContaining(["text-accent-strong", "text-[15px]", "font-semibold"]));
@@ -1431,20 +1431,20 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
 
   it("draws Official Event identically with or without Tickets, always labelled 'Official Event'", () => {
     const withTickets = render(<EventRow event={FULL} />);
-    const a = within(mobile(withTickets.container)).getByRole("link", { name: /Official Event/, ...opts });
+    const a = within(mobile(withTickets.container)).getByRole("link", { name: /^Event\b/, ...opts });
     const aClasses = (a.firstElementChild as Element).className;
     withTickets.unmount();
     const without = render(<EventRow event={{ ...FULL, ticketUrl: null }} />);
-    const b = within(mobile(without.container)).getByRole("link", { name: /Official Event/, ...opts });
+    const b = within(mobile(without.container)).getByRole("link", { name: /^Event\b/, ...opts });
     expect((b.firstElementChild as Element).className).toBe(aClasses);
     expect(a.className).toBe(b.className);
-    expect(b.textContent).toMatch(/^Official Event/);
+    expect(b.textContent).toMatch(/^Event/);
     expect(within(mobile(without.container)).queryByRole("link", { name: /Tickets/, ...opts })).toBeNull();
   });
 
   it("shows no Official Event button without an official link", () => {
     const { container } = render(<EventRow event={{ ...FULL, officialEventUrl: null }} />);
-    expect(within(mobile(container)).queryByRole("link", { name: /Official/, ...opts })).toBeNull();
+    expect(within(mobile(container)).queryByRole("link", { name: /^Event\b/, ...opts })).toBeNull();
   });
 
   it("gives every action a touch target of at least 44×44px (h-11 / w-11)", () => {
@@ -1454,21 +1454,26 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
     for (const el of Array.from((actions.lastElementChild as HTMLElement).querySelectorAll("a, button"))) expect(cls(el)).toContain("w-11");
   });
 
-  it("shows SOLD OUT and FREE in Tickets' place in the action row, not on the time/venue line", () => {
+  it("shows SOLD OUT, FREE and FREE BEFORE first in the action row (Tickets' place), not on the time/venue line", () => {
     const sold = render(<EventRow event={{ ...FULL, soldOut: true }} />);
     expect((mobile(sold.container).firstElementChild as HTMLElement).textContent).not.toContain("Sold out");
-    expect((mobile(sold.container).lastElementChild as HTMLElement).textContent).toContain("Sold out");
+    expect((mobile(sold.container).lastElementChild as HTMLElement).textContent).toMatch(/^Sold out/);
     expect(within(mobile(sold.container)).queryByRole("link", { name: /Tickets/, ...opts })).toBeNull();
     sold.unmount();
     const free = render(<EventRow event={makeEvent({ priceFrom: 0, officialEventUrl: "https://venue.example.com/e" })} />);
     expect((mobile(free.container).firstElementChild as HTMLElement).textContent).not.toContain("Free");
-    expect((mobile(free.container).lastElementChild as HTMLElement).textContent).toContain("Free");
+    expect((mobile(free.container).lastElementChild as HTMLElement).textContent).toMatch(/^FreeEvent/);
+    free.unmount();
+    const fb = render(<EventRow event={makeEvent({ ticketUrl: null, residentAdvisorUrl: null, description: "Free till 23:00", officialEventUrl: "https://venue.example.com/e" })} />);
+    expect((mobile(fb.container).firstElementChild as HTMLElement).textContent).not.toContain("Free before");
+    expect((mobile(fb.container).lastElementChild as HTMLElement).textContent).toMatch(/^Free before/);
   });
 
-  it("draws SOLD OUT / FREE as fixed-height badges with leading-none (text centred in the box)", () => {
+  it("draws the mobile SOLD OUT / FREE / FREE BEFORE as a compact 28px status, text centred, inside a 44px action box", () => {
     const { container } = render(<EventRow event={{ ...FULL, soldOut: true }} />);
     const badge = within(mobile(container)).getByText("Sold out", { ignore: false });
-    expect(cls(badge)).toEqual(expect.arrayContaining(["h-[18px]", "leading-none", "items-center", "justify-center"]));
+    expect(cls(badge)).toEqual(expect.arrayContaining(["h-7", "leading-none", "items-center", "justify-center", "border-accent-dim", "bg-accent/10", "rounded-md"]));
+    expect(cls(badge.parentElement as Element)).toEqual(["flex", "h-11", "items-center"]);
   });
 
   it("separates every row from the next with the same discreet line (no day groups)", () => {
@@ -1493,7 +1498,7 @@ describe("EventRow — mobile layout (2026-11-24 redesign)", () => {
   });
 });
 
-describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Tickets) > FREE (only without Tickets) > nothing", () => {
+describe("EventRow — one access indicator: SOLD OUT > Tickets > FREE / FREE BEFORE > nothing", () => {
   afterEach(cleanup);
   const FREE_BEFORE_TEXT = "22:00 to 04:00 Free till 23:00 · 120 DKK after";
   const START_22 = "2026-11-27T21:00:00.000Z"; // 22:00 Copenhagen
@@ -1506,9 +1511,9 @@ describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Ti
     expect(shown()).toEqual(["Sold out"]);
   });
 
-  it("FREE BEFORE is shown beside Tickets; FREE is not", () => {
+  it("a ticket link hides FREE and FREE BEFORE", () => {
     const fb = render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0, description: FREE_BEFORE_TEXT, startDatetime: START_22 })} />);
-    expect(shown()).toEqual(["Tickets", "Free before"]);
+    expect(shown()).toEqual(["Tickets"]);
     fb.unmount();
     render(<EventRow event={makeEvent({ ticketUrl: "https://billetto.dk/e/x", priceFrom: 0 })} />);
     expect(shown()).toEqual(["Tickets"]);
@@ -1534,8 +1539,8 @@ describe("EventRow — one access status: SOLD OUT > FREE BEFORE (also beside Ti
     expect(badge.textContent).toBe("Free before"); // the time is not part of the badge
     const tooltip = document.getElementById(badge.getAttribute("aria-describedby") as string) as HTMLElement;
     expect(tooltip.textContent).toBe("Free entry before 23:00");
-    expect(tooltip.className).toContain("group-hover/free:block");
-    expect(tooltip.className).toContain("group-focus-within/free:block");
+    expect(tooltip.className).toContain("group-hover/tip:block");
+    expect(tooltip.className).toContain("group-focus-within/tip:block");
     fireEvent.click(badge);
     expect(badge.getAttribute("aria-expanded")).toBe("true");
     expect(tooltip.className.split(/\s+/)).toContain("block");

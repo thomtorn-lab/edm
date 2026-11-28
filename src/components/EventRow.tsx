@@ -62,8 +62,8 @@ const MOBILE_ICON_BOX =
 const MOBILE_CALENDAR_BUTTON = `${MOBILE_ICON_TARGET} cursor-pointer [&>svg]:box-content [&>svg]:h-4 [&>svg]:w-4 [&>svg]:rounded-[10px] [&>svg]:border [&>svg]:border-border-strong [&>svg]:p-[9px] [&>svg]:transition-colors hover:[&>svg]:border-accent-dim hover:text-text-primary`;
 
 /**
- * Mobile lifecycle badge on the time/venue line (Postponed): fixed 18px box,
- * leading-none, padding calibrated for that line's monospace font.
+ * Mobile lifecycle badge on the date · time · venue line (Postponed): fixed
+ * 18px box, leading-none, padding calibrated for that line's monospace font.
  */
 const MOBILE_BADGE =
   "inline-flex h-[18px] items-center justify-center rounded-[3px] border pb-0 pl-[5.5px] pr-[6.5px] pt-1 text-[10px] font-semibold uppercase leading-none tracking-wide";
@@ -79,7 +79,19 @@ const MOBILE_BADGE_TONE = {
  * smaller to offset tracking-wide's trailing letter-space.
  */
 const ACCESS_BADGE =
-  "inline-flex h-[18px] items-center justify-center rounded-[3px] border border-text-primary pl-1.5 pr-[5.75px] text-[10px] font-semibold uppercase leading-none tracking-wide text-text-primary";
+  "inline-flex h-[18px] items-center justify-center rounded-[4px] border border-accent-dim bg-accent/10 pl-1.5 pr-[5.75px] text-[10px] font-semibold uppercase leading-none tracking-wide text-accent-strong";
+/**
+ * The same status on mobile, in the action row where Tickets would be:
+ * compact (28px), information rather than a button (no arrow, no hover
+ * fill). The invisible ::before grows FREE BEFORE's tap target to 44px.
+ */
+const MOBILE_ACCESS_BADGE =
+  "relative inline-flex h-7 items-center justify-center rounded-md border border-accent-dim bg-accent/10 px-2.5 text-[12px] font-semibold uppercase leading-none tracking-wide text-accent-strong before:absolute before:-inset-2 before:content-['']";
+
+/** The event list says "Event" for the official event link (shorter); the event page keeps "Official event". */
+function listLinkLabel(label: string): string {
+  return label === "Official event" ? "Event" : label;
+}
 
 function ExternalArrow() {
   return (
@@ -96,21 +108,19 @@ export default function EventRow({
 }) {
   const genres = displayGenres(event.subgenres);
   const links = getExternalLinks(event, 2);
-  // At most one access status per row (SOLD OUT / FREE / FREE BEFORE):
-  //   1. sold out     -> SOLD OUT only (getExternalLinks already drops Tickets)
-  //   2. FREE BEFORE  -> shown, also beside Tickets: free early, paid later
-  //   3. FREE         -> only without a Tickets link (Tickets wins)
-  //   4. otherwise    -> no status
-  // admissionStatus never returns both FREE and FREE BEFORE (a stated
-  // "free before <time>" means not confirmed free all night, so it wins).
-  // The Admission filter uses admissionStatus itself.
+  // At most one access indicator per row, never Tickets and a status together:
+  //   1. sold out        -> SOLD OUT (getExternalLinks already drops Tickets)
+  //   2. a Tickets link  -> Tickets, no FREE / FREE BEFORE
+  //   3. no Tickets link -> FREE BEFORE or FREE when documented
+  //      (admissionStatus never returns both)
+  //   4. otherwise       -> nothing
+  // Display only: the Admission filter uses admissionStatus itself.
   const showsTickets = links.some((l) => l.label === "Tickets");
-  const admission = admissionStatus(event);
   const accessStatus: AccessStatusValue | null = event.soldOut
     ? { kind: "sold-out" }
-    : admission?.kind === "free-before" || (admission && !showsTickets)
-      ? admission
-      : null;
+    : showsTickets
+      ? null
+      : admissionStatus(event);
   // Lifecycle statuses other than SOLD OUT (i.e. Postponed) are unchanged.
   const statuses = getEventStatuses(event).filter((s) => s.label !== "Sold out");
   const title = cleanEventTitle(event.title, event.venue.name);
@@ -183,7 +193,7 @@ export default function EventRow({
         rel="noopener noreferrer"
         className={`${LINK_GROUP_TEXT} ${TAP_AREA} -order-1 whitespace-nowrap text-text-secondary sm:text-text-secondary-strong transition-colors duration-150 hover:text-text-primary focus-visible:text-text-primary sm:order-none sm:whitespace-normal`}
       >
-        {item.label} ↗<span className="sr-only"> (opens in a new tab)</span>
+        {listLinkLabel(item.label)} ↗<span className="sr-only"> (opens in a new tab)</span>
       </a>
     );
   const calendarInput = {
@@ -500,16 +510,16 @@ export default function EventRow({
         <div className="flex flex-wrap items-center justify-between">
           {(mobileLinks.length > 0 || accessStatus) && (
             <div className="flex items-center gap-3">
-              {/* SOLD OUT / FREE / FREE BEFORE sit first in the action row; only FREE BEFORE can sit beside Tickets. */}
+              {/* SOLD OUT / FREE / FREE BEFORE take Tickets' place (never both). */}
               {accessStatus && (
                 <span className={MOBILE_ACTION_BOX}>
-                  <AccessStatus status={accessStatus} badgeClassName={ACCESS_BADGE} />
+                  <AccessStatus status={accessStatus} badgeClassName={MOBILE_ACCESS_BADGE} />
                 </span>
               )}
               {mobileLinks.map((l) => (
                 <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className={`group ${MOBILE_ACTION_BOX}`}>
                   <span className={l.label === "Tickets" ? MOBILE_PRIMARY_PILL : MOBILE_SECONDARY_PILL}>
-                    {l.label === "Official event" ? "Official Event" : l.label}
+                    {listLinkLabel(l.label)}
                     <ExternalArrow />
                   </span>
                   <span className="sr-only"> (opens in a new tab)</span>
